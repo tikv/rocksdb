@@ -1783,6 +1783,10 @@ void VersionStorageInfo::GetOverlappingInputs(
 void VersionStorageInfo::GetCleanInputsWithinInterval(
     int level, const InternalKey* begin, const InternalKey* end,
     std::vector<FileMetaData*>* inputs, int hint_index, int* file_index) const {
+  inputs->clear();
+  if (file_index) {
+    *file_index = -1;
+  }
   if (level >= num_non_empty_levels_ || level == 0 ||
       level_files_brief_[level].num_files == 0) {
     // this level is empty, no inputs within range
@@ -1790,7 +1794,6 @@ void VersionStorageInfo::GetCleanInputsWithinInterval(
     return;
   }
 
-  inputs->clear();
   Slice user_begin, user_end;
   const auto& level_files = level_files_brief_[level];
   if (begin == nullptr) {
@@ -1803,9 +1806,6 @@ void VersionStorageInfo::GetCleanInputsWithinInterval(
         level_files.files[level_files.num_files - 1].largest_key);
   } else {
     user_end = end->user_key();
-  }
-  if (file_index) {
-    *file_index = -1;
   }
   GetOverlappingInputsRangeBinarySearch(level, user_begin, user_end, inputs,
                                         hint_index, file_index,
