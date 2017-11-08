@@ -643,20 +643,22 @@ Status ExternalSstFileIngestionJob::IngestedFileOverlapWithLevel(
                                     nullptr /* range_del_agg */);
   ScopedArenaIterator level_iter(merge_iter_builder.Finish());
 
-  std::vector<InternalIterator*> level_range_del_iters;
-  sv->current->AddRangeDelIteratorsForLevel(ro, env_options_, lvl,
-                                            &level_range_del_iters);
-  std::unique_ptr<InternalIterator> level_range_del_iter(NewMergingIterator(
-      &cfd_->internal_comparator(),
-      level_range_del_iters.empty() ? nullptr : &level_range_del_iters[0],
-      static_cast<int>(level_range_del_iters.size())));
+  // Note: DISABLE_DELETE_RANGE
+  // std::vector<InternalIterator*> level_range_del_iters;
+  // sv->current->AddRangeDelIteratorsForLevel(ro, env_options_, lvl,
+  //                                           &level_range_del_iters);
+  // std::unique_ptr<InternalIterator> level_range_del_iter(NewMergingIterator(
+  //     &cfd_->internal_comparator(),
+  //     level_range_del_iters.empty() ? nullptr : &level_range_del_iters[0],
+  //     static_cast<int>(level_range_del_iters.size())));
 
   Status status = IngestedFileOverlapWithIteratorRange(
       file_to_ingest, level_iter.get(), overlap_with_level);
-  if (status.ok() && *overlap_with_level == false) {
-    status = IngestedFileOverlapWithRangeDeletions(
-        file_to_ingest, level_range_del_iter.get(), overlap_with_level);
-  }
+  // Note: DISABLE_DELETE_RANGE
+  // if (status.ok() && *overlap_with_level == false) {
+  //   status = IngestedFileOverlapWithRangeDeletions(
+  //       file_to_ingest, level_range_del_iter.get(), overlap_with_level);
+  // }
   return status;
 }
 
