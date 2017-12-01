@@ -120,7 +120,7 @@ Status SstFileReader::NewTableReader(
   // BlockBasedTable
   if (BlockBasedTableFactory::kName == options_.table_factory->Name()) {
      return options_.table_factory->NewTableReader(
-         TableReaderOptions(ioptions_, soptions_, internal_comparator_,
+         TableReaderOptions(*ioptions_, soptions_, *internal_comparator_,
                             /*skip_filters=*/false),
          std::move(file_), file_size, &table_reader_, /*enable_prefetch=*/false);
   }
