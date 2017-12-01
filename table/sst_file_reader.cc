@@ -24,8 +24,6 @@
 
 namespace rocksdb {
 
-using std::dynamic_pointer_cast;
-
 extern const uint64_t kBlockBasedTableMagicNumber;
 extern const uint64_t kLegacyBlockBasedTableMagicNumber;
 extern const uint64_t kPlainTableMagicNumber;
@@ -85,7 +83,7 @@ Status SstFileReader::GetTableReader(const std::string& file_path) {
   file_.reset(new RandomAccessFileReader(std::move(file), file_path));
 
   if (s.ok()) {
-    s = ReadFooterFromFile(file_.get(), file_size, &footer);
+    s = ReadFooterFromFile(file_.get(), nullptr /* prefetch_buffer */, file_size, &footer);
   }
   if (s.ok()) {
     magic_number = footer.table_magic_number();
@@ -120,17 +118,12 @@ Status SstFileReader::NewTableReader(
     unique_ptr<TableReader>* table_reader) {
   // We need to turn off pre-fetching of index and filter nodes for
   // BlockBasedTable
-  shared_ptr<BlockBasedTableFactory> block_table_factory =
-      dynamic_pointer_cast<BlockBasedTableFactory>(options_.table_factory);
-
-  if (block_table_factory) {
-    return block_table_factory->NewTableReader(
-        TableReaderOptions(*ioptions_, soptions_, *internal_comparator_,
-                           /*skip_filters=*/false),
-        std::move(file_), file_size, &table_reader_, /*enable_prefetch=*/false);
+  if (BlockBasedTableFactory::kName == options_.table_factory->Name()) {
+     return options_.table_factory->NewTableReader(
+         TableReaderOptions(ioptions_, soptions_, internal_comparator_,
+                            /*skip_filters=*/false),
+         std::move(file_), file_size, &table_reader_, /*enable_prefetch=*/false);
   }
-
-  assert(!block_table_factory);
 
   // For all other factory implementation
   return options_.table_factory->NewTableReader(
