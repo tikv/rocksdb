@@ -131,6 +131,10 @@ Status SstFileReader::NewTableReader(
       std::move(file_), file_size, &table_reader_);
 }
 
+Status SstFileReader::VerifyChecksum() {
+    return table_reader_->VerifyChecksum();
+}
+
 Status SstFileReader::DumpTable(const std::string& out_filename) {
   unique_ptr<WritableFile> out_file;
   Env* env = Env::Default();
@@ -173,7 +177,8 @@ uint64_t SstFileReader::CalculateCompressedTableSize(
   return size;
 }
 
-int SstFileReader::ShowAllCompressionSizes(size_t block_size) {
+int SstFileReader::ShowAllCompressionSizes(size_t block_size,
+  const std::vector<std::pair<CompressionType, const char*>> &compression_types) {
   ReadOptions read_options;
   Options opts;
   const ImmutableCFOptions imoptions(opts);
@@ -187,17 +192,6 @@ int SstFileReader::ShowAllCompressionSizes(size_t block_size) {
         snprintf(buf, 64, "Block Size: %" ROCKSDB_PRIszt "\n", block_size);
     info_handler_(std::string(buf, len));
   }
-
-  static const std::vector<std::pair<CompressionType, const char*>>
-      compression_types = {
-          {CompressionType::kNoCompression, "kNoCompression"},
-          {CompressionType::kSnappyCompression, "kSnappyCompression"},
-          {CompressionType::kZlibCompression, "kZlibCompression"},
-          {CompressionType::kBZip2Compression, "kBZip2Compression"},
-          {CompressionType::kLZ4Compression, "kLZ4Compression"},
-          {CompressionType::kLZ4HCCompression, "kLZ4HCCompression"},
-          {CompressionType::kXpressCompression, "kXpressCompression"},
-          {CompressionType::kZSTD, "kZSTD"}};
 
   for (auto& i : compression_types) {
     if (CompressionTypeSupported(i.first)) {

@@ -29,6 +29,7 @@
 #include "rocksdb/write_buffer_manager.h"
 #include "table/scoped_arena_iterator.h"
 #include "tools/ldb_cmd_impl.h"
+#include "util/cast_util.h"
 #include "util/coding.h"
 #include "util/filename.h"
 #include "util/stderr_logger.h"

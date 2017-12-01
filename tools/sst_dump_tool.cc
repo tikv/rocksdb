@@ -44,6 +44,17 @@
 
 namespace rocksdb {
 
+static const std::vector<std::pair<CompressionType, const char*>>
+    kCompressions = {
+        {CompressionType::kNoCompression, "kNoCompression"},
+        {CompressionType::kSnappyCompression, "kSnappyCompression"},
+        {CompressionType::kZlibCompression, "kZlibCompression"},
+        {CompressionType::kBZip2Compression, "kBZip2Compression"},
+        {CompressionType::kLZ4Compression, "kLZ4Compression"},
+        {CompressionType::kLZ4HCCompression, "kLZ4HCCompression"},
+        {CompressionType::kXpressCompression, "kXpressCompression"},
+        {CompressionType::kZSTD, "kZSTD"}};
+
 namespace {
 
 void print_help() {
