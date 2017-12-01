@@ -43,26 +43,6 @@
 
 namespace rocksdb {
 
-using std::dynamic_pointer_cast;
-
-extern const uint64_t kBlockBasedTableMagicNumber;
-extern const uint64_t kLegacyBlockBasedTableMagicNumber;
-extern const uint64_t kPlainTableMagicNumber;
-extern const uint64_t kLegacyPlainTableMagicNumber;
-
-const char* testFileName = "test_file_name";
-
-static const std::vector<std::pair<CompressionType, const char*>>
-    kCompressions = {
-        {CompressionType::kNoCompression, "kNoCompression"},
-        {CompressionType::kSnappyCompression, "kSnappyCompression"},
-        {CompressionType::kZlibCompression, "kZlibCompression"},
-        {CompressionType::kBZip2Compression, "kBZip2Compression"},
-        {CompressionType::kLZ4Compression, "kLZ4Compression"},
-        {CompressionType::kLZ4HCCompression, "kLZ4HCCompression"},
-        {CompressionType::kXpressCompression, "kXpressCompression"},
-        {CompressionType::kZSTD, "kZSTD"}};
-
 namespace {
 
 void print_help() {

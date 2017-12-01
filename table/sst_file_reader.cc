@@ -24,6 +24,13 @@
 
 namespace rocksdb {
 
+using std::dynamic_pointer_cast;
+
+extern const uint64_t kBlockBasedTableMagicNumber;
+extern const uint64_t kLegacyBlockBasedTableMagicNumber;
+extern const uint64_t kPlainTableMagicNumber;
+extern const uint64_t kLegacyPlainTableMagicNumber;
+
 SstFileReader::SstFileReader(
     const std::string& file_path, bool verify_checksum,
     std::function<void(const Slice&, const Slice&, SequenceNumber,
@@ -78,8 +85,7 @@ Status SstFileReader::GetTableReader(const std::string& file_path) {
   file_.reset(new RandomAccessFileReader(std::move(file), file_path));
 
   if (s.ok()) {
-    s = ReadFooterFromFile(file_.get(), nullptr /* prefetch_buffer */,
-                           file_size, &footer);
+    s = ReadFooterFromFile(file_.get(), file_size, &footer);
   }
   if (s.ok()) {
     magic_number = footer.table_magic_number();
@@ -114,21 +120,22 @@ Status SstFileReader::NewTableReader(
     unique_ptr<TableReader>* table_reader) {
   // We need to turn off pre-fetching of index and filter nodes for
   // BlockBasedTable
-  if (BlockBasedTableFactory::kName == options_.table_factory->Name()) {
-    return options_.table_factory->NewTableReader(
+  shared_ptr<BlockBasedTableFactory> block_table_factory =
+      dynamic_pointer_cast<BlockBasedTableFactory>(options_.table_factory);
+
+  if (block_table_factory) {
+    return block_table_factory->NewTableReader(
         TableReaderOptions(*ioptions_, soptions_, *internal_comparator_,
                            /*skip_filters=*/false),
         std::move(file_), file_size, &table_reader_, /*enable_prefetch=*/false);
   }
 
+  assert(!block_table_factory);
+
   // For all other factory implementation
   return options_.table_factory->NewTableReader(
       TableReaderOptions(*ioptions_, soptions_, *internal_comparator_),
       std::move(file_), file_size, &table_reader_);
-}
-
-Status SstFileReader::VerifyChecksum() {
-  return table_reader_->VerifyChecksum();
 }
 
 Status SstFileReader::DumpTable(const std::string& out_filename) {
@@ -173,10 +180,7 @@ uint64_t SstFileReader::CalculateCompressedTableSize(
   return size;
 }
 
-int SstFileReader::ShowAllCompressionSizes(
-    size_t block_size,
-    const std::vector<std::pair<CompressionType, const char*>>&
-        compression_types) {
+int SstFileReader::ShowAllCompressionSizes(size_t block_size) {
   ReadOptions read_options;
   Options opts;
   const ImmutableCFOptions imoptions(opts);
@@ -190,6 +194,17 @@ int SstFileReader::ShowAllCompressionSizes(
         snprintf(buf, 64, "Block Size: %" ROCKSDB_PRIszt "\n", block_size);
     info_handler_(std::string(buf, len));
   }
+
+  static const std::vector<std::pair<CompressionType, const char*>>
+      compression_types = {
+          {CompressionType::kNoCompression, "kNoCompression"},
+          {CompressionType::kSnappyCompression, "kSnappyCompression"},
+          {CompressionType::kZlibCompression, "kZlibCompression"},
+          {CompressionType::kBZip2Compression, "kBZip2Compression"},
+          {CompressionType::kLZ4Compression, "kLZ4Compression"},
+          {CompressionType::kLZ4HCCompression, "kLZ4HCCompression"},
+          {CompressionType::kXpressCompression, "kXpressCompression"},
+          {CompressionType::kZSTD, "kZSTD"}};
 
   for (auto& i : compression_types) {
     if (CompressionTypeSupported(i.first)) {
