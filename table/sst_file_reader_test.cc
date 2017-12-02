@@ -87,17 +87,17 @@ void cleanup(const std::string& file_name) {
 }
 }  // namespace
 
-// Test for sst dump tool "raw" mode
-class SSTDumpToolTest : public testing::Test {
+// Test for sst file reader "raw" mode
+class SstFileReaderTest : public testing::Test {
  public:
   BlockBasedTableOptions table_options_;
 
-  SSTDumpToolTest() {}
+  SstFileReaderTest() {}
 
-  ~SSTDumpToolTest() {}
+  ~SstFileReaderTest() {}
 };
 
-TEST_F(SSTDumpToolTest, EmptyFilter) {
+TEST_F(SstFileReaderTest, EmptyFilter) {
   std::string file_name = "rocksdb_sst_test.sst";
   createSST(file_name, table_options_);
 
@@ -118,7 +118,7 @@ TEST_F(SSTDumpToolTest, EmptyFilter) {
   }
 }
 
-TEST_F(SSTDumpToolTest, FilterBlock) {
+TEST_F(SstFileReaderTest, FilterBlock) {
   table_options_.filter_policy.reset(rocksdb::NewBloomFilterPolicy(10, true));
   std::string file_name = "rocksdb_sst_test.sst";
   createSST(file_name, table_options_);
@@ -140,7 +140,7 @@ TEST_F(SSTDumpToolTest, FilterBlock) {
   }
 }
 
-TEST_F(SSTDumpToolTest, FullFilterBlock) {
+TEST_F(SstFileReaderTest, FullFilterBlock) {
   table_options_.filter_policy.reset(rocksdb::NewBloomFilterPolicy(10, false));
   std::string file_name = "rocksdb_sst_test.sst";
   createSST(file_name, table_options_);
@@ -162,7 +162,7 @@ TEST_F(SSTDumpToolTest, FullFilterBlock) {
   }
 }
 
-TEST_F(SSTDumpToolTest, GetProperties) {
+TEST_F(SstFileReaderTest, GetProperties) {
   table_options_.filter_policy.reset(rocksdb::NewBloomFilterPolicy(10, false));
   std::string file_name = "rocksdb_sst_test.sst";
   createSST(file_name, table_options_);
@@ -184,7 +184,7 @@ TEST_F(SSTDumpToolTest, GetProperties) {
   }
 }
 
-TEST_F(SSTDumpToolTest, CompressedSizes) {
+TEST_F(SstFileReaderTest, CompressedSizes) {
   table_options_.filter_policy.reset(rocksdb::NewBloomFilterPolicy(10, false));
   std::string file_name = "rocksdb_sst_test.sst";
   createSST(file_name, table_options_);

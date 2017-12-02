@@ -584,12 +584,12 @@ if(WIN32)
     port/win/win_logger.cc
     port/win/win_thread.cc
     port/win/xpress_win.cc)
-	
+
 if(WITH_JEMALLOC)
   list(APPEND SOURCES
     port/win/win_jemalloc.cc)
 endif()
-	
+
 else()
   list(APPEND SOURCES
     port/port_posix.cc
@@ -800,10 +800,10 @@ if(WITH_TESTS)
         table/cuckoo_table_reader_test.cc
         table/full_filter_block_test.cc
         table/merger_test.cc
+        table/sst_file_reader_test.cc
         table/table_test.cc
         tools/ldb_cmd_test.cc
         tools/reduce_levels_test.cc
-        tools/sst_dump_test.cc
         util/arena_test.cc
         util/auto_roll_logger_test.cc
         util/autovector_test.cc

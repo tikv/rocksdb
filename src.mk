@@ -307,6 +307,7 @@ MAIN_SOURCES =                                                    \
   table/cuckoo_table_reader_test.cc                                     \
   table/full_filter_block_test.cc                                       \
   table/merger_test.cc                                                  \
+  table/sst_file_reader_test.cc                                         \
   table/table_reader_bench.cc                                           \
   table/table_test.cc                                                   \
   third-party/gtest-1.7.0/fused-src/gtest/gtest-all.cc                  \
@@ -315,7 +316,6 @@ MAIN_SOURCES =                                                    \
   tools/db_sanity_test.cc                                               \
   tools/ldb_cmd_test.cc                                                 \
   tools/reduce_levels_test.cc                                           \
-  tools/sst_dump_test.cc                                                \
   util/arena_test.cc                                                    \
   util/auto_roll_logger_test.cc                                         \
   util/autovector_test.cc                                               \
