@@ -10,8 +10,7 @@
 #ifndef ROCKSDB_LITE
 
 #include <stdint.h>
-#include "rocksdb/sst_dump_tool.h"
-
+#include "rocksdb/sst_file_reader.h"
 #include "rocksdb/filter_policy.h"
 #include "table/block_based_table_factory.h"
 #include "table/table_builder.h"
@@ -24,6 +23,7 @@ namespace rocksdb {
 const uint32_t optLength = 100;
 
 namespace {
+
 static std::string MakeKey(int i) {
   char buf[100];
   snprintf(buf, sizeof(buf), "k_%04d", i);
@@ -38,10 +38,9 @@ static std::string MakeValue(int i) {
   return key.Encode().ToString();
 }
 
-void createSST(const std::string& file_name,
-               const BlockBasedTableOptions& table_options) {
+void createSST(const std::string& file_name) {
   std::shared_ptr<rocksdb::TableFactory> tf;
-  tf.reset(new rocksdb::BlockBasedTableFactory(table_options));
+  tf.reset(new rocksdb::BlockBasedTableFactory(BlockBasedTableOptions()));
 
   unique_ptr<WritableFile> file;
   Env* env = Env::Default();
@@ -85,126 +84,75 @@ void cleanup(const std::string& file_name) {
   outfile_name.append("_dump.txt");
   env->DeleteFile(outfile_name);
 }
+
 }  // namespace
 
 // Test for sst file reader "raw" mode
 class SstFileReaderTest : public testing::Test {
  public:
-  BlockBasedTableOptions table_options_;
-
   SstFileReaderTest() {}
 
   ~SstFileReaderTest() {}
 };
 
-TEST_F(SstFileReaderTest, EmptyFilter) {
-  std::string file_name = "rocksdb_sst_test.sst";
-  createSST(file_name, table_options_);
+TEST_F(SSTFileReaderTest, GetProperties) {
+  std::string file_name = "rocksdb_sst_file_reader_test.sst";
+  createSST(file_name);
 
-  char* usage[3];
-  for (int i = 0; i < 3; i++) {
-    usage[i] = new char[optLength];
-  }
-  snprintf(usage[0], optLength, "./sst_dump");
-  snprintf(usage[1], optLength, "--command=raw");
-  snprintf(usage[2], optLength, "--file=rocksdb_sst_test.sst");
+  SstFileReader *reader = new SstFileReader(file_name, false);
+  ASSERT_TRUE(reader->getStatus().ok());
 
-  rocksdb::SSTDumpTool tool;
-  ASSERT_TRUE(!tool.Run(3, usage));
-
+  std::shared_ptr<const TableProperties> props;
+  auto s = reader->ReadTableProperties(&props);
+  ASSERT_TRUE(s.ok());
   cleanup(file_name);
-  for (int i = 0; i < 3; i++) {
-    delete[] usage[i];
-  }
+  delete reader;
 }
 
-TEST_F(SstFileReaderTest, FilterBlock) {
-  table_options_.filter_policy.reset(rocksdb::NewBloomFilterPolicy(10, true));
-  std::string file_name = "rocksdb_sst_test.sst";
-  createSST(file_name, table_options_);
+TEST_F(SSTFileReaderTest, VerifyChecksum) {
+  std::string file_name = "rocksdb_sst_file_reader_test.sst";
+  createSST(file_name);
 
-  char* usage[3];
-  for (int i = 0; i < 3; i++) {
-    usage[i] = new char[optLength];
-  }
-  snprintf(usage[0], optLength, "./sst_dump");
-  snprintf(usage[1], optLength, "--command=raw");
-  snprintf(usage[2], optLength, "--file=rocksdb_sst_test.sst");
+  SstFileReader *reader = new SstFileReader(file_name, false);
+  ASSERT_TRUE(reader->getStatus().ok());
 
-  rocksdb::SSTDumpTool tool;
-  ASSERT_TRUE(!tool.Run(3, usage));
-
+  auto s = reader->VerifyChecksum();
+  ASSERT_TRUE(s.ok());
   cleanup(file_name);
-  for (int i = 0; i < 3; i++) {
-    delete[] usage[i];
-  }
+  delete reader;
 }
 
-TEST_F(SstFileReaderTest, FullFilterBlock) {
-  table_options_.filter_policy.reset(rocksdb::NewBloomFilterPolicy(10, false));
-  std::string file_name = "rocksdb_sst_test.sst";
-  createSST(file_name, table_options_);
+TEST_F(SSTFileReaderTest, ReadSequential) {
+  std::string file_name = "rocksdb_sst_file_reader_test.sst";
+  createSST(file_name);
 
-  char* usage[3];
-  for (int i = 0; i < 3; i++) {
-    usage[i] = new char[optLength];
-  }
-  snprintf(usage[0], optLength, "./sst_dump");
-  snprintf(usage[1], optLength, "--command=raw");
-  snprintf(usage[2], optLength, "--file=rocksdb_sst_test.sst");
+  SstFileReader *reader = new SstFileReader(file_name, false);
+  ASSERT_TRUE(reader->getStatus().ok());
 
-  rocksdb::SSTDumpTool tool;
-  ASSERT_TRUE(!tool.Run(3, usage));
+  uint64_t num = 10;
+  auto s = reader->ReadSequential(num, true, std::string("0"), true, std::string("9"));
+  ASSERT_TRUE(s.ok());
+  ASSERT_TRUE(reader->GetReadNumber() == num);
 
   cleanup(file_name);
-  for (int i = 0; i < 3; i++) {
-    delete[] usage[i];
-  }
+  delete reader;
 }
 
-TEST_F(SstFileReaderTest, GetProperties) {
-  table_options_.filter_policy.reset(rocksdb::NewBloomFilterPolicy(10, false));
-  std::string file_name = "rocksdb_sst_test.sst";
-  createSST(file_name, table_options_);
+TEST_F(SSTFileReaderTest, DumpTable) {
+  std::string file_name = "rocksdb_sst_file_reader_test.sst";
+  createSST(file_name);
 
-  char* usage[3];
-  for (int i = 0; i < 3; i++) {
-    usage[i] = new char[optLength];
-  }
-  snprintf(usage[0], optLength, "./sst_dump");
-  snprintf(usage[1], optLength, "--show_properties");
-  snprintf(usage[2], optLength, "--file=rocksdb_sst_test.sst");
+  SstFileReader *reader = new SstFileReader(file_name, false);
+  ASSERT_TRUE(reader->getStatus().ok());
 
-  rocksdb::SSTDumpTool tool;
-  ASSERT_TRUE(!tool.Run(3, usage));
-
+  std::string dump_name = "rocksdb_sst_file_reader_test.dump";
+  auto s = reader->DumpTable(dump_name);
+  ASSERT_TRUE(s.ok());
   cleanup(file_name);
-  for (int i = 0; i < 3; i++) {
-    delete[] usage[i];
-  }
+  cleanup(dump_name);
+  delete reader;
 }
 
-TEST_F(SstFileReaderTest, CompressedSizes) {
-  table_options_.filter_policy.reset(rocksdb::NewBloomFilterPolicy(10, false));
-  std::string file_name = "rocksdb_sst_test.sst";
-  createSST(file_name, table_options_);
-
-  char* usage[3];
-  for (int i = 0; i < 3; i++) {
-    usage[i] = new char[optLength];
-  }
-
-  snprintf(usage[0], optLength, "./sst_dump");
-  snprintf(usage[1], optLength, "--command=recompress");
-  snprintf(usage[2], optLength, "--file=rocksdb_sst_test.sst");
-  rocksdb::SSTDumpTool tool;
-  ASSERT_TRUE(!tool.Run(3, usage));
-
-  cleanup(file_name);
-  for (int i = 0; i < 3; i++) {
-    delete[] usage[i];
-  }
-}
 }  // namespace rocksdb
 
 int main(int argc, char** argv) {
@@ -216,7 +164,7 @@ int main(int argc, char** argv) {
 #include <stdio.h>
 
 int main(int argc, char** argv) {
-  fprintf(stderr, "SKIPPED as SSTDumpTool is not supported in ROCKSDB_LITE\n");
+  fprintf(stderr, "SKIPPED as SstFileReader is not supported in ROCKSDB_LITE\n");
   return 0;
 }
 

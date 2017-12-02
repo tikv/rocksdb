@@ -804,6 +804,7 @@ if(WITH_TESTS)
         table/table_test.cc
         tools/ldb_cmd_test.cc
         tools/reduce_levels_test.cc
+        tools/sst_dump_test.cc
         util/arena_test.cc
         util/auto_roll_logger_test.cc
         util/autovector_test.cc
