@@ -13,7 +13,6 @@
 #include "rocksdb/env.h"
 #include "rocksdb/options.h"
 #include "rocksdb/table_properties.h"
-#include "rocksdb/types.h"
 
 namespace rocksdb {
 

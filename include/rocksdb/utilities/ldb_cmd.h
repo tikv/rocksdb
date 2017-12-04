@@ -31,7 +31,7 @@ struct DefaultKvHandler {
 
   void operator()(const Slice& key, const Slice& value, SequenceNumber sequence,
                   unsigned char type) {
-    fprintf(stdout, "%s => %s, seq:%" PRIu64 ", type:%d\n",
+    fprintf(stdout, "%s => %s, seq:%ld   type:%d\n",
             key.ToString(output_hex_).c_str(),
             value.ToString(output_hex_).c_str(), sequence, type);
   }
