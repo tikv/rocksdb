@@ -2042,6 +2042,7 @@ TEST_F(DBIteratorTest, TableFilter) {
     ASSERT_FALSE(iter->Valid());
     delete iter;
   }
+}
 
 }  // namespace rocksdb
 
