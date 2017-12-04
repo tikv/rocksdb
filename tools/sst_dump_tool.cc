@@ -269,7 +269,7 @@ int SSTDumpTool::Run(int argc, char** argv) {
 
     rocksdb::SstFileReader reader(
         filename, verify_checksum,
-        (command == "scan" ? rocksdb::DefaultKvHandler(output_hex) : false),
+        (command == "scan" ? rocksdb::DefaultKvHandler(output_hex) : nullptr),
         rocksdb::DefaultInfoHandler(), rocksdb::DefaultErrHandler());
     if (!reader.getStatus().ok()) {
       fprintf(stderr, "%s: %s\n", filename.c_str(),
