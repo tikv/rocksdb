@@ -95,7 +95,7 @@ class SstFileReaderTest : public testing::Test {
   ~SstFileReaderTest() {}
 };
 
-TEST_F(SSTFileReaderTest, GetProperties) {
+TEST_F(SstFileReaderTest, GetProperties) {
   std::string file_name = "rocksdb_sst_file_reader_test.sst";
   createSST(file_name);
 
@@ -109,7 +109,7 @@ TEST_F(SSTFileReaderTest, GetProperties) {
   delete reader;
 }
 
-TEST_F(SSTFileReaderTest, VerifyChecksum) {
+TEST_F(SstFileReaderTest, VerifyChecksum) {
   std::string file_name = "rocksdb_sst_file_reader_test.sst";
   createSST(file_name);
 
@@ -122,7 +122,7 @@ TEST_F(SSTFileReaderTest, VerifyChecksum) {
   delete reader;
 }
 
-TEST_F(SSTFileReaderTest, ReadSequential) {
+TEST_F(SstFileReaderTest, ReadSequential) {
   std::string file_name = "rocksdb_sst_file_reader_test.sst";
   createSST(file_name);
 
@@ -130,7 +130,7 @@ TEST_F(SSTFileReaderTest, ReadSequential) {
   ASSERT_TRUE(reader->getStatus().ok());
 
   uint64_t num = 10;
-  auto s = reader->ReadSequential(num, true, std::string("0"), true, std::string("9"));
+  auto s = reader->ReadSequential(num, false, std::string("k_0000"), true, std::string("k_0009"));
   ASSERT_TRUE(s.ok());
   ASSERT_TRUE(reader->GetReadNumber() == num);
 
@@ -138,7 +138,7 @@ TEST_F(SSTFileReaderTest, ReadSequential) {
   delete reader;
 }
 
-TEST_F(SSTFileReaderTest, DumpTable) {
+TEST_F(SstFileReaderTest, DumpTable) {
   std::string file_name = "rocksdb_sst_file_reader_test.sst";
   createSST(file_name);
 
