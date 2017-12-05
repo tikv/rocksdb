@@ -80,9 +80,6 @@ void createSST(const std::string& file_name) {
 void cleanup(const std::string& file_name) {
   Env* env = Env::Default();
   env->DeleteFile(file_name);
-  std::string outfile_name = file_name.substr(0, file_name.length() - 4);
-  outfile_name.append("_dump.txt");
-  env->DeleteFile(outfile_name);
 }
 
 }  // namespace
@@ -145,7 +142,7 @@ TEST_F(SstFileReaderTest, DumpTable) {
   SstFileReader *reader = new SstFileReader(file_name, false);
   ASSERT_TRUE(reader->getStatus().ok());
 
-  std::string dump_name = "rocksdb_sst_file_reader_test.dump";
+  std::string dump_name = "rocksdb_sst_file_reader_test_dump.txt";
   auto s = reader->DumpTable(dump_name);
   ASSERT_TRUE(s.ok());
   cleanup(file_name);
