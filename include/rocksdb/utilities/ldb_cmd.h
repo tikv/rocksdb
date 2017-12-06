@@ -26,6 +26,31 @@
 
 namespace rocksdb {
 
+struct DefaultKvHandler {
+  DefaultKvHandler(bool output_hex) : output_hex_(output_hex) {}
+
+  void operator()(const Slice& key, const Slice& value, SequenceNumber sequence,
+                  unsigned char type) {
+    fprintf(stdout, "%s => %s, seq:%ld   type:%d\n",
+            key.ToString(output_hex_).c_str(),
+            value.ToString(output_hex_).c_str(), sequence, type);
+  }
+
+  bool output_hex_;
+};
+
+struct DefaultInfoHandler {
+  void operator()(const std::string& info) {
+    fprintf(stdout, "%s", info.c_str());
+  }
+};
+
+struct DefaultErrHandler {
+  void operator()(const std::string& info) {
+    fprintf(stderr, "%s", info.c_str());
+  }
+};
+
 class LDBCommand {
  public:
   // Command-line arguments

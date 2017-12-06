@@ -205,6 +205,7 @@ TEST_F(SSTDumpToolTest, CompressedSizes) {
     delete[] usage[i];
   }
 }
+
 }  // namespace rocksdb
 
 int main(int argc, char** argv) {

@@ -25,10 +25,10 @@
 #include "rocksdb/utilities/object_registry.h"
 #include "rocksdb/utilities/options_util.h"
 #include "rocksdb/write_batch.h"
+#include "rocksdb/sst_file_reader.h"
 #include "rocksdb/write_buffer_manager.h"
 #include "table/scoped_arena_iterator.h"
 #include "tools/ldb_cmd_impl.h"
-#include "tools/sst_dump_tool_imp.h"
 #include "util/cast_util.h"
 #include "util/coding.h"
 #include "util/filename.h"
@@ -2793,8 +2793,11 @@ void DumpSstFile(std::string filename, bool output_hex, bool show_properties) {
     return;
   }
   // no verification
-  rocksdb::SstFileReader reader(filename, false, output_hex);
-  Status st = reader.ReadSequential(true, -1, false,  // has_from
+  rocksdb::SstFileReader reader(
+      filename, false, rocksdb::DefaultKvHandler(output_hex),
+      rocksdb::DefaultInfoHandler(), rocksdb::DefaultErrHandler());
+  Status st = reader.ReadSequential(std::numeric_limits<uint64_t>::max(),
+                                    false,            // has_from
                                     from_key, false,  // has_to
                                     to_key);
   if (!st.ok()) {

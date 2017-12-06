@@ -477,6 +477,7 @@ TESTS = \
 	object_registry_test \
 	repair_test \
 	env_timed_test \
+	sst_file_reader_test \
 
 PARALLEL_TEST = \
 	backupable_db_test \
@@ -1433,6 +1434,9 @@ range_del_aggregator_test: db/range_del_aggregator_test.o db/db_test_util.o $(LI
 	$(AM_LINK)
 
 blob_db_test: utilities/blob_db/blob_db_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(AM_LINK)
+
+sst_file_reader_test: table/sst_file_reader_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
 #-------------------------------------------------
