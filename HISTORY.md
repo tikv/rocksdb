@@ -1,4 +1,8 @@
 # Rocksdb Change Log
+## Unreleased
+### New Features
+* Improve the performance of iterators doing long range scans by using readahead.
+
 ## 5.8.7 (11/28/2017)
 ### Bug Fixes
 * Fix IOError on WAL write doesn't propagate to write group follower
