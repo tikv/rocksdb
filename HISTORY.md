@@ -1,8 +1,5 @@
 # Rocksdb Change Log
 ## 5.8.7 (11/28/2017)
-### New Features
-* If `ColumnFamilyOptions::max_subcompactions` is set greater than one, we now parallelize large manual level-based compactions.
-
 ### Bug Fixes
 * Fix IOError on WAL write doesn't propagate to write group follower
 
