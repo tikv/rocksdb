@@ -60,7 +60,6 @@
 #include "util/compression.h"
 #include "util/file_reader_writer.h"
 #include "util/filename.h"
-#include "util/hash.h"
 #include "util/mutexlock.h"
 #include "util/rate_limiter.h"
 #include "util/string_util.h"
@@ -223,6 +222,10 @@ TEST_F(DBTest, SkipDelay) {
 
   for (bool sync : {true, false}) {
     for (bool disableWAL : {true, false}) {
+      if (sync && disableWAL) {
+        // sync and disableWAL is incompatible.
+        continue;
+      }
       // Use a small number to ensure a large delay that is still effective
       // when we do Put
       // TODO(myabandeh): this is time dependent and could potentially make
@@ -2324,9 +2327,9 @@ class ModelDB : public DB {
     return false;
   }
   using DB::GetMapProperty;
-  virtual bool GetMapProperty(ColumnFamilyHandle* column_family,
-                              const Slice& property,
-                              std::map<std::string, double>* value) override {
+  virtual bool GetMapProperty(
+      ColumnFamilyHandle* column_family, const Slice& property,
+      std::map<std::string, std::string>* value) override {
     return false;
   }
   using DB::GetAggregatedIntProperty;
@@ -2458,6 +2461,10 @@ class ModelDB : public DB {
   }
 
   virtual SequenceNumber GetLatestSequenceNumber() const override { return 0; }
+
+  virtual bool SetPreserveDeletesSequenceNumber(SequenceNumber seqnum) override {
+    return true;
+  }
 
   virtual ColumnFamilyHandle* DefaultColumnFamily() const override {
     return nullptr;
@@ -4302,7 +4309,141 @@ TEST_F(DBTest, DynamicCompactionOptions) {
   dbfull()->TEST_WaitForCompact();
   ASSERT_LT(NumTableFilesAtLevel(0), 4);
 }
+
+// Test dynamic FIFO copmaction options.
+// This test covers just option parsing and makes sure that the options are
+// correctly assigned. Also look at DBOptionsTest.SetFIFOCompactionOptions
+// test which makes sure that the FIFO compaction funcionality is working
+// as expected on dynamically changing the options.
+// Even more FIFOCompactionTests are at DBTest.FIFOCompaction* .
+TEST_F(DBTest, DynamicFIFOCompactionOptions) {
+  Options options;
+  options.create_if_missing = true;
+  DestroyAndReopen(options);
+
+  // Initial defaults
+  ASSERT_EQ(dbfull()->GetOptions().compaction_options_fifo.max_table_files_size,
+            1024 * 1024 * 1024);
+  ASSERT_EQ(dbfull()->GetOptions().compaction_options_fifo.ttl, 0);
+  ASSERT_EQ(dbfull()->GetOptions().compaction_options_fifo.allow_compaction,
+            false);
+
+  ASSERT_OK(dbfull()->SetOptions(
+      {{"compaction_options_fifo", "{max_table_files_size=23;}"}}));
+  ASSERT_EQ(dbfull()->GetOptions().compaction_options_fifo.max_table_files_size,
+            23);
+  ASSERT_EQ(dbfull()->GetOptions().compaction_options_fifo.ttl, 0);
+  ASSERT_EQ(dbfull()->GetOptions().compaction_options_fifo.allow_compaction,
+            false);
+
+  ASSERT_OK(dbfull()->SetOptions({{"compaction_options_fifo", "{ttl=97}"}}));
+  ASSERT_EQ(dbfull()->GetOptions().compaction_options_fifo.max_table_files_size,
+            23);
+  ASSERT_EQ(dbfull()->GetOptions().compaction_options_fifo.ttl, 97);
+  ASSERT_EQ(dbfull()->GetOptions().compaction_options_fifo.allow_compaction,
+            false);
+
+  ASSERT_OK(dbfull()->SetOptions({{"compaction_options_fifo", "{ttl=203;}"}}));
+  ASSERT_EQ(dbfull()->GetOptions().compaction_options_fifo.max_table_files_size,
+            23);
+  ASSERT_EQ(dbfull()->GetOptions().compaction_options_fifo.ttl, 203);
+  ASSERT_EQ(dbfull()->GetOptions().compaction_options_fifo.allow_compaction,
+            false);
+
+  ASSERT_OK(dbfull()->SetOptions(
+      {{"compaction_options_fifo", "{allow_compaction=true;}"}}));
+  ASSERT_EQ(dbfull()->GetOptions().compaction_options_fifo.max_table_files_size,
+            23);
+  ASSERT_EQ(dbfull()->GetOptions().compaction_options_fifo.ttl, 203);
+  ASSERT_EQ(dbfull()->GetOptions().compaction_options_fifo.allow_compaction,
+            true);
+
+  ASSERT_OK(dbfull()->SetOptions(
+      {{"compaction_options_fifo", "{max_table_files_size=31;ttl=19;}"}}));
+  ASSERT_EQ(dbfull()->GetOptions().compaction_options_fifo.max_table_files_size,
+            31);
+  ASSERT_EQ(dbfull()->GetOptions().compaction_options_fifo.ttl, 19);
+  ASSERT_EQ(dbfull()->GetOptions().compaction_options_fifo.allow_compaction,
+            true);
+
+  ASSERT_OK(dbfull()->SetOptions(
+      {{"compaction_options_fifo",
+        "{max_table_files_size=51;ttl=49;allow_compaction=true;}"}}));
+  ASSERT_EQ(dbfull()->GetOptions().compaction_options_fifo.max_table_files_size,
+            51);
+  ASSERT_EQ(dbfull()->GetOptions().compaction_options_fifo.ttl, 49);
+  ASSERT_EQ(dbfull()->GetOptions().compaction_options_fifo.allow_compaction,
+            true);
+}
 #endif  // ROCKSDB_LITE
+
+TEST_F(DBTest, DynamicUniversalCompactionOptions) {
+  Options options;
+  options.create_if_missing = true;
+  DestroyAndReopen(options);
+
+  // Initial defaults
+  ASSERT_EQ(dbfull()->GetOptions().compaction_options_universal.size_ratio, 1);
+  ASSERT_EQ(dbfull()->GetOptions().compaction_options_universal.min_merge_width,
+            2);
+  ASSERT_EQ(dbfull()->GetOptions().compaction_options_universal.max_merge_width,
+            UINT_MAX);
+  ASSERT_EQ(dbfull()
+                ->GetOptions()
+                .compaction_options_universal.max_size_amplification_percent,
+            200);
+  ASSERT_EQ(dbfull()
+                ->GetOptions()
+                .compaction_options_universal.compression_size_percent,
+            -1);
+  ASSERT_EQ(dbfull()->GetOptions().compaction_options_universal.stop_style,
+            kCompactionStopStyleTotalSize);
+  ASSERT_EQ(
+      dbfull()->GetOptions().compaction_options_universal.allow_trivial_move,
+      false);
+
+  ASSERT_OK(dbfull()->SetOptions(
+      {{"compaction_options_universal", "{size_ratio=7;}"}}));
+  ASSERT_EQ(dbfull()->GetOptions().compaction_options_universal.size_ratio, 7);
+  ASSERT_EQ(dbfull()->GetOptions().compaction_options_universal.min_merge_width,
+            2);
+  ASSERT_EQ(dbfull()->GetOptions().compaction_options_universal.max_merge_width,
+            UINT_MAX);
+  ASSERT_EQ(dbfull()
+                ->GetOptions()
+                .compaction_options_universal.max_size_amplification_percent,
+            200);
+  ASSERT_EQ(dbfull()
+                ->GetOptions()
+                .compaction_options_universal.compression_size_percent,
+            -1);
+  ASSERT_EQ(dbfull()->GetOptions().compaction_options_universal.stop_style,
+            kCompactionStopStyleTotalSize);
+  ASSERT_EQ(
+      dbfull()->GetOptions().compaction_options_universal.allow_trivial_move,
+      false);
+
+  ASSERT_OK(dbfull()->SetOptions(
+      {{"compaction_options_universal", "{min_merge_width=11;}"}}));
+  ASSERT_EQ(dbfull()->GetOptions().compaction_options_universal.size_ratio, 7);
+  ASSERT_EQ(dbfull()->GetOptions().compaction_options_universal.min_merge_width,
+            11);
+  ASSERT_EQ(dbfull()->GetOptions().compaction_options_universal.max_merge_width,
+            UINT_MAX);
+  ASSERT_EQ(dbfull()
+                ->GetOptions()
+                .compaction_options_universal.max_size_amplification_percent,
+            200);
+  ASSERT_EQ(dbfull()
+                ->GetOptions()
+                .compaction_options_universal.compression_size_percent,
+            -1);
+  ASSERT_EQ(dbfull()->GetOptions().compaction_options_universal.stop_style,
+            kCompactionStopStyleTotalSize);
+  ASSERT_EQ(
+      dbfull()->GetOptions().compaction_options_universal.allow_trivial_move,
+      false);
+}
 
 TEST_F(DBTest, FileCreationRandomFailure) {
   Options options;
@@ -4515,7 +4656,7 @@ TEST_F(DBTest, EncodeDecompressedBlockSizeTest) {
       options.compression = comp;
       DestroyAndReopen(options);
 
-      int kNumKeysWritten = 100000;
+      int kNumKeysWritten = 1000;
 
       Random rnd(301);
       for (int i = 0; i < kNumKeysWritten; ++i) {
@@ -5172,6 +5313,19 @@ TEST_F(DBTest, HardLimit) {
 }
 
 #ifndef ROCKSDB_LITE
+class WriteStallListener : public EventListener {
+ public:
+  WriteStallListener() : condition_(WriteStallCondition::kNormal) {}
+  void OnStallConditionsChanged(const WriteStallInfo& info) override {
+    condition_ = info.condition.cur;
+  }
+  bool CheckCondition(WriteStallCondition expected) {
+    return expected == condition_;
+  }
+ private:
+  WriteStallCondition condition_;
+};
+
 TEST_F(DBTest, SoftLimit) {
   Options options = CurrentOptions();
   options.env = env_;
@@ -5187,6 +5341,8 @@ TEST_F(DBTest, SoftLimit) {
   options.max_bytes_for_level_multiplier = 10;
   options.max_background_compactions = 1;
   options.compression = kNoCompression;
+  WriteStallListener* listener = new WriteStallListener();
+  options.listeners.emplace_back(listener);
 
   Reopen(options);
 
@@ -5226,6 +5382,7 @@ TEST_F(DBTest, SoftLimit) {
     Flush();
   }
   ASSERT_TRUE(dbfull()->TEST_write_controler().NeedsDelay());
+  ASSERT_TRUE(listener->CheckCondition(WriteStallCondition::kDelayed));
 
   sleeping_task_low.WakeUp();
   sleeping_task_low.WaitUntilDone();
@@ -5236,6 +5393,7 @@ TEST_F(DBTest, SoftLimit) {
   // The L1 file size is around 30KB.
   ASSERT_EQ(NumTableFilesAtLevel(1), 1);
   ASSERT_TRUE(!dbfull()->TEST_write_controler().NeedsDelay());
+  ASSERT_TRUE(listener->CheckCondition(WriteStallCondition::kNormal));
 
   // Only allow one compactin going through.
   rocksdb::SyncPoint::GetInstance()->SetCallBack(
@@ -5270,6 +5428,7 @@ TEST_F(DBTest, SoftLimit) {
   // doesn't trigger soft_pending_compaction_bytes_limit
   ASSERT_EQ(NumTableFilesAtLevel(1), 1);
   ASSERT_TRUE(!dbfull()->TEST_write_controler().NeedsDelay());
+  ASSERT_TRUE(listener->CheckCondition(WriteStallCondition::kNormal));
 
   // Create 3 L0 files, making score of L0 to be 3, higher than L0.
   for (int i = 0; i < 3; i++) {
@@ -5290,11 +5449,13 @@ TEST_F(DBTest, SoftLimit) {
   // triggerring soft_pending_compaction_bytes_limit
   ASSERT_EQ(NumTableFilesAtLevel(1), 1);
   ASSERT_TRUE(dbfull()->TEST_write_controler().NeedsDelay());
+  ASSERT_TRUE(listener->CheckCondition(WriteStallCondition::kDelayed));
 
   sleeping_task_low.WakeUp();
   sleeping_task_low.WaitUntilSleeping();
 
   ASSERT_TRUE(!dbfull()->TEST_write_controler().NeedsDelay());
+  ASSERT_TRUE(listener->CheckCondition(WriteStallCondition::kNormal));
 
   // shrink level base so L2 will hit soft limit easier.
   ASSERT_OK(dbfull()->SetOptions({
@@ -5304,6 +5465,7 @@ TEST_F(DBTest, SoftLimit) {
   Put("", "");
   Flush();
   ASSERT_TRUE(dbfull()->TEST_write_controler().NeedsDelay());
+  ASSERT_TRUE(listener->CheckCondition(WriteStallCondition::kDelayed));
 
   sleeping_task_low.WaitUntilSleeping();
   rocksdb::SyncPoint::GetInstance()->DisableProcessing();
@@ -5488,6 +5650,50 @@ TEST_F(DBTest, PauseBackgroundWorkTest) {
   }
   // now it's done
   ASSERT_TRUE(done.load());
+}
+
+// Keep spawning short-living threads that create an iterator and quit.
+// Meanwhile in another thread keep flushing memtables.
+// This used to cause a deadlock.
+TEST_F(DBTest, ThreadLocalPtrDeadlock) {
+  std::atomic<int> flushes_done{0};
+  std::atomic<int> threads_destroyed{0};
+  auto done = [&] {
+    return flushes_done.load() > 10;
+  };
+
+  std::thread flushing_thread([&] {
+    for (int i = 0; !done(); ++i) {
+      ASSERT_OK(db_->Put(WriteOptions(), Slice("hi"),
+                         Slice(std::to_string(i).c_str())));
+      ASSERT_OK(db_->Flush(FlushOptions()));
+      int cnt = ++flushes_done;
+      fprintf(stderr, "Flushed %d times\n", cnt);
+    }
+  });
+
+  std::vector<std::thread> thread_spawning_threads(10);
+  for (auto& t: thread_spawning_threads) {
+    t = std::thread([&] {
+      while (!done()) {
+        {
+          std::thread tmp_thread([&] {
+            auto it = db_->NewIterator(ReadOptions());
+            delete it;
+          });
+          tmp_thread.join();
+        }
+        ++threads_destroyed;
+      }
+    });
+  }
+
+  for (auto& t: thread_spawning_threads) {
+    t.join();
+  }
+  flushing_thread.join();
+  fprintf(stderr, "Done. Flushed %d times, destroyed %d threads\n",
+          flushes_done.load(), threads_destroyed.load());
 }
 }  // namespace rocksdb
 

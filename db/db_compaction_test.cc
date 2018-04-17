@@ -218,6 +218,84 @@ TEST_P(DBCompactionTestWithParam, CompactionDeletionTrigger) {
   }
 }
 
+TEST_P(DBCompactionTestWithParam, CompactionsPreserveDeletes) {
+  //  For each options type we test following
+  //  - Enable preserve_deletes
+  //  - write bunch of keys and deletes
+  //  - Set start_seqnum to the beginning; compact; check that keys are present
+  //  - rewind start_seqnum way forward; compact; check that keys are gone
+
+  for (int tid = 0; tid < 3; ++tid) {
+    Options options = DeletionTriggerOptions(CurrentOptions());
+    options.max_subcompactions = max_subcompactions_;
+    options.preserve_deletes=true;
+    options.num_levels = 2;
+
+    if (tid == 1) {
+      options.skip_stats_update_on_db_open = true;
+    } else if (tid == 2) {
+      // third pass with universal compaction
+      options.compaction_style = kCompactionStyleUniversal;
+    }
+
+    DestroyAndReopen(options);
+    Random rnd(301);
+    // highlight the default; all deletes should be preserved
+    SetPreserveDeletesSequenceNumber(0);
+
+    const int kTestSize = kCDTKeysPerBuffer;
+    std::vector<std::string> values;
+    for (int k = 0; k < kTestSize; ++k) {
+      values.push_back(RandomString(&rnd, kCDTValueSize));
+      ASSERT_OK(Put(Key(k), values[k]));
+    }
+
+    for (int k = 0; k < kTestSize; ++k) {
+      ASSERT_OK(Delete(Key(k)));
+    }
+    // to ensure we tackle all tombstones
+    CompactRangeOptions cro;
+    cro.change_level = true;
+    cro.target_level = 2;
+    cro.bottommost_level_compaction = BottommostLevelCompaction::kForce;
+
+    dbfull()->TEST_WaitForFlushMemTable();
+    dbfull()->CompactRange(cro, nullptr, nullptr);
+
+    // check that normal user iterator doesn't see anything
+    Iterator* db_iter = dbfull()->NewIterator(ReadOptions());
+    int i = 0;
+    for (db_iter->SeekToFirst(); db_iter->Valid(); db_iter->Next()) {
+      i++;
+    }
+    ASSERT_EQ(i, 0);
+    delete db_iter;
+
+    // check that iterator that sees internal keys sees tombstones
+    ReadOptions ro;
+    ro.iter_start_seqnum=1;
+    db_iter = dbfull()->NewIterator(ro);
+    i = 0;
+    for (db_iter->SeekToFirst(); db_iter->Valid(); db_iter->Next()) {
+      i++;
+    }
+    ASSERT_EQ(i, 4);
+    delete db_iter;
+
+    // now all deletes should be gone
+    SetPreserveDeletesSequenceNumber(100000000);
+    dbfull()->CompactRange(cro, nullptr, nullptr);
+
+    db_iter = dbfull()->NewIterator(ro);
+    i = 0;
+    for (db_iter->SeekToFirst(); db_iter->Valid(); db_iter->Next()) {
+      i++;
+    }
+    ASSERT_EQ(i, 0);
+    delete db_iter;
+  }
+}
+
 TEST_F(DBCompactionTest, SkipStatsUpdateTest) {
   // This test verify UpdateAccumulatedStats is not on
   // if options.skip_stats_update_on_db_open = true
@@ -1439,122 +1517,6 @@ TEST_F(DBCompactionTest, DeleteFileRange) {
   ASSERT_GT(old_num_files, new_num_files);
 }
 
-TEST_F(DBCompactionTest, DeleteFilesInRanges) {
-  Options options = CurrentOptions();
-  options.write_buffer_size = 10 * 1024 * 1024;
-  options.max_bytes_for_level_multiplier = 2;
-  options.num_levels = 4;
-  options.max_background_compactions = 3;
-  options.disable_auto_compactions = true;
-
-  DestroyAndReopen(options);
-  int32_t value_size = 10 * 1024;  // 10 KB
-
-  Random rnd(301);
-  std::map<int32_t, std::string> values;
-
-  // file [0 => 100), [100 => 200), ... [900, 1000)
-  for (auto i = 0; i < 10; i++) {
-    for (auto j = 0; j < 100; j++) {
-      auto k = i * 100 + j;
-      values[k] = RandomString(&rnd, value_size);
-      ASSERT_OK(Put(Key(k), values[k]));
-    }
-    ASSERT_OK(Flush());
-  }
-  ASSERT_EQ("10", FilesPerLevel(0));
-  CompactRangeOptions compact_options;
-  compact_options.change_level = true;
-  compact_options.target_level = 2;
-  ASSERT_OK(db_->CompactRange(compact_options, nullptr, nullptr));
-  ASSERT_EQ("0,0,10", FilesPerLevel(0));
-
-  // file [0 => 100), [200 => 300), ... [800, 900)
-  for (auto i = 0; i < 10; i+=2) {
-    for (auto j = 0; j < 100; j++) {
-      auto k = i * 100 + j;
-      ASSERT_OK(Put(Key(k), values[k]));
-    }
-    ASSERT_OK(Flush());
-  }
-  ASSERT_EQ("5,0,10", FilesPerLevel(0));
-  ASSERT_OK(dbfull()->TEST_CompactRange(0, nullptr, nullptr));
-  ASSERT_EQ("0,5,10", FilesPerLevel(0));
-
-  // Delete files in range [0, 299] (inclusive)
-  {
-    auto begin_str1 = Key(0), end_str1 = Key(100);
-    auto begin_str2 = Key(100), end_str2 = Key(200);
-    auto begin_str3 = Key(200), end_str3 = Key(299);
-    Slice begin1(begin_str1), end1(end_str1);
-    Slice begin2(begin_str2), end2(end_str2);
-    Slice begin3(begin_str3), end3(end_str3);
-    std::vector<RangePtr> ranges;
-    ranges.push_back(RangePtr(&begin1, &end1));
-    ranges.push_back(RangePtr(&begin2, &end2));
-    ranges.push_back(RangePtr(&begin3, &end3));
-    ASSERT_OK(DeleteFilesInRanges(db_, db_->DefaultColumnFamily(),
-                                  ranges.data(), ranges.size()));
-    ASSERT_EQ("0,3,7", FilesPerLevel(0));
-
-    // Keys [0, 300) should not exist.
-    for (auto i = 0; i < 300; i++) {
-      ReadOptions ropts;
-      std::string result;
-      auto s = db_->Get(ropts, Key(i), &result);
-      ASSERT_TRUE(s.IsNotFound());
-    }
-    for (auto i = 300; i < 1000; i++) {
-      ASSERT_EQ(Get(Key(i)), values[i]);
-    }
-  }
-
-  // Delete files in range [600, 999) (exclusive)
-  {
-    auto begin_str1 = Key(600), end_str1 = Key(800);
-    auto begin_str2 = Key(700), end_str2 = Key(900);
-    auto begin_str3 = Key(800), end_str3 = Key(999);
-    Slice begin1(begin_str1), end1(end_str1);
-    Slice begin2(begin_str2), end2(end_str2);
-    Slice begin3(begin_str3), end3(end_str3);
-    std::vector<RangePtr> ranges;
-    ranges.push_back(RangePtr(&begin1, &end1));
-    ranges.push_back(RangePtr(&begin2, &end2));
-    ranges.push_back(RangePtr(&begin3, &end3));
-    ASSERT_OK(DeleteFilesInRanges(db_, db_->DefaultColumnFamily(),
-                                  ranges.data(), ranges.size(), false));
-    ASSERT_EQ("0,1,4", FilesPerLevel(0));
-
-    // Keys [600, 900) should not exist.
-    for (auto i = 600; i < 900; i++) {
-      ReadOptions ropts;
-      std::string result;
-      auto s = db_->Get(ropts, Key(i), &result);
-      ASSERT_TRUE(s.IsNotFound());
-    }
-    for (auto i = 300; i < 600; i++) {
-      ASSERT_EQ(Get(Key(i)), values[i]);
-    }
-    for (auto i = 900; i < 1000; i++) {
-      ASSERT_EQ(Get(Key(i)), values[i]);
-    }
-  }
-
-  // Delete all files.
-  {
-    RangePtr range;
-    ASSERT_OK(DeleteFilesInRanges(db_, db_->DefaultColumnFamily(), &range, 1));
-    ASSERT_EQ("", FilesPerLevel(0));
-
-    for (auto i = 0; i < 1000; i++) {
-      ReadOptions ropts;
-      std::string result;
-      auto s = db_->Get(ropts, Key(i), &result);
-      ASSERT_TRUE(s.IsNotFound());
-    }
-  }
-}
-
 TEST_F(DBCompactionTest, DeleteFileRangeFileEndpointsOverlapBug) {
   // regression test for #2833: groups of files whose user-keys overlap at the
   // endpoints could be split by `DeleteFilesInRange`. This caused old data to
@@ -1601,8 +1563,8 @@ TEST_F(DBCompactionTest, DeleteFileRangeFileEndpointsOverlapBug) {
 
   // Verify `DeleteFilesInRange` can't drop only file 0 which would cause
   // "1 -> vals[0]" to reappear.
-  Slice begin = Key(0);
-  Slice end = Key(1);
+  std::string begin_str = Key(0), end_str = Key(1);
+  Slice begin = begin_str, end = end_str;
   ASSERT_OK(DeleteFilesInRange(db_, db_->DefaultColumnFamily(), &begin, &end));
   ASSERT_EQ(vals[1], Get(Key(1)));
 
@@ -2892,6 +2854,139 @@ TEST_F(DBCompactionTest, OptimizedDeletionObsoleting) {
                    COMPACTION_OPTIMIZED_DEL_DROP_OBSOLETE));
   ASSERT_EQ(2,
             options.statistics->getTickerCount(COMPACTION_KEY_DROP_OBSOLETE));
+}
+
+TEST_F(DBCompactionTest, CompactFilesPendingL0Bug) {
+  // https://www.facebook.com/groups/rocksdb.dev/permalink/1389452781153232/
+  // CompactFiles() had a bug where it failed to pick a compaction when an L0
+  // compaction existed, but marked it as scheduled anyways. It'd never be
+  // unmarked as scheduled, so future compactions or DB close could hang.
+  const int kNumL0Files = 5;
+  Options options = CurrentOptions();
+  options.level0_file_num_compaction_trigger = kNumL0Files - 1;
+  options.max_background_compactions = 2;
+  DestroyAndReopen(options);
+
+  rocksdb::SyncPoint::GetInstance()->LoadDependency(
+      {{"LevelCompactionPicker::PickCompaction:Return",
+        "DBCompactionTest::CompactFilesPendingL0Bug:Picked"},
+       {"DBCompactionTest::CompactFilesPendingL0Bug:ManualCompacted",
+        "DBImpl::BackgroundCompaction:NonTrivial:AfterRun"}});
+  rocksdb::SyncPoint::GetInstance()->EnableProcessing();
+
+  auto schedule_multi_compaction_token =
+      dbfull()->TEST_write_controler().GetCompactionPressureToken();
+
+  // Files 0-3 will be included in an L0->L1 compaction.
+  //
+  // File 4 will be included in a call to CompactFiles() while the first
+  // compaction is running.
+  for (int i = 0; i < kNumL0Files - 1; ++i) {
+    ASSERT_OK(Put(Key(0), "val"));  // sentinel to prevent trivial move
+    ASSERT_OK(Put(Key(i + 1), "val"));
+    ASSERT_OK(Flush());
+  }
+  TEST_SYNC_POINT("DBCompactionTest::CompactFilesPendingL0Bug:Picked");
+  // file 4 flushed after 0-3 picked
+  ASSERT_OK(Put(Key(kNumL0Files), "val"));
+  ASSERT_OK(Flush());
+
+  // previously DB close would hang forever as this situation caused scheduled
+  // compactions count to never decrement to zero.
+  ColumnFamilyMetaData cf_meta;
+  dbfull()->GetColumnFamilyMetaData(dbfull()->DefaultColumnFamily(), &cf_meta);
+  ASSERT_EQ(kNumL0Files, cf_meta.levels[0].files.size());
+  std::vector<std::string> input_filenames;
+  input_filenames.push_back(cf_meta.levels[0].files.front().name);
+  ASSERT_OK(dbfull()
+                  ->CompactFiles(CompactionOptions(), input_filenames,
+                                 0 /* output_level */));
+  TEST_SYNC_POINT("DBCompactionTest::CompactFilesPendingL0Bug:ManualCompacted");
+  rocksdb::SyncPoint::GetInstance()->DisableProcessing();
+}
+
+TEST_F(DBCompactionTest, CompactFilesOverlapInL0Bug) {
+  // Regression test for bug of not pulling in L0 files that overlap the user-
+  // specified input files in time- and key-ranges.
+  Put(Key(0), "old_val");
+  Flush();
+  Put(Key(0), "new_val");
+  Flush();
+
+  ColumnFamilyMetaData cf_meta;
+  dbfull()->GetColumnFamilyMetaData(dbfull()->DefaultColumnFamily(), &cf_meta);
+  ASSERT_GE(cf_meta.levels.size(), 2);
+  ASSERT_EQ(2, cf_meta.levels[0].files.size());
+
+  // Compacting {new L0 file, L1 file} should pull in the old L0 file since it
+  // overlaps in key-range and time-range.
+  std::vector<std::string> input_filenames;
+  input_filenames.push_back(cf_meta.levels[0].files.front().name);
+  ASSERT_OK(dbfull()->CompactFiles(CompactionOptions(), input_filenames,
+                                   1 /* output_level */));
+  ASSERT_EQ("new_val", Get(Key(0)));
+}
+
+TEST_F(DBCompactionTest, CompactBottomLevelFilesWithDeletions) {
+  // bottom-level files may contain deletions due to snapshots protecting the
+  // deleted keys. Once the snapshot is released, we should see files with many
+  // such deletions undergo single-file compactions.
+  const int kNumKeysPerFile = 1024;
+  const int kNumLevelFiles = 4;
+  const int kValueSize = 128;
+  Options options = CurrentOptions();
+  options.compression = kNoCompression;
+  options.level0_file_num_compaction_trigger = kNumLevelFiles;
+  // inflate it a bit to account for key/metadata overhead
+  options.target_file_size_base = 120 * kNumKeysPerFile * kValueSize / 100;
+  Reopen(options);
+
+  Random rnd(301);
+  const Snapshot* snapshot = nullptr;
+  for (int i = 0; i < kNumLevelFiles; ++i) {
+    for (int j = 0; j < kNumKeysPerFile; ++j) {
+      ASSERT_OK(
+          Put(Key(i * kNumKeysPerFile + j), RandomString(&rnd, kValueSize)));
+    }
+    if (i == kNumLevelFiles - 1) {
+      snapshot = db_->GetSnapshot();
+      // delete every other key after grabbing a snapshot, so these deletions
+      // and the keys they cover can't be dropped until after the snapshot is
+      // released.
+      for (int j = 0; j < kNumLevelFiles * kNumKeysPerFile; j += 2) {
+        ASSERT_OK(Delete(Key(j)));
+      }
+    }
+    Flush();
+    if (i < kNumLevelFiles - 1) {
+      ASSERT_EQ(i + 1, NumTableFilesAtLevel(0));
+    }
+  }
+  dbfull()->TEST_WaitForCompact();
+  ASSERT_EQ(kNumLevelFiles, NumTableFilesAtLevel(1));
+
+  std::vector<LiveFileMetaData> pre_release_metadata, post_release_metadata;
+  db_->GetLiveFilesMetaData(&pre_release_metadata);
+  // just need to bump seqnum so ReleaseSnapshot knows the newest key in the SST
+  // files does not need to be preserved in case of a future snapshot.
+  ASSERT_OK(Put(Key(0), "val"));
+  // release snapshot and wait for compactions to finish. Single-file
+  // compactions should be triggered, which reduce the size of each bottom-level
+  // file without changing file count.
+  db_->ReleaseSnapshot(snapshot);
+  dbfull()->TEST_WaitForCompact();
+  db_->GetLiveFilesMetaData(&post_release_metadata);
+  ASSERT_EQ(pre_release_metadata.size(), post_release_metadata.size());
+
+  for (size_t i = 0; i < pre_release_metadata.size(); ++i) {
+    const auto& pre_file = pre_release_metadata[i];
+    const auto& post_file = post_release_metadata[i];
+    ASSERT_EQ(1, pre_file.level);
+    ASSERT_EQ(1, post_file.level);
+    // each file is smaller than it was before as it was rewritten without
+    // deletion markers/deleted keys.
+    ASSERT_LT(post_file.size, pre_file.size);
+  }
 }
 
 INSTANTIATE_TEST_CASE_P(DBCompactionTestWithParam, DBCompactionTestWithParam,

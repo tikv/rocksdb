@@ -74,9 +74,23 @@ class RangeDelAggregator {
   //             the deletion whose interval contains this key. Otherwise, its
   //             value must be kFullScan indicating linear scan from beginning..
   bool ShouldDelete(const ParsedInternalKey& parsed,
-                    RangePositioningMode mode = kFullScan);
+                    RangePositioningMode mode = kFullScan) {
+    if (rep_ == nullptr) {
+      return false;
+    }
+    return ShouldDeleteImpl(parsed, mode);
+  }
   bool ShouldDelete(const Slice& internal_key,
-                    RangePositioningMode mode = kFullScan);
+                    RangePositioningMode mode = kFullScan) {
+    if (rep_ == nullptr) {
+      return false;
+    }
+    return ShouldDeleteImpl(internal_key, mode);
+  }
+  bool ShouldDeleteImpl(const ParsedInternalKey& parsed,
+                        RangePositioningMode mode = kFullScan);
+  bool ShouldDeleteImpl(const Slice& internal_key,
+                        RangePositioningMode mode = kFullScan);
 
   // Checks whether range deletions cover any keys between `start` and `end`,
   // inclusive.
