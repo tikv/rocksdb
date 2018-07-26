@@ -667,6 +667,18 @@ set(SOURCES
         utilities/ttl/db_ttl_impl.cc
         utilities/write_batch_with_index/write_batch_with_index.cc
         utilities/write_batch_with_index/write_batch_with_index_internal.cc
+        utilities/titandb/options.cc
+        utilities/titandb/db.cc
+        utilities/titandb/db_impl.cc
+        utilities/titandb/version_set.cc
+        utilities/titandb/version_file.cc
+        utilities/titandb/table_builder.cc
+        utilities/titandb/table_factory.cc
+        utilities/titandb/blob_format.cc
+        utilities/titandb/blob_file_cache.cc
+        utilities/titandb/blob_file_reader.cc
+        utilities/titandb/blob_file_builder.cc
+        utilities/titandb/blob_table_builder.cc
         $<TARGET_OBJECTS:build_version>)
 
 if(HAVE_SSE42 AND NOT FORCE_SSE42)
