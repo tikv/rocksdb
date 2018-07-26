@@ -215,6 +215,19 @@ LIB_SOURCES =                                                   \
   utilities/ttl/db_ttl_impl.cc                                  \
   utilities/write_batch_with_index/write_batch_with_index.cc    \
   utilities/write_batch_with_index/write_batch_with_index_internal.cc    \
+  utilities/titandb/db.cc                                       \
+  utilities/titandb/db_impl.cc                                  \
+  utilities/titandb/options.cc                                  \
+  utilities/titandb/version.cc                                  \
+  utilities/titandb/version_set.cc                              \
+  utilities/titandb/version_edit.cc                             \
+  utilities/titandb/version_builder.cc                          \
+  utilities/titandb/blob_format.cc                              \
+  utilities/titandb/blob_file_cache.cc                          \
+  utilities/titandb/blob_file_reader.cc                         \
+  utilities/titandb/blob_file_builder.cc                        \
+  utilities/titandb/table_builder.cc                            \
+  utilities/titandb/table_factory.cc                            \
 
 ifeq (,$(shell $(CXX) -fsyntax-only -maltivec -xc /dev/null 2>&1))
 LIB_SOURCES_ASM =\

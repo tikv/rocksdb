@@ -1541,6 +1541,21 @@ range_del_aggregator_test: db/range_del_aggregator_test.o db/db_test_util.o $(LI
 blob_db_test: utilities/blob_db/blob_db_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
+titandb_blob_format_test: utilities/titandb/blob_format_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(AM_LINK)
+
+titandb_blob_file_test: utilities/titandb/blob_file_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(AM_LINK)
+
+titandb_table_builder_test: utilities/titandb/table_builder_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(AM_LINK)
+
+titandb_version_test: utilities/titandb/version_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(AM_LINK)
+
+titandb_db_test: utilities/titandb/db_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(AM_LINK)
+
 #-------------------------------------------------
 # make install related stuff
 INSTALL_PATH ?= /usr/local
