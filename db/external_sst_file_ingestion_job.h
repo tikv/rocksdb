@@ -86,7 +86,8 @@ class ExternalSstFileIngestionJob {
         job_start_time_(env_->NowMicros()) {}
 
   // Prepare the job by copying external files into the DB.
-  Status Prepare(const std::vector<std::string>& external_files_paths);
+  Status Prepare(const std::vector<std::string>& external_files_paths,
+                 uint64_t next_file_number);
 
   // Check if we need to flush the memtable before running the ingestion job
   // This will be true if the files we are ingesting are overlapping with any
