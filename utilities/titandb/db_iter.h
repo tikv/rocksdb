@@ -12,7 +12,7 @@ namespace titandb {
 // Wraps the current version together with the snapshot from base DB
 // so that we can safely recycle a steal version when it is dropped.
 // This also implies a guarantee that the current version must contain
-// all the data accessable from base DB.
+// all the data accessible from base DB.
 class TitanSnapshot : public Snapshot {
  public:
   TitanSnapshot(Version* current, const Snapshot* snapshot)
