@@ -70,22 +70,25 @@ Status VersionSet::Recover() {
 
   bool has_next_file_number = false;
   uint64_t next_file_number = 0;
-  VersionBuilder builder(current_);
 
-  LogReporter reporter;
-  reporter.status = &s;
-  log::Reader reader(nullptr, std::move(file), &reporter,
-                     true /*checksum*/, 0 /*initial_offset*/, 0);
-  Slice record;
-  std::string scratch;
-  while (reader.ReadRecord(&record, &scratch) && s.ok()) {
-    VersionEdit edit;
-    s = DecodeInto(record, &edit);
-    if (!s.ok()) return s;
-    builder.Apply(&edit);
-    if (edit.has_next_file_number_) {
-      next_file_number = edit.next_file_number_;
-      has_next_file_number = true;
+  // Reads edits from the manifest and applies them one by one.
+  VersionBuilder builder(current_);
+  {
+    LogReporter reporter;
+    reporter.status = &s;
+    log::Reader reader(nullptr, std::move(file), &reporter,
+                       true /*checksum*/, 0 /*initial_offset*/, 0);
+    Slice record;
+    std::string scratch;
+    while (reader.ReadRecord(&record, &scratch) && s.ok()) {
+      VersionEdit edit;
+      s = DecodeInto(record, &edit);
+      if (!s.ok()) return s;
+      builder.Apply(&edit);
+      if (edit.has_next_file_number_) {
+        next_file_number = edit.next_file_number_;
+        has_next_file_number = true;
+      }
     }
   }
 
