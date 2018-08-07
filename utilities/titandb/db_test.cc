@@ -23,6 +23,7 @@ class TitanDBTest : public testing::Test {
 
   void Reopen() {
     ASSERT_OK(db_->Close());
+    delete db_;
     ASSERT_OK(TitanDB::Open(dbname_, options_, tdb_options_, &db_));
   }
 

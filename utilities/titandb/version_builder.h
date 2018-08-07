@@ -17,7 +17,10 @@ class VersionBuilder {
 
   ~VersionBuilder();
 
+  // Applies "*edit" on the current state.
   void Apply(VersionEdit* edit);
+
+  // Saves the current state to the version "*v".
   void SaveTo(Version* v);
 
  private:

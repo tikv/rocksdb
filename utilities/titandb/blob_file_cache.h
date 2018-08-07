@@ -14,7 +14,7 @@ class BlobFileCache {
   BlobFileCache(const DBOptions& db_options,
                 const TitanDBOptions& tdb_options);
 
-  // Gets the blob record pointed by the handle in the speficied file
+  // Gets the blob record pointed by the handle in the specified file
   // number. The corresponding file size must be exactly "file_size"
   // bytes. The provided buffer is used to store the record data, so
   // the buffer must be valid when the record is used.
