@@ -3,7 +3,6 @@
 #include "db/db_impl.h"
 #include "utilities/titandb/db.h"
 #include "utilities/titandb/version_set.h"
-#include "utilities/titandb/read_context.h"
 #include "utilities/titandb/blob_file_manager.h"
 
 namespace rocksdb {
@@ -41,16 +40,26 @@ class TitanDBImpl : public TitanDB {
                       const std::vector<ColumnFamilyHandle*>& cf_handles,
                       std::vector<Iterator*>* iterators) override;
 
+  const Snapshot* GetSnapshot() override;
+
+  void ReleaseSnapshot(const Snapshot* snapshot) override;
+
  private:
   class FileManager;
   friend class FileManager;
 
-  Status GetImpl(const ReadContext& ctx,
+  Status GetImpl(const ReadOptions& options,
                  ColumnFamilyHandle* cf_handle,
                  const Slice& key, PinnableSlice* value);
 
-  Iterator* NewIteratorImpl(std::shared_ptr<ReadContext> ctx,
-                            ColumnFamilyHandle* cf_handle);
+  std::vector<Status> MultiGetImpl(
+      const ReadOptions& options,
+      const std::vector<ColumnFamilyHandle*>& cf_handles,
+      const std::vector<Slice>& keys, std::vector<std::string>* values);
+
+  Iterator* NewIteratorImpl(const ReadOptions& options,
+                            ColumnFamilyHandle* cf_handle,
+                            std::shared_ptr<ManagedSnapshot> snapshot);
 
   Env* env_;
   EnvOptions env_options_;
