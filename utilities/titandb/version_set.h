@@ -19,12 +19,20 @@ class VersionSet {
 
   ~VersionSet();
 
+  // Sets up the storage specified in "tdb_options.dirname".
+  // If the manifest doesn't exist, it will create one.
+  // If the manifest exists, it will recover from the lastest one.
   Status Open();
 
+  // Applies *edit on the current version to form a new version that is
+  // both saved to the manifest and installed as the new current version.
+  // REQUIRES: *mutex is held
   Status LogAndApply(VersionEdit* edit, port::Mutex* mutex);
 
+  // Returns the current version.
   Version* current() { return current_; }
 
+  // Allocates a new file number.
   uint64_t NewFileNumber();
 
  private:
