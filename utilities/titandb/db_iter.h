@@ -15,8 +15,8 @@ namespace titandb {
 // all the data accessible from base DB.
 class TitanSnapshot : public Snapshot {
  public:
-  TitanSnapshot(Version* current, const Snapshot* snapshot)
-      : current_(current), snapshot_(snapshot) {}
+  TitanSnapshot(Version* _current, const Snapshot* _snapshot)
+      : current_(_current), snapshot_(_snapshot) {}
 
   Version* current() const { return current_; }
 
