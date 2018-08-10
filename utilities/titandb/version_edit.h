@@ -17,12 +17,12 @@ class VersionEdit {
 
   void AddBlobFile(const BlobFileMeta& file) {
     auto it = added_files_.emplace(file.file_number, file);
-    assert(it.second == true);
+    if (!it.second) abort();
   }
 
   void DeleteBlobFile(uint64_t file_number) {
     auto it = deleted_files_.emplace(file_number);
-    assert(it.second == true);
+    if (!it.second) abort();
   }
 
   void EncodeTo(std::string* dst) const;
