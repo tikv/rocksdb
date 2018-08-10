@@ -32,10 +32,10 @@ class BlobFileReader {
   // Constructs a reader with the shared blob file. The provided blob
   // file must be corresponding to the "file".
   BlobFileReader(const TitanDBOptions& options,
-                 std::shared_ptr<BlobFile> blob_file,
+                 std::shared_ptr<BlobFile> _blob_file,
                  std::unique_ptr<RandomAccessFileReader> file)
       : options_(options),
-        blob_file_(blob_file),
+        blob_file_(_blob_file),
         file_(std::move(file)) {}
 
   // Gets the blob record pointed by the handle in this file. The data

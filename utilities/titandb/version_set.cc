@@ -49,16 +49,16 @@ Status VersionSet::Recover() {
   };
 
   // Reads "CURRENT" file, which contains the name of the current manifest file.
-  std::string current;
-  Status s = ReadFileToString(env_, CurrentFileName(dirname_), &current);
+  std::string manifest;
+  Status s = ReadFileToString(env_, CurrentFileName(dirname_), &manifest);
   if (!s.ok()) return s;
-  if (current.empty() || current.back() != '\n') {
+  if (manifest.empty() || manifest.back() != '\n') {
     return Status::Corruption("CURRENT file does not end with newline");
   }
-  current.resize(current.size() - 1);
+  manifest.resize(manifest.size() - 1);
 
   // Opens the current manifest file.
-  auto file_name = dirname_ + "/" + current;
+  auto file_name = dirname_ + "/" + manifest;
   std::unique_ptr<SequentialFileReader> file;
   {
     std::unique_ptr<SequentialFile> f;

@@ -21,7 +21,7 @@ class VersionSet {
 
   // Sets up the storage specified in "tdb_options.dirname".
   // If the manifest doesn't exist, it will create one.
-  // If the manifest exists, it will recover from the lastest one.
+  // If the manifest exists, it will recover from the latest one.
   Status Open();
 
   // Applies *edit on the current version to form a new version that is

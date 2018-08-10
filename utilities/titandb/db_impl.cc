@@ -164,17 +164,22 @@ Status TitanDBImpl::Close() {
 Status TitanDBImpl::Get(const ReadOptions& options,
                         ColumnFamilyHandle* cf_handle,
                         const Slice& key, PinnableSlice* value) {
-  ReadContext ctx(db_, vset_, &mutex_, options);
-  return GetImpl(ctx, cf_handle, key, value);
+  if (options.snapshot) {
+    return GetImpl(options, cf_handle, key, value);
+  }
+  ReadOptions ro(options);
+  ManagedSnapshot snapshot(this);
+  ro.snapshot = snapshot.snapshot();
+  return GetImpl(ro, cf_handle, key, value);
 }
 
-Status TitanDBImpl::GetImpl(const ReadContext& ctx,
+Status TitanDBImpl::GetImpl(const ReadOptions& options,
                             ColumnFamilyHandle* cf_handle,
                             const Slice& key, PinnableSlice* value) {
-  Status s;
-  auto current = ctx.current();
-  auto options = ctx.options();
+  auto snapshot = reinterpret_cast<const TitanSnapshot*>(options.snapshot);
+  auto current = snapshot->current();
 
+  Status s;
   bool is_blob_index = false;
   s = db_impl_->GetImpl(options, cf_handle, key, value,
                         nullptr /*value_found*/,
@@ -200,7 +205,19 @@ std::vector<Status> TitanDBImpl::MultiGet(
     const ReadOptions& options,
     const std::vector<ColumnFamilyHandle*>& cf_handles,
     const std::vector<Slice>& keys, std::vector<std::string>* values) {
-  ReadContext ctx(db_, vset_, &mutex_, options);
+  if (options.snapshot) {
+    return MultiGetImpl(options, cf_handles, keys, values);
+  }
+  ReadOptions ro(options);
+  ManagedSnapshot snapshot(this);
+  ro.snapshot = snapshot.snapshot();
+  return MultiGetImpl(ro, cf_handles, keys, values);
+}
+
+std::vector<Status> TitanDBImpl::MultiGetImpl(
+    const ReadOptions& options,
+    const std::vector<ColumnFamilyHandle*>& cf_handles,
+    const std::vector<Slice>& keys, std::vector<std::string>* values) {
   std::vector<Status> res;
   res.reserve(keys.size());
   values->clear();
@@ -209,7 +226,7 @@ std::vector<Status> TitanDBImpl::MultiGet(
     Status s;
     std::string value;
     PinnableSlice pinnable_value(&value);
-    s = GetImpl(ctx, cf_handles[i], keys[i], &pinnable_value);
+    s = GetImpl(options, cf_handles[i], keys[i], &pinnable_value);
     res.emplace_back(s);
     values->emplace_back(value);
   }
@@ -218,34 +235,70 @@ std::vector<Status> TitanDBImpl::MultiGet(
 
 Iterator* TitanDBImpl::NewIterator(const ReadOptions& options,
                                    ColumnFamilyHandle* cf_handle) {
-  std::shared_ptr<ReadContext> ctx(
-      new ReadContext(db_, vset_, &mutex_, options));
-  return NewIteratorImpl(ctx, cf_handle);
+  std::shared_ptr<ManagedSnapshot> snapshot;
+  if (options.snapshot) {
+    return NewIteratorImpl(options, cf_handle, snapshot);
+  }
+  ReadOptions ro(options);
+  snapshot.reset(new ManagedSnapshot(this));
+  ro.snapshot = snapshot->snapshot();
+  return NewIteratorImpl(ro, cf_handle, snapshot);
 }
 
-Iterator* TitanDBImpl::NewIteratorImpl(std::shared_ptr<ReadContext> ctx,
-                                       ColumnFamilyHandle* cf_handle) {
+Iterator* TitanDBImpl::NewIteratorImpl(
+    const ReadOptions& options,
+    ColumnFamilyHandle* cf_handle,
+    std::shared_ptr<ManagedSnapshot> snapshot) {
+  assert(snapshot->snapshot() == nullptr ||
+         snapshot->snapshot() == options.snapshot);
+
   auto cfd = reinterpret_cast<ColumnFamilyHandleImpl*>(cf_handle)->cfd();
   std::unique_ptr<ArenaWrappedDBIter> iter(
       db_impl_->NewIteratorImpl(
-          ctx->options(), cfd,
-          ctx->options().snapshot->GetSequenceNumber(),
+          options, cfd,
+          options.snapshot->GetSequenceNumber(),
           nullptr /*read_callback*/, true /*allow_blob*/));
-  return new TitanDBIterator(ctx, std::move(iter));
+  return new TitanDBIterator(options, snapshot, std::move(iter));
 }
 
 Status TitanDBImpl::NewIterators(
     const ReadOptions& options,
     const std::vector<ColumnFamilyHandle*>& cf_handles,
     std::vector<Iterator*>* iterators) {
-  std::shared_ptr<ReadContext> ctx(
-      new ReadContext(db_, vset_, &mutex_, options));
+  ReadOptions ro(options);
+  std::shared_ptr<ManagedSnapshot> snapshot;
+  if (!ro.snapshot) {
+    snapshot.reset(new ManagedSnapshot(this));
+    ro.snapshot = snapshot->snapshot();
+  }
   iterators->clear();
   iterators->reserve(cf_handles.size());
   for (auto& cf_handle : cf_handles) {
-    iterators->emplace_back(NewIteratorImpl(ctx, cf_handle));
+    iterators->emplace_back(NewIteratorImpl(ro, cf_handle, snapshot));
   }
   return Status::OK();
+}
+
+const Snapshot* TitanDBImpl::GetSnapshot() {
+  Version* current;
+  const Snapshot* snapshot;
+  {
+    MutexLock l(&mutex_);
+    current = vset_->current();
+    current->Ref();
+    snapshot = db_->GetSnapshot();
+  }
+  return new TitanSnapshot(current, snapshot);
+}
+
+void TitanDBImpl::ReleaseSnapshot(const Snapshot* snapshot) {
+  auto s = reinterpret_cast<const TitanSnapshot*>(snapshot);
+  {
+    MutexLock l(&mutex_);
+    s->current()->Unref();
+    db_->ReleaseSnapshot(s->snapshot());
+  }
+  delete s;
 }
 
 }  // namespace titandb

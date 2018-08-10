@@ -2,17 +2,42 @@
 
 #include "rocksdb/iterator.h"
 #include "db/db_iter.h"
+#include "utilities/titandb/version.h"
 #include "utilities/titandb/blob_format.h"
-#include "utilities/titandb/version_set.h"
+#include "utilities/titandb/blob_file_reader.h"
 
 namespace rocksdb {
 namespace titandb {
 
+// Wraps the current version together with the snapshot from base DB
+// so that we can safely recycle a steal version when it is dropped.
+// This also implies a guarantee that the current version must contain
+// all the data accessible from base DB.
+class TitanSnapshot : public Snapshot {
+ public:
+  TitanSnapshot(Version* _current, const Snapshot* _snapshot)
+      : current_(_current), snapshot_(_snapshot) {}
+
+  Version* current() const { return current_; }
+
+  const Snapshot* snapshot() const { return snapshot_; }
+
+  SequenceNumber GetSequenceNumber() const override {
+    return snapshot_->GetSequenceNumber();
+  }
+
+ private:
+  Version* current_;
+  const Snapshot* snapshot_;
+};
+
 class TitanDBIterator : public Iterator {
  public:
-  TitanDBIterator(std::shared_ptr<ReadContext> ctx,
+  TitanDBIterator(const ReadOptions& options,
+                  std::shared_ptr<ManagedSnapshot> snap,
                   std::unique_ptr<ArenaWrappedDBIter> iter)
-      : ctx_(ctx),
+      : options_(options),
+        snap_(snap),
         iter_(std::move(iter)) {}
 
   bool Valid() const override {
@@ -72,27 +97,28 @@ class TitanDBIterator : public Iterator {
     status_ = DecodeInto(iter_->value(), &index);
     if (!status_.ok()) return;
 
-    auto current = ctx_->current();
-    auto options = ctx_->options();
-    if (!options.readahead_size) {
-      status_ = current->Get(options, index, &record_, &buffer_);
+    auto snapshot = reinterpret_cast<const TitanSnapshot*>(options_.snapshot);
+    auto current = snapshot->current();
+    if (!options_.readahead_size) {
+      status_ = current->Get(options_, index, &record_, &buffer_);
       return;
     }
 
     auto it = cache_.find(index.file_number);
     if (it == cache_.end()) {
       std::unique_ptr<BlobFileReader> reader;
-      status_ = current->NewReader(options, index.file_number, &reader);
+      status_ = current->NewReader(options_, index.file_number, &reader);
       if (!status_.ok()) return;
       it = cache_.emplace(index.file_number, std::move(reader)).first;
     }
-    status_ = it->second->Get(options, index.blob_handle, &record_, &buffer_);
+    status_ = it->second->Get(options_, index.blob_handle, &record_, &buffer_);
   }
 
   Status status_;
   BlobRecord record_;
   std::string buffer_;
-  std::shared_ptr<ReadContext> ctx_;
+  ReadOptions options_;
+  std::shared_ptr<ManagedSnapshot> snap_;
   std::unique_ptr<ArenaWrappedDBIter> iter_;
   std::map<uint64_t, std::unique_ptr<BlobFileReader>> cache_;
 };
