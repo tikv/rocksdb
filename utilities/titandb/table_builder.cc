@@ -34,14 +34,14 @@ void TitanTableBuilder::AddBlob(const Slice& key, const Slice& value,
   if (!blob_builder_) {
     status_ = blob_manager_->NewFile(&blob_handle_);
     if (!ok()) return;
-    blob_builder_.reset(new BlobFileBuilder(options_, blob_handle_->file()));
+    blob_builder_.reset(new BlobFileBuilder(options_, blob_handle_->GetFile()));
   }
 
   BlobIndex index;
   BlobRecord record;
   record.key = key;
   record.value = value;
-  index.file_number = blob_handle_->number();
+  index.file_number = blob_handle_->GetNumber();
   blob_builder_->Add(record, &index.blob_handle);
   if (ok()) {
     index.EncodeTo(index_value);
@@ -65,10 +65,10 @@ Status TitanTableBuilder::Finish() {
     blob_builder_->Finish();
     if (ok()) {
       BlobFileMeta file;
-      file.column_family_id = column_family_id_;
-      file.file_number = blob_handle_->number();
-      file.file_size = blob_handle_->file()->GetFileSize();
-      status_ = blob_manager_->FinishFile(file, std::move(blob_handle_));
+      file.file_number = blob_handle_->GetNumber();
+      file.file_size = blob_handle_->GetFile()->GetFileSize();
+      status_ = blob_manager_->FinishFile(cf_id_, file,
+                                          std::move(blob_handle_));
     } else {
       status_ = blob_manager_->DeleteFile(std::move(blob_handle_));
     }

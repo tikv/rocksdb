@@ -87,14 +87,12 @@ bool operator==(const BlobIndex& lhs, const BlobIndex& rhs) {
 }
 
 void BlobFileMeta::EncodeTo(std::string* dst) const {
-  PutVarint32(dst, column_family_id);
   PutVarint64(dst, file_number);
   PutVarint64(dst, file_size);
 }
 
 Status BlobFileMeta::DecodeFrom(Slice* src) {
-  if (!GetVarint32(src, &column_family_id) ||
-      !GetVarint64(src, &file_number) ||
+  if (!GetVarint64(src, &file_number) ||
       !GetVarint64(src, &file_size)) {
     return Status::Corruption("BlobFileMeta");
   }
@@ -102,8 +100,7 @@ Status BlobFileMeta::DecodeFrom(Slice* src) {
 }
 
 bool operator==(const BlobFileMeta& lhs, const BlobFileMeta& rhs) {
-  return (lhs.column_family_id == rhs.column_family_id &&
-          lhs.file_number == rhs.file_number &&
+  return (lhs.file_number == rhs.file_number &&
           lhs.file_size == rhs.file_size);
 }
 

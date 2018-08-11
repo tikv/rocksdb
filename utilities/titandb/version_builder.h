@@ -6,8 +6,6 @@
 namespace rocksdb {
 namespace titandb {
 
-class VersionSet;
-
 class VersionBuilder {
  public:
   // Constructs a builder to build on the base version. The
@@ -24,9 +22,25 @@ class VersionBuilder {
   void SaveTo(Version* v);
 
  private:
+  friend class VersionTest;
+
+  class Builder {
+   public:
+    Builder(std::shared_ptr<BlobStorage> base) : base_(base) {}
+
+    void AddFile(const BlobFileMeta& file);
+    void DeleteFile(uint64_t number);
+
+    std::shared_ptr<BlobStorage> Build();
+
+   private:
+    std::shared_ptr<BlobStorage> base_;
+    std::map<uint64_t, BlobFileMeta> added_files_;
+    std::set<uint64_t> deleted_files_;
+  };
+
   Version* base_;
-  std::map<uint64_t, BlobFileMeta> added_files_;
-  std::set<uint64_t> deleted_files_;
+  std::map<uint32_t, Builder> column_families_;
 };
 
 }  // namespace titandb

@@ -3,29 +3,30 @@
 #include <inttypes.h>
 
 #include "util/filename.h"
+#include "utilities/titandb/version_builder.h"
 
 namespace rocksdb {
 namespace titandb {
 
-VersionSet::VersionSet(const DBOptions& db_options,
-                       const TitanDBOptions& tdb_options)
-    : dirname_(tdb_options.dirname),
-      env_(db_options.env),
-      db_options_(db_options),
-      env_options_(db_options),
-      tdb_options_(tdb_options),
-      version_list_(nullptr) {
-  AppendVersion(new Version(this));
-  file_cache_.reset(new BlobFileCache(db_options, tdb_options));
-}
+VersionSet::VersionSet(const TitanDBOptions& options)
+    : dirname_(options.dirname),
+      env_(options.env),
+      env_options_(options),
+      db_options_(options),
+      file_cache_(NewLRUCache(db_options_.max_open_files)) {}
 
-VersionSet::~VersionSet() {
-  current_->Unref();
-  assert(version_list_.next_ == &version_list_);
-  assert(version_list_.prev_ == &version_list_);
-}
+Status VersionSet::Open(
+    const std::map<uint32_t, TitanCFOptions>& column_families) {
+  // Sets up the first version for the specified column families.
+  auto v = new Version;
+  for (auto& cf : column_families) {
+    std::shared_ptr<BlobFileCache> file_cache(
+        new BlobFileCache(db_options_, cf.second, file_cache_));
+    std::shared_ptr<BlobStorage> storage(new BlobStorage(file_cache));
+    v->column_families_.emplace(cf.first, storage);
+  }
+  versions_.Append(v);
 
-Status VersionSet::Open() {
   Status s = env_->FileExists(CurrentFileName(dirname_));
   if (s.ok()) {
     return Recover();
@@ -72,7 +73,7 @@ Status VersionSet::Recover() {
   uint64_t next_file_number = 0;
 
   // Reads edits from the manifest and applies them one by one.
-  VersionBuilder builder(current_);
+  VersionBuilder builder(current());
   {
     LogReporter reporter;
     reporter.status = &s;
@@ -97,10 +98,10 @@ Status VersionSet::Recover() {
   }
   next_file_number_.store(next_file_number);
 
-  Version* v = new Version(this);
+  auto v = new Version;
   {
     builder.SaveTo(v);
-    AppendVersion(v);
+    versions_.Append(v);
   }
   return OpenManifest(NewFileNumber());
 }
@@ -117,13 +118,13 @@ Status VersionSet::OpenManifest(uint64_t file_number) {
     file.reset(new WritableFileWriter(std::move(f), env_options_));
   }
 
-  manifest_log_.reset(new log::Writer(std::move(file), 0, false));
+  manifest_.reset(new log::Writer(std::move(file), 0, false));
 
   // Saves current snapshot
-  s = WriteSnapshot(manifest_log_.get());
+  s = WriteSnapshot(manifest_.get());
   if (s.ok()) {
     ImmutableDBOptions ioptions(db_options_);
-    s = SyncManifest(env_, &ioptions, manifest_log_->file());
+    s = SyncManifest(env_, &ioptions, manifest_->file());
   }
   if (s.ok()) {
     // Makes "CURRENT" file that points to the new manifest file.
@@ -131,21 +132,36 @@ Status VersionSet::OpenManifest(uint64_t file_number) {
   }
 
   if (!s.ok()) {
-    manifest_log_.reset();
+    manifest_.reset();
     env_->DeleteFile(file_name);
   }
   return s;
 }
 
 Status VersionSet::WriteSnapshot(log::Writer* log) {
-  VersionEdit edit;
-  edit.SetNextFileNumber(next_file_number_.load());
-  for (auto& file : current_->files_) {
-    edit.AddBlobFile(file.second);
+  Status s;
+  // Saves global information
+  {
+    VersionEdit edit;
+    edit.SetNextFileNumber(next_file_number_.load());
+    std::string record;
+    edit.EncodeTo(&record);
+    s = log->AddRecord(record);
+    if (!s.ok()) return s;
   }
-  std::string record;
-  edit.EncodeTo(&record);
-  return log->AddRecord(record);
+  // Saves column families information
+  for (auto& it : current()->column_families_) {
+    VersionEdit edit;
+    edit.SetColumnFamilyID(it.first);
+    for (auto& file : it.second->files_) {
+      edit.AddBlobFile(file.second);
+    }
+    std::string record;
+    edit.EncodeTo(&record);
+    s = log->AddRecord(record);
+    if (!s.ok()) return s;
+  }
+  return s;
 }
 
 Status VersionSet::LogAndApply(VersionEdit* edit, port::Mutex* mutex) {
@@ -155,41 +171,21 @@ Status VersionSet::LogAndApply(VersionEdit* edit, port::Mutex* mutex) {
   std::string record;
   edit->SetNextFileNumber(next_file_number_.load());
   edit->EncodeTo(&record);
-  Status s = manifest_log_->AddRecord(record);
+  Status s = manifest_->AddRecord(record);
   if (s.ok()) {
     ImmutableDBOptions ioptions(db_options_);
-    s = SyncManifest(env_, &ioptions, manifest_log_->file());
+    s = SyncManifest(env_, &ioptions, manifest_->file());
   }
   if (!s.ok()) return s;
 
-  Version* v = new Version(this);
+  auto v = new Version;
   {
-    VersionBuilder builder(current_);
+    VersionBuilder builder(current());
     builder.Apply(edit);
     builder.SaveTo(v);
-    AppendVersion(v);
+    versions_.Append(v);
   }
   return s;
-}
-
-void VersionSet::AppendVersion(Version* v) {
-  assert(v->refs_ == 0);
-  assert(v != current_);
-
-  if (current_) {
-    current_->Unref();
-  }
-  current_ = v;
-  current_->Ref();
-
-  v->next_ = &version_list_;
-  v->prev_ = version_list_.prev_;
-  v->next_->prev_ = v;
-  v->prev_->next_ = v;
-}
-
-uint64_t VersionSet::NewFileNumber() {
-  return next_file_number_.fetch_add(1);
 }
 
 }  // namespace titandb

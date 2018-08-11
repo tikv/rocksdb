@@ -3,7 +3,7 @@
 namespace rocksdb {
 namespace titandb {
 
-Status BlobFileReader::Open(const TitanDBOptions& options,
+Status BlobFileReader::Open(const TitanCFOptions& options,
                             std::unique_ptr<RandomAccessFileReader> file,
                             uint64_t file_size,
                             std::unique_ptr<BlobFileReader>* result) {

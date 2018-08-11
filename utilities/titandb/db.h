@@ -6,19 +6,26 @@
 namespace rocksdb {
 namespace titandb {
 
+struct TitanCFDescriptor {
+  std::string name;
+  TitanCFOptions options;
+  TitanCFDescriptor()
+      : name(kDefaultColumnFamilyName), options(TitanCFOptions()) {}
+  TitanCFDescriptor(const std::string& _name, const TitanCFOptions& _options)
+      : name(_name), options(_options) {}
+};
+
 class TitanDB : public StackableDB {
  public:
-  static Status Open(const std::string& dbname,
-                     const Options& options,
-                     const TitanDBOptions& tdb_options,
-                     TitanDB** tdb);
+  static Status Open(const TitanOptions& options,
+                     const std::string& dbname,
+                     TitanDB** db);
 
-  static Status Open(const std::string& dbname,
-                     const DBOptions& db_options,
-                     const TitanDBOptions& tdb_options,
-                     const std::vector<ColumnFamilyDescriptor>& cf_descs,
-                     std::vector<ColumnFamilyHandle*>* cf_handles,
-                     TitanDB** tdb);
+  static Status Open(const TitanDBOptions& db_options,
+                     const std::string& dbname,
+                     const std::vector<TitanCFDescriptor>& descs,
+                     std::vector<ColumnFamilyHandle*>* handles,
+                     TitanDB** db);
 
   TitanDB() : StackableDB(nullptr) {}
 

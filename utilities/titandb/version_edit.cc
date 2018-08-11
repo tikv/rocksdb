@@ -7,6 +7,7 @@ namespace titandb {
 
 enum Tag {
   kNextFileNumber = 1,
+  kColumnFamilyID = 10,
   kAddedBlobFile = 11,
   kDeletedBlobFile = 12,
 };
@@ -16,9 +17,11 @@ void VersionEdit::EncodeTo(std::string* dst) const {
     PutVarint32Varint64(dst, kNextFileNumber, next_file_number_);
   }
 
+  PutVarint32Varint32(dst, kColumnFamilyID, column_family_id_);
+
   for (auto& file : added_files_) {
     PutVarint32(dst, kAddedBlobFile);
-    file.second.EncodeTo(dst);
+    file.EncodeTo(dst);
   }
   for (auto& file : deleted_files_) {
     PutVarint32Varint64(dst, kDeletedBlobFile, file);
@@ -42,6 +45,12 @@ Status VersionEdit::DecodeFrom(Slice* src) {
           has_next_file_number_ = true;
         } else {
           error = "next file number";
+        }
+        break;
+      case kColumnFamilyID:
+        if (GetVarint32(src, &column_family_id_)) {
+        } else {
+          error = "column family id";
         }
         break;
       case kAddedBlobFile:
@@ -73,6 +82,7 @@ Status VersionEdit::DecodeFrom(Slice* src) {
 bool operator==(const VersionEdit& lhs, const VersionEdit& rhs) {
   return (lhs.has_next_file_number_ == rhs.has_next_file_number_ &&
           lhs.next_file_number_ == rhs.next_file_number_ &&
+          lhs.column_family_id_ == rhs.column_family_id_ &&
           lhs.added_files_ == rhs.added_files_ &&
           lhs.deleted_files_ == rhs.deleted_files_);
 }
