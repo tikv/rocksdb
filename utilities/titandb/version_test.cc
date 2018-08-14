@@ -10,7 +10,7 @@ namespace titandb {
 class VersionTest : public testing::Test {
  public:
   VersionTest() {
-    std::shared_ptr<Cache> cache(NewLRUCache(db_options_.max_open_files));
+    auto cache = NewLRUCache(db_options_.max_open_files);
     file_cache_.reset(new BlobFileCache(db_options_, cf_options_, cache));
     Reset();
   }

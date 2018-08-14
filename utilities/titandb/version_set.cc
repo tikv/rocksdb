@@ -8,21 +8,28 @@
 namespace rocksdb {
 namespace titandb {
 
+const size_t kMaxFileCacheSize = 1024 * 1024;
+
 VersionSet::VersionSet(const TitanDBOptions& options)
     : dirname_(options.dirname),
       env_(options.env),
       env_options_(options),
-      db_options_(options),
-      file_cache_(NewLRUCache(db_options_.max_open_files)) {}
+      db_options_(options) {
+  auto file_cache_size = db_options_.max_open_files;
+  if (file_cache_size < 0) {
+    file_cache_size = kMaxFileCacheSize;
+  }
+  file_cache_ = NewLRUCache(file_cache_size);
+}
 
 Status VersionSet::Open(
     const std::map<uint32_t, TitanCFOptions>& column_families) {
   // Sets up the first version for the specified column families.
   auto v = new Version;
   for (auto& cf : column_families) {
-    std::shared_ptr<BlobFileCache> file_cache(
-        new BlobFileCache(db_options_, cf.second, file_cache_));
-    std::shared_ptr<BlobStorage> storage(new BlobStorage(file_cache));
+    auto file_cache = std::make_shared<BlobFileCache>(
+        db_options_, cf.second, file_cache_);
+    auto storage = std::make_shared<BlobStorage>(file_cache);
     v->column_families_.emplace(cf.first, storage);
   }
   versions_.Append(v);

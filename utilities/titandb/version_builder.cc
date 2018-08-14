@@ -38,7 +38,7 @@ std::shared_ptr<BlobStorage> VersionBuilder::Builder::Build() {
     return base_;
   }
 
-  std::shared_ptr<BlobStorage> vs(new BlobStorage(*base_));
+  auto vs = std::make_shared<BlobStorage>(*base_);
   vs->files_.insert(added_files_.begin(), added_files_.end());
   for (auto& file : deleted_files_) {
     vs->files_.erase(file);
