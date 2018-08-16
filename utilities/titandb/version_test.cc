@@ -9,81 +9,70 @@ namespace titandb {
 
 class VersionTest : public testing::Test {
  public:
-  VersionTest() : list_(nullptr) {
-    AppendVersion(new Version(nullptr));
+  VersionTest() {
+    auto cache = NewLRUCache(db_options_.max_open_files);
+    file_cache_.reset(new BlobFileCache(db_options_, cf_options_, cache));
+    Reset();
   }
 
-  ~VersionTest() {
-    for (auto v : referenced_) {
-      v->Unref();
+  void Reset() {
+    versions_.reset(new VersionList);
+    column_families_.clear();
+    // Sets up some column families.
+    auto v = new Version;
+    for (uint32_t id = 0; id < 10; id++) {
+      std::shared_ptr<BlobStorage> storage;
+      storage.reset(new BlobStorage(file_cache_));
+      column_families_.emplace(id, storage);
+      storage.reset(new BlobStorage(file_cache_));
+      v->column_families_.emplace(id, storage);
     }
-    current_->Unref();
-    assert(list_.next_ == &list_);
-    assert(list_.prev_ == &list_);
+    versions_->Append(v);
   }
 
-  Version* GetAndRefCurrent() {
-    auto v = current_;
-    v->Ref();
-    referenced_.push_back(v);
-    return v;
-  }
-
-  void AddBlobFiles(uint64_t start_number, uint64_t end_number) {
-    auto v = new Version(nullptr);
-    v->files_ = current_->files_;
-    for (auto i = start_number; i < end_number; i++) {
+  void AddBlobFiles(uint32_t cf_id, uint64_t start, uint64_t end) {
+    auto storage = column_families_[cf_id];
+    for (auto i = start; i < end; i++) {
       BlobFileMeta file;
       file.file_number = i;
-      v->files_.emplace(i, file);
+      storage->files_.emplace(i, file);
     }
-    AppendVersion(v);
   }
 
-  void DeleteBlobFiles(uint64_t start_number, uint64_t end_number) {
-    auto v = new Version(nullptr);
-    v->files_ = current_->files_;
-    for (auto i = start_number; i < end_number; i++) {
-      v->files_.erase(i);
+  void DeleteBlobFiles(uint32_t cf_id, uint64_t start, uint64_t end) {
+    auto& storage = column_families_[cf_id];
+    for (auto i = start; i < end; i++) {
+      storage->files_.erase(i);
     }
-    AppendVersion(v);
   }
 
-  void BuildAndCheckCurrent(Version* base,
-                            const std::vector<VersionEdit*> edit_list) {
-    VersionBuilder builder(base);
-    for (auto& edit : edit_list) {
-      builder.Apply(edit);
+  void BuildAndCheck(std::vector<VersionEdit> edits) {
+    VersionBuilder builder(versions_->current());
+    for (auto& edit : edits) {
+      builder.Apply(&edit);
     }
-    Version v(nullptr);
-    builder.SaveTo(&v);
-    ASSERT_EQ(v.files_, current_->files_);
+    Version* v = new Version;
+    builder.SaveTo(v);
+    versions_->Append(v);
+    for (auto& it : v->column_families_) {
+      auto& storage = column_families_[it.first];
+      ASSERT_EQ(storage->files_, it.second->files_);
+    }
   }
 
  private:
-  void AppendVersion(Version* v) {
-    if (current_) {
-      current_->Unref();
-    }
-
-    current_ = v;
-    current_->Ref();
-
-    v->prev_ = list_.prev_;
-    v->next_ = &list_;
-    v->prev_->next_ = v;
-    v->next_->prev_ = v;
-  }
-
-  Version list_;
-  Version* current_ {nullptr};
-  std::vector<Version*> referenced_;
+  TitanDBOptions db_options_;
+  TitanCFOptions cf_options_;
+  std::unique_ptr<VersionList> versions_;
+  std::shared_ptr<BlobFileCache> file_cache_;
+  std::map<uint32_t, std::shared_ptr<BlobStorage>> column_families_;
 };
 
 TEST_F(VersionTest, VersionEdit) {
   VersionEdit input;
   CheckCodec(input);
   input.SetNextFileNumber(1);
+  input.SetColumnFamilyID(2);
   CheckCodec(input);
   BlobFileMeta file1;
   file1.file_number = 3;
@@ -98,50 +87,57 @@ TEST_F(VersionTest, VersionEdit) {
   CheckCodec(input);
 }
 
+VersionEdit AddBlobFilesEdit(uint32_t cf_id, uint64_t start, uint64_t end) {
+  VersionEdit edit;
+  edit.SetColumnFamilyID(cf_id);
+  for (auto i = start; i < end; i++) {
+    BlobFileMeta file;
+    file.file_number = i;
+    edit.AddBlobFile(file);
+  }
+  return edit;
+}
+
+VersionEdit DeleteBlobFilesEdit(uint32_t cf_id, uint64_t start, uint64_t end) {
+  VersionEdit edit;
+  edit.SetColumnFamilyID(cf_id);
+  for (auto i = start; i < end; i++) {
+    edit.DeleteBlobFile(i);
+  }
+  return edit;
+}
+
 TEST_F(VersionTest, VersionBuilder) {
-  auto base = GetAndRefCurrent();
-  BuildAndCheckCurrent(base, {});
+  // {(0, 4)}, {}
+  auto add1_0_4 = AddBlobFilesEdit(1, 0, 4);
+  AddBlobFiles(1, 0, 4);
+  BuildAndCheck({add1_0_4});
 
-  // Add files [0, 4)
-  VersionEdit add_0_4;
-  for (uint64_t i = 0; i < 4; i++) {
-    BlobFileMeta file;
-    file.file_number = i;
-    add_0_4.AddBlobFile(file);
-  }
-  AddBlobFiles(0, 4);
-  BuildAndCheckCurrent(base, {&add_0_4});
-  auto base_0_4 = GetAndRefCurrent();
+  // {(0, 8)}, {(4, 8)}
+  auto add1_4_8 = AddBlobFilesEdit(1, 4, 8);
+  auto add2_4_8 = AddBlobFilesEdit(2, 4, 8);
+  AddBlobFiles(1, 4, 8);
+  AddBlobFiles(2, 4, 8);
+  BuildAndCheck({add1_4_8, add2_4_8});
 
-  // Add files [4, 8)
-  VersionEdit add_4_8;
-  for (uint64_t i = 4; i < 8; i++) {
-    BlobFileMeta file;
-    file.file_number = i;
-    add_4_8.AddBlobFile(file);
-  }
-  AddBlobFiles(4, 8);
-  BuildAndCheckCurrent(base, {&add_0_4, &add_4_8});
-  BuildAndCheckCurrent(base_0_4, {&add_4_8});
-  auto base_0_8 = GetAndRefCurrent();
+  // {(0, 4), (6, 8)}, {(4, 8)}
+  auto del1_4_6 = DeleteBlobFilesEdit(1, 4, 6);
+  DeleteBlobFiles(1, 4, 6);
+  BuildAndCheck({del1_4_6});
 
-  // Delete files [4, 6)
-  VersionEdit del_4_6;
-  for (uint64_t i = 4; i < 6; i++) {
-    del_4_6.DeleteBlobFile(i);
-  }
-  // Delete files [6, 8)
-  VersionEdit del_6_8;
-  for (uint64_t i = 6; i < 8; i++) {
-    del_6_8.DeleteBlobFile(i);
-  }
-  DeleteBlobFiles(4, 8);
+  // {(0, 4)}, {(4, 6)}
+  auto del1_6_8 = DeleteBlobFilesEdit(1, 6, 8);
+  auto del2_6_8 = DeleteBlobFilesEdit(2, 6, 8);
+  DeleteBlobFiles(1, 6, 8);
+  DeleteBlobFiles(2, 6, 8);
+  BuildAndCheck({del1_6_8, del2_6_8});
+  BuildAndCheck({add1_4_8, del1_4_6, del1_6_8});
 
-  BuildAndCheckCurrent(base, {&add_0_4});
-  BuildAndCheckCurrent(base, {&add_0_4, &add_4_8, &del_4_6, &del_6_8});
-  BuildAndCheckCurrent(base_0_4, {});
-  BuildAndCheckCurrent(base_0_4, {&add_4_8, &del_4_6, &del_6_8});
-  BuildAndCheckCurrent(base_0_8, {&del_4_6, &del_6_8});
+  // {(0, 4)}, {(4, 6)}
+  Reset();
+  AddBlobFiles(1, 0, 4);
+  AddBlobFiles(2, 4, 6);
+  BuildAndCheck({add1_0_4, add1_4_8, del1_4_6, del1_6_8, add2_4_8, del2_6_8});
 }
 
 }  // namespace titandb

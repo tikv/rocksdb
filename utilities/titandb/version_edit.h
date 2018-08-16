@@ -15,14 +15,16 @@ class VersionEdit {
     next_file_number_ = v;
   }
 
+  void SetColumnFamilyID(uint32_t v) {
+    column_family_id_ = v;
+  }
+
   void AddBlobFile(const BlobFileMeta& file) {
-    auto it = added_files_.emplace(file.file_number, file);
-    if (!it.second) abort();
+    added_files_.push_back(file);
   }
 
   void DeleteBlobFile(uint64_t file_number) {
-    auto it = deleted_files_.emplace(file_number);
-    if (!it.second) abort();
+    deleted_files_.push_back(file_number);
   }
 
   void EncodeTo(std::string* dst) const;
@@ -36,9 +38,10 @@ class VersionEdit {
 
   bool has_next_file_number_ {false};
   uint64_t next_file_number_ {0};
+  uint32_t column_family_id_ {0};
 
-  std::map<uint64_t, BlobFileMeta> added_files_;
-  std::set<uint64_t> deleted_files_;
+  std::vector<BlobFileMeta> added_files_;
+  std::vector<uint64_t> deleted_files_;
 };
 
 }  // namespace titandb

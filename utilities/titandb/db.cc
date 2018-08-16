@@ -5,38 +5,34 @@
 namespace rocksdb {
 namespace titandb {
 
-Status TitanDB::Open(const std::string& dbname,
-                     const Options& options,
-                     const TitanDBOptions& tdb_options,
-                     TitanDB** tdb) {
-  DBOptions db_options(options);
-  ColumnFamilyOptions cf_options(options);
-  std::vector<ColumnFamilyDescriptor> cf_descs = {
-    ColumnFamilyDescriptor(kDefaultColumnFamilyName, cf_options),
-  };
-  std::vector<ColumnFamilyHandle*> cf_handles;
-  Status s = TitanDB::Open(dbname, db_options, tdb_options, cf_descs,
-                           &cf_handles, tdb);
+Status TitanDB::Open(const TitanOptions& options,
+                     const std::string& dbname,
+                     TitanDB** db) {
+  TitanDBOptions db_options(options);
+  TitanCFOptions cf_options(options);
+  std::vector<TitanCFDescriptor> descs;
+  descs.emplace_back(kDefaultColumnFamilyName, cf_options);
+  std::vector<ColumnFamilyHandle*> handles;
+  Status s = TitanDB::Open(db_options, dbname, descs, &handles, db);
   if (s.ok()) {
-    assert(cf_handles.size() == 1);
+    assert(handles.size() == 1);
     // DBImpl is always holding the default handle.
-    delete cf_handles[0];
+    delete handles[0];
   }
   return s;
 }
 
-Status TitanDB::Open(const std::string& dbname,
-                     const DBOptions& db_options,
-                     const TitanDBOptions& tdb_options,
-                     const std::vector<ColumnFamilyDescriptor>& cf_descs,
-                     std::vector<ColumnFamilyHandle*>* cf_handles,
-                     TitanDB** tdb) {
-  auto impl = new TitanDBImpl(dbname, db_options, tdb_options);
-  auto s = impl->Open(cf_descs, cf_handles);
+Status TitanDB::Open(const TitanDBOptions& db_options,
+                     const std::string& dbname,
+                     const std::vector<TitanCFDescriptor>& descs,
+                     std::vector<ColumnFamilyHandle*>* handles,
+                     TitanDB** db) {
+  auto impl = new TitanDBImpl(db_options, dbname);
+  auto s = impl->Open(descs, handles);
   if (s.ok()) {
-    *tdb = impl;
+    *db = impl;
   } else {
-    *tdb = nullptr;
+    *db = nullptr;
     delete impl;
   }
   return s;

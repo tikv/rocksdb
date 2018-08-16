@@ -24,18 +24,18 @@ class BlobFileReader {
  public:
   // Opens a blob file and read the necessary metadata from it.
   // If successful, sets "*result" to the newly opened file reader.
-  static Status Open(const TitanDBOptions& options,
+  static Status Open(const TitanCFOptions& options,
                      std::unique_ptr<RandomAccessFileReader> file,
                      uint64_t file_size,
                      std::unique_ptr<BlobFileReader>* result);
 
   // Constructs a reader with the shared blob file. The provided blob
   // file must be corresponding to the "file".
-  BlobFileReader(const TitanDBOptions& options,
-                 std::shared_ptr<BlobFile> _blob_file,
+  BlobFileReader(const TitanCFOptions& options,
+                 std::shared_ptr<BlobFile> blob_file,
                  std::unique_ptr<RandomAccessFileReader> file)
       : options_(options),
-        blob_file_(_blob_file),
+        blob_file_(blob_file),
         file_(std::move(file)) {}
 
   // Gets the blob record pointed by the handle in this file. The data
@@ -46,10 +46,10 @@ class BlobFileReader {
              BlobRecord* record, std::string* buffer);
 
   // Returns a shared reference to the blob file.
-  std::shared_ptr<BlobFile> blob_file() const { return blob_file_; }
+  std::shared_ptr<BlobFile> GetBlobFile() const { return blob_file_; }
 
  private:
-  TitanDBOptions options_;
+  TitanCFOptions options_;
   std::shared_ptr<BlobFile> blob_file_;
   std::unique_ptr<RandomAccessFileReader> file_;
 };

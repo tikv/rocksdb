@@ -10,7 +10,7 @@ class TitanDBTest : public testing::Test {
  public:
   TitanDBTest() : dbname_(test::TmpDir()) {
     options_.create_if_missing = true;
-    tdb_options_.min_blob_size = 0;
+    options_.min_blob_size = 0;
   }
 
   ~TitanDBTest() {
@@ -18,13 +18,13 @@ class TitanDBTest : public testing::Test {
   }
 
   void Open() {
-    ASSERT_OK(TitanDB::Open(dbname_, options_, tdb_options_, &db_));
+    ASSERT_OK(TitanDB::Open(options_, dbname_, &db_));
   }
 
   void Reopen() {
     ASSERT_OK(db_->Close());
     delete db_;
-    ASSERT_OK(TitanDB::Open(dbname_, options_, tdb_options_, &db_));
+    ASSERT_OK(TitanDB::Open(options_, dbname_, &db_));
   }
 
   void Put(uint64_t i, std::map<std::string, std::string>* data = nullptr) {
@@ -73,10 +73,8 @@ class TitanDBTest : public testing::Test {
   }
 
   std::string dbname_;
-  Options options_;
-  TitanDBOptions tdb_options_;
-
-  TitanDB* db_ = nullptr;
+  TitanOptions options_;
+  TitanDB* db_ {nullptr};
 };
 
 TEST_F(TitanDBTest, Basic) {

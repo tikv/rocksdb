@@ -18,13 +18,14 @@ Slice FileNumberSlice(const uint64_t* number) {
 
 }
 
-BlobFileCache::BlobFileCache(const DBOptions& db_options,
-                             const TitanDBOptions& tdb_options)
-    : db_options_(db_options),
-      tdb_options_(tdb_options),
-      env_(db_options.env),
+BlobFileCache::BlobFileCache(const TitanDBOptions& db_options,
+                             const TitanCFOptions& cf_options,
+                             std::shared_ptr<Cache> cache)
+    : env_(db_options.env),
       env_options_(db_options),
-      cache_(NewLRUCache(tdb_options.max_open_files)) {}
+      db_options_(db_options),
+      cf_options_(cf_options),
+      cache_(cache) {}
 
 Status BlobFileCache::Get(const ReadOptions& options,
                           uint64_t file_number,
@@ -50,14 +51,14 @@ Status BlobFileCache::NewReader(const ReadOptions& options,
   if (!s.ok()) return s;
 
   auto reader = reinterpret_cast<BlobFileReader*>(cache_->Value(ch));
-  auto blob_file = reader->blob_file();
+  auto blob_file = reader->GetBlobFile();
   cache_->Release(ch);
 
   std::unique_ptr<RandomAccessFileReader> file;
   s = NewRandomAccessReader(file_number, options.readahead_size, &file);
   if (!s.ok()) return s;
 
-  result->reset(new BlobFileReader(tdb_options_, blob_file, std::move(file)));
+  result->reset(new BlobFileReader(cf_options_, blob_file, std::move(file)));
   return s;
 }
 
@@ -78,7 +79,7 @@ Status BlobFileCache::FindFile(uint64_t file_number,
   if (!s.ok()) return s;
 
   std::unique_ptr<BlobFileReader> reader;
-  s = BlobFileReader::Open(tdb_options_, std::move(file), file_size, &reader);
+  s = BlobFileReader::Open(cf_options_, std::move(file), file_size, &reader);
   if (!s.ok()) return s;
 
   cache_->Insert(number, reader.release(), 1, &DeleteValue, handle);
@@ -89,7 +90,7 @@ Status BlobFileCache::NewRandomAccessReader(
     uint64_t file_number, uint64_t readahead_size,
     std::unique_ptr<RandomAccessFileReader>* result) {
   std::unique_ptr<RandomAccessFile> file;
-  auto file_name = BlobFileName(tdb_options_.dirname, file_number);
+  auto file_name = BlobFileName(db_options_.dirname, file_number);
   Status s = env_->NewRandomAccessFile(file_name, &file, env_options_);
   if (!s.ok()) return s;
 

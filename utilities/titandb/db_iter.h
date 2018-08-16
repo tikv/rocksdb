@@ -1,10 +1,7 @@
 #pragma once
 
-#include "rocksdb/iterator.h"
 #include "db/db_iter.h"
 #include "utilities/titandb/version.h"
-#include "utilities/titandb/blob_format.h"
-#include "utilities/titandb/blob_file_reader.h"
 
 namespace rocksdb {
 namespace titandb {
@@ -34,9 +31,11 @@ class TitanSnapshot : public Snapshot {
 class TitanDBIterator : public Iterator {
  public:
   TitanDBIterator(const ReadOptions& options,
+                  std::shared_ptr<BlobStorage> storage,
                   std::shared_ptr<ManagedSnapshot> snap,
                   std::unique_ptr<ArenaWrappedDBIter> iter)
       : options_(options),
+        storage_(storage),
         snap_(snap),
         iter_(std::move(iter)) {}
 
@@ -97,17 +96,15 @@ class TitanDBIterator : public Iterator {
     status_ = DecodeInto(iter_->value(), &index);
     if (!status_.ok()) return;
 
-    auto snapshot = reinterpret_cast<const TitanSnapshot*>(options_.snapshot);
-    auto current = snapshot->current();
     if (!options_.readahead_size) {
-      status_ = current->Get(options_, index, &record_, &buffer_);
+      status_ = storage_->Get(options_, index, &record_, &buffer_);
       return;
     }
 
     auto it = cache_.find(index.file_number);
     if (it == cache_.end()) {
       std::unique_ptr<BlobFileReader> reader;
-      status_ = current->NewReader(options_, index.file_number, &reader);
+      status_ = storage_->NewReader(options_, index.file_number, &reader);
       if (!status_.ok()) return;
       it = cache_.emplace(index.file_number, std::move(reader)).first;
     }
@@ -117,7 +114,9 @@ class TitanDBIterator : public Iterator {
   Status status_;
   BlobRecord record_;
   std::string buffer_;
+
   ReadOptions options_;
+  std::shared_ptr<BlobStorage> storage_;
   std::shared_ptr<ManagedSnapshot> snap_;
   std::unique_ptr<ArenaWrappedDBIter> iter_;
   std::map<uint64_t, std::unique_ptr<BlobFileReader>> cache_;

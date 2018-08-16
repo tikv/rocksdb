@@ -35,7 +35,6 @@ TEST(BlobFormatTest, BlobIndex) {
 TEST(BlobFormatTest, BlobFileMeta) {
   BlobFileMeta input;
   CheckCodec(input);
-  input.column_family_id = 1;
   input.file_number = 2;
   input.file_size = 3;
   CheckCodec(input);

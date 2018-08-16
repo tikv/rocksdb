@@ -10,12 +10,12 @@ namespace titandb {
 
 class TitanTableBuilder : public TableBuilder {
  public:
-  TitanTableBuilder(const TitanDBOptions& options,
-                    uint64_t column_family_id,
+  TitanTableBuilder(uint32_t cf_id,
+                    const TitanCFOptions& options,
                     std::unique_ptr<TableBuilder> base_builder,
                     std::shared_ptr<BlobFileManager> blob_manager)
-      : options_(options),
-        column_family_id_(column_family_id),
+      : cf_id_(cf_id),
+        options_(options),
         base_builder_(std::move(base_builder)),
         blob_manager_(blob_manager) {}
 
@@ -41,8 +41,8 @@ class TitanTableBuilder : public TableBuilder {
   void AddBlob(const Slice& key, const Slice& value, std::string* index_value);
 
   Status status_;
-  TitanDBOptions options_;
-  uint64_t column_family_id_;
+  uint32_t cf_id_;
+  TitanCFOptions options_;
   std::unique_ptr<TableBuilder> base_builder_;
   std::unique_ptr<BlobFileHandle> blob_handle_;
   std::shared_ptr<BlobFileManager> blob_manager_;
