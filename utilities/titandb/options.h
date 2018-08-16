@@ -5,25 +5,26 @@
 namespace rocksdb {
 namespace titandb {
 
-struct TitanDBOptions {
+struct TitanDBOptions : public DBOptions {
   // The directory to store data specific to TitanDB alongside with
   // the base DB.
   //
   // Default: {dbname}/titandb
   std::string dirname;
 
+  TitanDBOptions() = default;
+  explicit TitanDBOptions(const DBOptions& options)
+      : DBOptions(options) {}
+};
+
+struct TitanCFOptions : public ColumnFamilyOptions {
   // The smallest value to store in blob files. Value smaller than
   // this threshold will be inlined in base DB.
   //
   // Default: 4096
   uint64_t min_blob_size {4096};
 
-  // The maximum open blob files in the blob file cache.
-  //
-  // Default: 1 << 20
-  uint64_t max_open_files {1 << 20};
-
-  // The compression algorithm used to compress blob records in blob files.
+  // The compression algorithm used to compress data in blob files.
   //
   // Default: kNoCompression
   CompressionType blob_file_compression {kNoCompression};
@@ -33,8 +34,14 @@ struct TitanDBOptions {
   // Default: 256MB
   uint64_t blob_file_target_size {256 << 20};
 
+  TitanCFOptions() = default;
+  explicit TitanCFOptions(const ColumnFamilyOptions& options)
+      : ColumnFamilyOptions(options) {}
+
   std::string ToString() const;
 };
+
+struct TitanOptions : public TitanDBOptions, public TitanCFOptions {};
 
 }  // namespace titandb
 }  // namespace rocksdb

@@ -10,9 +10,7 @@ namespace titandb {
 class BlobFileTest : public testing::Test {
  public:
   BlobFileTest()
-      : env_(db_options_.env),
-        env_options_(db_options_),
-        dirname_(test::TmpDir(env_)) {
+      : dirname_(test::TmpDir(env_)) {
     file_name_ = BlobFileName(dirname_, file_number_);
   }
 
@@ -21,21 +19,24 @@ class BlobFileTest : public testing::Test {
     env_->DeleteDir(dirname_);
   }
 
-  void TestBlobFile(TitanDBOptions tdb_options) {
-    tdb_options.dirname = dirname_;
-    BlobFileCache cache(db_options_, tdb_options);
+  void TestBlobFile(TitanOptions options) {
+    options.dirname = dirname_;
+    TitanDBOptions db_options(options);
+    TitanCFOptions cf_options(options);
+    BlobFileCache cache(db_options, cf_options, {NewLRUCache(128)});
 
     const int n = 100;
     std::vector<BlobHandle> handles(n);
 
     std::unique_ptr<WritableFileWriter> file;
     {
-      std::unique_ptr<WritableFile> result;
-      ASSERT_OK(env_->NewWritableFile(file_name_, &result, env_options_));
-      file.reset(new WritableFileWriter(std::move(result), env_options_));
+      std::unique_ptr<WritableFile> f;
+      ASSERT_OK(env_->NewWritableFile(file_name_, &f, env_options_));
+      file.reset(new WritableFileWriter(std::move(f), env_options_));
     }
     std::unique_ptr<BlobFileBuilder> builder(
-        new BlobFileBuilder(tdb_options, file.get()));
+        new BlobFileBuilder(cf_options, file.get()));
+
     for (int i = 0; i < n; i++) {
       auto id = std::to_string(i);
       BlobRecord record;
@@ -68,8 +69,7 @@ class BlobFileTest : public testing::Test {
     }
   }
 
-  DBOptions db_options_;
-  Env* env_;
+  Env* env_ {Env::Default()};
   EnvOptions env_options_;
   std::string dirname_;
   std::string file_name_;
@@ -77,7 +77,7 @@ class BlobFileTest : public testing::Test {
 };
 
 TEST_F(BlobFileTest, Basic) {
-  TitanDBOptions options;
+  TitanOptions options;
   TestBlobFile(options);
 }
 

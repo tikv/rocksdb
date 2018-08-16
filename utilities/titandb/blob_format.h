@@ -53,11 +53,9 @@ struct BlobIndex {
 
 // Blob file meta format:
 //
-// column_family_id : varint32
 // file_number      : varint64
 // file_size        : varint64
 struct BlobFileMeta {
-  uint32_t column_family_id {0};
   uint64_t file_number {0};
   uint64_t file_size {0};
 

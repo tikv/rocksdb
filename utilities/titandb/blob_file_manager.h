@@ -11,11 +11,11 @@ class BlobFileHandle {
  public:
   virtual ~BlobFileHandle() {}
 
-  virtual uint64_t number() const = 0;
+  virtual uint64_t GetNumber() const = 0;
 
-  virtual const std::string& name() const = 0;
+  virtual const std::string& GetName() const = 0;
 
-  virtual WritableFileWriter* file() const = 0;
+  virtual WritableFileWriter* GetFile() const = 0;
 };
 
 // Manages the process of blob files creation.
@@ -31,7 +31,8 @@ class BlobFileManager {
   // Finishes the file with the provided metadata. Stops writting to
   // the file anymore.
   // REQUIRES: FinishFile(), DeleteFile() have not been called.
-  virtual Status FinishFile(const BlobFileMeta& file,
+  virtual Status FinishFile(uint32_t cf_id,
+                            const BlobFileMeta& file,
                             std::unique_ptr<BlobFileHandle> handle) = 0;
 
   // Deletes the file. If the caller is not going to call

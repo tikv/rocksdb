@@ -9,11 +9,10 @@ namespace titandb {
 
 class TitanTableFactory : public TableFactory {
  public:
-  TitanTableFactory(const TitanDBOptions& options,
-                    std::shared_ptr<TableFactory> base_factory,
+  TitanTableFactory(const TitanCFOptions& options,
                     std::shared_ptr<BlobFileManager> blob_manager)
       : options_(options),
-        base_factory_(base_factory),
+        base_factory_(options.table_factory),
         blob_manager_(blob_manager) {}
 
   const char* Name() const { return "TitanTable"; }
@@ -53,7 +52,7 @@ class TitanTableFactory : public TableFactory {
   }
 
  private:
-  TitanDBOptions options_;
+  TitanCFOptions options_;
   std::shared_ptr<TableFactory> base_factory_;
   std::shared_ptr<BlobFileManager> blob_manager_;
 };

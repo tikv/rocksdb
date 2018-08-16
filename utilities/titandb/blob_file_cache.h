@@ -11,8 +11,9 @@ namespace titandb {
 class BlobFileCache {
  public:
   // Constructs a blob file cache to cache opened files.
-  BlobFileCache(const DBOptions& db_options,
-                const TitanDBOptions& tdb_options);
+  BlobFileCache(const TitanDBOptions& db_options,
+                const TitanCFOptions& cf_options,
+                std::shared_ptr<Cache> cache);
 
   // Gets the blob record pointed by the handle in the specified file
   // number. The corresponding file size must be exactly "file_size"
@@ -47,10 +48,10 @@ class BlobFileCache {
                                uint64_t readahead_size,
                                std::unique_ptr<RandomAccessFileReader>* result);
 
-  DBOptions db_options_;
-  TitanDBOptions tdb_options_;
   Env* env_;
   EnvOptions env_options_;
+  TitanDBOptions db_options_;
+  TitanCFOptions cf_options_;
   std::shared_ptr<Cache> cache_;
 };
 
