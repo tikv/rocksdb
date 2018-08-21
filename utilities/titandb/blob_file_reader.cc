@@ -30,10 +30,8 @@ Status BlobFileReader::Get(const ReadOptions& /*options*/,
                            const BlobHandle& handle,
                            BlobRecord* record, std::string* buffer) {
   Slice blob;
-  buffer->clear();
-  buffer->reserve(handle.size);
-  Status s = file_->Read(handle.offset, handle.size,
-                         &blob, const_cast<char*>(buffer->data()));
+  buffer->resize(handle.size);
+  Status s = file_->Read(handle.offset, handle.size, &blob, &(*buffer)[0]);
   if (!s.ok()) return s;
   return DecodeInto(blob, record);
 }
