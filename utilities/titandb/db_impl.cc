@@ -197,7 +197,7 @@ Status TitanDBImpl::GetImpl(const ReadOptions& options,
   if (!s.ok()) return s;
 
   BlobRecord record;
-  std::string buffer;
+  PinnableSlice buffer;
   s = storage->Get(options, index, &record, &buffer);
   if (s.ok()) {
     value->Reset();

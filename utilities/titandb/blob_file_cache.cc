@@ -28,7 +28,7 @@ Status BlobFileCache::Get(const ReadOptions& options,
                           uint64_t file_number,
                           uint64_t file_size,
                           const BlobHandle& handle,
-                          BlobRecord* record, std::string* buffer) {
+                          BlobRecord* record, PinnableSlice* buffer) {
   Cache::Handle* cache_handle = nullptr;
   Status s = FindFile(file_number, file_size, &cache_handle);
   if (!s.ok()) return s;

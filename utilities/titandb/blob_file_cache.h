@@ -23,7 +23,7 @@ class BlobFileCache {
              uint64_t file_number,
              uint64_t file_size,
              const BlobHandle& handle,
-             BlobRecord* record, std::string* buffer);
+             BlobRecord* record, PinnableSlice* buffer);
 
   // Creates a prefetcher for the specified file number.
   Status NewPrefetcher(uint64_t file_number,

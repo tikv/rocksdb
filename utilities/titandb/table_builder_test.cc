@@ -207,7 +207,7 @@ TEST_F(TableBuilderTest, Basic) {
       ASSERT_OK(DecodeInto(iter->value(), &index));
       ASSERT_EQ(index.file_number, kTestFileNumber);
       BlobRecord record;
-      std::string buffer;
+      PinnableSlice buffer;
       ASSERT_OK(blob_reader->Get(ro, index.blob_handle, &record, &buffer));
       ASSERT_EQ(record.key, key);
       ASSERT_EQ(record.value, std::string(kMinBlobSize, i));

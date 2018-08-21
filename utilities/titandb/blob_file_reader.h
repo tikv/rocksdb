@@ -7,6 +7,8 @@
 namespace rocksdb {
 namespace titandb {
 
+class BlobBuffer;
+
 class BlobFileReader {
  public:
   // Opens a blob file and read the necessary metadata from it.
@@ -21,13 +23,15 @@ class BlobFileReader {
   // must be valid when the record is used.
   Status Get(const ReadOptions& options,
              const BlobHandle& handle,
-             BlobRecord* record, std::string* buffer);
+             BlobRecord* record, PinnableSlice* buffer);
 
  private:
   friend class BlobFilePrefetcher;
 
   BlobFileReader(const TitanCFOptions& options,
                  std::unique_ptr<RandomAccessFileReader> file);
+
+  Status ReadBlob(const BlobHandle& handle, BlobBuffer* buffer);
 
   TitanCFOptions options_;
   std::unique_ptr<RandomAccessFileReader> file_;
@@ -49,7 +53,7 @@ class BlobFilePrefetcher : public Cleanable {
 
   Status Get(const ReadOptions& options,
              const BlobHandle& handle,
-             BlobRecord* record, std::string* buffer);
+             BlobRecord* record, PinnableSlice* buffer);
 
  private:
   BlobFileReader* reader_;
