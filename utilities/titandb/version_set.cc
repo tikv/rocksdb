@@ -24,15 +24,8 @@ VersionSet::VersionSet(const TitanDBOptions& options)
 
 Status VersionSet::Open(
     const std::map<uint32_t, TitanCFOptions>& column_families) {
-  // Sets up the first version for the specified column families.
-  auto v = new Version;
-  for (auto& cf : column_families) {
-    auto file_cache = std::make_shared<BlobFileCache>(
-        db_options_, cf.second, file_cache_);
-    auto storage = std::make_shared<BlobStorage>(file_cache);
-    v->column_families_.emplace(cf.first, storage);
-  }
-  versions_.Append(v);
+  // Sets up initial column families.
+  AddColumnFamilies(column_families);
 
   Status s = env_->FileExists(CurrentFileName(dirname_));
   if (s.ok()) {
@@ -193,6 +186,29 @@ Status VersionSet::LogAndApply(VersionEdit* edit, port::Mutex* mutex) {
     versions_.Append(v);
   }
   return s;
+}
+
+void VersionSet::AddColumnFamilies(
+    const std::map<uint32_t, TitanCFOptions>& column_families) {
+  auto v = new Version;
+  v->column_families_ = current()->column_families_;
+  for (auto& cf : column_families) {
+    auto file_cache = std::make_shared<BlobFileCache>(
+        db_options_, cf.second, file_cache_);
+    auto blob_storage = std::make_shared<BlobStorage>(file_cache);
+    v->column_families_.emplace(cf.first, blob_storage);
+  }
+  versions_.Append(v);
+}
+
+void VersionSet::DropColumnFamilies(
+    const std::vector<uint32_t>& column_families) {
+  auto v = new Version;
+  v->column_families_ = current()->column_families_;
+  for (auto& cf : column_families) {
+    v->column_families_.erase(cf);
+  }
+  versions_.Append(v);
 }
 
 }  // namespace titandb

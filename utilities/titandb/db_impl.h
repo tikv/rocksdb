@@ -19,6 +19,14 @@ class TitanDBImpl : public TitanDB {
 
   Status Close() override;
 
+  using TitanDB::CreateColumnFamilies;
+  Status CreateColumnFamilies(
+      const std::vector<TitanCFDescriptor>& descs,
+      std::vector<ColumnFamilyHandle*>* handles) override;
+
+  Status DropColumnFamilies(
+      const std::vector<ColumnFamilyHandle*>& handles) override;
+
   using TitanDB::Get;
   Status Get(const ReadOptions& options,
              ColumnFamilyHandle* handle,

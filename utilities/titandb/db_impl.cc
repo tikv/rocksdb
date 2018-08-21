@@ -125,6 +125,8 @@ Status TitanDBImpl::Open(const std::vector<TitanCFDescriptor>& descs,
   std::map<uint32_t, TitanCFOptions> column_families;
 
   // Opens the base DB first to collect the column families information.
+  // Avoid flush here because we haven't replaced the table factory yet.
+  db_options_.avoid_flush_during_recovery = true;
   s = DB::Open(db_options_, dbname_, base_descs, handles, &db_);
   if (s.ok()) {
     for (size_t i = 0; i < descs.size(); i++) {
@@ -162,6 +164,43 @@ Status TitanDBImpl::Close() {
   if (lock_) {
     env_->UnlockFile(lock_);
     lock_ = nullptr;
+  }
+  return s;
+}
+
+Status TitanDBImpl::CreateColumnFamilies(
+    const std::vector<TitanCFDescriptor>& descs,
+    std::vector<ColumnFamilyHandle*>* handles) {
+  std::vector<ColumnFamilyDescriptor> base_descs;
+  for (auto& desc : descs) {
+    ColumnFamilyOptions options = desc.options;
+    // Replaces the provided table factory with TitanTableFactory.
+    options.table_factory.reset(
+        new TitanTableFactory(desc.options, blob_manager_));
+    base_descs.emplace_back(desc.name, options);
+  }
+  Status s = db_impl_->CreateColumnFamilies(base_descs, handles);
+  if (s.ok()) {
+    std::map<uint32_t, TitanCFOptions> column_families;
+    for (size_t i = 0; i < descs.size(); i++) {
+      column_families.emplace((*handles)[i]->GetID(), descs[i].options);
+    }
+    MutexLock l(&mutex_);
+    vset_->AddColumnFamilies(column_families);
+  }
+  return s;
+}
+
+Status TitanDBImpl::DropColumnFamilies(
+    const std::vector<ColumnFamilyHandle*>& handles) {
+  std::vector<uint32_t> column_families;
+  for (auto& handle : handles) {
+    column_families.push_back(handle->GetID());
+  }
+  Status s = db_impl_->DropColumnFamilies(handles);
+  if (s.ok()) {
+    MutexLock l(&mutex_);
+    vset_->DropColumnFamilies(column_families);
   }
   return s;
 }
@@ -224,16 +263,15 @@ std::vector<Status> TitanDBImpl::MultiGetImpl(
     const std::vector<ColumnFamilyHandle*>& handles,
     const std::vector<Slice>& keys, std::vector<std::string>* values) {
   std::vector<Status> res;
-  res.reserve(keys.size());
-  values->clear();
-  values->reserve(keys.size());
+  res.resize(keys.size());
+  values->resize(keys.size());
   for (size_t i = 0; i < keys.size(); i++) {
-    Status s;
-    std::string value;
-    PinnableSlice pinnable_value(&value);
-    s = GetImpl(options, handles[i], keys[i], &pinnable_value);
-    res.emplace_back(s);
-    values->emplace_back(value);
+    auto value = &(*values)[i];
+    PinnableSlice pinnable_value(value);
+    res[i] = GetImpl(options, handles[i], keys[i], &pinnable_value);
+    if (res[i].ok() && pinnable_value.IsPinned()) {
+      value->assign(pinnable_value.data(), pinnable_value.size());
+    }
   }
   return res;
 }

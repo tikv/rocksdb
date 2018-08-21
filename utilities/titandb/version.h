@@ -43,7 +43,7 @@ class Version {
   Version() : prev_(this), next_(this) {}
 
   // Reference count management.
-  // REQUIRES: lock is held
+  // REQUIRES: mutex is held
   void Ref();
   void Unref();
 

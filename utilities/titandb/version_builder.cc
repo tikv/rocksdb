@@ -61,8 +61,8 @@ void VersionBuilder::Apply(VersionEdit* edit) {
   auto cf_id = edit->column_family_id_;
   auto it = column_families_.find(cf_id);
   if (it == column_families_.end()) {
-    fprintf(stderr, "missing column family %" PRIu32 "\n", cf_id);
-    abort();
+    // Ignore unknown column families.
+    return;
   }
   auto& builder = it->second;
 

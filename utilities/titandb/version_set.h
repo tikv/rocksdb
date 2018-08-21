@@ -26,6 +26,15 @@ class VersionSet {
   // REQUIRES: *mutex is held
   Status LogAndApply(VersionEdit* edit, port::Mutex* mutex);
 
+  // Adds some column families with the specified options.
+  // REQUIRES: mutex is held
+  void AddColumnFamilies(
+      const std::map<uint32_t, TitanCFOptions>& column_families);
+  // Drops some column families. The obsolete files will be deleted in
+  // background when they will not be accessed anymore.
+  // REQUIRES: mutex is held
+  void DropColumnFamilies(const std::vector<uint32_t>& column_families);
+
   // Returns the current version.
   Version* current() { return versions_.current(); }
 
