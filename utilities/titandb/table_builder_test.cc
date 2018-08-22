@@ -118,7 +118,6 @@ class TableBuilderTest : public testing::Test {
   void NewBlobFileReader(std::unique_ptr<BlobFileReader>* result) {
     std::unique_ptr<RandomAccessFileReader> file;
     NewFileReader(blob_name_, &file);
-    std::unique_ptr<BlobFile> blob_file;
     uint64_t file_size = 0;
     ASSERT_OK(env_->GetFileSize(blob_name_, &file_size));
     ASSERT_OK(BlobFileReader::Open(

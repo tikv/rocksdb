@@ -96,17 +96,12 @@ class TitanDBIterator : public Iterator {
     status_ = DecodeInto(iter_->value(), &index);
     if (!status_.ok()) return;
 
-    if (!options_.readahead_size) {
-      status_ = storage_->Get(options_, index, &record_, &buffer_);
-      return;
-    }
-
-    auto it = cache_.find(index.file_number);
-    if (it == cache_.end()) {
-      std::unique_ptr<BlobFileReader> reader;
-      status_ = storage_->NewReader(options_, index.file_number, &reader);
+    auto it = files_.find(index.file_number);
+    if (it == files_.end()) {
+      std::unique_ptr<BlobFilePrefetcher> prefetcher;
+      status_ = storage_->NewPrefetcher(index.file_number, &prefetcher);
       if (!status_.ok()) return;
-      it = cache_.emplace(index.file_number, std::move(reader)).first;
+      it = files_.emplace(index.file_number, std::move(prefetcher)).first;
     }
     status_ = it->second->Get(options_, index.blob_handle, &record_, &buffer_);
   }
@@ -119,7 +114,7 @@ class TitanDBIterator : public Iterator {
   std::shared_ptr<BlobStorage> storage_;
   std::shared_ptr<ManagedSnapshot> snap_;
   std::unique_ptr<ArenaWrappedDBIter> iter_;
-  std::map<uint64_t, std::unique_ptr<BlobFileReader>> cache_;
+  std::map<uint64_t, std::unique_ptr<BlobFilePrefetcher>> files_;
 };
 
 }  // namespace titandb

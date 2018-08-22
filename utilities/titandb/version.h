@@ -21,11 +21,9 @@ class BlobStorage {
              const BlobIndex& index,
              BlobRecord* record, std::string* buffer);
 
-  // Creates a new blob file reader for the specified file number.
-  // If successful, sets "*result" to the new blob file reader.
-  Status NewReader(const ReadOptions& options,
-                   uint64_t file_number,
-                   std::unique_ptr<BlobFileReader>* result);
+  // Creates a prefetcher for the specified file number.
+  Status NewPrefetcher(uint64_t file_number,
+                       std::unique_ptr<BlobFilePrefetcher>* result);
 
   // Finds the blob file meta for the specified file number. It is a
   // corruption if the file doesn't exist in the specific version.

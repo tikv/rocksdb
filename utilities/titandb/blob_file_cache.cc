@@ -8,12 +8,18 @@ namespace titandb {
 
 namespace {
 
-void DeleteValue(const Slice&, void* value) {
+Slice EncodeFileNumber(const uint64_t* number) {
+  return Slice(reinterpret_cast<const char*>(number), sizeof(*number));
+}
+
+void DeleteFileReader(const Slice&, void* value) {
   delete reinterpret_cast<BlobFileReader*>(value);
 }
 
-Slice FileNumberSlice(const uint64_t* number) {
-  return Slice(reinterpret_cast<const char*>(number), sizeof(*number));
+void UnrefCacheHandle(void* arg1, void* arg2) {
+  Cache* cache = reinterpret_cast<Cache*>(arg1);
+  Cache::Handle* h = reinterpret_cast<Cache::Handle*>(arg2);
+  cache->Release(h);
 }
 
 }
@@ -32,72 +38,60 @@ Status BlobFileCache::Get(const ReadOptions& options,
                           uint64_t file_size,
                           const BlobHandle& handle,
                           BlobRecord* record, std::string* buffer) {
-  Cache::Handle* ch = nullptr;
-  Status s = FindFile(file_number, file_size, &ch);
+  Cache::Handle* cache_handle = nullptr;
+  Status s = FindFile(file_number, file_size, &cache_handle);
   if (!s.ok()) return s;
 
-  auto reader = reinterpret_cast<BlobFileReader*>(cache_->Value(ch));
+  auto reader = reinterpret_cast<BlobFileReader*>(cache_->Value(cache_handle));
   s = reader->Get(options, handle, record, buffer);
-  cache_->Release(ch);
+  cache_->Release(cache_handle);
   return s;
 }
 
-Status BlobFileCache::NewReader(const ReadOptions& options,
-                                uint64_t file_number,
-                                uint64_t file_size,
-                                std::unique_ptr<BlobFileReader>* result) {
-  Cache::Handle* ch = nullptr;
-  Status s = FindFile(file_number, file_size, &ch);
+Status BlobFileCache::NewPrefetcher(
+    uint64_t file_number,
+    uint64_t file_size,
+    std::unique_ptr<BlobFilePrefetcher>* result) {
+  Cache::Handle* cache_handle = nullptr;
+  Status s = FindFile(file_number, file_size, &cache_handle);
   if (!s.ok()) return s;
 
-  auto reader = reinterpret_cast<BlobFileReader*>(cache_->Value(ch));
-  auto blob_file = reader->GetBlobFile();
-  cache_->Release(ch);
-
-  std::unique_ptr<RandomAccessFileReader> file;
-  s = NewRandomAccessReader(file_number, options.readahead_size, &file);
-  if (!s.ok()) return s;
-
-  result->reset(new BlobFileReader(cf_options_, blob_file, std::move(file)));
+  auto reader = reinterpret_cast<BlobFileReader*>(cache_->Value(cache_handle));
+  auto prefetcher = new BlobFilePrefetcher(reader);
+  prefetcher->RegisterCleanup(&UnrefCacheHandle, cache_.get(), cache_handle);
+  result->reset(prefetcher);
   return s;
 }
 
 void BlobFileCache::Evict(uint64_t file_number) {
-  cache_->Erase(FileNumberSlice(&file_number));
+  cache_->Erase(EncodeFileNumber(&file_number));
 }
 
 Status BlobFileCache::FindFile(uint64_t file_number,
                                uint64_t file_size,
                                Cache::Handle** handle) {
   Status s;
-  Slice number = FileNumberSlice(&file_number);
-  *handle = cache_->Lookup(number);
+  Slice cache_key = EncodeFileNumber(&file_number);
+  *handle = cache_->Lookup(cache_key);
   if (*handle) return s;
 
   std::unique_ptr<RandomAccessFileReader> file;
-  s = NewRandomAccessReader(file_number, 0, &file);
-  if (!s.ok()) return s;
+  {
+    std::unique_ptr<RandomAccessFile> f;
+    auto file_name = BlobFileName(db_options_.dirname, file_number);
+    s = env_->NewRandomAccessFile(file_name, &f, env_options_);
+    if (!s.ok()) return s;
+    if (db_options_.advise_random_on_open) {
+      f->Hint(RandomAccessFile::RANDOM);
+    }
+    file.reset(new RandomAccessFileReader(std::move(f), file_name));
+  }
 
   std::unique_ptr<BlobFileReader> reader;
   s = BlobFileReader::Open(cf_options_, std::move(file), file_size, &reader);
   if (!s.ok()) return s;
 
-  cache_->Insert(number, reader.release(), 1, &DeleteValue, handle);
-  return s;
-}
-
-Status BlobFileCache::NewRandomAccessReader(
-    uint64_t file_number, uint64_t readahead_size,
-    std::unique_ptr<RandomAccessFileReader>* result) {
-  std::unique_ptr<RandomAccessFile> file;
-  auto file_name = BlobFileName(db_options_.dirname, file_number);
-  Status s = env_->NewRandomAccessFile(file_name, &file, env_options_);
-  if (!s.ok()) return s;
-
-  if (readahead_size > 0) {
-    file = NewReadaheadRandomAccessFile(std::move(file), readahead_size);
-  }
-  result->reset(new RandomAccessFileReader(std::move(file), file_name));
+  cache_->Insert(cache_key, reader.release(), 1, &DeleteFileReader, handle);
   return s;
 }
 
