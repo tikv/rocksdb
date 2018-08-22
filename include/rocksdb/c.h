@@ -1652,6 +1652,35 @@ extern ROCKSDB_LIBRARY_API void rocksdb_pinnableslice_destroy(
 extern ROCKSDB_LIBRARY_API const char* rocksdb_pinnableslice_value(
     const rocksdb_pinnableslice_t* t, size_t* vlen);
 
+// TitanDB
+
+typedef struct titandb_options_t titandb_options_t;
+
+extern ROCKSDB_LIBRARY_API rocksdb_t* titandb_open(
+    const titandb_options_t* options, const char* name, char** errptr);
+
+extern ROCKSDB_LIBRARY_API titandb_options_t* titandb_options_create();
+
+extern ROCKSDB_LIBRARY_API void titandb_options_destroy(titandb_options_t*);
+
+extern ROCKSDB_LIBRARY_API void titandb_options_set_rocksdb(
+    titandb_options_t* options, rocksdb_options_t* rocksdb);
+
+extern ROCKSDB_LIBRARY_API void titandb_options_set_dirname(
+    titandb_options_t* options, const char* name);
+
+extern ROCKSDB_LIBRARY_API void titandb_options_set_min_blob_size(
+    titandb_options_t* options, uint64_t size);
+
+extern ROCKSDB_LIBRARY_API void titandb_options_set_blob_file_compression(
+    titandb_options_t* options, int compression);
+
+extern ROCKSDB_LIBRARY_API void titandb_options_set_blob_cache(
+    titandb_options_t* options, rocksdb_cache_t* blob_cache);
+
+extern ROCKSDB_LIBRARY_API void titandb_options_set_disable_background_gc(
+    titandb_options_t* options, unsigned char disable);
+
 #ifdef __cplusplus
 }  /* end extern "C" */
 #endif
