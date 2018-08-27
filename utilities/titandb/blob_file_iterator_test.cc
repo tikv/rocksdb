@@ -1,24 +1,29 @@
-#include "util/testharness.h"
+//
+// Created by 郑志铨 on 2018/8/13.
+//
+
+#include "utilities/titandb/blob_file_iterator.h"
 #include "util/filename.h"
+#include "util/testharness.h"
+#include "utilities/titandb/blob_file_builder.h"
 #include "utilities/titandb/blob_file_cache.h"
 #include "utilities/titandb/blob_file_reader.h"
-#include "utilities/titandb/blob_file_builder.h"
 
 namespace rocksdb {
 namespace titandb {
 
-class BlobFileTest : public testing::Test {
+class BlobFileIteratorTest : public testing::Test {
  public:
-  BlobFileTest() : dirname_(test::TmpDir(env_)) {
+  BlobFileIteratorTest() : dirname_(test::TmpDir(env_)) {
     file_name_ = BlobFileName(dirname_, file_number_);
   }
 
-  ~BlobFileTest() {
+  ~BlobFileIteratorTest() {
     env_->DeleteFile(file_name_);
     env_->DeleteDir(dirname_);
   }
 
-  void TestBlobFile(TitanOptions options) {
+  void TestBlobFileIterator(TitanOptions options) {
     options.dirname = dirname_;
     TitanDBOptions db_options(options);
     TitanCFOptions cf_options(options);
@@ -50,46 +55,41 @@ class BlobFileTest : public testing::Test {
     uint64_t file_size = 0;
     ASSERT_OK(env_->GetFileSize(file_name_, &file_size));
 
-    ReadOptions ro;
-    std::unique_ptr<BlobFilePrefetcher> prefetcher;
-    ASSERT_OK(cache.NewPrefetcher(file_number_, file_size, &prefetcher));
-    for (int i = 0; i < n; i++) {
+    std::unique_ptr<RandomAccessFileReader> readable_file;
+    NewBlobFileReader(file_number_, 0, db_options, env_options_, env_,
+                      &readable_file);
+    BlobFileIterator blob_file_iterator(std::move(readable_file), file_number_,
+                                        file_size);
+    blob_file_iterator.SeekToFirst();
+    for (int i = 0; i < n; blob_file_iterator.Next(), i++) {
+      ASSERT_OK(blob_file_iterator.status());
+      ASSERT_EQ(blob_file_iterator.Valid(), true);
       auto id = std::to_string(i);
-      BlobRecord expect;
-      expect.key = id;
-      expect.value = id;
-      BlobRecord record;
-      PinnableSlice buffer;
-      ASSERT_OK(cache.Get(ro, file_number_, file_size, handles[i],
-                          &record, &buffer));
-      ASSERT_EQ(record, expect);
-      buffer.Reset();
-      ASSERT_OK(cache.Get(ro, file_number_, file_size, handles[i],
-                          &record, &buffer));
-      ASSERT_EQ(record, expect);
-      buffer.Reset();
-      ASSERT_OK(prefetcher->Get(ro, handles[i], &record, &buffer));
-      ASSERT_EQ(record, expect);
-      buffer.Reset();
-      ASSERT_OK(prefetcher->Get(ro, handles[i], &record, &buffer));
-      ASSERT_EQ(record, expect);
+      ASSERT_EQ(id, blob_file_iterator.key());
+      ASSERT_EQ(id, blob_file_iterator.value());
+      std::string tmp;
+      blob_file_iterator.GetProperty(BlobFileIterator::PROPERTY_FILE_NAME,
+                                     &tmp);
+      uint64_t file_number = *reinterpret_cast<const uint64_t*>(tmp.data());
+      ASSERT_EQ(file_number_, file_number);
+      blob_file_iterator.GetProperty(BlobFileIterator::PROPERTY_FILE_OFFSET,
+                                     &tmp);
+      uint64_t entry_offset = *reinterpret_cast<const uint64_t*>(tmp.data());
+      ASSERT_EQ(handles[i].offset, entry_offset);
     }
   }
 
+ private:
   Env* env_{Env::Default()};
   EnvOptions env_options_;
   std::string dirname_;
   std::string file_name_;
-  uint64_t file_number_ {1};
+  uint64_t file_number_{1};
 };
 
-TEST_F(BlobFileTest, Basic) {
+TEST_F(BlobFileIteratorTest, Basic) {
   TitanOptions options;
-  TestBlobFile(options);
-  options.blob_cache = NewLRUCache(1 << 20);
-  TestBlobFile(options);
-  options.blob_file_compression = kZSTD;
-  TestBlobFile(options);
+  TestBlobFileIterator(options);
 }
 
 }  // namespace titandb

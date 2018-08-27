@@ -33,8 +33,8 @@ class FileManager : public BlobFileManager {
   }
 
   Status FinishFile(uint32_t /*cf_id*/,
-                    const BlobFileMeta& /*file*/,
-                    std::unique_ptr<BlobFileHandle> handle) {
+                    std::shared_ptr<BlobFileMeta> /*file*/,
+                    std::unique_ptr<BlobFileHandle>&& handle) override {
     Status s = handle->GetFile()->Sync(true);
     if (s.ok()) {
       s = handle->GetFile()->Close();
@@ -42,7 +42,7 @@ class FileManager : public BlobFileManager {
     return s;
   }
 
-  Status DeleteFile(std::unique_ptr<BlobFileHandle> handle) {
+  Status DeleteFile(std::unique_ptr<BlobFileHandle>&& handle) override {
     return env_->DeleteFile(handle->GetName());
   }
 

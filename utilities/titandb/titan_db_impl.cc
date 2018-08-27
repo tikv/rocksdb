@@ -1,5 +1,10 @@
-#include "utilities/titandb/db_impl.h"
+#include "utilities/titandb/titan_db_impl.h"
+#include <table/merging_iterator.h>
 
+#include "blob_file_builder.h"
+#include "blob_file_iterator.h"
+#include "utilities/titandb/blob_file_size_collector.h"
+#include "utilities/titandb/blob_gc.h"
 #include "utilities/titandb/db_iter.h"
 #include "utilities/titandb/table_factory.h"
 
@@ -10,7 +15,7 @@ class TitanDBImpl::FileManager : public BlobFileManager {
  public:
   FileManager(TitanDBImpl* db) : db_(db) {}
 
-  Status NewFile(std::unique_ptr<BlobFileHandle>* handle) {
+  Status NewFile(std::unique_ptr<BlobFileHandle>* handle) override {
     auto number = db_->vset_->NewFileNumber();
     auto name = BlobFileName(db_->dirname_, number);
 
@@ -31,32 +36,41 @@ class TitanDBImpl::FileManager : public BlobFileManager {
     return s;
   }
 
-  Status FinishFile(uint32_t cf_id,
-                    const BlobFileMeta& file,
-                    std::unique_ptr<BlobFileHandle> handle) {
-    Status s = handle->GetFile()->Sync(false);
-    if (s.ok()) {
-      s = handle->GetFile()->Close();
-    }
-    if (!s.ok()) return s;
-
+  Status BatchFinishFiles(
+      uint32_t cf_id,
+      const std::vector<std::pair<std::shared_ptr<BlobFileMeta>,
+                                  std::unique_ptr<BlobFileHandle>>>& files)
+      override {
+    Status s;
     VersionEdit edit;
     edit.SetColumnFamilyID(cf_id);
-    edit.AddBlobFile(file);
+    for (auto& file : files) {
+      s = file.second->GetFile()->Sync(false);
+      if (s.ok()) {
+        s = file.second->GetFile()->Close();
+      }
+      if (!s.ok()) return s;
+
+      edit.AddBlobFile(file.first);
+    }
 
     {
       MutexLock l(&db_->mutex_);
       s = db_->vset_->LogAndApply(&edit, &db_->mutex_);
-      db_->pending_outputs_.erase(handle->GetNumber());
+      for (const auto& file : files)
+        db_->pending_outputs_.erase(file.second->GetNumber());
     }
     return s;
   }
 
-  Status DeleteFile(std::unique_ptr<BlobFileHandle> handle) {
-    Status s = db_->env_->DeleteFile(handle->GetName());
+  Status BatchDeleteFiles(
+      const std::vector<std::unique_ptr<BlobFileHandle>>& handles) override {
+    Status s;
+    for (auto& handle : handles) s = db_->env_->DeleteFile(handle->GetName());
     {
       MutexLock l(&db_->mutex_);
-      db_->pending_outputs_.erase(handle->GetNumber());
+      for (const auto& handle : handles)
+        db_->pending_outputs_.erase(handle->GetNumber());
     }
     return s;
   }
@@ -64,12 +78,9 @@ class TitanDBImpl::FileManager : public BlobFileManager {
  private:
   class FileHandle : public BlobFileHandle {
    public:
-    FileHandle(uint64_t number,
-               const std::string& name,
+    FileHandle(uint64_t number, const std::string& name,
                std::unique_ptr<WritableFileWriter> file)
-        : number_(number),
-          name_(name),
-          file_(std::move(file)) {}
+        : number_(number), name_(name), file_(std::move(file)) {}
 
     uint64_t GetNumber() const override { return number_; }
 
@@ -86,7 +97,8 @@ class TitanDBImpl::FileManager : public BlobFileManager {
   TitanDBImpl* db_;
 };
 
-TitanDBImpl::TitanDBImpl(const TitanDBOptions& options, const std::string& dbname)
+TitanDBImpl::TitanDBImpl(const TitanDBOptions& options,
+                         const std::string& dbname)
     : TitanDB(),
       dbname_(dbname),
       env_(options.env),
@@ -100,9 +112,7 @@ TitanDBImpl::TitanDBImpl(const TitanDBOptions& options, const std::string& dbnam
   blob_manager_.reset(new FileManager(this));
 }
 
-TitanDBImpl::~TitanDBImpl() {
-  Close();
-}
+TitanDBImpl::~TitanDBImpl() { Close(); }
 
 Status TitanDBImpl::Open(const std::vector<TitanCFDescriptor>& descs,
                          std::vector<ColumnFamilyHandle*>* handles) {
@@ -136,6 +146,10 @@ Status TitanDBImpl::Open(const std::vector<TitanCFDescriptor>& descs,
       // Replaces the provided table factory with TitanTableFactory.
       base_descs[i].options.table_factory.reset(
           new TitanTableFactory(descs[i].options, blob_manager_));
+
+      // Add TableProperties for collecting statistics GC
+      base_descs[i].options.table_properties_collector_factories.emplace_back(
+          std::make_shared<BlobFileSizeCollectorFactory>());
     }
     handles->clear();
     s = db_->Close();
@@ -145,6 +159,13 @@ Status TitanDBImpl::Open(const std::vector<TitanCFDescriptor>& descs,
 
   s = vset_->Open(column_families);
   if (!s.ok()) return s;
+
+  // Add EventListener for collecting statistics for GC
+  db_options_.listeners.emplace_back(
+      std::make_shared<BlobDiscardableSizeListener>(&mutex_, vset_.get()));
+
+  // New gc scheduler thread
+  env_->StartThread(TitanDBImpl::BGWorkGCScheduler, this);
 
   s = DB::Open(db_options_, dbname_, base_descs, handles, &db_);
   if (s.ok()) {
@@ -205,8 +226,7 @@ Status TitanDBImpl::DropColumnFamilies(
   return s;
 }
 
-Status TitanDBImpl::Get(const ReadOptions& options,
-                        ColumnFamilyHandle* handle,
+Status TitanDBImpl::Get(const ReadOptions& options, ColumnFamilyHandle* handle,
                         const Slice& key, PinnableSlice* value) {
   if (options.snapshot) {
     return GetImpl(options, handle, key, value);
@@ -218,17 +238,15 @@ Status TitanDBImpl::Get(const ReadOptions& options,
 }
 
 Status TitanDBImpl::GetImpl(const ReadOptions& options,
-                            ColumnFamilyHandle* handle,
-                            const Slice& key, PinnableSlice* value) {
+                            ColumnFamilyHandle* handle, const Slice& key,
+                            PinnableSlice* value) {
   auto snap = reinterpret_cast<const TitanSnapshot*>(options.snapshot);
   auto storage = snap->current()->GetBlobStorage(handle->GetID());
 
   Status s;
   bool is_blob_index = false;
-  s = db_impl_->GetImpl(options, handle, key, value,
-                        nullptr /*value_found*/,
-                        nullptr /*read_callback*/,
-                        &is_blob_index);
+  s = db_impl_->GetImpl(options, handle, key, value, nullptr /*value_found*/,
+                        nullptr /*read_callback*/, &is_blob_index);
   if (!s.ok() || !is_blob_index) return s;
 
   BlobIndex index;
@@ -246,8 +264,7 @@ Status TitanDBImpl::GetImpl(const ReadOptions& options,
 }
 
 std::vector<Status> TitanDBImpl::MultiGet(
-    const ReadOptions& options,
-    const std::vector<ColumnFamilyHandle*>& handles,
+    const ReadOptions& options, const std::vector<ColumnFamilyHandle*>& handles,
     const std::vector<Slice>& keys, std::vector<std::string>* values) {
   if (options.snapshot) {
     return MultiGetImpl(options, handles, keys, values);
@@ -259,8 +276,7 @@ std::vector<Status> TitanDBImpl::MultiGet(
 }
 
 std::vector<Status> TitanDBImpl::MultiGetImpl(
-    const ReadOptions& options,
-    const std::vector<ColumnFamilyHandle*>& handles,
+    const ReadOptions& options, const std::vector<ColumnFamilyHandle*>& handles,
     const std::vector<Slice>& keys, std::vector<std::string>* values) {
   std::vector<Status> res;
   res.resize(keys.size());
@@ -289,22 +305,19 @@ Iterator* TitanDBImpl::NewIterator(const ReadOptions& options,
 }
 
 Iterator* TitanDBImpl::NewIteratorImpl(
-    const ReadOptions& options,
-    ColumnFamilyHandle* handle,
+    const ReadOptions& options, ColumnFamilyHandle* handle,
     std::shared_ptr<ManagedSnapshot> snapshot) {
   auto cfd = reinterpret_cast<ColumnFamilyHandleImpl*>(handle)->cfd();
   auto snap = reinterpret_cast<const TitanSnapshot*>(options.snapshot);
   auto storage = snap->current()->GetBlobStorage(handle->GetID());
-  std::unique_ptr<ArenaWrappedDBIter> iter(
-      db_impl_->NewIteratorImpl(
-          options, cfd, snap->GetSequenceNumber(),
-          nullptr /*read_callback*/, true /*allow_blob*/));
+  std::unique_ptr<ArenaWrappedDBIter> iter(db_impl_->NewIteratorImpl(
+      options, cfd, snap->GetSequenceNumber(), nullptr /*read_callback*/,
+      true /*allow_blob*/));
   return new TitanDBIterator(options, storage, snapshot, std::move(iter));
 }
 
 Status TitanDBImpl::NewIterators(
-    const ReadOptions& options,
-    const std::vector<ColumnFamilyHandle*>& handles,
+    const ReadOptions& options, const std::vector<ColumnFamilyHandle*>& handles,
     std::vector<Iterator*>* iterators) {
   ReadOptions ro(options);
   std::shared_ptr<ManagedSnapshot> snapshot;

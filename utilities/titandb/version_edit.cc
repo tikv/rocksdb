@@ -21,7 +21,7 @@ void VersionEdit::EncodeTo(std::string* dst) const {
 
   for (auto& file : added_files_) {
     PutVarint32(dst, kAddedBlobFile);
-    file.EncodeTo(dst);
+    file->EncodeTo(dst);
   }
   for (auto& file : deleted_files_) {
     PutVarint32Varint64(dst, kDeletedBlobFile, file);
@@ -31,7 +31,7 @@ void VersionEdit::EncodeTo(std::string* dst) const {
 Status VersionEdit::DecodeFrom(Slice* src) {
   uint32_t tag;
   uint64_t file_number;
-  BlobFileMeta blob_file;
+  std::shared_ptr<BlobFileMeta> blob_file = std::make_shared<BlobFileMeta>();
 
   const char* error = nullptr;
   while (!error && !src->empty()) {
@@ -54,7 +54,7 @@ Status VersionEdit::DecodeFrom(Slice* src) {
         }
         break;
       case kAddedBlobFile:
-        if (blob_file.DecodeFrom(src).ok()) {
+        if (blob_file->DecodeFrom(src).ok()) {
           AddBlobFile(blob_file);
         } else {
           error = "added blob file";

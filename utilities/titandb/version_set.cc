@@ -25,7 +25,7 @@ VersionSet::VersionSet(const TitanDBOptions& options)
 Status VersionSet::Open(
     const std::map<uint32_t, TitanCFOptions>& column_families) {
   // Sets up initial column families.
-  AddColumnFamilies(column_families);
+  AddColumnFamilies( column_families) ;
 
   Status s = env_->FileExists(CurrentFileName(dirname_));
   if (s.ok()) {
@@ -103,6 +103,15 @@ Status VersionSet::Recover() {
     builder.SaveTo(v);
     versions_.Append(v);
   }
+
+  // Make sure perform gc on all files at the beginning
+  v = versions_.current();
+  for (auto& blob_storage : v->column_families_) {
+    for (auto& blob_file : blob_storage.second->files_) {
+      blob_file.second->marked_for_gc = true;
+    }
+  }
+
   return OpenManifest(NewFileNumber());
 }
 

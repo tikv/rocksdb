@@ -2,9 +2,26 @@
 
 #include "util/crc32c.h"
 #include "utilities/titandb/util.h"
+#include "util/filename.h"
 
 namespace rocksdb {
 namespace titandb {
+
+Status NewBlobFileReader(uint64_t file_number, uint64_t readahead_size,
+                         const TitanDBOptions& db_options,
+                         const EnvOptions& env_options, Env* env,
+                         std::unique_ptr<RandomAccessFileReader>* result) {
+  std::unique_ptr<RandomAccessFile> file;
+  auto file_name = BlobFileName(db_options.dirname, file_number);
+  Status s = env->NewRandomAccessFile(file_name, &file, env_options);
+  if (!s.ok()) return s;
+
+  if (readahead_size > 0) {
+    file = NewReadaheadRandomAccessFile(std::move(file), readahead_size);
+  }
+  result->reset(new RandomAccessFileReader(std::move(file), file_name));
+  return s;
+}
 
 const uint64_t kMinReadaheadSize = 4 << 10;
 const uint64_t kMaxReadaheadSize = 256 << 10;

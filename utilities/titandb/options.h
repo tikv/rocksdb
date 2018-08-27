@@ -13,8 +13,7 @@ struct TitanDBOptions : public DBOptions {
   std::string dirname;
 
   TitanDBOptions() = default;
-  explicit TitanDBOptions(const DBOptions& options)
-      : DBOptions(options) {}
+  explicit TitanDBOptions(const DBOptions& options) : DBOptions(options) {}
 };
 
 struct TitanCFOptions : public ColumnFamilyOptions {

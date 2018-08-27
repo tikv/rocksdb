@@ -33,8 +33,8 @@ class VersionTest : public testing::Test {
   void AddBlobFiles(uint32_t cf_id, uint64_t start, uint64_t end) {
     auto storage = column_families_[cf_id];
     for (auto i = start; i < end; i++) {
-      BlobFileMeta file;
-      file.file_number = i;
+      auto file = std::make_shared<BlobFileMeta>();
+      file->file_number = i;
       storage->files_.emplace(i, file);
     }
   }
@@ -74,12 +74,12 @@ TEST_F(VersionTest, VersionEdit) {
   input.SetNextFileNumber(1);
   input.SetColumnFamilyID(2);
   CheckCodec(input);
-  BlobFileMeta file1;
-  file1.file_number = 3;
-  file1.file_size = 4;
-  BlobFileMeta file2;
-  file2.file_number = 5;
-  file2.file_size = 6;
+  auto file1 = std::make_shared<BlobFileMeta>();
+  file1->file_number = 3;
+  file1->file_size = 4;
+  auto file2 = std::make_shared<BlobFileMeta>();
+  file2->file_number = 5;
+  file2->file_size = 6;
   input.AddBlobFile(file1);
   input.AddBlobFile(file2);
   input.DeleteBlobFile(7);
@@ -91,8 +91,8 @@ VersionEdit AddBlobFilesEdit(uint32_t cf_id, uint64_t start, uint64_t end) {
   VersionEdit edit;
   edit.SetColumnFamilyID(cf_id);
   for (auto i = start; i < end; i++) {
-    BlobFileMeta file;
-    file.file_number = i;
+    auto file = std::make_shared<BlobFileMeta>();
+    file->file_number = i;
     edit.AddBlobFile(file);
   }
   return edit;

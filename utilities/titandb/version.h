@@ -1,8 +1,8 @@
 #pragma once
 
 #include "rocksdb/options.h"
-#include "utilities/titandb/blob_format.h"
 #include "utilities/titandb/blob_file_cache.h"
+#include "utilities/titandb/blob_format.h"
 
 namespace rocksdb {
 namespace titandb {
@@ -11,6 +11,11 @@ namespace titandb {
 // version. The version must be valid when this storage is used.
 class BlobStorage {
  public:
+  struct GCScore {
+    uint64_t file_number;
+    double score;
+  };
+
   BlobStorage(const TitanCFOptions& options,
               std::shared_ptr<BlobFileCache> file_cache)
       : options_(options),
@@ -29,16 +34,31 @@ class BlobStorage {
 
   // Finds the blob file meta for the specified file number. It is a
   // corruption if the file doesn't exist in the specific version.
-  Status FindFile(uint64_t file_number, const BlobFileMeta** file);
+  Status FindFile(uint64_t file_number, std::shared_ptr<BlobFileMeta>* file);
+
+  const std::map<uint64_t, std::shared_ptr<BlobFileMeta>> files() {
+    return files_;
+  }
+
+  std::map<uint64_t, std::shared_ptr<BlobFileMeta>>* mutable_files() {
+    return &files_;
+  }
+
+  const std::vector<GCScore> gc_score() { return gc_score_; }
+
+  void ComputeGCScore();
 
  private:
   friend class VersionSet;
   friend class VersionTest;
   friend class VersionBuilder;
+  friend class BlobGCPickerTest;
 
   TitanCFOptions options_;
-  std::map<uint64_t, BlobFileMeta> files_;
+  std::map<uint64_t, std::shared_ptr<BlobFileMeta>> files_;
   std::shared_ptr<BlobFileCache> file_cache_;
+
+  std::vector<GCScore> gc_score_;
 };
 
 class Version {
@@ -62,7 +82,7 @@ class Version {
 
   ~Version();
 
-  int refs_ {0};
+  int refs_{0};
   Version* prev_;
   Version* next_;
   std::map<uint32_t, std::shared_ptr<BlobStorage>> column_families_;
@@ -80,7 +100,7 @@ class VersionList {
 
  private:
   Version list_;
-  Version* current_ {nullptr};
+  Version* current_{nullptr};
 };
 
 }  // namespace titandb

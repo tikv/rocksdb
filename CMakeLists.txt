@@ -668,8 +668,8 @@ set(SOURCES
         utilities/ttl/db_ttl_impl.cc
         utilities/write_batch_with_index/write_batch_with_index.cc
         utilities/write_batch_with_index/write_batch_with_index_internal.cc
-        utilities/titandb/db.cc
-        utilities/titandb/db_impl.cc
+        utilities/titandb/titan_db.cc
+        utilities/titandb/titan_db_impl.cc
         utilities/titandb/options.cc
         utilities/titandb/version.cc
         utilities/titandb/version_set.cc
@@ -677,6 +677,7 @@ set(SOURCES
         utilities/titandb/version_builder.cc
         utilities/titandb/blob_format.cc
         utilities/titandb/blob_file_cache.cc
+        utilities/titandb/blob_file_manager.h
         utilities/titandb/blob_file_reader.cc
         utilities/titandb/blob_file_builder.cc
         utilities/titandb/table_builder.cc
@@ -1012,7 +1013,12 @@ if(WITH_TESTS)
       table/mock_table.cc
       util/fault_injection_test_env.cc
       utilities/cassandra/test_utils.cc
-  )
+          utilities/titandb/blob_gc.cc
+      utilities/titandb/blob_gc.h
+          utilities/titandb/blob_file_iterator.cc
+      utilities/titandb/blob_file_iterator.h
+          utilities/titandb/blob_file_iterator_test.cc
+          utilities/titandb/blob_file_size_collector.cc utilities/titandb/blob_file_size_collector.h utilities/titandb/titan_db_impl_gc.cc utilities/titandb/blob_gc_picker.cc utilities/titandb/blob_gc_picker.h utilities/titandb/blob_gc_picker_test.cc utilities/titandb/blob_gc_job.cc utilities/titandb/blob_gc_job.h utilities/titandb/blob_file_size_collector_test.cc utilities/titandb/blob_gc_job_test.cc utilities/titandb/blob_gc_job_test.cc utilities/titandb/table_builder_test.cc)
   # test utilities are only build in debug
   enable_testing()
   add_custom_target(check COMMAND ${CMAKE_CTEST_COMMAND})

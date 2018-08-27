@@ -17,15 +17,13 @@ struct TitanCFDescriptor {
 
 class TitanDB : public StackableDB {
  public:
-  static Status Open(const TitanOptions& options,
-                     const std::string& dbname,
+  static Status Open(const TitanOptions& options, const std::string& dbname,
                      TitanDB** db);
 
   static Status Open(const TitanDBOptions& db_options,
                      const std::string& dbname,
                      const std::vector<TitanCFDescriptor>& descs,
-                     std::vector<ColumnFamilyHandle*>* handles,
-                     TitanDB** db);
+                     std::vector<ColumnFamilyHandle*>* handles, TitanDB** db);
 
   TitanDB() : StackableDB(nullptr) {}
 
@@ -53,8 +51,8 @@ class TitanDB : public StackableDB {
       const std::vector<ColumnFamilyHandle*>& handles) = 0;
 
   using StackableDB::Merge;
-  Status Merge(const WriteOptions&, ColumnFamilyHandle*,
-               const Slice& /*key*/, const Slice& /*value*/) override {
+  Status Merge(const WriteOptions&, ColumnFamilyHandle*, const Slice& /*key*/,
+               const Slice& /*value*/) override {
     return Status::NotSupported("TitanDB doesn't support this operation");
   }
 };

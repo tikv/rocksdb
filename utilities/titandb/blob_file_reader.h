@@ -8,6 +8,23 @@ namespace rocksdb {
 namespace titandb {
 
 class BlobBuffer;
+Status NewBlobFileReader(uint64_t file_number, uint64_t readahead_size,
+                         const TitanDBOptions& db_options,
+                         const EnvOptions& env_options, Env* env,
+                         std::unique_ptr<RandomAccessFileReader>* result);
+
+// Represents the information of a blob file read from the file.
+class BlobFile {
+ public:
+  const BlobFileFooter& footer() const { return footer_; }
+
+ private:
+  friend class BlobFileReader;
+
+  BlobFile() = default;
+
+  BlobFileFooter footer_;
+};
 
 class BlobFileReader {
  public:

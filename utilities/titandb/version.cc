@@ -3,33 +3,55 @@
 namespace rocksdb {
 namespace titandb {
 
-Status BlobStorage::Get(const ReadOptions& options,
-                        const BlobIndex& index,
+Status BlobStorage::Get(const ReadOptions& options, const BlobIndex& index,
                         BlobRecord* record, PinnableSlice* buffer) {
-  const BlobFileMeta* file;
+  std::shared_ptr<BlobFileMeta> file;
   Status s = FindFile(index.file_number, &file);
   if (!s.ok()) return s;
-  return file_cache_->Get(
-      options, file->file_number, file->file_size, index.blob_handle,
-      record, buffer);
+  return file_cache_->Get(options, file->file_number, file->file_size,
+                          index.blob_handle, record, buffer);
 }
 
-Status BlobStorage::NewPrefetcher(uint64_t file_number,
-                                  std::unique_ptr<BlobFilePrefetcher>* result) {
-  const BlobFileMeta* file;
+Status BlobStorage::NewPrefetcher(
+                              uint64_t file_number,
+                              std::unique_ptr<BlobFilePrefetcher>* result) {
+  std::shared_ptr< BlobFileMeta> file;
   Status s = FindFile(file_number, &file);
   if (!s.ok()) return s;
-  return file_cache_->NewPrefetcher(file->file_number, file->file_size, result);
+  return file_cache_->NewPrefetcher( file->file_number, file->file_size, result);
 }
 
-Status BlobStorage::FindFile(uint64_t file_number, const BlobFileMeta** file) {
+Status BlobStorage::FindFile(uint64_t file_number,
+                             std::shared_ptr<BlobFileMeta>* file) {
   auto it = files_.find(file_number);
   if (it != files_.end()) {
-    *file = &it->second;
+    *file = it->second;
     return Status::OK();
   }
   auto number = std::to_string(file_number);
   return Status::Corruption("missing blob file " + number);
+}
+
+void BlobStorage::ComputeGCScore() {
+  for (auto& file : files_) {
+    gc_score_.push_back({});
+    auto& score = gc_score_.back();
+    score.file_number = file.first;
+    if (file.second->marked_for_gc) {
+      score.score = 1;
+      file.second->marked_for_gc = false;
+    } else if (file.second->file_size < 8 << 20) {
+      // TODO configurable
+      score.score = 1;
+    } else {
+      score.score = file.second->discardable_size / file.second->file_size;
+    }
+  }
+
+  std::sort(gc_score_.begin(), gc_score_.end(),
+            [](const GCScore& first, const GCScore& second) {
+              return first.score > second.score;
+            });
 }
 
 Version::~Version() {
@@ -59,9 +81,7 @@ std::shared_ptr<BlobStorage> Version::GetBlobStorage(uint32_t cf_id) {
   return nullptr;
 }
 
-VersionList::VersionList() {
-  Append(new Version);
-}
+VersionList::VersionList() { Append(new Version); }
 
 VersionList::~VersionList() {
   current_->Unref();
