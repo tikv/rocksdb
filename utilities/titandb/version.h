@@ -53,6 +53,8 @@ class BlobStorage {
   friend class VersionTest;
   friend class VersionBuilder;
   friend class BlobGCPickerTest;
+  friend class BlobGCJobTest;
+
 
   TitanCFOptions options_;
   std::map<uint64_t, std::shared_ptr<BlobFileMeta>> files_;

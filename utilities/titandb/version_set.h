@@ -5,7 +5,7 @@
 #include <include/rocksdb/status.h>
 #include <port/port_posix.h>
 #include <stdint.h>
-#include <c++/v1/atomic>
+#include <atomic>
 #include "blob_file_cache.h"
 #include "db/log_reader.h"
 #include "db/log_writer.h"

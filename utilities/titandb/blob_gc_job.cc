@@ -90,6 +90,8 @@ Status BlobGCJob::Run() {
 
   InternalIterator* gc_iter = nullptr;
   s = BuildIterator(&gc_iter);
+  if (s.IsNotFound())
+    return Status::OK();
   if (!s.ok()) {
     return s;
   }
@@ -132,7 +134,6 @@ Status BlobGCJob::RunGC(InternalIterator* gc_iter) {
 
   auto* cfd = reinterpret_cast<ColumnFamilyHandleImpl*>(this->cfh_)->cfd();
   auto* db_impl = reinterpret_cast<DBImpl*>(this->db_);
-  PinnableSlice index_entry;
   bool is_blob_index;
   for (gc_iter->SeekToFirst(); gc_iter->status().ok() && gc_iter->Valid();
        gc_iter->Next()) {
@@ -140,6 +141,7 @@ Status BlobGCJob::RunGC(InternalIterator* gc_iter) {
     SequenceNumber latest_seq = this->db_->GetLatestSequenceNumber();
 
     // Read Key-Index pairs from LSM
+    PinnableSlice index_entry;
     s = db_impl->GetImpl(ReadOptions(), this->cfh_, gc_iter->key(),
                          &index_entry, nullptr /*value_found*/,
                          nullptr /*read_callback*/, &is_blob_index);
@@ -197,20 +199,35 @@ Status BlobGCJob::RunGC(InternalIterator* gc_iter) {
 Status BlobGCJob::BuildIterator(InternalIterator** result) const {
   Status s;
   const auto& inputs = blob_gc_->selected();
+  if (inputs.size() <= 0)
+    return Status::NotFound();
   // Build iterator
   auto list = new InternalIterator*[inputs.size()];
   for (size_t i = 0; i < inputs.size(); ++i) {
-    unique_ptr<RandomAccessFileReader> file;
+    std::unique_ptr<RandomAccessFileReader> file;
     s = NewBlobFileReader(inputs[i]->file_number, 0, this->titan_db_options_,
                           this->env_options_, this->env_, &file);
     // TODO memory leak here
     if (!s.ok()) {
       return s;
     }
-    list[i] = new BlobFileIterator(move(file), inputs[i]->file_number,
+    list[i] = new BlobFileIterator(std::move(file), inputs[i]->file_number,
                                    inputs[i]->file_size);
+    list[i]->Valid();
   }
-  InternalKeyComparator* cmp = nullptr;
+  class PlainInternalKeyComparator : public InternalKeyComparator {
+   public:
+    explicit PlainInternalKeyComparator(const Comparator* c)
+        : InternalKeyComparator(c) {}
+
+    virtual ~PlainInternalKeyComparator() {}
+
+    virtual int Compare(const Slice& a, const Slice& b) const override {
+      return user_comparator()->Compare(a, b);
+    }
+  };
+  InternalKeyComparator
+      * cmp = new PlainInternalKeyComparator(BytewiseComparator());
   *result = NewMergingIterator(cmp, list,
                                static_cast<int>(blob_gc_->candidates().size()));
   return Status::OK();
@@ -222,36 +239,37 @@ Status BlobGCJob::BuildIterator(InternalIterator** result) const {
 Status BlobGCJob::Finish() {
   Status s;
 
-  // Install output blob file to db
-  for (auto& builder : blob_file_builders_) {
-    s = builder.second->Finish();
-    if (!s.ok()) {
-      break;
-    }
-  }
-  if (s.ok()) {
-    std::vector<std::pair<std::shared_ptr<BlobFileMeta>,
-                          std::unique_ptr<BlobFileHandle>>>
-        files;
-    for (auto& builder : blob_file_builders_) {
-      auto file = std::make_shared<BlobFileMeta>();
-      file->file_number = builder.first->GetNumber();
-      file->file_size = builder.first->GetFile()->GetFileSize();
-      files.emplace_back(
-          std::make_pair(std::move(file), std::move(builder.first)));
-    }
-    blob_file_manager_->BatchFinishFiles(cfh_->GetID(), files);
-  } else {
-    std::vector<std::unique_ptr<BlobFileHandle>> handles;
-    for (auto& builder : blob_file_builders_)
-      handles.emplace_back(std::move(builder.first));
-    blob_file_manager_->BatchDeleteFiles(handles);
-    return s;
-  }
-
-  // Rewrite all valid keys to LSM
   {
     db_mutex_->Unlock();
+    // TODO deal with 0 size blob file
+    // Install output blob file to db
+    for (auto& builder : blob_file_builders_) {
+      s = builder.second->Finish();
+      if (!s.ok()) {
+        break;
+      }
+    }
+    if (s.ok()) {
+      std::vector<std::pair<std::shared_ptr<BlobFileMeta>,
+                            std::unique_ptr<BlobFileHandle>>>
+          files;
+      for (auto& builder : blob_file_builders_) {
+        auto file = std::make_shared<BlobFileMeta>();
+        file->file_number = builder.first->GetNumber();
+        file->file_size = builder.first->GetFile()->GetFileSize();
+        files.emplace_back(
+            std::make_pair(std::move(file), std::move(builder.first)));
+      }
+      blob_file_manager_->BatchFinishFiles(cfh_->GetID(), files);
+    } else {
+      std::vector<std::unique_ptr<BlobFileHandle>> handles;
+      for (auto& builder : blob_file_builders_)
+        handles.emplace_back(std::move(builder.first));
+      blob_file_manager_->BatchDeleteFiles(handles);
+      return s;
+    }
+
+    // Rewrite all valid keys to LSM
     int i = 0;
     auto* db_impl = reinterpret_cast<DBImpl*>(db_);
     for (auto& write_batch : rewrite_batches_) {

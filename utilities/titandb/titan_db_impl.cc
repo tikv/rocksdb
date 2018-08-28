@@ -165,7 +165,7 @@ Status TitanDBImpl::Open(const std::vector<TitanCFDescriptor>& descs,
       std::make_shared<BlobDiscardableSizeListener>(&mutex_, vset_.get()));
 
   // New gc scheduler thread
-  env_->StartThread(TitanDBImpl::BGWorkGCScheduler, this);
+//  env_->StartThread(TitanDBImpl::BGWorkGCScheduler, this);
 
   s = DB::Open(db_options_, dbname_, base_descs, handles, &db_);
   if (s.ok()) {

@@ -71,7 +71,7 @@ Status TitanDBImpl::BackgroundGC(uint32_t column_family_id) {
 
   BlobGCJob blob_gc_job(blob_gc.get(), db_options_,
                         titan_cfs_options_[column_family_id], env_,
-                        env_options_, blob_manager_.get(), vset_.get(), this,
+                        env_options_, blob_manager_.get(), vset_.get(), db_,
                         column_family_id, cfh, &mutex_);
 
   blob_gc_job.Prepare();
