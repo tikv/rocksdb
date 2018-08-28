@@ -35,6 +35,7 @@ class VersionTest : public testing::Test {
     for (auto i = start; i < end; i++) {
       auto file = std::make_shared<BlobFileMeta>();
       file->file_number = i;
+      file->file_size = i;
       storage->files_.emplace(i, file);
     }
   }
@@ -56,7 +57,12 @@ class VersionTest : public testing::Test {
     versions_->Append(v);
     for (auto& it : v->column_families_) {
       auto& storage = column_families_[it.first];
-      ASSERT_EQ(storage->files_, it.second->files_);
+      ASSERT_EQ(storage->files_.size(), it.second->files_.size());
+      for (auto& f : storage->files_) {
+        auto iter = it.second->files_.find(f.first);
+        ASSERT_TRUE(iter != it.second->files_.end());
+        ASSERT_EQ(*f.second, *(iter->second));
+      }
     }
   }
 
@@ -93,6 +99,7 @@ VersionEdit AddBlobFilesEdit(uint32_t cf_id, uint64_t start, uint64_t end) {
   for (auto i = start; i < end; i++) {
     auto file = std::make_shared<BlobFileMeta>();
     file->file_number = i;
+    file->file_size = i;
     edit.AddBlobFile(file);
   }
   return edit;

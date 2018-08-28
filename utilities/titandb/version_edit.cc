@@ -31,7 +31,7 @@ void VersionEdit::EncodeTo(std::string* dst) const {
 Status VersionEdit::DecodeFrom(Slice* src) {
   uint32_t tag;
   uint64_t file_number;
-  std::shared_ptr<BlobFileMeta> blob_file = std::make_shared<BlobFileMeta>();
+  std::shared_ptr<BlobFileMeta> blob_file;
 
   const char* error = nullptr;
   while (!error && !src->empty()) {
@@ -54,6 +54,7 @@ Status VersionEdit::DecodeFrom(Slice* src) {
         }
         break;
       case kAddedBlobFile:
+        blob_file = std::make_shared<BlobFileMeta>();
         if (blob_file->DecodeFrom(src).ok()) {
           AddBlobFile(blob_file);
         } else {
@@ -80,10 +81,23 @@ Status VersionEdit::DecodeFrom(Slice* src) {
 }
 
 bool operator==(const VersionEdit& lhs, const VersionEdit& rhs) {
+  if (lhs.added_files_.size() != rhs.added_files_.size()) {
+    return false;
+  }
+  std::map<uint64_t, std::shared_ptr<BlobFileMeta>> blob_files;
+  for (std::size_t idx = 0; idx < lhs.added_files_.size(); idx++) {
+    blob_files.insert({lhs.added_files_[idx]->file_number,
+                       lhs.added_files_[idx]});
+  }
+  for (std::size_t idx = 0; idx < rhs.added_files_.size(); idx++) {
+    auto iter = blob_files.find(rhs.added_files_[idx]->file_number);
+    if (iter == blob_files.end() || !(*iter->second == *rhs.added_files_[idx]))
+      return false;
+  }
+
   return (lhs.has_next_file_number_ == rhs.has_next_file_number_ &&
           lhs.next_file_number_ == rhs.next_file_number_ &&
           lhs.column_family_id_ == rhs.column_family_id_ &&
-          lhs.added_files_ == rhs.added_files_ &&
           lhs.deleted_files_ == rhs.deleted_files_);
 }
 

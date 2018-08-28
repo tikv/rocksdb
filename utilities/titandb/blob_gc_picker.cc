@@ -17,6 +17,7 @@ std::unique_ptr<BlobGC> BasicBlobGCPicker::PickBlobGC(
   std::shared_ptr<BlobFileMeta> blob_file_meta = nullptr;
   uint64_t total_file_size = 0;
   for (auto& gc_score : blob_storage->gc_score()) {
+    // TODO check return value
     blob_storage->FindFile(gc_score.file_number, &blob_file_meta);
     if (blob_file_meta->being_gc) continue;
     blob_file_meta->being_gc = true;

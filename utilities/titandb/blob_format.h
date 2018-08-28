@@ -67,9 +67,11 @@ struct BlobIndex {
 // file_size        : varint64
 struct BlobFileMeta {
   BlobFileMeta(){};
-  BlobFileMeta(uint64_t _file_number, uint64_t _file_size,
-               uint64_t _discardable_size = 0, bool _marked_for_sample = true,
-               bool _being_gc = false)
+  BlobFileMeta(uint64_t _file_number,
+               uint64_t _file_size,
+               uint64_t _discardable_size = 0,
+               bool _being_gc = false,
+               bool _marked_for_sample = true)
       : file_number(_file_number),
         file_size(_file_size),
         discardable_size(_discardable_size),
