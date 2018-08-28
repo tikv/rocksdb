@@ -32,9 +32,11 @@ Status BlobFileSizeCollector::AddUserKey(const Slice& /* key */,
 
   auto iter = blob_files_size_.find(index.file_number);
   if (iter == blob_files_size_.end()) {
-    iter->second = 0;
+    blob_files_size_[index.file_number] = index.blob_handle.size;
+  } else {
+    iter->second += index.blob_handle.size;
   }
-  iter->second += index.blob_handle.size;
+
 
   return Status::OK();
 }
@@ -69,7 +71,7 @@ void BlobDiscardableSizeListener::OnCompactionCompleted(
     for (const auto& bfs : tmp) {
       auto bfsiter = blob_files_size.find(bfs.first);
       if (bfsiter == blob_files_size.end())
-        bfsiter->second = -bfs.second;
+        blob_files_size[bfs.first] = -bfs.second;
       else
         bfsiter->second -= bfs.second;
     }
@@ -88,7 +90,7 @@ void BlobDiscardableSizeListener::OnCompactionCompleted(
     for (const auto& bfs : tmp) {
       auto bfsiter = blob_files_size.find(bfs.first);
       if (bfsiter == blob_files_size.end())
-        bfsiter->second = bfs.second;
+        blob_files_size[bfs.first] = bfs.second;
       else
         bfsiter->second += bfs.second;
     }

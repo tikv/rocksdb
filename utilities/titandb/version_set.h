@@ -55,6 +55,8 @@ class VersionSet {
   uint64_t NewFileNumber() { return next_file_number_.fetch_add(1); }
 
  private:
+  friend class BlobFileSizeCollectorTest;
+
   Status Recover();
 
   Status OpenManifest(uint64_t number);
