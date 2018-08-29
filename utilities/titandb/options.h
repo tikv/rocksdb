@@ -17,10 +17,10 @@ struct TitanDBOptions : public DBOptions {
   // Default: 2
   int max_background_gc {4};
 
-  // Enable/Disable background GC
+  // Disable background GC
   //
   // Default: true
-  bool enable_background_gc {true};
+  bool disable_background_gc { false };
 
   TitanDBOptions() = default;
   explicit TitanDBOptions(const DBOptions& options) : DBOptions(options) {}
