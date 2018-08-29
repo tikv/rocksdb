@@ -17,11 +17,26 @@
 #include "utilities/titandb/version.h"
 #include "utilities/titandb/version_builder.h"
 #include "utilities/titandb/version_edit.h"
-#include "version.h"
-#include "version_edit.h"
 
 namespace rocksdb {
 namespace titandb {
+
+struct ObsoleteFiles {
+  ObsoleteFiles() = default;
+
+  ObsoleteFiles(const ObsoleteFiles&) = delete;
+  ObsoleteFiles& operator=(const ObsoleteFiles&) = delete;
+  ObsoleteFiles(ObsoleteFiles&&) = delete;
+  ObsoleteFiles& operator=(ObsoleteFiles&&) = delete;
+
+  void Swap(ObsoleteFiles* obsolete_file) {
+    blob_files.swap(obsolete_file->blob_files);
+    manifests.swap(obsolete_file->manifests);
+  }
+
+  std::vector<std::shared_ptr<BlobFileMeta>> blob_files;
+  std::vector<std::string> manifests;
+};
 
 class VersionSet {
  public:
@@ -54,7 +69,13 @@ class VersionSet {
   // Allocates a new file number.
   uint64_t NewFileNumber() { return next_file_number_.fetch_add(1); }
 
+  // REQUIRES: *mutex is held
+  void GetObsoleteFiles(ObsoleteFiles* obsolete_files) {
+    obsolete_files->Swap(&obsolete_files_);
+  }
+
  private:
+  friend class Version;
   friend class BlobFileSizeCollectorTest;
 
   Status Recover();
@@ -72,6 +93,8 @@ class VersionSet {
   VersionList versions_;
   std::unique_ptr<log::Writer> manifest_;
   std::atomic<uint64_t> next_file_number_ {1};
+
+  ObsoleteFiles obsolete_files_;
 };
 
 }  // namespace titandb

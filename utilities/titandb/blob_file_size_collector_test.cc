@@ -27,7 +27,7 @@ class BlobFileSizeCollectorTest : public testing::Test {
                      const TitanCFOptions& titan_cf_options) {
     auto blob_file_cache = std::make_shared<BlobFileCache>(
         titan_db_options, titan_cf_options, NewLRUCache(128));
-    auto v = new Version;
+    auto v = new Version(vset_);
     auto storage = std::make_shared<BlobStorage>(blob_file_cache);
     v->column_families_.emplace(kDefauleColumnFamilyID, storage);
     vset_ = new VersionSet(titan_db_options);

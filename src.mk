@@ -235,6 +235,7 @@ LIB_SOURCES =                                                   \
   utilities/titandb/blob_gc_job.cc                              \
   utilities/titandb/titan_db_impl_gc.cc                         \
   utilities/titandb/titan_db_impl.cc                            \
+  utilities/titandb/titan_db_impl_files.cc                      \
 
 ifeq (,$(shell $(CXX) -fsyntax-only -maltivec -xc /dev/null 2>&1))
 LIB_SOURCES_ASM =\

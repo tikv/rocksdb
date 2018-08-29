@@ -993,7 +993,7 @@ int PosixEnv::UnSchedule(void* arg, Priority pri) {
 }
 
 unsigned int PosixEnv::GetThreadPoolQueueLen(Priority pri) const {
-  assert(pri >= Priority::GC&& pri <= Priority::HIGH);
+  assert(pri >= Priority::GC && pri <= Priority::HIGH);
   return thread_pools_[pri].GetQueueLen();
 }
 

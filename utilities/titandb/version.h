@@ -7,6 +7,8 @@
 namespace rocksdb {
 namespace titandb {
 
+class VersionSet;
+
 // Provides methods to access the blob storage for a specific
 // version. The version must be valid when this storage is used.
 class BlobStorage {
@@ -49,6 +51,7 @@ class BlobStorage {
   void ComputeGCScore();
 
  private:
+  friend class Version;
   friend class VersionSet;
   friend class VersionTest;
   friend class VersionBuilder;
@@ -65,7 +68,7 @@ class BlobStorage {
 
 class Version {
  public:
-  Version() : prev_(this), next_(this) {}
+  Version(VersionSet* vset) : vset_(vset), prev_(this), next_(this) {}
 
   // Reference count management.
   // REQUIRES: mutex is held
@@ -85,6 +88,7 @@ class Version {
 
   ~Version();
 
+  VersionSet* vset_;
   int refs_{0};
   Version* prev_;
   Version* next_;
@@ -102,7 +106,7 @@ class VersionList {
   void Append(Version* v);
 
  private:
-  Version list_;
+  Version list_{nullptr};
   Version* current_{nullptr};
 };
 

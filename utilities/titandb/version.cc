@@ -1,4 +1,5 @@
 #include "utilities/titandb/version.h"
+#include "utilities/titandb/version_set.h"
 
 namespace rocksdb {
 namespace titandb {
@@ -63,6 +64,18 @@ Version::~Version() {
   // Remove linked list
   prev_->next_ = next_;
   next_->prev_ = prev_;
+
+  // Drop references to files
+  for (auto& column_family : column_families_) {
+    // Someone else holds this storage
+    if (column_family.second.use_count() > 1) continue;
+    auto& blob_storage = *column_family.second;
+    for (size_t i = 0; i < blob_storage.files_.size(); i++) {
+      if (blob_storage.files_[i].use_count() > 1) continue;
+      vset_->obsolete_files_.blob_files.emplace_back(
+          std::move(blob_storage.files_[i]));
+    }
+  }
 }
 
 void Version::Ref() {
@@ -84,7 +97,7 @@ std::shared_ptr<BlobStorage> Version::GetBlobStorage(uint32_t cf_id) {
   return nullptr;
 }
 
-VersionList::VersionList() { Append(new Version); }
+VersionList::VersionList() { Append(new Version(nullptr)); }
 
 VersionList::~VersionList() {
   current_->Unref();

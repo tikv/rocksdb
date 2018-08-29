@@ -98,7 +98,7 @@ Status VersionSet::Recover() {
   }
   next_file_number_.store(next_file_number);
 
-  auto v = new Version;
+  auto v = new Version(this);
   {
     builder.SaveTo(v);
     versions_.Append(v);
@@ -112,7 +112,12 @@ Status VersionSet::Recover() {
     }
   }
 
-  return OpenManifest(NewFileNumber());
+  s = OpenManifest(NewFileNumber());
+  if (!s.ok()) return s;
+
+  obsolete_files_.manifests.emplace_back(std::move(file_name));
+
+  return Status::OK();
 }
 
 Status VersionSet::OpenManifest(uint64_t file_number) {
@@ -142,7 +147,8 @@ Status VersionSet::OpenManifest(uint64_t file_number) {
 
   if (!s.ok()) {
     manifest_.reset();
-    env_->DeleteFile(file_name);
+    //    env_->DeleteFile(file_name);
+    obsolete_files_.manifests.emplace_back(file_name);
   }
   return s;
 }
@@ -187,7 +193,7 @@ Status VersionSet::LogAndApply(VersionEdit* edit, port::Mutex* mutex) {
   }
   if (!s.ok()) return s;
 
-  auto v = new Version;
+  auto v = new Version(this);
   {
     VersionBuilder builder(current());
     builder.Apply(edit);

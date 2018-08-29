@@ -3,6 +3,7 @@
 #include "utilities/titandb/version.h"
 #include "utilities/titandb/version_edit.h"
 #include "utilities/titandb/version_builder.h"
+#include "utilities/titandb/version_set.h"
 
 namespace rocksdb {
 namespace titandb {
@@ -16,10 +17,11 @@ class VersionTest : public testing::Test {
   }
 
   void Reset() {
+    vset_.reset(new VersionSet(TitanDBOptions()));
     versions_.reset(new VersionList);
     column_families_.clear();
     // Sets up some column families.
-    auto v = new Version;
+    auto v = new Version(nullptr);
     for (uint32_t id = 0; id < 10; id++) {
       std::shared_ptr<BlobStorage> storage;
       storage.reset(new BlobStorage(cf_options_, file_cache_));
@@ -52,7 +54,7 @@ class VersionTest : public testing::Test {
     for (auto& edit : edits) {
       builder.Apply(&edit);
     }
-    Version* v = new Version;
+    Version* v = new Version(vset_.get());
     builder.SaveTo(v);
     versions_->Append(v);
     for (auto& it : v->column_families_) {
@@ -72,6 +74,7 @@ class VersionTest : public testing::Test {
   std::unique_ptr<VersionList> versions_;
   std::shared_ptr<BlobFileCache> file_cache_;
   std::map<uint32_t, std::shared_ptr<BlobStorage>> column_families_;
+  std::unique_ptr<VersionSet> vset_;
 };
 
 TEST_F(VersionTest, VersionEdit) {
