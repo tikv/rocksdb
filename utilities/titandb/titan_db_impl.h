@@ -27,6 +27,8 @@ class TitanDBImpl : public TitanDB {
   Status DropColumnFamilies(
       const std::vector<ColumnFamilyHandle*>& handles) override;
 
+  Status CloseImpl();
+
   using TitanDB::Get;
   Status Get(const ReadOptions& options, ColumnFamilyHandle* handle,
              const Slice& key, PinnableSlice* value) override;
@@ -53,6 +55,7 @@ class TitanDBImpl : public TitanDB {
   class FileManager;
   friend class FileManager;
   friend class BlobGCJobTest;
+  friend class BlobDiscardableSizeListener;
 
   Status GetImpl(const ReadOptions& options, ColumnFamilyHandle* handle,
                  const Slice& key, PinnableSlice* value);
@@ -66,35 +69,38 @@ class TitanDBImpl : public TitanDB {
                             ColumnFamilyHandle* handle,
                             std::shared_ptr<ManagedSnapshot> snapshot);
 
-  Status NewRandomAccessReader(uint64_t file_number, uint64_t readahead_size,
-                               std::unique_ptr<RandomAccessFileReader>* result);
-
-  Status BackgroundGC(uint32_t column_family_id);
-
+  // REQUIRE: mutex_ held
   void AddToGCQueue(uint32_t column_family_id) {
     if (pending_gc_.find(column_family_id) != pending_gc_.end()) return;
     gc_queue_.push_back(column_family_id);
     pending_gc_.insert(column_family_id);
   }
 
+  // REQUIRE: gc_queue_ not empty
+  // REQUIRE: mutex_ held
   uint32_t PopFirstFromGCQueue() {
-    if (gc_queue_.empty()) {
-      assert(pending_gc_.empty());
-      return 0;
-    }
+    assert(!gc_queue_.empty());
+    assert(!pending_gc_.empty());
     auto column_family_id = *gc_queue_.begin();
     gc_queue_.pop_front();
+    assert(pending_gc_.count(column_family_id) != 0);
     pending_gc_.erase(column_family_id);
     return column_family_id;
   }
 
-  static void BGWorkGCScheduler(void* db);
+  // REQUIRE: mutex_ held
+  void MaybeScheduleGC();
+
   static void BGWorkGC(void* db);
-  void BackgroundCallGCScheduler();
   void BackgroundCallGC();
+  Status BackgroundGC();
 
   FileLock* lock_{nullptr};
   port::Mutex mutex_;
+  // This condition variable is signaled on these conditions:
+  // * whenever bg_gc_scheduled_ goes down to 0
+  port::CondVar bg_cv_;
+
   std::string dbname_;
   std::string dirname_;
   Env* env_;
@@ -112,6 +118,8 @@ class TitanDBImpl : public TitanDB {
   // pending_gc_ hold column families that already on gc_queue_.
   std::deque<uint32_t> gc_queue_;
   std::set<uint32_t> pending_gc_;
+
+  int bg_gc_scheduled_{0};
 };
 
 }  // namespace titandb

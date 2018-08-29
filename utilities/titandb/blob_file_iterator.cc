@@ -29,19 +29,15 @@ void BlobFileIterator::SeekToFirst() {
   blob_file_footer.DecodeFrom(&result);
   blocks_size_ = file_size_ - BlobFileFooter::kEncodedLength -
                  blob_file_footer.meta_index_handle.size();
+  assert(blocks_size_ > 0);
 
   // Init first block
   GetOneBlock();
 }
 
-bool BlobFileIterator::Valid() const { return iterate_size_ <= blocks_size_; }
+bool BlobFileIterator::Valid() const { return valid_; }
 
 void BlobFileIterator::Next() {
-  if (iterate_size_ >= blocks_size_) {
-    status_ = Status::Aborted("The end of blob file blocks");
-    return;
-  }
-
   GetOneBlock();
 }
 
@@ -50,6 +46,11 @@ Slice BlobFileIterator::key() const { return current_blob_record_.key; }
 Slice BlobFileIterator::value() const { return current_blob_record_.value; }
 
 void BlobFileIterator::GetOneBlock() {
+  if (iterate_size_ >= blocks_size_) {
+    valid_ = false;
+    return;
+  }
+
   Slice result;
   char buf[4];
   status_ = file_->Read(iterate_offset_, 4, &result, buf);
@@ -68,6 +69,8 @@ void BlobFileIterator::GetOneBlock() {
 }
 
 Status BlobFileIterator::GetProperty(std::string prop_name, std::string* prop) {
+  prop->clear();
+  assert(Valid());
   if (prop_name == PROPERTY_FILE_NAME) {
     prop->assign(reinterpret_cast<const char*>(&file_name_),
                  sizeof(file_name_));

@@ -52,7 +52,7 @@ class BlobGCJobTest : public testing::Test {
     std::unique_ptr<BlobGC> blob_gc;
     {
       std::shared_ptr<BlobGCPicker> blob_gc_picker =
-          std::make_shared<BasicBlobGCPicker>();
+          std::make_shared<BasicBlobGCPicker>(TitanCFOptions());
       blob_gc = blob_gc_picker->PickBlobGC(
           version_set_->current()->GetBlobStorage(cfh->GetID()).get());
     }

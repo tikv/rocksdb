@@ -17,72 +17,68 @@
 namespace rocksdb {
 namespace titandb {
 
-void TitanDBImpl::BGWorkGCScheduler(void* db) {
-  reinterpret_cast<TitanDBImpl*>(db)->BackgroundCallGCScheduler();
+void TitanDBImpl::MaybeScheduleGC() {
+  if (!db_options_.enable_background_gc)
+    return;
+  bg_gc_scheduled_++;
+  env_->Schedule(&TitanDBImpl::BGWorkGC, this, Env::Priority::LOW, this);
 }
 
 void TitanDBImpl::BGWorkGC(void* db) {
   reinterpret_cast<TitanDBImpl*>(db)->BackgroundCallGC();
 }
 
-void TitanDBImpl::BackgroundCallGCScheduler() {
-  for (;;) {
-    env_->Schedule(TitanDBImpl::BGWorkGC, this, Env::LOW);
-    env_->SleepForMicroseconds(5 * 1000 * 1000);
-  }
-}
-
 void TitanDBImpl::BackgroundCallGC() {
   MutexLock l(&mutex_);
-  auto column_family_id = PopFirstFromGCQueue();
-  if (column_family_id == 0) return;
-  BackgroundGC(column_family_id);
-}
-
-// TODO remove
-Status TitanDBImpl::NewRandomAccessReader(
-    uint64_t file_number, uint64_t readahead_size,
-    std::unique_ptr<RandomAccessFileReader>* result) {
-  std::unique_ptr<RandomAccessFile> file;
-  auto file_name = BlobFileName(db_options_.dirname, file_number);
-  Status s = env_->NewRandomAccessFile(file_name, &file, env_options_);
-  if (!s.ok()) return s;
-
-  if (readahead_size > 0) {
-    file = NewReadaheadRandomAccessFile(std::move(file), readahead_size);
+  assert(bg_gc_scheduled_ > 0);
+  BackgroundGC();
+  bg_gc_scheduled_--;
+  if (bg_gc_scheduled_ == 0) {
+    // signal if
+    // * bg_gc_scheduled_ == 0 -- need to wakeup ~TitanDBImpl
+    // If none of this is true, there is no need to signal since nobody is
+    // waiting for it
+    bg_cv_.SignalAll();
   }
-  result->reset(new RandomAccessFileReader(std::move(file), file_name));
-  return s;
+  // IMPORTANT: there should be no code after calling SignalAll. This call may
+  // signal the DB destructor that it's OK to proceed with destruction. In
+  // that case, all DB variables will be dealloacated and referencing them
+  // will cause trouble.
 }
 
-Status TitanDBImpl::BackgroundGC(uint32_t column_family_id) {
-  auto* cfh = db_impl_->GetColumnFamilyHandleUnlocked(column_family_id);
+Status TitanDBImpl::BackgroundGC() {
+  Status s;
+  if (!gc_queue_.empty()) {
+    uint32_t column_family_id = PopFirstFromGCQueue();
+    auto* cfh = db_impl_->GetColumnFamilyHandleUnlocked(column_family_id);
+    assert(cfh != nullptr);
 
-  // Build BlobGC
-  std::unique_ptr<BlobGC> blob_gc;
-  {
-    MutexLock l(&mutex_);
+    // Build BlobGC
+    std::unique_ptr<BlobGC> blob_gc;
     std::shared_ptr<BlobGCPicker> blob_gc_picker =
-        std::make_shared<BasicBlobGCPicker>();
+        std::make_shared<BasicBlobGCPicker>(
+            titan_cfs_options_[column_family_id]);
     blob_gc = blob_gc_picker->PickBlobGC(
         vset_->current()->GetBlobStorage(column_family_id).get());
+    if (!blob_gc) return Status::Corruption("Build BlobGC failed");
+
+    BlobGCJob blob_gc_job(blob_gc.get(), db_options_,
+                          titan_cfs_options_[column_family_id], env_,
+                          env_options_, blob_manager_.get(), vset_.get(), db_,
+                          column_family_id, cfh, &mutex_);
+    s = blob_gc_job.Prepare();
+    if (!s.ok()) return s;
+
+    {
+      mutex_.Unlock();
+      s = blob_gc_job.Run();
+      mutex_.Lock();
+    }
+    if (!s.ok()) return s;
+
+    s = blob_gc_job.Finish();
+    if (!s.ok()) return s;
   }
-  if (!blob_gc) return Status::Corruption("Build BlobGC failed");
-
-  BlobGCJob blob_gc_job(blob_gc.get(), db_options_,
-                        titan_cfs_options_[column_family_id], env_,
-                        env_options_, blob_manager_.get(), vset_.get(), db_,
-                        column_family_id, cfh, &mutex_);
-
-  blob_gc_job.Prepare();
-
-  {
-    mutex_.Unlock();
-    blob_gc_job.Run();
-    mutex_.Lock();
-  }
-
-  blob_gc_job.Finish();
 
   return Status::OK();
 }

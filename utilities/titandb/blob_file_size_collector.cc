@@ -3,10 +3,6 @@
 //
 
 #include "utilities/titandb/blob_file_size_collector.h"
-#include <db/db_impl.h>
-#include <monitoring/instrumented_mutex.h>
-#include "utilities/titandb/blob_format.h"
-#include "utilities/titandb/version_set.h"
 
 namespace rocksdb {
 namespace titandb {
@@ -48,9 +44,10 @@ Status BlobFileSizeCollector::Finish(UserCollectedProperties* properties) {
   return Status::OK();
 }
 
-BlobDiscardableSizeListener::BlobDiscardableSizeListener(port::Mutex* mutex,
+BlobDiscardableSizeListener::BlobDiscardableSizeListener(TitanDBImpl* db,
+                                                         port::Mutex* db_mutex,
                                                          VersionSet* versions)
-    : db_mutex_(mutex), versions_(versions) {}
+    : db_(db), db_mutex_(db_mutex), versions_(versions) {}
 
 BlobDiscardableSizeListener::~BlobDiscardableSizeListener() {}
 
@@ -112,6 +109,11 @@ void BlobDiscardableSizeListener::OnCompactionCompleted(
       iter->second->discardable_size += -bfs.second;
     }
     current->Unref();
+
+    if (db_ != nullptr) {
+      db_->AddToGCQueue(ci.cf_id);
+      db_->MaybeScheduleGC();
+    }
   }
 }
 

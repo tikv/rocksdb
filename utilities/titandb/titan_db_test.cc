@@ -3,6 +3,7 @@
 #include "util/testharness.h"
 #include "util/filename.h"
 #include "utilities/titandb/titan_db.h"
+#include "util/random.h"
 
 namespace rocksdb {
 namespace titandb {
@@ -22,7 +23,7 @@ void DeleteDir(Env* env, const std::string& dirname) {
 
 class TitanDBTest : public testing::Test {
  public:
-  TitanDBTest() : dbname_(test::TmpDir()) {
+  TitanDBTest() : dbname_(/* test::TmpDir() */ "/tmp/titandb/" + std::to_string(Random::GetTLSInstance()->Next())) {
     options_.dirname = dbname_ + "/titandb";
     options_.create_if_missing = true;
     options_.min_blob_size = 32;

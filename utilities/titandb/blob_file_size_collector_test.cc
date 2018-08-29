@@ -6,10 +6,7 @@
 #include "util/testharness.h"
 #include "utilities/titandb/blob_file_builder.h"
 #include "utilities/titandb/blob_file_cache.h"
-#include "utilities/titandb/blob_file_iterator.h"
-#include "utilities/titandb/blob_file_reader.h"
 #include "utilities/titandb/blob_gc_picker.h"
-#include "utilities/titandb/version.h"
 #include "utilities/titandb/version_set.h"
 #include "utilities/titandb/blob_file_size_collector.h"
 
@@ -80,7 +77,7 @@ TEST_F(BlobFileSizeCollectorTest, Basic) {
   cji.table_properties["2"] = tp2;
   cji.output_files.emplace_back("2");
   port::Mutex mutex;
-  BlobDiscardableSizeListener listener(&mutex, vset_);
+  BlobDiscardableSizeListener listener(nullptr, &mutex, vset_);
   listener.OnCompactionCompleted(nullptr, cji);
   ASSERT_EQ(file->discardable_size, 25);
 }

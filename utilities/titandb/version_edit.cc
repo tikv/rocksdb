@@ -86,8 +86,8 @@ bool operator==(const VersionEdit& lhs, const VersionEdit& rhs) {
   }
   std::map<uint64_t, std::shared_ptr<BlobFileMeta>> blob_files;
   for (std::size_t idx = 0; idx < lhs.added_files_.size(); idx++) {
-    blob_files.insert({lhs.added_files_[idx]->file_number,
-                       lhs.added_files_[idx]});
+    blob_files.insert(
+        {lhs.added_files_[idx]->file_number, lhs.added_files_[idx]});
   }
   for (std::size_t idx = 0; idx < rhs.added_files_.size(); idx++) {
     auto iter = blob_files.find(rhs.added_files_[idx]->file_number);

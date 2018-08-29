@@ -88,6 +88,7 @@ Status BlobGCJob::Run() {
   Status s;
   SampleCandidates();
 
+  // remember to delete gc_iter
   InternalIterator* gc_iter = nullptr;
   s = BuildIterator(&gc_iter);
   if (s.IsNotFound())
@@ -109,18 +110,6 @@ Status BlobGCJob::Run() {
 
 Status BlobGCJob::RunGC(InternalIterator* gc_iter) {
   Status s;
-  // Create new blob file for rewrite valid KV pairs
-  {
-    unique_ptr<BlobFileHandle> blob_file_handle;
-    s = this->blob_file_manager_->NewFile(&blob_file_handle);
-    if (!s.ok()) {
-      return s;
-    }
-    auto blob_file_builder = unique_ptr<BlobFileBuilder>(
-        new BlobFileBuilder(titan_cf_options_, blob_file_handle->GetFile()));
-    blob_file_builders_.emplace_back(std::make_pair(
-        std::move(blob_file_handle), std::move(blob_file_builder)));
-  }
 
   // Similar to OptimisticTransaction, we obtain latest_seq from
   // base DB, which is guaranteed to be no smaller than the sequence of
@@ -132,17 +121,20 @@ Status BlobGCJob::RunGC(InternalIterator* gc_iter) {
   // is_blob_index flag to GetImpl.
   std::vector<GarbageCollectionWriteCallback> callbacks;
 
+  std::unique_ptr<BlobFileHandle> blob_file_handle;
+  std::unique_ptr<BlobFileBuilder> blob_file_builder;
   auto* cfd = reinterpret_cast<ColumnFamilyHandleImpl*>(this->cfh_)->cfd();
   auto* db_impl = reinterpret_cast<DBImpl*>(this->db_);
   bool is_blob_index;
+  int i = 0;
   for (gc_iter->SeekToFirst(); gc_iter->status().ok() && gc_iter->Valid();
-       gc_iter->Next()) {
+       gc_iter->Next(), i++) {
     // This API is very lightweight
-    SequenceNumber latest_seq = this->db_->GetLatestSequenceNumber();
+    SequenceNumber latest_seq = db_->GetLatestSequenceNumber();
 
     // Read Key-Index pairs from LSM
     PinnableSlice index_entry;
-    s = db_impl->GetImpl(ReadOptions(), this->cfh_, gc_iter->key(),
+    s = db_impl->GetImpl(ReadOptions(), cfh_, gc_iter->key(),
                          &index_entry, nullptr /*value_found*/,
                          nullptr /*read_callback*/, &is_blob_index);
     if (!s.ok() && !s.IsNotFound()) {
@@ -164,9 +156,11 @@ Status BlobGCJob::RunGC(InternalIterator* gc_iter) {
 
     // Judge if blob index still hold by valid key
     std::string prop;
-    gc_iter->GetProperty(BlobFileIterator::PROPERTY_FILE_NAME, &prop);
+    s = gc_iter->GetProperty(BlobFileIterator::PROPERTY_FILE_NAME, &prop);
+    assert(s.ok());
     uint64_t file_name = *reinterpret_cast<const uint64_t*>(prop.data());
-    gc_iter->GetProperty(BlobFileIterator::PROPERTY_FILE_OFFSET, &prop);
+    s = gc_iter->GetProperty(BlobFileIterator::PROPERTY_FILE_OFFSET, &prop);
+    assert(s.ok());
     uint64_t file_offset = *reinterpret_cast<const uint64_t*>(prop.data());
     if (blob_index.file_number != file_name ||
         blob_index.blob_handle.offset != file_offset) {
@@ -178,28 +172,52 @@ Status BlobGCJob::RunGC(InternalIterator* gc_iter) {
     BlobRecord record;
     record.key = gc_iter->key();
     record.value = gc_iter->value();
-    index.file_number = blob_file_builders_.back().first->GetNumber();
-    this->blob_file_builders_.back().second->Add(record, &index.blob_handle);
+    if (!blob_file_handle && !blob_file_builder) {
+      s = blob_file_manager_->NewFile(&blob_file_handle);
+      if (!s.ok()) {
+        return s;
+      }
+      blob_file_builder = unique_ptr<BlobFileBuilder>(
+          new BlobFileBuilder(titan_cf_options_, blob_file_handle->GetFile()));
+    } else {
+      assert(blob_file_handle);
+      assert(blob_file_builder);
+    }
+    index.file_number = blob_file_handle->GetNumber();
+    blob_file_builder->Add(record, &index.blob_handle);
     std::string new_index_entry;
     index.EncodeTo(&new_index_entry);
 
     rewrite_batches_.emplace_back(std::make_pair(
         WriteBatch(),
         GarbageCollectionWriteCallback{cfd, record.key, latest_seq}));
-    s = WriteBatchInternal::PutBlobIndex(&this->rewrite_batches_.back().first,
-                                         this->cfh_->GetID(), record.key,
+    auto& wb = rewrite_batches_.back().first;
+    s = WriteBatchInternal::PutBlobIndex(&wb,
+                                         cfh_->GetID(), record.key,
                                          new_index_entry);
     if (!s.ok()) {
       return s;
     }
   }
+
+  if (blob_file_builder && blob_file_handle) {
+    assert(blob_file_builder->status().ok());
+    blob_file_builders_.emplace_back(std::make_pair(
+        std::move(blob_file_handle), std::move(blob_file_builder)));
+  } else {
+    assert(!blob_file_builder);
+    assert(!blob_file_handle);
+  }
+  // TODO remove here
+  assert(!blob_file_builders_.empty());
+
   return Status::OK();
 }
 
 Status BlobGCJob::BuildIterator(InternalIterator** result) const {
   Status s;
   const auto& inputs = blob_gc_->selected();
-  if (inputs.size() <= 0)
+  if (inputs.empty())
     return Status::NotFound();
   // Build iterator
   auto list = new InternalIterator*[inputs.size()];
@@ -228,8 +246,8 @@ Status BlobGCJob::BuildIterator(InternalIterator** result) const {
   };
   InternalKeyComparator
       * cmp = new PlainInternalKeyComparator(BytewiseComparator());
-  *result = NewMergingIterator(cmp, list,
-                               static_cast<int>(blob_gc_->candidates().size()));
+  *result = NewMergingIterator(cmp, list, inputs.size());
+  delete[] list;
   return Status::OK();
 }
 
@@ -241,7 +259,6 @@ Status BlobGCJob::Finish() {
 
   {
     db_mutex_->Unlock();
-    // TODO deal with 0 size blob file
     // Install output blob file to db
     for (auto& builder : blob_file_builders_) {
       s = builder.second->Finish();
@@ -291,8 +308,9 @@ Status BlobGCJob::Finish() {
   // Delete input blob file
   VersionEdit edit;
   edit.SetColumnFamilyID(cf_id_);
-  for (const auto& tmp : blob_gc_->candidates())
+  for (const auto& tmp : blob_gc_->selected()) {
     edit.DeleteBlobFile(tmp->file_number);
+  }
   {
     s = version_set_->LogAndApply(&edit, db_mutex_);
     // TODO what is this????

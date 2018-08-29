@@ -33,6 +33,7 @@ Status BlobStorage::FindFile(uint64_t file_number,
 }
 
 void BlobStorage::ComputeGCScore() {
+  gc_score_.clear();
   for (auto& file : files_) {
     gc_score_.push_back({});
     auto& score = gc_score_.back();
@@ -43,8 +44,10 @@ void BlobStorage::ComputeGCScore() {
     } else if (file.second->file_size < 8 << 20) {
       // TODO configurable
       score.score = 1;
+      file.second->marked_for_sample = false;
     } else {
       score.score = file.second->discardable_size / file.second->file_size;
+      if (score.score >= 0.5) file.second->marked_for_sample = false;
     }
   }
 

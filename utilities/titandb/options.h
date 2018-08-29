@@ -12,6 +12,16 @@ struct TitanDBOptions : public DBOptions {
   // Default: {dbname}/titandb
   std::string dirname;
 
+  // Maximum number of concurrent background GC jobs.
+  //
+  // Default: 2
+  int max_background_gc {4};
+
+  // Enable/Disable background GC
+  //
+  // Default: true
+  bool enable_background_gc {true};
+
   TitanDBOptions() = default;
   explicit TitanDBOptions(const DBOptions& options) : DBOptions(options) {}
 };
@@ -37,6 +47,11 @@ struct TitanCFOptions : public ColumnFamilyOptions {
   //
   // Default: nullptr
   std::shared_ptr<Cache> blob_cache;
+
+  // Batch size for gc
+  //
+  // Default: 1GB
+  uint64_t blob_gc_batch_size{1 << 30};
 
   TitanCFOptions() = default;
   explicit TitanCFOptions(const ColumnFamilyOptions& options)

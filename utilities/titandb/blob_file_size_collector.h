@@ -8,6 +8,7 @@
 #include "include/rocksdb/listener.h"
 #include "include/rocksdb/table_properties.h"
 #include "util/coding.h"
+#include "utilities/titandb/titan_db_impl.h"
 #include "utilities/titandb/version.h"
 #include "utilities/titandb/version_set.h"
 
@@ -67,12 +68,14 @@ class BlobFileSizeCollector final : public TablePropertiesCollector {
 
 class BlobDiscardableSizeListener final : public EventListener {
  public:
-  BlobDiscardableSizeListener(port::Mutex* mutex, VersionSet* versions);
+  BlobDiscardableSizeListener(TitanDBImpl* db, port::Mutex* db_mutex,
+                              VersionSet* versions);
   ~BlobDiscardableSizeListener();
 
   void OnCompactionCompleted(DB* db, const CompactionJobInfo& ci) override;
 
  private:
+  TitanDBImpl* db_;
   port::Mutex* db_mutex_;
   VersionSet* versions_;
 };

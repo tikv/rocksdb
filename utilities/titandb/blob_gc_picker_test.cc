@@ -17,7 +17,7 @@ namespace titandb {
 class BlobGCPickerTest : public testing::Test {
  public:
   std::unique_ptr<BlobStorage> blob_storage_;
-  BasicBlobGCPicker basic_blob_gc_picker_;
+  BasicBlobGCPicker basic_blob_gc_picker_{TitanCFOptions()};
 
   BlobGCPickerTest() {}
   ~BlobGCPickerTest() {}

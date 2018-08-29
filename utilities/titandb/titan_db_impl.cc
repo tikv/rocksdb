@@ -100,6 +100,8 @@ class TitanDBImpl::FileManager : public BlobFileManager {
 TitanDBImpl::TitanDBImpl(const TitanDBOptions& options,
                          const std::string& dbname)
     : TitanDB(),
+      mutex_(),
+      bg_cv_(&mutex_),
       dbname_(dbname),
       env_(options.env),
       env_options_(options),
@@ -160,12 +162,10 @@ Status TitanDBImpl::Open(const std::vector<TitanCFDescriptor>& descs,
   s = vset_->Open(column_families);
   if (!s.ok()) return s;
 
-  // Add EventListener for collecting statistics for GC
+  // Add EventListener to collect statistics for GC
   db_options_.listeners.emplace_back(
-      std::make_shared<BlobDiscardableSizeListener>(&mutex_, vset_.get()));
-
-  // New gc scheduler thread
-//  env_->StartThread(TitanDBImpl::BGWorkGCScheduler, this);
+      std::make_shared<BlobDiscardableSizeListener>(this, &this->mutex_,
+                                                    this->vset_.get()));
 
   s = DB::Open(db_options_, dbname_, base_descs, handles, &db_);
   if (s.ok()) {
@@ -176,6 +176,7 @@ Status TitanDBImpl::Open(const std::vector<TitanCFDescriptor>& descs,
 
 Status TitanDBImpl::Close() {
   Status s;
+  CloseImpl();
   if (db_) {
     s = db_->Close();
     delete db_;
@@ -224,6 +225,21 @@ Status TitanDBImpl::DropColumnFamilies(
     vset_->DropColumnFamilies(column_families);
   }
   return s;
+}
+
+Status TitanDBImpl::CloseImpl() {
+  int gc_unscheduled =
+      env_->UnSchedule(this, Env::Priority::GC);
+  {
+    MutexLock l(&mutex_);
+    bg_gc_scheduled_ -= gc_unscheduled;
+    while (bg_gc_scheduled_ > 0) {
+      bg_cv_.Wait();
+    }
+  }
+
+  return Status::OK();
+
 }
 
 Status TitanDBImpl::Get(const ReadOptions& options, ColumnFamilyHandle* handle,

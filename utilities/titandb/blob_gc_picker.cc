@@ -7,28 +7,45 @@
 namespace rocksdb {
 namespace titandb {
 
-BasicBlobGCPicker::BasicBlobGCPicker() {}
+BasicBlobGCPicker::BasicBlobGCPicker(TitanCFOptions titan_cf_options)
+    : titan_cf_options_(titan_cf_options) {}
 
 BasicBlobGCPicker::~BasicBlobGCPicker() {}
 
 std::unique_ptr<BlobGC> BasicBlobGCPicker::PickBlobGC(
     BlobStorage* blob_storage) {
+  Status s;
   std::vector<std::shared_ptr<BlobFileMeta>> blob_files;
-  std::shared_ptr<BlobFileMeta> blob_file_meta = nullptr;
-  uint64_t total_file_size = 0;
+  std::shared_ptr<BlobFileMeta> blob_file = nullptr;
+
+  uint64_t batch_size = 0;
   for (auto& gc_score : blob_storage->gc_score()) {
-    // TODO check return value
-    blob_storage->FindFile(gc_score.file_number, &blob_file_meta);
-    if (blob_file_meta->being_gc) continue;
-    blob_file_meta->being_gc = true;
-    blob_files.push_back(blob_file_meta);
-    total_file_size += blob_file_meta->file_size;
-    // TODO configurable
-    if (total_file_size >= 2U << 30) break;
+    s = blob_storage->FindFile(gc_score.file_number, &blob_file);
+    assert(s.ok());
+
+    if (!CheckForPick(blob_file)) continue;
+    MarkedForPick(blob_file);
+    blob_files.push_back(blob_file);
+
+    batch_size += blob_file->file_size;
+    if (batch_size >= titan_cf_options_.blob_gc_batch_size) break;
   }
+
   if (blob_files.empty()) return nullptr;
   std::unique_ptr<BlobGC> blob_gc(new BlobGC(std::move(blob_files)));
+
   return blob_gc;
+}
+
+bool BasicBlobGCPicker::CheckForPick(
+    const std::shared_ptr<rocksdb::titandb::BlobFileMeta>& blob_file) const {
+  if (blob_file->being_gc) return false;
+  return true;
+}
+
+void BasicBlobGCPicker::MarkedForPick(
+    std::shared_ptr<rocksdb::titandb::BlobFileMeta> blob_file) {
+  blob_file->being_gc = true;
 }
 
 }  // namespace titandb

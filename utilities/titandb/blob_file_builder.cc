@@ -11,6 +11,8 @@ void BlobFileBuilder::Add(const BlobRecord& record, BlobHandle* handle) {
   if (!ok()) return;
 
   buffer_.clear();
+  assert(!record.key.empty());
+  assert(!record.value.empty());
   record.EncodeTo(&buffer_);
 
   CompressionType compression;

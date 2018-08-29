@@ -49,6 +49,7 @@ class BlobFileIterator final : public InternalIterator {
   std::vector<char> buffer_;
   BlobRecord current_blob_record_;
   uint64_t current_blob_offset_;
+  bool valid_ = true;
 
   void GetOneBlock();
 };
