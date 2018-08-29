@@ -82,8 +82,8 @@ class Version {
  private:
   friend class VersionSet;
   friend class VersionList;
-  friend class VersionTest;
   friend class VersionBuilder;
+  friend class VersionTest;
   friend class BlobFileSizeCollectorTest;
 
   ~Version();
