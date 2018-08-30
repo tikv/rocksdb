@@ -1,9 +1,6 @@
 #include "utilities/titandb/version_set.h"
 
-#include <inttypes.h>
-
 #include "util/filename.h"
-#include "utilities/titandb/version_builder.h"
 
 namespace rocksdb {
 namespace titandb {

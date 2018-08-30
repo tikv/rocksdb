@@ -18,7 +18,12 @@ class BlobStorage {
     double score;
   };
 
-  BlobStorage(const TitanCFOptions& options,
+  BlobStorage(const BlobStorage& bs) {
+    this->files_ = bs.files_;
+    this->file_cache_ = bs.file_cache_;
+  }
+
+  explicit BlobStorage(const TitanCFOptions& options,
               std::shared_ptr<BlobFileCache> file_cache)
       : options_(options),
         file_cache_(file_cache) {}

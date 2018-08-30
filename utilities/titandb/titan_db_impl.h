@@ -95,6 +95,9 @@ class TitanDBImpl : public TitanDB {
   void BackgroundCallGC();
   Status BackgroundGC();
 
+  // REQUIRES: mutex_ held;
+  void PurgeObsoleteFiles();
+
   FileLock* lock_{nullptr};
   port::Mutex mutex_;
   // This condition variable is signaled on these conditions:

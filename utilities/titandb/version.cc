@@ -66,14 +66,13 @@ Version::~Version() {
   next_->prev_ = prev_;
 
   // Drop references to files
-  for (auto& column_family : column_families_) {
-    // Someone else holds this storage
-    if (column_family.second.use_count() > 1) continue;
-    auto& blob_storage = *column_family.second;
-    for (size_t i = 0; i < blob_storage.files_.size(); i++) {
-      if (blob_storage.files_[i].use_count() > 1) continue;
-      vset_->obsolete_files_.blob_files.emplace_back(
-          std::move(blob_storage.files_[i]));
+  // Close DB will also destruct this class and add live file to here.
+  // But don't worry, ~Version will call after all our code executed.
+  for (auto& b : this->column_families_) {
+    if (b.second.use_count() > 1) continue;
+    for (auto& f : *b.second->mutable_files()) {
+      if (f.second.use_count() > 1) continue;
+      vset_->obsolete_files_.blob_files.emplace_back(std::move(f.second));
     }
   }
 }

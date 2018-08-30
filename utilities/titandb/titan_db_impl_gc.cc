@@ -29,9 +29,13 @@ void TitanDBImpl::BGWorkGC(void* db) {
 }
 
 void TitanDBImpl::BackgroundCallGC() {
+  // Is this legal? call bg_cv_.SignalAll() maybe
   MutexLock l(&mutex_);
   assert(bg_gc_scheduled_ > 0);
   BackgroundGC();
+
+  PurgeObsoleteFiles();
+
   bg_gc_scheduled_--;
   if (bg_gc_scheduled_ == 0) {
     // signal if

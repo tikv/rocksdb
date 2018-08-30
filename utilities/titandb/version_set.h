@@ -40,7 +40,7 @@ struct ObsoleteFiles {
 
 class VersionSet {
  public:
-  VersionSet(const TitanDBOptions& options);
+  explicit VersionSet(const TitanDBOptions& options);
 
   // Sets up the storage specified in "options.dirname".
   // If the manifest doesn't exist, it will create one.
