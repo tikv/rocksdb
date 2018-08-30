@@ -228,6 +228,7 @@ LIB_SOURCES =                                                   \
   utilities/titandb/blob_file_builder.cc                        \
   utilities/titandb/table_builder.cc                            \
   utilities/titandb/table_factory.cc                            \
+  utilities/titandb/util.cc                                     \
 
 ifeq (,$(shell $(CXX) -fsyntax-only -maltivec -xc /dev/null 2>&1))
 LIB_SOURCES_ASM =\

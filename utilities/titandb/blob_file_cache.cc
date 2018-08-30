@@ -2,6 +2,7 @@
 
 #include "util/filename.h"
 #include "util/file_reader_writer.h"
+#include "utilities/titandb/util.h"
 
 namespace rocksdb {
 namespace titandb {
@@ -10,16 +11,6 @@ namespace {
 
 Slice EncodeFileNumber(const uint64_t* number) {
   return Slice(reinterpret_cast<const char*>(number), sizeof(*number));
-}
-
-void DeleteFileReader(const Slice&, void* value) {
-  delete reinterpret_cast<BlobFileReader*>(value);
-}
-
-void UnrefCacheHandle(void* arg1, void* arg2) {
-  Cache* cache = reinterpret_cast<Cache*>(arg1);
-  Cache::Handle* h = reinterpret_cast<Cache::Handle*>(arg2);
-  cache->Release(h);
 }
 
 }
@@ -91,7 +82,8 @@ Status BlobFileCache::FindFile(uint64_t file_number,
   s = BlobFileReader::Open(cf_options_, std::move(file), file_size, &reader);
   if (!s.ok()) return s;
 
-  cache_->Insert(cache_key, reader.release(), 1, &DeleteFileReader, handle);
+  cache_->Insert(cache_key, reader.release(), 1,
+                 &DeleteCacheValue<BlobFileReader>, handle);
   return s;
 }
 

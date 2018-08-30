@@ -681,6 +681,7 @@ set(SOURCES
         utilities/titandb/blob_file_builder.cc
         utilities/titandb/table_builder.cc
         utilities/titandb/table_factory.cc
+        utilities/titandb/util.cc
         $<TARGET_OBJECTS:build_version>)
 
 if(HAVE_SSE42 AND NOT FORCE_SSE42)
