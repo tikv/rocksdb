@@ -60,15 +60,18 @@ class BlobFileTest : public testing::Test {
       expect.key = id;
       expect.value = id;
       BlobRecord record;
-      std::string buffer;
+      PinnableSlice buffer;
       ASSERT_OK(cache.Get(ro, file_number_, file_size, handles[i],
                           &record, &buffer));
       ASSERT_EQ(record, expect);
+      buffer.Reset();
       ASSERT_OK(cache.Get(ro, file_number_, file_size, handles[i],
                           &record, &buffer));
       ASSERT_EQ(record, expect);
+      buffer.Reset();
       ASSERT_OK(prefetcher->Get(ro, handles[i], &record, &buffer));
       ASSERT_EQ(record, expect);
+      buffer.Reset();
       ASSERT_OK(prefetcher->Get(ro, handles[i], &record, &buffer));
       ASSERT_EQ(record, expect);
     }
@@ -85,6 +88,8 @@ TEST_F(BlobFileTest, Basic) {
   TitanOptions options;
   TestBlobFile(options);
   options.blob_cache = NewLRUCache(1 << 20);
+  TestBlobFile(options);
+  options.blob_file_compression = kZSTD;
   TestBlobFile(options);
 }
 

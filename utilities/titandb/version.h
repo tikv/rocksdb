@@ -19,7 +19,7 @@ class BlobStorage {
   // valid when the record is used.
   Status Get(const ReadOptions& options,
              const BlobIndex& index,
-             BlobRecord* record, std::string* buffer);
+             BlobRecord* record, PinnableSlice* buffer);
 
   // Creates a prefetcher for the specified file number.
   Status NewPrefetcher(uint64_t file_number,

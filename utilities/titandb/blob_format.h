@@ -8,11 +8,14 @@
 namespace rocksdb {
 namespace titandb {
 
+// compression  : char
+// checksum     : fixed32
+const uint32_t kBlobTailerSize = 5;
+
 // Blob record format:
 //
 // key          : varint64 length + length bytes
 // value        : varint64 length + length bytes
-// checksum     : fixed32
 struct BlobRecord {
   Slice key;
   Slice value;
@@ -39,9 +42,13 @@ struct BlobHandle {
 
 // Blob index format:
 //
+// type         : char
 // file_number  : varint64
 // blob_handle  : varint64 offset + varint64 size
 struct BlobIndex {
+  enum Type : unsigned char {
+    kBlobRecord = 1,
+  };
   uint64_t file_number {0};
   BlobHandle blob_handle;
 
@@ -67,7 +74,6 @@ struct BlobFileMeta {
 
 // Blob file footer format:
 //
-// compression          : 1 byte
 // meta_index_handle    : varint64 offset + varint64 size
 // <padding>            : [... kEncodedLength - 12] bytes
 // magic_number         : fixed64
@@ -76,10 +82,9 @@ struct BlobFileFooter {
   // The first 64bits from $(echo titandb/blob | sha1sum).
   static const uint64_t kMagicNumber {0xcd3f52ea0fe14511ull};
   static const uint64_t kEncodedLength {
-      1 + BlockHandle::kMaxEncodedLength + 8 + 4
+      BlockHandle::kMaxEncodedLength + 8 + 4
   };
 
-  CompressionType compression {kNoCompression};
   BlockHandle meta_index_handle {BlockHandle::NullBlockHandle()};
 
   void EncodeTo(std::string* dst) const;

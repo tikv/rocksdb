@@ -24,8 +24,7 @@ namespace titandb {
 //
 // 1. The sequence of blob records in the file are stored in sorted
 // order. These records come one after another at the beginning of the
-// file, and are compressed according to the compression options
-// specified in the footer.
+// file, and are compressed according to the compression options.
 //
 // 2. After the blob records we store a bunch of meta blocks, and a
 // meta index block with block handles pointed to the meta blocks. The
@@ -38,7 +37,9 @@ class BlobFileBuilder {
   // is building in "*file". Does not close the file. It is up to the
   // caller to sync and close the file after calling Finish().
   BlobFileBuilder(const TitanCFOptions& options, WritableFileWriter* file)
-      : options_(options), file_(file) {}
+      : options_(options),
+        file_(file),
+        compression_ctx_(options.blob_file_compression) {}
 
   // Adds the record to the file and points the handle to it.
   void Add(const BlobRecord& record, BlobHandle* handle);
@@ -58,10 +59,13 @@ class BlobFileBuilder {
  private:
   bool ok() const { return status().ok(); }
 
-  Status status_;
-  std::string buffer_;
   TitanCFOptions options_;
   WritableFileWriter* file_;
+
+  Status status_;
+  std::string buffer_;
+  std::string compressed_buffer_;
+  CompressionContext compression_ctx_;
 };
 
 }  // namespace titandb
