@@ -93,7 +93,7 @@ template<typename T>
 Status DecodeInto(const Slice& src, T* target) {
   auto tmp = src;
   auto s = target->DecodeFrom(&tmp);
-  if (!s.ok() || !tmp.empty()) {
+  if (s.ok() && !tmp.empty()) {
     s = Status::Corruption(Slice());
   }
   return s;

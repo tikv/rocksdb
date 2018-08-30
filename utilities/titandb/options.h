@@ -34,6 +34,11 @@ struct TitanCFOptions : public ColumnFamilyOptions {
   // Default: 256MB
   uint64_t blob_file_target_size {256 << 20};
 
+  // If non-NULL use the specified cache for blob records.
+  //
+  // Default: nullptr
+  std::shared_ptr<Cache> blob_cache;
+
   TitanCFOptions() = default;
   explicit TitanCFOptions(const ColumnFamilyOptions& options)
       : ColumnFamilyOptions(options) {}

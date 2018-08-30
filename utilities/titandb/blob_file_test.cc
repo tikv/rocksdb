@@ -52,8 +52,8 @@ class BlobFileTest : public testing::Test {
     ASSERT_OK(env_->GetFileSize(file_name_, &file_size));
 
     ReadOptions ro;
-    std::unique_ptr<BlobFileReader> reader;
-    ASSERT_OK(cache.NewReader(ro, file_number_, file_size, &reader));
+    std::unique_ptr<BlobFilePrefetcher> prefetcher;
+    ASSERT_OK(cache.NewPrefetcher(file_number_, file_size, &prefetcher));
     for (int i = 0; i < n; i++) {
       auto id = std::to_string(i);
       BlobRecord expect;
@@ -61,10 +61,15 @@ class BlobFileTest : public testing::Test {
       expect.value = id;
       BlobRecord record;
       std::string buffer;
-      ASSERT_OK(reader->Get(ro, handles[i], &record, &buffer));
+      ASSERT_OK(cache.Get(ro, file_number_, file_size, handles[i],
+                          &record, &buffer));
       ASSERT_EQ(record, expect);
       ASSERT_OK(cache.Get(ro, file_number_, file_size, handles[i],
                           &record, &buffer));
+      ASSERT_EQ(record, expect);
+      ASSERT_OK(prefetcher->Get(ro, handles[i], &record, &buffer));
+      ASSERT_EQ(record, expect);
+      ASSERT_OK(prefetcher->Get(ro, handles[i], &record, &buffer));
       ASSERT_EQ(record, expect);
     }
   }
@@ -78,6 +83,8 @@ class BlobFileTest : public testing::Test {
 
 TEST_F(BlobFileTest, Basic) {
   TitanOptions options;
+  TestBlobFile(options);
+  options.blob_cache = NewLRUCache(1 << 20);
   TestBlobFile(options);
 }
 
