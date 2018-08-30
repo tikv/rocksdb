@@ -1,5 +1,5 @@
 #include "util/testharness.h"
-#include "utilities/titandb/test_util.h"
+#include "utilities/titandb/util.h"
 #include "utilities/titandb/version.h"
 #include "utilities/titandb/version_edit.h"
 #include "utilities/titandb/version_builder.h"
