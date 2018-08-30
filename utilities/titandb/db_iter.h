@@ -103,12 +103,14 @@ class TitanDBIterator : public Iterator {
       if (!status_.ok()) return;
       it = files_.emplace(index.file_number, std::move(prefetcher)).first;
     }
+
+    buffer_.Reset();
     status_ = it->second->Get(options_, index.blob_handle, &record_, &buffer_);
   }
 
   Status status_;
   BlobRecord record_;
-  std::string buffer_;
+  PinnableSlice buffer_;
 
   ReadOptions options_;
   std::shared_ptr<BlobStorage> storage_;

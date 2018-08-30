@@ -43,7 +43,6 @@ TEST(BlobFormatTest, BlobFileMeta) {
 TEST(BlobFormatTest, BlobFileFooter) {
   BlobFileFooter input;
   CheckCodec(input);
-  input.compression = kZSTD;
   input.meta_index_handle.set_offset(123);
   input.meta_index_handle.set_size(321);
   CheckCodec(input);

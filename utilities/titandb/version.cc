@@ -5,7 +5,7 @@ namespace titandb {
 
 Status BlobStorage::Get(const ReadOptions& options,
                         const BlobIndex& index,
-                        BlobRecord* record, std::string* buffer) {
+                        BlobRecord* record, PinnableSlice* buffer) {
   const BlobFileMeta* file;
   Status s = FindFile(index.file_number, &file);
   if (!s.ok()) return s;

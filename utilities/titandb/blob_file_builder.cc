@@ -1,5 +1,9 @@
 #include "utilities/titandb/blob_file_builder.h"
 
+#include "util/coding.h"
+#include "util/crc32c.h"
+#include "utilities/titandb/util.h"
+
 namespace rocksdb {
 namespace titandb {
 
@@ -8,16 +12,26 @@ void BlobFileBuilder::Add(const BlobRecord& record, BlobHandle* handle) {
 
   buffer_.clear();
   record.EncodeTo(&buffer_);
+
+  CompressionType compression;
+  auto output = Compress(compression_ctx_, buffer_,
+                         &compressed_buffer_, &compression);
   handle->offset = file_->GetFileSize();
-  handle->size = buffer_.size();
-  status_ = file_->Append(buffer_);
+  handle->size = output.size();
+
+  status_ = file_->Append(output);
+  if (ok()) {
+    char tailer[kBlobTailerSize];
+    tailer[0] = compression;
+    EncodeFixed32(tailer+1, crc32c::Value(output.data(), output.size()));
+    status_ = file_->Append(Slice(tailer, sizeof(tailer)));
+  }
 }
 
 Status BlobFileBuilder::Finish() {
   if (!ok()) return status();
 
   BlobFileFooter footer;
-  footer.compression = options_.blob_file_compression;
   buffer_.clear();
   footer.EncodeTo(&buffer_);
 
