@@ -1,62 +1,145 @@
 #include <inttypes.h>
 
 #include "util/testharness.h"
+#include "util/filename.h"
 #include "utilities/titandb/db.h"
 
 namespace rocksdb {
 namespace titandb {
 
+void DeleteDir(Env* env, const std::string& dirname) {
+  std::vector<std::string> filenames;
+  env->GetChildren(dirname, &filenames);
+  for (auto& fname : filenames) {
+    uint64_t number;
+    FileType type;
+    if (ParseFileName(fname, &number, &type)) {
+      ASSERT_OK(env->DeleteFile(dirname + "/" + fname));
+    }
+  }
+  env->DeleteDir(dirname);
+}
+
 class TitanDBTest : public testing::Test {
  public:
   TitanDBTest() : dbname_(test::TmpDir()) {
+    options_.dirname = dbname_ + "/titandb";
     options_.create_if_missing = true;
-    options_.min_blob_size = 0;
+    options_.min_blob_size = 32;
+    DeleteDir(env_, options_.dirname);
+    DeleteDir(env_, dbname_);
   }
 
   ~TitanDBTest() {
-    delete db_;
+    Close();
   }
 
   void Open() {
-    ASSERT_OK(TitanDB::Open(options_, dbname_, &db_));
+    if (cf_names_.empty()) {
+      ASSERT_OK(TitanDB::Open(options_, dbname_, &db_));
+    } else {
+      TitanDBOptions db_options(options_);
+      TitanCFOptions cf_options(options_);
+      cf_names_.clear();
+      ASSERT_OK(DB::ListColumnFamilies(db_options, dbname_, &cf_names_));
+      std::vector<TitanCFDescriptor> descs;
+      for (auto& name : cf_names_) {
+        descs.emplace_back(name, cf_options);
+      }
+      cf_handles_.clear();
+      ASSERT_OK(TitanDB::Open(db_options, dbname_, descs, &cf_handles_, &db_));
+    }
+  }
+
+  void Close() {
+    if (!db_) return;
+    for (auto& handle : cf_handles_) {
+      db_->DestroyColumnFamilyHandle(handle);
+    }
+    ASSERT_OK(db_->Close());
+    delete db_;
+    db_ = nullptr;
   }
 
   void Reopen() {
-    ASSERT_OK(db_->Close());
-    delete db_;
-    ASSERT_OK(TitanDB::Open(options_, dbname_, &db_));
+    Close();
+    Open();
   }
 
-  void Put(uint64_t i, std::map<std::string, std::string>* data = nullptr) {
-    std::string key = GenKey(i);
-    std::string value = GenValue(i);
-    ASSERT_OK(db_->Put(WriteOptions(), key, value));
+  void AddCF(const std::string& name) {
+    TitanCFDescriptor desc(name, options_);
+    ColumnFamilyHandle* handle = nullptr;
+    ASSERT_OK(db_->CreateColumnFamily(desc, &handle));
+    cf_names_.emplace_back(name);
+    cf_handles_.emplace_back(handle);
+  }
+
+  void DropCF(const std::string& name) {
+    for (size_t i = 0; i < cf_names_.size(); i++) {
+      if (cf_names_[i] != name) continue;
+      auto handle = cf_handles_[i];
+      ASSERT_OK(db_->DropColumnFamily(handle));
+      db_->DestroyColumnFamilyHandle(handle);
+      cf_names_.erase(cf_names_.begin() + i);
+      cf_handles_.erase(cf_handles_.begin() + i);
+      break;
+    }
+  }
+
+  void Put(uint64_t k, std::map<std::string, std::string>* data = nullptr) {
+    WriteOptions wopts;
+    std::string key = GenKey(k);
+    std::string value = GenValue(k);
+    ASSERT_OK(db_->Put(wopts, key, value));
+    for (auto& handle : cf_handles_) {
+      ASSERT_OK(db_->Put(wopts, handle, key, value));
+    }
     if (data != nullptr) {
       data->emplace(key, value);
     }
   }
 
   void Flush() {
-    db_->Flush(FlushOptions());
+    FlushOptions fopts;
+    ASSERT_OK(db_->Flush(fopts));
+    for (auto& handle : cf_handles_) {
+      ASSERT_OK(db_->Flush(fopts, handle));
+    }
   }
 
   void VerifyDB(const std::map<std::string, std::string>& data) {
     ReadOptions ropts;
-    ropts.readahead_size = 1024;
 
     for (auto& kv : data) {
       std::string value;
       ASSERT_OK(db_->Get(ropts, kv.first, &value));
       ASSERT_EQ(value, kv.second);
+      for (auto& handle : cf_handles_) {
+        ASSERT_OK(db_->Get(ropts, handle, kv.first, &value));
+        ASSERT_EQ(value, kv.second);
+      }
+      std::vector<Slice> keys(cf_handles_.size(), kv.first);
+      std::vector<std::string> values;
+      auto res = db_->MultiGet(ropts, cf_handles_, keys, &values);
+      for (auto& s : res) ASSERT_OK(s);
+      for (auto& v : values) ASSERT_EQ(v, kv.second);
     }
 
-    std::unique_ptr<Iterator> iter(db_->NewIterator(ropts));
-    iter->SeekToFirst();
-    for (auto& kv : data) {
-      ASSERT_EQ(iter->Valid(), true);
-      ASSERT_EQ(iter->key(), kv.first);
-      ASSERT_EQ(iter->value(), kv.second);
-      iter->Next();
+    std::vector<Iterator*> iterators;
+    db_->NewIterators(ropts, cf_handles_, &iterators);
+    iterators.emplace_back(db_->NewIterator(ropts));
+    for (auto& handle : cf_handles_) {
+      iterators.emplace_back(db_->NewIterator(ropts, handle));
+    }
+    for (auto& iter : iterators) {
+      iter->SeekToFirst();
+      for (auto& kv : data) {
+        ASSERT_EQ(iter->Valid(), true);
+        ASSERT_EQ(iter->key(), kv.first);
+        ASSERT_EQ(iter->value(), kv.second);
+        iter->Next();
+      }
+      delete iter;
     }
   }
 
@@ -66,31 +149,43 @@ class TitanDBTest : public testing::Test {
     return buf;
   }
 
-  std::string GenValue(uint64_t i) {
-    char buf[64];
-    snprintf(buf, sizeof(buf), "v-%08" PRIu64, i);
-    return buf;
+  std::string GenValue(uint64_t k) {
+    if (k % 2 == 0) {
+      return std::string(options_.min_blob_size - 1, 'v');
+    } else {
+      return std::string(options_.min_blob_size + 1, 'v');
+    }
   }
 
+  Env* env_ {Env::Default()};
   std::string dbname_;
   TitanOptions options_;
   TitanDB* db_ {nullptr};
+  std::vector<std::string> cf_names_;
+  std::vector<ColumnFamilyHandle*> cf_handles_;
 };
 
 TEST_F(TitanDBTest, Basic) {
-  const uint64_t kNumKeys = 10000;
-  const uint64_t kNumFiles = 10;
+  const uint64_t kNumKeys = 100;
   std::map<std::string, std::string> data;
-  Open();
-  for (uint64_t i = 1; i <= kNumKeys; i++) {
-    Put(i, &data);
-    if (i % (kNumKeys / kNumFiles) == 0) {
-      Flush();
+  for (auto i = 0; i < 6; i++) {
+    if (i == 0) {
+      Open();
+    } else {
+      Reopen();
+      VerifyDB(data);
+      AddCF(std::to_string(i));
+      if (i % 3 == 0) {
+        DropCF(std::to_string(i-1));
+        DropCF(std::to_string(i-2));
+      }
     }
+    for (uint64_t k = 1; k <= kNumKeys; k++) {
+      Put(k, &data);
+    }
+    Flush();
+    VerifyDB(data);
   }
-  VerifyDB(data);
-  Reopen();
-  VerifyDB(data);
 }
 
 }  // namespace titandb

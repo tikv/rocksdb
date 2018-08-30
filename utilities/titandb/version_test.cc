@@ -22,9 +22,9 @@ class VersionTest : public testing::Test {
     auto v = new Version;
     for (uint32_t id = 0; id < 10; id++) {
       std::shared_ptr<BlobStorage> storage;
-      storage.reset(new BlobStorage(file_cache_));
+      storage.reset(new BlobStorage(cf_options_, file_cache_));
       column_families_.emplace(id, storage);
-      storage.reset(new BlobStorage(file_cache_));
+      storage.reset(new BlobStorage(cf_options_, file_cache_));
       v->column_families_.emplace(id, storage);
     }
     versions_->Append(v);

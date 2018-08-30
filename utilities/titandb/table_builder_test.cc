@@ -93,6 +93,15 @@ class TableBuilderTest : public testing::Test {
     env_->DeleteDir(tmpdir_);
   }
 
+  void BlobFileExists(bool exists) {
+    Status s = env_->FileExists(blob_name_);
+    if (exists) {
+      ASSERT_TRUE(s.ok());
+    } else {
+      ASSERT_TRUE(s.IsNotFound());
+    }
+  }
+
   void NewFileWriter(const std::string& fname,
                      std::unique_ptr<WritableFileWriter>* result) {
     std::unique_ptr<WritableFile> file;
@@ -214,6 +223,66 @@ TEST_F(TableBuilderTest, Basic) {
     }
     iter->Next();
   }
+}
+
+TEST_F(TableBuilderTest, NoBlob) {
+  std::unique_ptr<WritableFileWriter> base_file;
+  NewBaseFileWriter(&base_file);
+  std::unique_ptr<TableBuilder> table_builder;
+  NewTableBuilder(base_file.get(), &table_builder);
+
+  const int n = 100;
+  for (char i = 0; i < n; i++) {
+    std::string key(1, i);
+    InternalKey ikey(key, 1, kTypeValue);
+    std::string value(1, i);
+    table_builder->Add(ikey.Encode(), value);
+  }
+  ASSERT_OK(table_builder->Finish());
+  ASSERT_OK(base_file->Sync(true));
+  ASSERT_OK(base_file->Close());
+  BlobFileExists(false);
+
+  std::unique_ptr<TableReader> base_reader;
+  NewTableReader(&base_reader);
+
+  ReadOptions ro;
+  std::unique_ptr<InternalIterator> iter;
+  iter.reset(base_reader->NewIterator(ro, nullptr));
+  iter->SeekToFirst();
+  for (char i = 0; i < n; i++) {
+    ASSERT_TRUE(iter->Valid());
+    std::string key(1, i);
+    ParsedInternalKey ikey;
+    ASSERT_TRUE(ParseInternalKey(iter->key(), &ikey));
+    ASSERT_EQ(ikey.user_key, key);
+    ASSERT_EQ(ikey.type, kTypeValue);
+    ASSERT_EQ(iter->value(), std::string(1, i));
+    iter->Next();
+  }
+}
+
+TEST_F(TableBuilderTest, Abandon) {
+  std::unique_ptr<WritableFileWriter> base_file;
+  NewBaseFileWriter(&base_file);
+  std::unique_ptr<TableBuilder> table_builder;
+  NewTableBuilder(base_file.get(), &table_builder);
+
+  const int n = 100;
+  for (char i = 0; i < n; i++) {
+    std::string key(1, i);
+    InternalKey ikey(key, 1, kTypeValue);
+    std::string value;
+    if (i % 2 == 0) {
+      value = std::string(1, i);
+    } else {
+      value = std::string(kMinBlobSize, i);
+    }
+    table_builder->Add(ikey.Encode(), value);
+  }
+  BlobFileExists(true);
+  table_builder->Abandon();
+  BlobFileExists(false);
 }
 
 }  // namespace titandb

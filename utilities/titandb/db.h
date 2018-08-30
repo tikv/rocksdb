@@ -29,6 +29,29 @@ class TitanDB : public StackableDB {
 
   TitanDB() : StackableDB(nullptr) {}
 
+  using StackableDB::CreateColumnFamily;
+  Status CreateColumnFamily(
+      const TitanCFDescriptor& desc, ColumnFamilyHandle** handle) {
+    std::vector<ColumnFamilyHandle*> handles;
+    Status s = CreateColumnFamilies({desc}, &handles);
+    if (s.ok()) {
+      *handle = handles[0];
+    }
+    return s;
+  }
+
+  using StackableDB::CreateColumnFamilies;
+  virtual Status CreateColumnFamilies(
+      const std::vector<TitanCFDescriptor>& descs,
+      std::vector<ColumnFamilyHandle*>* handles) = 0;
+
+  Status DropColumnFamily(ColumnFamilyHandle* handle) override {
+    return DropColumnFamilies({handle});
+  }
+
+  virtual Status DropColumnFamilies(
+      const std::vector<ColumnFamilyHandle*>& handles) = 0;
+
   using StackableDB::Merge;
   Status Merge(const WriteOptions&, ColumnFamilyHandle*,
                const Slice& /*key*/, const Slice& /*value*/) override {
