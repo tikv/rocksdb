@@ -195,7 +195,7 @@ void VersionSet::AddColumnFamilies(
   for (auto& cf : column_families) {
     auto file_cache = std::make_shared<BlobFileCache>(
         db_options_, cf.second, file_cache_);
-    auto blob_storage = std::make_shared<BlobStorage>(file_cache);
+    auto blob_storage = std::make_shared<BlobStorage>(cf.second, file_cache);
     v->column_families_.emplace(cf.first, blob_storage);
   }
   versions_.Append(v);

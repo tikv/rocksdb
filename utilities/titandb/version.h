@@ -11,8 +11,10 @@ namespace titandb {
 // version. The version must be valid when this storage is used.
 class BlobStorage {
  public:
-  BlobStorage(std::shared_ptr<BlobFileCache> file_cache)
-      : file_cache_(file_cache) {}
+  BlobStorage(const TitanCFOptions& options,
+              std::shared_ptr<BlobFileCache> file_cache)
+      : options_(options),
+        file_cache_(file_cache) {}
 
   // Gets the blob record pointed by the blob index. The provided
   // buffer is used to store the record data, so the buffer must be
@@ -34,6 +36,7 @@ class BlobStorage {
   friend class VersionTest;
   friend class VersionBuilder;
 
+  TitanCFOptions options_;
   std::map<uint64_t, BlobFileMeta> files_;
   std::shared_ptr<BlobFileCache> file_cache_;
 };
