@@ -16,8 +16,8 @@ void TitanDBImpl::PurgeObsoleteFiles() {
     mutex_.Unlock();
     std::vector<std::string> candidate_files;
     for (auto& blob_file : obsolete_files.blob_files) {
-      candidate_files.emplace_back(BlobFileName(db_options_.dirname,
-                                                blob_file->file_number));
+      candidate_files.emplace_back(
+          BlobFileName(db_options_.dirname, blob_file->file_number));
     }
     for (auto& manifest : obsolete_files.manifests) {
       candidate_files.emplace_back(std::move(manifest));

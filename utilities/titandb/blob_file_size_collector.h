@@ -28,6 +28,11 @@ class BlobFileSizeCollector final : public TablePropertiesCollector {
  public:
   const static std::string PROPERTIES_NAME;
 
+  static bool Encode(const std::map<uint64_t, uint64_t>& blob_files_size,
+                     std::string* result);
+  static bool Decode(Slice* slice,
+                     std::map<uint64_t, uint64_t>* blob_files_size);
+
   Status AddUserKey(const Slice& key, const Slice& value, EntryType type,
                     SequenceNumber seq, uint64_t file_size) override;
   Status Finish(UserCollectedProperties* properties) override;
@@ -35,32 +40,6 @@ class BlobFileSizeCollector final : public TablePropertiesCollector {
     return UserCollectedProperties();
   }
   const char* Name() const override { return "BlobFileSizeCollector"; }
-
-  static bool Encode(const std::map<uint64_t, uint64_t>& blob_files_size,
-                     std::string* result) {
-    PutVarint64(result, blob_files_size.size());
-    for (const auto& bfs : blob_files_size) {
-      // TODO Maybe check return value here
-      PutVarint64(result, bfs.first);
-      PutVarint64(result, bfs.second);
-    }
-    return true;
-  }
-  static bool Decode(const std::string& buffer,
-                     std::map<uint64_t, uint64_t>* blob_files_size) {
-    Slice slice{buffer};
-    uint64_t num = 0;
-    GetVarint64(&slice, &num);
-    uint64_t file_number;
-    uint64_t size;
-    for (uint32_t i = 0; i < num; ++i) {
-      // TODO Maybe check return value here
-      GetVarint64(&slice, &file_number);
-      GetVarint64(&slice, &size);
-      (*blob_files_size)[file_number] = size;
-    }
-    return true;
-  }
 
  private:
   std::map<uint64_t, uint64_t> blob_files_size_;
