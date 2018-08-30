@@ -1,5 +1,5 @@
 #include "util/testharness.h"
-#include "utilities/titandb/test_util.h"
+#include "utilities/titandb/util.h"
 #include "utilities/titandb/blob_format.h"
 
 namespace rocksdb {
