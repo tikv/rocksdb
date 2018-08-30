@@ -14,14 +14,12 @@ Status BlobStorage::Get(const ReadOptions& options,
       record, buffer);
 }
 
-Status BlobStorage::NewReader(const ReadOptions& options,
-                              uint64_t file_number,
-                              std::unique_ptr<BlobFileReader>* result) {
+Status BlobStorage::NewPrefetcher(uint64_t file_number,
+                                  std::unique_ptr<BlobFilePrefetcher>* result) {
   const BlobFileMeta* file;
   Status s = FindFile(file_number, &file);
   if (!s.ok()) return s;
-  return file_cache_->NewReader(
-      options, file->file_number, file->file_size, result);
+  return file_cache_->NewPrefetcher(file->file_number, file->file_size, result);
 }
 
 Status BlobStorage::FindFile(uint64_t file_number, const BlobFileMeta** file) {

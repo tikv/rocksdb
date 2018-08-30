@@ -7,19 +7,6 @@
 namespace rocksdb {
 namespace titandb {
 
-// Represents the information of a blob file read from the file.
-class BlobFile {
- public:
-  const BlobFileFooter& footer() const { return footer_; }
-
- private:
-  friend class BlobFileReader;
-
-  BlobFile() = default;
-
-  BlobFileFooter footer_;
-};
-
 class BlobFileReader {
  public:
   // Opens a blob file and read the necessary metadata from it.
@@ -29,15 +16,6 @@ class BlobFileReader {
                      uint64_t file_size,
                      std::unique_ptr<BlobFileReader>* result);
 
-  // Constructs a reader with the shared blob file. The provided blob
-  // file must be corresponding to the "file".
-  BlobFileReader(const TitanCFOptions& options,
-                 std::shared_ptr<BlobFile> blob_file,
-                 std::unique_ptr<RandomAccessFileReader> file)
-      : options_(options),
-        blob_file_(blob_file),
-        file_(std::move(file)) {}
-
   // Gets the blob record pointed by the handle in this file. The data
   // of the record is stored in the provided buffer, so the buffer
   // must be valid when the record is used.
@@ -45,13 +23,39 @@ class BlobFileReader {
              const BlobHandle& handle,
              BlobRecord* record, std::string* buffer);
 
-  // Returns a shared reference to the blob file.
-  std::shared_ptr<BlobFile> GetBlobFile() const { return blob_file_; }
+ private:
+  friend class BlobFilePrefetcher;
+
+  BlobFileReader(const TitanCFOptions& options,
+                 std::unique_ptr<RandomAccessFileReader> file);
+
+  TitanCFOptions options_;
+  std::unique_ptr<RandomAccessFileReader> file_;
+
+  std::shared_ptr<Cache> cache_;
+  std::string cache_prefix_;
+
+  // Information read from the file.
+  BlobFileFooter footer_;
+};
+
+// Performs readahead on continuous reads.
+class BlobFilePrefetcher : public Cleanable {
+ public:
+  // Constructs a prefetcher with the blob file reader.
+  // "*reader" must be valid when the prefetcher is used.
+  BlobFilePrefetcher(BlobFileReader* reader)
+      : reader_(reader) {}
+
+  Status Get(const ReadOptions& options,
+             const BlobHandle& handle,
+             BlobRecord* record, std::string* buffer);
 
  private:
-  TitanCFOptions options_;
-  std::shared_ptr<BlobFile> blob_file_;
-  std::unique_ptr<RandomAccessFileReader> file_;
+  BlobFileReader* reader_;
+  uint64_t last_offset_ {0};
+  uint64_t readahead_size_ {0};
+  uint64_t readahead_limit_ {0};
 };
 
 }  // namespace titandb

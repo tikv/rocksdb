@@ -25,13 +25,10 @@ class BlobFileCache {
              const BlobHandle& handle,
              BlobRecord* record, std::string* buffer);
 
-  // Creates a new blob file reader for the specified file number. The
-  // corresponding file size must be exactly "file_size" bytes.
-  // If successful, sets "*result" to the new blob file reader.
-  Status NewReader(const ReadOptions& options,
-                   uint64_t file_number,
-                   uint64_t file_size,
-                   std::unique_ptr<BlobFileReader>* result);
+  // Creates a prefetcher for the specified file number.
+  Status NewPrefetcher(uint64_t file_number,
+                       uint64_t file_size,
+                       std::unique_ptr<BlobFilePrefetcher>* result);
 
   // Evicts the file cache for the specified file number.
   void Evict(uint64_t file_number);
@@ -43,10 +40,6 @@ class BlobFileCache {
   Status FindFile(uint64_t file_number,
                   uint64_t file_size,
                   Cache::Handle** handle);
-
-  Status NewRandomAccessReader(uint64_t file_number,
-                               uint64_t readahead_size,
-                               std::unique_ptr<RandomAccessFileReader>* result);
 
   Env* env_;
   EnvOptions env_options_;
