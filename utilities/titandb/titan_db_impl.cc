@@ -190,6 +190,19 @@ Status TitanDBImpl::Close() {
   return s;
 }
 
+Status TitanDBImpl::CloseImpl() {
+  int gc_unscheduled = env_->UnSchedule(this, Env::Priority::GC);
+  {
+    MutexLock l(&mutex_);
+    bg_gc_scheduled_ -= gc_unscheduled;
+    while (bg_gc_scheduled_ > 0) {
+      bg_cv_.Wait();
+    }
+  }
+
+  return Status::OK();
+}
+
 Status TitanDBImpl::CreateColumnFamilies(
     const std::vector<TitanCFDescriptor>& descs,
     std::vector<ColumnFamilyHandle*>* handles) {
@@ -225,19 +238,6 @@ Status TitanDBImpl::DropColumnFamilies(
     vset_->DropColumnFamilies(column_families);
   }
   return s;
-}
-
-Status TitanDBImpl::CloseImpl() {
-  int gc_unscheduled = env_->UnSchedule(this, Env::Priority::GC);
-  {
-    MutexLock l(&mutex_);
-    bg_gc_scheduled_ -= gc_unscheduled;
-    while (bg_gc_scheduled_ > 0) {
-      bg_cv_.Wait();
-    }
-  }
-
-  return Status::OK();
 }
 
 Status TitanDBImpl::Get(const ReadOptions& options, ColumnFamilyHandle* handle,

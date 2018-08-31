@@ -80,8 +80,8 @@ struct BlobFileMeta {
         being_gc(_being_gc) {}
 
   // Persistent field, we should never modify it.
-  uint64_t file_number;
-  uint64_t file_size;
+  uint64_t file_number{0};
+  uint64_t file_size{0};
 
   // Not persistent field
   // These fields maybe are mutate, need to be protected by db.mutex_
@@ -107,10 +107,7 @@ struct BlobFileMeta {
 struct BlobFileFooter {
   // The first 64bits from $(echo titandb/blob | sha1sum).
   static const uint64_t kMagicNumber {0xcd3f52ea0fe14511ull};
-  static const uint64_t kEncodedLength {
-       BlockHandle::kMaxEncodedLength + 8 + 4
-  };
-
+  static const uint64_t kEncodedLength{BlockHandle::kMaxEncodedLength + 8 + 4};
 
   BlockHandle meta_index_handle {BlockHandle::NullBlockHandle()};
 

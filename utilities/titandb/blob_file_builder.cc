@@ -25,8 +25,7 @@ void BlobFileBuilder::Add(const BlobRecord& record, BlobHandle* handle) {
   uint64_t body_length = output.size();
   status_ = file_->Append(
       Slice{reinterpret_cast<const char*>(&body_length), kBlobHeaderSize});
-  if (!ok())
-    return;
+  if (!ok()) return;
 
   handle->offset = file_->GetFileSize();
   handle->size = output.size();

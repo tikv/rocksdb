@@ -53,23 +53,24 @@ bool BlobFileIterator::Init() {
   BlobFileFooter blob_file_footer;
   blob_file_footer.DecodeFrom(&slice);
   total_blocks_size_ = file_size_ - BlobFileFooter::kEncodedLength -
-      blob_file_footer.meta_index_handle.size();
+                       blob_file_footer.meta_index_handle.size();
   assert(total_blocks_size_ > 0);
   init_ = true;
   return true;
 }
 
 void BlobFileIterator::SeekToFirst() {
-  if (!init_)
-    Init();
+  if (!init_) Init();
 
   GetOneBlobRecord();
 }
 
 bool BlobFileIterator::Valid() const { return valid_; }
 
-void BlobFileIterator::Next() { assert(init_);
-  GetOneBlobRecord(); }
+void BlobFileIterator::Next() {
+  assert(init_);
+  GetOneBlobRecord();
+}
 
 Slice BlobFileIterator::key() const { return cur_blob_record_.key; }
 
@@ -97,8 +98,7 @@ Status BlobFileIterator::GetProperty(std::string prop_name, std::string* prop) {
 }
 
 void BlobFileIterator::IterateForPrev(uint64_t offset) {
-  if (!init_)
-    Init();
+  if (!init_) Init();
 
   if (offset >= total_blocks_size_) {
     iterate_offset_ = offset;
@@ -123,7 +123,8 @@ void BlobFileIterator::IterateForPrev(uint64_t offset) {
 }
 
 void BlobFileIterator::Prefetch() {
-  readahead_size_ = std::min(total_blocks_size_ - iterate_offset_, readahead_size_);
+  readahead_size_ =
+      std::min(total_blocks_size_ - iterate_offset_, readahead_size_);
   file_->Prefetch(iterate_offset_, readahead_size_);
   readahead_offset = iterate_offset_ + readahead_size_;
 }
@@ -149,8 +150,7 @@ void BlobFileIterator::GetOneBlobRecord() {
   // read body and tailer
   uint64_t left_size = body_length + kBlobTailerSize;
   buffer_.reserve(left_size);
-  status_ = file_->Read(
-      iterate_offset_, left_size, &slice, buffer_.data());
+  status_ = file_->Read(iterate_offset_, left_size, &slice, buffer_.data());
   if (!status_.ok()) return;
 
   // parse body and tailer
@@ -166,8 +166,8 @@ void BlobFileIterator::GetOneBlobRecord() {
     slice = {buffer_.data(), body_length};
   } else {
     UncompressionContext ctx(compression);
-    status_ = Uncompress(
-        ctx, {buffer_.data(), body_length}, &slice, &uncompressed);
+    status_ =
+        Uncompress(ctx, {buffer_.data(), body_length}, &slice, &uncompressed);
     if (!status_.ok()) return;
   }
   status_ = DecodeInto(slice, &cur_blob_record_);
