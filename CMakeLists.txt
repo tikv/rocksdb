@@ -1013,12 +1013,25 @@ if(WITH_TESTS)
       table/mock_table.cc
       util/fault_injection_test_env.cc
       utilities/cassandra/test_utils.cc
-          utilities/titandb/blob_gc.cc
+      utilities/titandb/blob_gc.cc
       utilities/titandb/blob_gc.h
-          utilities/titandb/blob_file_iterator.cc
+      utilities/titandb/blob_file_iterator.cc
       utilities/titandb/blob_file_iterator.h
-          utilities/titandb/blob_file_iterator_test.cc
-          utilities/titandb/blob_file_size_collector.cc utilities/titandb/blob_file_size_collector.h utilities/titandb/titan_db_impl_gc.cc utilities/titandb/blob_gc_picker.cc utilities/titandb/blob_gc_picker.h utilities/titandb/blob_gc_picker_test.cc utilities/titandb/blob_gc_job.cc utilities/titandb/blob_gc_job.h utilities/titandb/blob_file_size_collector_test.cc utilities/titandb/blob_gc_job_test.cc utilities/titandb/blob_gc_job_test.cc utilities/titandb/table_builder_test.cc utilities/titandb/version_test.cc utilities/titandb/titan_db_impl_files.cc utilities/titandb/titan_db_impl_files.h)
+      utilities/titandb/blob_file_iterator_test.cc
+      utilities/titandb/blob_file_size_collector.cc
+      utilities/titandb/blob_file_size_collector.h
+      utilities/titandb/titan_db_impl_gc.cc
+      utilities/titandb/blob_gc_picker.cc
+      utilities/titandb/blob_gc_picker.h
+      utilities/titandb/blob_gc_picker_test.cc
+      utilities/titandb/blob_gc_job.cc
+      utilities/titandb/blob_gc_job.h
+      utilities/titandb/blob_file_size_collector_test.cc
+      utilities/titandb/blob_gc_job_test.cc
+      utilities/titandb/blob_gc_job_test.cc
+      utilities/titandb/table_builder_test.cc
+      utilities/titandb/version_test.cc
+      utilities/titandb/titan_db_impl_files.cc)
   # test utilities are only build in debug
   enable_testing()
   add_custom_target(check COMMAND ${CMAKE_CTEST_COMMAND})
