@@ -9,7 +9,7 @@ namespace rocksdb {
 namespace titandb {
 
 // 8 bytes body length
-const uint32_t kBlobHeaderSize = 4;
+const uint32_t kBlobHeaderSize = 8;
 
 // compression  : char
 // checksum     : fixed32

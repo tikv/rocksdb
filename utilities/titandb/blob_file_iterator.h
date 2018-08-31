@@ -27,6 +27,7 @@ class BlobFileIterator final : public InternalIterator {
                    uint64_t file_name, uint64_t file_size);
   ~BlobFileIterator() override;
 
+  bool Init();
   bool Valid() const override;
   void SeekToFirst() override;
   void SeekToLast() override { assert(false); }
@@ -43,20 +44,29 @@ class BlobFileIterator final : public InternalIterator {
   void IterateForPrev(uint64_t);
 
  private:
+  // Blob file info
   const std::unique_ptr<RandomAccessFileReader> file_;
   const uint64_t file_number_;
   const uint64_t file_size_;
-  Status status_;
-  uint64_t iterate_offset_ = 0;
-  uint64_t iterate_size_ = 0;
-  uint64_t blocks_size_ = 0;
-  std::vector<char> buffer_;
-  BlobRecord current_blob_record_;
-  uint64_t current_blob_offset_;
-  uint64_t current_blob_size_;
-  bool valid_ = true;
 
-  void GetOneBlock();
+  bool init_{false};
+  uint64_t total_blocks_size_{0};
+
+  // Iterator status
+  Status status_;
+  bool valid_{false};
+
+  uint64_t iterate_offset_{0};
+  std::vector<char> buffer_;
+  BlobRecord cur_blob_record_;
+  uint64_t cur_record_offset_;
+  uint64_t cur_record_size_;
+
+  uint64_t readahead_offset{0};
+  uint64_t readahead_size_{4 << 10};
+
+  void GetOneBlobRecord();
+  void Prefetch();
 };
 
 }  // namespace titandb

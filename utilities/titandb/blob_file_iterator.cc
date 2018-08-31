@@ -2,8 +2,12 @@
 // Created by 郑志铨 on 2018/8/9.
 //
 
-#include "blob_file_iterator.h"
-#include "blob_format.h"
+#include "utilities/titandb/blob_file_iterator.h"
+
+#include "utilities/titandb/blob_format.h"
+#include "utilities/titandb/util.h"
+
+#include "util/crc32c.h"
 
 namespace rocksdb {
 namespace titandb {
@@ -15,8 +19,7 @@ const std::string BlobFileIterator::PROPERTIES_BLOB_OFFSET =
 const std::string BlobFileIterator::PROPERTIES_BLOB_SIZE = "PropertiesBlobSize";
 
 BlobFileIterator::BlobFileIterator(
-    std::unique_ptr<RandomAccessFileReader>&& file,
-    uint64_t file_name,
+    std::unique_ptr<RandomAccessFileReader>&& file, uint64_t file_name,
     uint64_t file_size)
     : file_(std::move(file)), file_number_(file_name), file_size_(file_size) {}
 
@@ -41,58 +44,36 @@ Status BlobFileIterator::GetBlobIndex(InternalIterator* iter,
   return Status::OK();
 }
 
-void BlobFileIterator::SeekToFirst() {
-  std::vector<char> buf;
-  buf.reserve(BlobFileFooter::kEncodedLength);
-  Slice result;
+bool BlobFileIterator::Init() {
+  char buf[BlobFileFooter::kEncodedLength];
+  Slice slice;
   status_ = file_->Read(file_size_ - BlobFileFooter::kEncodedLength,
-                        BlobFileFooter::kEncodedLength, &result, buf.data());
-  if (!status_.ok()) return;
+                        BlobFileFooter::kEncodedLength, &slice, buf);
+  if (!status_.ok()) return false;
   BlobFileFooter blob_file_footer;
-  blob_file_footer.DecodeFrom(&result);
-  blocks_size_ = file_size_ - BlobFileFooter::kEncodedLength -
-                 blob_file_footer.meta_index_handle.size();
-  assert(blocks_size_ > 0);
+  blob_file_footer.DecodeFrom(&slice);
+  total_blocks_size_ = file_size_ - BlobFileFooter::kEncodedLength -
+      blob_file_footer.meta_index_handle.size();
+  assert(total_blocks_size_ > 0);
+  init_ = true;
+  return true;
+}
 
-  // Init first block
-  GetOneBlock();
+void BlobFileIterator::SeekToFirst() {
+  if (!init_)
+    Init();
+
+  GetOneBlobRecord();
 }
 
 bool BlobFileIterator::Valid() const { return valid_; }
 
-void BlobFileIterator::Next() { GetOneBlock(); }
+void BlobFileIterator::Next() { assert(init_);
+  GetOneBlobRecord(); }
 
-Slice BlobFileIterator::key() const { return current_blob_record_.key; }
+Slice BlobFileIterator::key() const { return cur_blob_record_.key; }
 
-Slice BlobFileIterator::value() const { return current_blob_record_.value; }
-
-void BlobFileIterator::GetOneBlock() {
-  if (iterate_size_ >= blocks_size_) {
-    valid_ = false;
-    return;
-  }
-
-  Slice result;
-  char buf[8];
-  status_ = file_->Read(iterate_offset_, 8, &result, buf);
-  if (!status_.ok()) return;
-  uint64_t length = *reinterpret_cast<const uint64_t*>(result.data());
-
-  current_blob_offset_ = iterate_offset_;
-  current_blob_size_ = length;
-
-  iterate_offset_ += 8;
-  iterate_size_ += 8;
-  assert(length > 0);
-  buffer_.reserve(length);
-  status_ = file_->Read(iterate_offset_, length, &result, buffer_.data());
-  if (!status_.ok()) return;
-  status_ = current_blob_record_.DecodeFrom(&result);
-  if (!status_.ok()) return;
-  iterate_offset_ += length;
-  iterate_size_ += length;
-  valid_ = true;
-}
+Slice BlobFileIterator::value() const { return cur_blob_record_.value; }
 
 Status BlobFileIterator::GetProperty(std::string prop_name, std::string* prop) {
   assert(Valid());
@@ -103,11 +84,11 @@ Status BlobFileIterator::GetProperty(std::string prop_name, std::string* prop) {
     prop->assign(reinterpret_cast<const char*>(&file_number_),
                  sizeof(file_number_));
   } else if (prop_name == PROPERTIES_BLOB_OFFSET) {
-    prop->assign(reinterpret_cast<char*>(&current_blob_offset_),
-                 sizeof(current_blob_offset_));
+    prop->assign(reinterpret_cast<char*>(&cur_record_offset_),
+                 sizeof(cur_record_offset_));
   } else if (prop_name == PROPERTIES_BLOB_SIZE) {
-    prop->assign(reinterpret_cast<char*>(&current_blob_size_),
-                 sizeof(current_blob_size_));
+    prop->assign(reinterpret_cast<char*>(&cur_record_size_),
+                 sizeof(cur_record_size_));
   } else {
     return Status::InvalidArgument("Unknown prop_name: " + prop_name);
   }
@@ -116,7 +97,10 @@ Status BlobFileIterator::GetProperty(std::string prop_name, std::string* prop) {
 }
 
 void BlobFileIterator::IterateForPrev(uint64_t offset) {
-  if (offset >= blocks_size_) {
+  if (!init_)
+    Init();
+
+  if (offset >= total_blocks_size_) {
     iterate_offset_ = offset;
     status_ = Status::InvalidArgument("Out of bound");
     return;
@@ -125,12 +109,10 @@ void BlobFileIterator::IterateForPrev(uint64_t offset) {
   Slice slice;
   uint64_t length;
   for (iterate_offset_ = 0;
-       iterate_offset_ < blocks_size_ && iterate_offset_ < offset;
+       iterate_offset_ < total_blocks_size_ && iterate_offset_ < offset;
        iterate_offset_ += kBlobHeaderSize + length + kBlobTailerSize) {
-    Status s = file_->Read(current_blob_offset_,
-                    kBlobHeaderSize,
-                    &slice,
-                    reinterpret_cast<char*>(&length));
+    Status s = file_->Read(cur_record_offset_, kBlobHeaderSize, &slice,
+                           reinterpret_cast<char*>(&length));
     if (!s.ok()) {
       status_ = s;
       return;
@@ -138,6 +120,63 @@ void BlobFileIterator::IterateForPrev(uint64_t offset) {
   }
 
   if (iterate_offset_ > offset) iterate_offset_ -= length;
+}
+
+void BlobFileIterator::Prefetch() {
+  readahead_size_ = std::min(total_blocks_size_ - iterate_offset_, readahead_size_);
+  file_->Prefetch(iterate_offset_, readahead_size_);
+  readahead_offset = iterate_offset_ + readahead_size_;
+}
+
+void BlobFileIterator::GetOneBlobRecord() {
+  if (iterate_offset_ >= total_blocks_size_) {
+    valid_ = false;
+    return;
+  }
+
+  Prefetch();
+
+  // read header
+  Slice slice;
+  uint64_t body_length;
+  status_ = file_->Read(iterate_offset_, kBlobHeaderSize, &slice,
+                        reinterpret_cast<char*>(&body_length));
+  if (!status_.ok()) return;
+  body_length = *reinterpret_cast<const uint64_t*>(slice.data());
+  assert(body_length > 0);
+  iterate_offset_ += kBlobHeaderSize;
+
+  // read body and tailer
+  uint64_t left_size = body_length + kBlobTailerSize;
+  buffer_.reserve(left_size);
+  status_ = file_->Read(
+      iterate_offset_, left_size, &slice, buffer_.data());
+  if (!status_.ok()) return;
+
+  // parse body and tailer
+  auto tailer = buffer_.data() + body_length;
+  auto checksum = DecodeFixed32(tailer + 1);
+  if (crc32c::Value(buffer_.data(), body_length) != checksum) {
+    status_ = Status::Corruption("BlobRecord", "checksum");
+    return;
+  }
+  auto compression = static_cast<CompressionType>(*tailer);
+  std::unique_ptr<char[]> uncompressed;
+  if (compression == kNoCompression) {
+    slice = {buffer_.data(), body_length};
+  } else {
+    UncompressionContext ctx(compression);
+    status_ = Uncompress(
+        ctx, {buffer_.data(), body_length}, &slice, &uncompressed);
+    if (!status_.ok()) return;
+  }
+  status_ = DecodeInto(slice, &cur_blob_record_);
+  if (!status_.ok()) return;
+
+  cur_record_offset_ = iterate_offset_;
+  cur_record_size_ = body_length;
+  iterate_offset_ += left_size;
+  valid_ = true;
 }
 
 }  // namespace titandb

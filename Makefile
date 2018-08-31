@@ -1547,11 +1547,11 @@ TITANDB_TESTS = \
 	titandb_table_builder_test \
 	titandb_version_test \
 	titandb_util_test \
-	titandb_db_test \
 	titandb_blob_file_iterator_test \
 	titandb_blob_gc_picker_test \
 	titandb_blob_file_size_collector_test \
 	titandb_blob_gc_job_test \
+	titandb_db_test \
 
 titandb_blob_format_test: utilities/titandb/blob_format_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)

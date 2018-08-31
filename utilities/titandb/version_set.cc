@@ -1,6 +1,9 @@
 #include "utilities/titandb/version_set.h"
 
+#include <inttypes.h>
+
 #include "util/filename.h"
+#include "utilities/titandb/version_builder.h"
 
 namespace rocksdb {
 namespace titandb {
@@ -202,7 +205,7 @@ Status VersionSet::LogAndApply(VersionEdit* edit, port::Mutex* mutex) {
 
 void VersionSet::AddColumnFamilies(
     const std::map<uint32_t, TitanCFOptions>& column_families) {
-  auto v = new Version;
+  auto v = new Version(this);
   v->column_families_ = current()->column_families_;
   for (auto& cf : column_families) {
     auto file_cache = std::make_shared<BlobFileCache>(
@@ -215,7 +218,7 @@ void VersionSet::AddColumnFamilies(
 
 void VersionSet::DropColumnFamilies(
     const std::vector<uint32_t>& column_families) {
-  auto v = new Version;
+  auto v = new Version(this);
   v->column_families_ = current()->column_families_;
   for (auto& cf : column_families) {
     v->column_families_.erase(cf);

@@ -21,11 +21,16 @@ void BlobFileBuilder::Add(const BlobRecord& record, BlobHandle* handle) {
   CompressionType compression;
   auto output = Compress(compression_ctx_, buffer_,
                          &compressed_buffer_, &compression);
+
+  uint64_t body_length = output.size();
+  status_ = file_->Append(
+      Slice{reinterpret_cast<const char*>(&body_length), kBlobHeaderSize});
+  if (!ok())
+    return;
+
   handle->offset = file_->GetFileSize();
   handle->size = output.size();
 
-  status_ =
-      file_->Append({static_cast<const char*>(&handle->size), kBlobHeaderSize});
   status_ = file_->Append(output);
   if (ok()) {
     char tailer[kBlobTailerSize];
