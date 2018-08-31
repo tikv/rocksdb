@@ -129,9 +129,8 @@ Status BlobGCJob::SampleCandidateFiles() {
 bool BlobGCJob::SampleOne(
     const std::shared_ptr<rocksdb::titandb::BlobFileMeta>& file) {
   Status s;
-  static const float kSampleSizeWindowRatio = 0.1;
-  uint64_t sample_size_window =
-      static_cast<uint64_t>(file->file_size * kSampleSizeWindowRatio);
+  uint64_t sample_size_window = static_cast<uint64_t>(
+      file->file_size * titan_cf_options_.sample_flie_size_ratio);
   Random64 random64(file->file_size);
   uint64_t sample_begin_offset =
       random64.Uniform(file->file_size - sample_size_window);
@@ -139,9 +138,7 @@ bool BlobGCJob::SampleOne(
   std::unique_ptr<RandomAccessFileReader> file_reader;
   s = NewBlobFileReader(file->file_number, 0, titan_db_options_, env_options_,
                         env_, &file_reader);
-  if (!s.ok()) {
-    return false;
-  }
+  assert(s.ok());
   BlobFileIterator iter(std::move(file_reader), file->file_number,
                         file->file_size);
   iter.IterateForPrev(sample_begin_offset);
@@ -162,8 +159,8 @@ bool BlobGCJob::SampleOne(
     }
   }
 
-  // TODO Configurable
-  return discardable_size >= sample_size_window * 0.5;
+  return discardable_size >=
+         sample_size_window * titan_cf_options_.blob_file_discardable_ratio;
 }
 
 Status BlobGCJob::DoRunGC() {

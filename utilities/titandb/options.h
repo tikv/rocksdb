@@ -53,6 +53,16 @@ struct TitanCFOptions : public ColumnFamilyOptions {
   // Default: 1GB
   uint64_t blob_gc_batch_size{1 << 30};
 
+  // The ratio of how much discardable size of a blob file can be GC
+  //
+  // Default: 0.5
+  float blob_file_discardable_ratio{0.5};
+
+  // The ratio of how much size of a blob file need to be sample before GC
+  //
+  // Default: 0.1
+  float sample_flie_size_ratio{0.1};
+
   TitanCFOptions() = default;
   explicit TitanCFOptions(const ColumnFamilyOptions& options)
       : ColumnFamilyOptions(options) {}
