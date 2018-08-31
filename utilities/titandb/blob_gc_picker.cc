@@ -23,7 +23,7 @@ std::unique_ptr<BlobGC> BasicBlobGCPicker::PickBlobGC(
     s = blob_storage->FindFile(gc_score.file_number, &blob_file);
     assert(s.ok());
 
-    if (!CheckForPick(blob_file)) continue;
+    if (!CheckForPick(blob_file, gc_score)) continue;
     MarkedForPick(blob_file);
     blob_files.push_back(blob_file);
 
@@ -38,8 +38,12 @@ std::unique_ptr<BlobGC> BasicBlobGCPicker::PickBlobGC(
 }
 
 bool BasicBlobGCPicker::CheckForPick(
-    const std::shared_ptr<rocksdb::titandb::BlobFileMeta>& blob_file) const {
-  if (blob_file->being_gc) return false;
+    const std::shared_ptr<rocksdb::titandb::BlobFileMeta>& blob_file,
+    const GCScore& gc_score) const {
+  if (blob_file->being_gc.load(std::memory_order_acquire))
+    return false;
+  if (gc_score.score >= titan_cf_options_.blob_file_discardable_ratio)
+    blob_file->marked_for_sample = false;
   return true;
 }
 

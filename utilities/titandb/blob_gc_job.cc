@@ -151,8 +151,7 @@ bool BlobGCJob::DoSample(
        iter.Next()) {
     BlobIndex blob_index;
     BlobFileIterator::GetBlobIndex(&iter, &blob_index);
-    uint64_t total_length =
-        blob_index.blob_handle.size + kBlobFixedSize;
+    uint64_t total_length = blob_index.blob_handle.size + kBlobFixedSize;
     iterated_size += total_length;
     if (DiscardEntry(iter.key(), blob_index)) {
       discardable_size += total_length;
@@ -331,14 +330,28 @@ Status BlobGCJob::Finish() {
   // TODO cal discardable size for new blob file
 
   // Delete input blob file
-  VersionEdit edit;
-  edit.SetColumnFamilyID(cfh_->GetID());
-  for (const auto& file : blob_gc_->selected_files()) {
-    edit.DeleteBlobFile(file->file_number);
+  {
+    VersionEdit edit;
+    edit.SetColumnFamilyID(cfh_->GetID());
+    for (const auto& file : blob_gc_->selected_files()) {
+      edit.DeleteBlobFile(file->file_number);
+    }
+    s = version_set_->LogAndApply(&edit, tdb_mutex_);
+    // TODO
+    // base_db_->pending_outputs_.erase(handle->GetNumber());
   }
-  s = version_set_->LogAndApply(&edit, tdb_mutex_);
-  // TODO
-  // base_db_->pending_outputs_.erase(handle->GetNumber());
+
+  for (auto& f : blob_gc_->candidate_files()) {
+    bool selected = false;
+    for (std::size_t i = 0; i < blob_gc_->selected_files().size(); i++) {
+      if (*blob_gc_->selected_files()[i] == *f) {
+        selected = true;
+        break;
+      }
+    }
+    if (!selected) f->being_gc.store(false, std::memory_order_release);
+  }
+
   return Status::OK();
 }
 

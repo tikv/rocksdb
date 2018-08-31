@@ -63,6 +63,11 @@ struct TitanCFOptions : public ColumnFamilyOptions {
   // Default: 0.1
   float sample_flie_size_ratio{0.1};
 
+  // The blob file size less than this option will be mark gc
+  //
+  // Default: 8MB
+  uint64_t merge_small_file_threashold{8 << 20};
+
   TitanCFOptions() = default;
   explicit TitanCFOptions(const ColumnFamilyOptions& options)
       : ColumnFamilyOptions(options) {}

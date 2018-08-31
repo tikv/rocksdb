@@ -3,6 +3,7 @@
 #include "rocksdb/options.h"
 #include "utilities/titandb/blob_file_cache.h"
 #include "utilities/titandb/blob_format.h"
+#include "utilities/titandb/blob_gc.h"
 
 namespace rocksdb {
 namespace titandb {
@@ -13,11 +14,6 @@ class VersionSet;
 // version. The version must be valid when this storage is used.
 class BlobStorage {
  public:
-  struct GCScore {
-    uint64_t file_number;
-    double score;
-  };
-
   BlobStorage(const BlobStorage& bs) {
     this->files_ = bs.files_;
     this->file_cache_ = bs.file_cache_;

@@ -35,6 +35,11 @@ class BlobGC {
   std::vector<std::shared_ptr<BlobFileMeta>> selected_files_;
 };
 
+struct GCScore {
+  uint64_t file_number;
+  double score;
+};
+
 }  // namespace titandb
 }  // namespace rocksdb
 

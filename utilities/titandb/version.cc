@@ -37,18 +37,15 @@ void BlobStorage::ComputeGCScore() {
   gc_score_.clear();
   for (auto& file : files_) {
     gc_score_.push_back({});
-    auto& score = gc_score_.back();
-    score.file_number = file.first;
+    auto& gcs = gc_score_.back();
+    gcs.file_number = file.first;
     if (file.second->marked_for_gc) {
-      score.score = 1;
+      gcs.score = 1;
       file.second->marked_for_gc = false;
-    } else if (file.second->file_size < 8 << 20) {
-      // TODO configurable
-      score.score = 1;
-      file.second->marked_for_sample = false;
+    } else if (file.second->file_size < options_.merge_small_file_threashold) {
+      gcs.score = 1;
     } else {
-      score.score = file.second->discardable_size / file.second->file_size;
-      if (score.score >= 0.5) file.second->marked_for_sample = false;
+      gcs.score = file.second->discardable_size / file.second->file_size;
     }
   }
 
