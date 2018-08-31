@@ -21,9 +21,9 @@ namespace titandb {
 // since last read. Similar to how OptimisticTransaction works.
 class BlobGCJob::GarbageCollectionWriteCallback : public WriteCallback {
  public:
-  GarbageCollectionWriteCallback(ColumnFamilyData* cfd, const Slice& key,
+  GarbageCollectionWriteCallback(ColumnFamilyData* cfd, std::string&& key,
                                  SequenceNumber upper_bound)
-      : cfd_(cfd), key_(key), upper_bound_(upper_bound) {}
+      : cfd_(cfd), key_(std::move(key)), upper_bound_(upper_bound) {}
 
   virtual Status Callback(DB* db) override {
     auto* db_impl = reinterpret_cast<DBImpl*>(db);
@@ -41,11 +41,12 @@ class BlobGCJob::GarbageCollectionWriteCallback : public WriteCallback {
       return s;
     }
     if (s.IsNotFound()) {
+      // Deleted
       assert(!found_record_for_key);
       return Status::Busy("Key deleted");
     }
     assert(found_record_for_key);
-    if (latest_seq > upper_bound_ || !is_blob_index) {
+    if (!is_blob_index || latest_seq > upper_bound_) {
       return Status::Busy("Key overwritten");
     }
     return s;
@@ -56,7 +57,7 @@ class BlobGCJob::GarbageCollectionWriteCallback : public WriteCallback {
  private:
   ColumnFamilyData* cfd_;
   // Key to check
-  Slice key_;
+  std::string key_;
   // Upper bound of sequence number to proceed.
   SequenceNumber upper_bound_;
 };
@@ -205,6 +206,7 @@ Status BlobGCJob::DoRunGC() {
     }
     assert(blob_file_handle);
     assert(blob_file_builder);
+
     BlobRecord blob_record;
     blob_record.key = gc_iter->key();
     blob_record.value = gc_iter->value();
@@ -216,7 +218,9 @@ Status BlobGCJob::DoRunGC() {
     // Store WriteBatch for rewriting new Key-Index pairs to LSM
     rewrite_batches_.emplace_back(std::make_pair(
         WriteBatch(),
-        GarbageCollectionWriteCallback{cfd, blob_record.key, latest_seq}));
+        GarbageCollectionWriteCallback{
+            cfd, std::string(blob_record.key.data(), blob_record.key.size()),
+            latest_seq}));
     auto& wb = rewrite_batches_.back().first;
     s = WriteBatchInternal::PutBlobIndex(&wb, cfh_->GetID(), blob_record.key,
                                          index_entry);

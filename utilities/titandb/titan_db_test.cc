@@ -29,8 +29,6 @@ class TitanDBTest : public testing::Test {
     options_.min_blob_size = 32;
     DeleteDir(env_, options_.dirname);
     DeleteDir(env_, dbname_);
-    options_.max_background_gc = 2;
-    options_.max_background_jobs = 2;
   }
 
   ~TitanDBTest() {

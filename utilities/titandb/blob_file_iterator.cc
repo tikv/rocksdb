@@ -86,7 +86,8 @@ void BlobFileIterator::GetOneBlock() {
   buffer_.reserve(length);
   status_ = file_->Read(iterate_offset_, length, &result, buffer_.data());
   if (!status_.ok()) return;
-  current_blob_record_.DecodeFrom(&result);
+  status_ = current_blob_record_.DecodeFrom(&result);
+  if (!status_.ok()) return;
   iterate_offset_ += length;
   iterate_size_ += length;
 }
