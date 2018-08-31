@@ -2,13 +2,13 @@
 // Created by 郑志铨 on 2018/8/22.
 //
 
+#include "utilities/titandb/blob_file_size_collector.h"
 #include "util/filename.h"
 #include "util/testharness.h"
 #include "utilities/titandb/blob_file_builder.h"
 #include "utilities/titandb/blob_file_cache.h"
 #include "utilities/titandb/blob_gc_picker.h"
 #include "utilities/titandb/version_set.h"
-#include "utilities/titandb/blob_file_size_collector.h"
 
 namespace rocksdb {
 namespace titandb {
@@ -36,7 +36,9 @@ class BlobFileSizeCollectorTest : public testing::Test {
 
   void AddBlobFile(uint64_t file_number, uint64_t file_size,
                    uint64_t discardable_size, bool being_gc = false) {
-    vset_->current()->column_families_[kDefauleColumnFamilyID]->files_[file_number] = std::make_shared<BlobFileMeta>(
+    vset_->current()
+        ->column_families_[kDefauleColumnFamilyID]
+        ->files_[file_number] = std::make_shared<BlobFileMeta>(
         file_number, file_size, discardable_size, being_gc);
   }
 };
@@ -46,12 +48,15 @@ TEST_F(BlobFileSizeCollectorTest, Basic) {
   CompactionJobInfo cji;
   cji.cf_id = kDefauleColumnFamilyID;
   AddBlobFile(1, 100, 5);
-  auto file = (*vset_->current()->GetBlobStorage(kDefauleColumnFamilyID)->mutable_files())[1];
+  auto file = (*vset_->current()
+                    ->GetBlobStorage(kDefauleColumnFamilyID)
+                    ->mutable_files())[1];
   ASSERT_EQ(file->discardable_size, 5);
   TablePropertiesCollectorFactory::Context context;
   context.column_family_id = kDefauleColumnFamilyID;
   BlobFileSizeCollectorFactory factory;
-  std::shared_ptr<TablePropertiesCollector> c(factory.CreateTablePropertiesCollector(context));
+  std::shared_ptr<TablePropertiesCollector> c(
+      factory.CreateTablePropertiesCollector(context));
   BlobIndex bi;
   bi.file_number = 1;
   bi.blob_handle.size = 80;

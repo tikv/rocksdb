@@ -55,9 +55,7 @@ VersionBuilder::VersionBuilder(Version* base) : base_(base) {
   }
 }
 
-VersionBuilder::~VersionBuilder() {
-  base_->Unref();
-}
+VersionBuilder::~VersionBuilder() { base_->Unref(); }
 
 void VersionBuilder::Apply(VersionEdit* edit) {
   auto cf_id = edit->column_family_id_;

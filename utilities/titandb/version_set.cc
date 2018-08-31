@@ -32,8 +32,8 @@ Status VersionSet::Open(
     return s;
   }
   if (!db_options_.create_if_missing) {
-    return Status::InvalidArgument(
-        dirname_, "does't exist (create_if_missing is false)");
+    return Status::InvalidArgument(dirname_,
+                                   "does't exist (create_if_missing is false)");
   }
   return OpenManifest(NewFileNumber());
 }
@@ -74,8 +74,8 @@ Status VersionSet::Recover() {
   {
     LogReporter reporter;
     reporter.status = &s;
-    log::Reader reader(nullptr, std::move(file), &reporter,
-                       true /*checksum*/, 0 /*initial_offset*/, 0);
+    log::Reader reader(nullptr, std::move(file), &reporter, true /*checksum*/,
+                       0 /*initial_offset*/, 0);
     Slice record;
     std::string scratch;
     while (reader.ReadRecord(&record, &scratch) && s.ok()) {

@@ -18,8 +18,7 @@ namespace rocksdb {
 namespace titandb {
 
 void TitanDBImpl::MaybeScheduleGC() {
-  if (db_options_.disable_background_gc)
-    return;
+  if (db_options_.disable_background_gc) return;
   bg_gc_scheduled_++;
   env_->Schedule(&TitanDBImpl::BGWorkGC, this, Env::Priority::LOW, this);
 }

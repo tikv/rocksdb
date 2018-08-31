@@ -228,8 +228,7 @@ Status TitanDBImpl::DropColumnFamilies(
 }
 
 Status TitanDBImpl::CloseImpl() {
-  int gc_unscheduled =
-      env_->UnSchedule(this, Env::Priority::GC);
+  int gc_unscheduled = env_->UnSchedule(this, Env::Priority::GC);
   {
     MutexLock l(&mutex_);
     bg_gc_scheduled_ -= gc_unscheduled;
@@ -239,7 +238,6 @@ Status TitanDBImpl::CloseImpl() {
   }
 
   return Status::OK();
-
 }
 
 Status TitanDBImpl::Get(const ReadOptions& options, ColumnFamilyHandle* handle,

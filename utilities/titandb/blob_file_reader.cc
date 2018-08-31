@@ -107,9 +107,8 @@ BlobFileReader::BlobFileReader(const TitanCFOptions& options,
 
 Status BlobFileReader::Get(const ReadOptions& /*options*/,
                            const BlobHandle& handle,
-                           BlobRecord* record, PinnableSlice* buffer) {
-  Status s;
-  std::string cache_key;
+                           BlobRecord* record,PinnableSlice* buffer) {
+  Status s; std::stringcache_key;
   Cache::Handle* cache_handle = nullptr;
   if (cache_) {
     EncodeBlobCache(&cache_key, cache_prefix_, handle.offset);
@@ -143,9 +142,10 @@ Status BlobFileReader::Get(const ReadOptions& /*options*/,
 
 Status BlobFileReader::ReadBlob(const BlobHandle& handle, BlobBuffer* buffer) {
   Slice blob;
-  size_t blob_size = handle.size + kBlobTailerSize;
+  size_t blob_size =handle.size+ kBlobTailerSize;
   std::unique_ptr<char[]> compressed(new char[blob_size]);
-  Status s = file_->Read(handle.offset, blob_size, &blob, compressed.get());
+  Status s = file_->Read(handle.offset, blob_size,
+                         &blob, compressed.get());
   if (!s.ok()) return s;
 
   auto tailer = blob.data() + handle.size;

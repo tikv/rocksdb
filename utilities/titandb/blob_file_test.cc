@@ -1,8 +1,8 @@
-#include "util/testharness.h"
 #include "util/filename.h"
+#include "util/testharness.h"
+#include "utilities/titandb/blob_file_builder.h"
 #include "utilities/titandb/blob_file_cache.h"
 #include "utilities/titandb/blob_file_reader.h"
-#include "utilities/titandb/blob_file_builder.h"
 
 namespace rocksdb {
 namespace titandb {
@@ -64,8 +64,8 @@ class BlobFileTest : public testing::Test {
                           &record, &buffer));
       ASSERT_EQ(record, expect);
       buffer.Reset();
-      ASSERT_OK(cache.Get(ro, file_number_, file_size, handles[i],
-                          &record, &buffer));
+      ASSERT_OK(
+          cache.Get(ro, file_number_, file_size, handles[i], &record, &buffer));
       ASSERT_EQ(record, expect);
       buffer.Reset();
       ASSERT_OK(prefetcher->Get(ro, handles[i], &record, &buffer));
@@ -80,7 +80,7 @@ class BlobFileTest : public testing::Test {
   EnvOptions env_options_;
   std::string dirname_;
   std::string file_name_;
-  uint64_t file_number_ {1};
+  uint64_t file_number_{1};
 };
 
 TEST_F(BlobFileTest, Basic) {

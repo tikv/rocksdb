@@ -34,8 +34,8 @@ struct BlobRecord {
 // offset       : varint64
 // size         : varint64
 struct BlobHandle {
-  uint64_t offset {0};
-  uint64_t size {0};
+  uint64_t offset{0};
+  uint64_t size{0};
 
   void EncodeTo(std::string* dst) const;
   Status DecodeFrom(Slice* src);
@@ -52,7 +52,7 @@ struct BlobIndex {
   enum Type : unsigned char {
     kBlobRecord = 1,
   };
-  uint64_t file_number {0};
+  uint64_t file_number{0};
   BlobHandle blob_handle;
 
   void EncodeTo(std::string* dst) const;
@@ -105,8 +105,9 @@ struct BlobFileFooter {
   // The first 64bits from $(echo titandb/blob | sha1sum).
   static const uint64_t kMagicNumber {0xcd3f52ea0fe14511ull};
   static const uint64_t kEncodedLength {
-      BlockHandle::kMaxEncodedLength + 8 + 4
+       BlockHandle::kMaxEncodedLength + 8 + 4
   };
+
 
   BlockHandle meta_index_handle {BlockHandle::NullBlockHandle()};
 

@@ -38,5 +38,5 @@ void TitanDBImpl::PurgeObsoleteFiles() {
   }
 }
 
-}
+}  // namespace titandb
 }  // namespace rocksdb

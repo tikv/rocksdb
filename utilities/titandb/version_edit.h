@@ -34,8 +34,8 @@ class VersionEdit {
   friend class VersionSet;
   friend class VersionBuilder;
 
-  bool has_next_file_number_ {false};
-  uint64_t next_file_number_ {0};
+  bool has_next_file_number_{false};
+  uint64_t next_file_number_{0};
   uint32_t column_family_id_{0};
 
   std::vector<std::shared_ptr<BlobFileMeta>> added_files_;

@@ -59,9 +59,7 @@ void BlobFileIterator::SeekToFirst() {
 
 bool BlobFileIterator::Valid() const { return valid_; }
 
-void BlobFileIterator::Next() {
-  GetOneBlock();
-}
+void BlobFileIterator::Next() { GetOneBlock(); }
 
 Slice BlobFileIterator::key() const { return current_blob_record_.key; }
 

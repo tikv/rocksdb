@@ -1,11 +1,11 @@
-#include "util/testharness.h"
-#include "util/filename.h"
+#include "table/table_builder.h"
 #include "rocksdb/options.h"
 #include "table/table_reader.h"
-#include "table/table_builder.h"
-#include "utilities/titandb/table_factory.h"
-#include "utilities/titandb/blob_file_reader.h"
+#include "util/filename.h"
+#include "util/testharness.h"
 #include "utilities/titandb/blob_file_manager.h"
+#include "utilities/titandb/blob_file_reader.h"
+#include "utilities/titandb/table_factory.h"
 
 namespace rocksdb {
 namespace titandb {
@@ -15,8 +15,7 @@ const uint64_t kTestFileNumber = 123;
 
 class FileManager : public BlobFileManager {
  public:
-  FileManager(const TitanDBOptions& db_options)
-      : db_options_(db_options) {}
+  FileManager(const TitanDBOptions& db_options) : db_options_(db_options) {}
 
   Status NewFile(std::unique_ptr<BlobFileHandle>* handle) override {
     auto number = kTestFileNumber;
@@ -32,8 +31,7 @@ class FileManager : public BlobFileManager {
     return Status::OK();
   }
 
-  Status FinishFile(uint32_t /*cf_id*/,
-                    std::shared_ptr<BlobFileMeta> /*file*/,
+  Status FinishFile(uint32_t /*cf_id*/, std::shared_ptr<BlobFileMeta> /*file*/,
                     std::unique_ptr<BlobFileHandle>&& handle) override {
     Status s = handle->GetFile()->Sync(true);
     if (s.ok()) {
@@ -49,8 +47,7 @@ class FileManager : public BlobFileManager {
  private:
   class FileHandle : public BlobFileHandle {
    public:
-    FileHandle(uint64_t number,
-               const std::string& name,
+    FileHandle(uint64_t number, const std::string& name,
                std::unique_ptr<WritableFileWriter> file)
         : number_(number), name_(name), file_(std::move(file)) {}
 
@@ -68,7 +65,7 @@ class FileManager : public BlobFileManager {
     std::unique_ptr<WritableFileWriter> file_;
   };
 
-  Env* env_ {Env::Default()};
+  Env* env_{Env::Default()};
   EnvOptions env_options_;
   TitanDBOptions db_options_;
 };
@@ -129,8 +126,8 @@ class TableBuilderTest : public testing::Test {
     NewFileReader(blob_name_, &file);
     uint64_t file_size = 0;
     ASSERT_OK(env_->GetFileSize(blob_name_, &file_size));
-    ASSERT_OK(BlobFileReader::Open(
-        cf_options_, std::move(file), file_size, result));
+    ASSERT_OK(
+        BlobFileReader::Open(cf_options_, std::move(file), file_size, result));
   }
 
   void NewTableReader(std::unique_ptr<TableReader>* result) {
@@ -140,20 +137,20 @@ class TableBuilderTest : public testing::Test {
     ASSERT_OK(env_->GetFileSize(file->file_name(), &file_size));
     TableReaderOptions options(cf_ioptions_, nullptr, env_options_,
                                cf_ioptions_.internal_comparator);
-    ASSERT_OK(table_factory_->NewTableReader(
-        options, std::move(file), file_size, result));
+    ASSERT_OK(table_factory_->NewTableReader(options, std::move(file),
+                                             file_size, result));
   }
 
   void NewTableBuilder(WritableFileWriter* file,
                        std::unique_ptr<TableBuilder>* result) {
-    TableBuilderOptions options(
-        cf_ioptions_, cf_moptions_, cf_ioptions_.internal_comparator,
-        &collectors_, kNoCompression, CompressionOptions(), nullptr,
-        false, kDefaultColumnFamilyName, 0);
+    TableBuilderOptions options(cf_ioptions_, cf_moptions_,
+                                cf_ioptions_.internal_comparator, &collectors_,
+                                kNoCompression, CompressionOptions(), nullptr,
+                                false, kDefaultColumnFamilyName, 0);
     result->reset(table_factory_->NewTableBuilder(options, 0, file));
   }
 
-  Env* env_ {Env::Default()};
+  Env* env_{Env::Default()};
   EnvOptions env_options_;
   Options options_;
   TitanDBOptions db_options_;

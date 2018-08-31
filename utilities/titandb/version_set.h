@@ -92,7 +92,7 @@ class VersionSet {
 
   VersionList versions_;
   std::unique_ptr<log::Writer> manifest_;
-  std::atomic<uint64_t> next_file_number_ {1};
+  std::atomic<uint64_t> next_file_number_{1};
 
   ObsoleteFiles obsolete_files_;
 };

@@ -31,13 +31,14 @@ class BlobStorage {
   // Gets the blob record pointed by the blob index. The provided
   // buffer is used to store the record data, so the buffer must be
   // valid when the record is used.
-  Status Get(const ReadOptions& options,
-             const BlobIndex& index,
+  Status Get(const ReadOptions& options, const BlobIndex& index,
              BlobRecord* record, PinnableSlice* buffer);
 
   // Creates a prefetcher for the specified file number.
-  Status NewPrefetcher(uint64_t file_number,
-                       std::unique_ptr<BlobFilePrefetcher>* result);
+
+  Status NewPrefetcher(
+                   uint64_t file_number,
+                   std::unique_ptr<BlobFilePrefetcher>* result);
 
   // Finds the blob file meta for the specified file number. It is a
   // corruption if the file doesn't exist in the specific version.

@@ -39,9 +39,7 @@ class TitanDBIterator : public Iterator {
         snap_(snap),
         iter_(std::move(iter)) {}
 
-  bool Valid() const override {
-    return iter_->Valid() && status_.ok();
-  }
+  bool Valid() const override { return iter_->Valid() && status_.ok(); }
 
   Status status() const override {
     Status s = iter_->status();
@@ -79,9 +77,7 @@ class TitanDBIterator : public Iterator {
     GetBlobValue();
   }
 
-  Slice key() const override {
-    return iter_->key();
-  }
+  Slice key() const override { return iter_->key(); }
 
   Slice value() const override {
     if (!iter_->IsBlob()) return iter_->value();

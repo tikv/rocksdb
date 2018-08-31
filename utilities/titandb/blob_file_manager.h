@@ -45,8 +45,8 @@ class BlobFileManager {
       uint32_t cf_id,
       const std::vector<std::pair<std::shared_ptr<BlobFileMeta>,
                                   std::unique_ptr<BlobFileHandle>>>& files) {
-    (void) cf_id;
-    (void) files;
+    (void)cf_id;
+    (void)files;
     return Status::OK();
   };
 
@@ -62,7 +62,7 @@ class BlobFileManager {
   // Batch version of DeleteFile
   virtual Status BatchDeleteFiles(
       const std::vector<std::unique_ptr<BlobFileHandle>>& handles) {
-    (void) handles;
+    (void)handles;
     return Status::OK();
   }
 };

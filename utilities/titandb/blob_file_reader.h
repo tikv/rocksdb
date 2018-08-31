@@ -1,8 +1,8 @@
 #pragma once
 
 #include "util/file_reader_writer.h"
-#include "utilities/titandb/options.h"
 #include "utilities/titandb/blob_format.h"
+#include "utilities/titandb/options.h"
 
 namespace rocksdb {
 namespace titandb {
@@ -38,8 +38,7 @@ class BlobFileReader {
   // Gets the blob record pointed by the handle in this file. The data
   // of the record is stored in the provided buffer, so the buffer
   // must be valid when the record is used.
-  Status Get(const ReadOptions& options,
-             const BlobHandle& handle,
+  Status Get(const ReadOptions& options, const BlobHandle& handle,
              BlobRecord* record, PinnableSlice* buffer);
 
  private:

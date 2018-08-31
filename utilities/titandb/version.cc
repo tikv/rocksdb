@@ -77,9 +77,7 @@ Version::~Version() {
   }
 }
 
-void Version::Ref() {
-  refs_++;
-}
+void Version::Ref() { refs_++; }
 
 void Version::Unref() {
   refs_--;

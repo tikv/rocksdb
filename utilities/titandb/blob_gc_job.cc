@@ -166,6 +166,7 @@ bool BlobGCJob::SampleOne(
 
 Status BlobGCJob::DoRunGC() {
   Status s;
+
   std::unique_ptr<InternalIterator> gc_iter;
   s = BuildIterator(&gc_iter);
   if (!s.ok()) return s;
@@ -182,9 +183,8 @@ Status BlobGCJob::DoRunGC() {
   std::unique_ptr<BlobFileHandle> blob_file_handle;
   std::unique_ptr<BlobFileBuilder> blob_file_builder;
   auto* cfd = reinterpret_cast<ColumnFamilyHandleImpl*>(this->cfh_)->cfd();
-  int i = 0;
   for (gc_iter->SeekToFirst(); gc_iter->status().ok() && gc_iter->Valid();
-       gc_iter->Next(), i++) {
+       gc_iter->Next()) {
     // This API is very lightweight
     SequenceNumber latest_seq = base_db_->GetLatestSequenceNumber();
 
@@ -198,7 +198,7 @@ Status BlobGCJob::DoRunGC() {
     if (!blob_file_handle && !blob_file_builder) {
       s = blob_file_manager_->NewFile(&blob_file_handle);
       if (!s.ok()) {
-        return s;
+        break;
       }
       blob_file_builder = unique_ptr<BlobFileBuilder>(
           new BlobFileBuilder(titan_cf_options_, blob_file_handle->GetFile()));
@@ -221,20 +221,24 @@ Status BlobGCJob::DoRunGC() {
     s = WriteBatchInternal::PutBlobIndex(&wb, cfh_->GetID(), blob_record.key,
                                          index_entry);
     if (!s.ok()) {
-      return s;
+      break;
     }
   }
 
-  if (blob_file_builder && blob_file_handle) {
-    assert(blob_file_builder->status().ok());
-    blob_file_builders_.emplace_back(std::make_pair(
-        std::move(blob_file_handle), std::move(blob_file_builder)));
-  } else {
-    assert(!blob_file_builder);
-    assert(!blob_file_handle);
+  if (gc_iter->status().ok() && s.ok()) {
+    if (blob_file_builder && blob_file_handle) {
+      assert(blob_file_builder->status().ok());
+      blob_file_builders_.emplace_back(std::make_pair(
+          std::move(blob_file_handle), std::move(blob_file_builder)));
+    } else {
+      assert(!blob_file_builder);
+      assert(!blob_file_handle);
+    }
+  } else if (!gc_iter->status().ok()) {
+    return gc_iter->status();
   }
 
-  return Status::OK();
+  return s;
 }
 
 Status BlobGCJob::BuildIterator(std::unique_ptr<InternalIterator>* result) {
@@ -306,8 +310,8 @@ Status BlobGCJob::Finish() {
     // Rewrite all valid keys to LSM
     auto* db_impl = reinterpret_cast<DBImpl*>(base_db_);
     for (auto& write_batch : rewrite_batches_) {
-      s = db_impl->WriteWithCallback(
-          WriteOptions(), &write_batch.first, &write_batch.second);
+      s = db_impl->WriteWithCallback(WriteOptions(), &write_batch.first,
+                                     &write_batch.second);
       if (s.ok()) {
         // Key is successfully written to LSM
       } else if (s.IsBusy()) {
@@ -318,8 +322,7 @@ Status BlobGCJob::Finish() {
       }
     }
 
-    if (!s.ok())
-      return s;
+    if (!s.ok()) return s;
 
     tdb_mutex_->Lock();
   }
@@ -330,7 +333,7 @@ Status BlobGCJob::Finish() {
   VersionEdit edit;
   edit.SetColumnFamilyID(cfh_->GetID());
   for (const auto& file : blob_gc_->selected_files()) {
-    edit.DeleteBlobFile(file ->file_number);
+    edit.DeleteBlobFile(file->file_number);
   }
   s = version_set_->LogAndApply(&edit, tdb_mutex_);
   // TODO

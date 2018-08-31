@@ -13,7 +13,7 @@ Slice EncodeFileNumber(const uint64_t* number) {
   return Slice(reinterpret_cast<const char*>(number), sizeof(*number));
 }
 
-}
+}  // namespace
 
 BlobFileCache::BlobFileCache(const TitanDBOptions& db_options,
                              const TitanCFOptions& cf_options,
@@ -24,10 +24,8 @@ BlobFileCache::BlobFileCache(const TitanDBOptions& db_options,
       cf_options_(cf_options),
       cache_(cache) {}
 
-Status BlobFileCache::Get(const ReadOptions& options,
-                          uint64_t file_number,
-                          uint64_t file_size,
-                          const BlobHandle& handle,
+Status BlobFileCache::Get(const ReadOptions& options, uint64_t file_number,
+                          uint64_t file_size, const BlobHandle& handle,
                           BlobRecord* record, PinnableSlice* buffer) {
   Cache::Handle* cache_handle = nullptr;
   Status s = FindFile(file_number, file_size, &cache_handle);
@@ -40,9 +38,9 @@ Status BlobFileCache::Get(const ReadOptions& options,
 }
 
 Status BlobFileCache::NewPrefetcher(
-    uint64_t file_number,
-    uint64_t file_size,
-    std::unique_ptr<BlobFilePrefetcher>* result) {
+                                uint64_t file_number,
+                                uint64_t file_size,
+                                std::unique_ptr<BlobFilePrefetcher>* result) {
   Cache::Handle* cache_handle = nullptr;
   Status s = FindFile(file_number, file_size, &cache_handle);
   if (!s.ok()) return s;
