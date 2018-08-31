@@ -40,7 +40,7 @@ class BlobGCJob {
 
   Status SampleCandidateFiles();
 
-  bool SampleOne(const std::shared_ptr<BlobFileMeta>& file);
+  bool DoSample(const std::shared_ptr<BlobFileMeta>& file);
 
   Status DoRunGC();
 

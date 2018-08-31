@@ -15,6 +15,8 @@ const uint32_t kBlobHeaderSize = 8;
 // checksum     : fixed32
 const uint32_t kBlobTailerSize = 5;
 
+const uint32_t kBlobFixedSize = kBlobHeaderSize + kBlobTailerSize;
+
 // Blob record format:
 //
 // key          : varint64 length + length bytes

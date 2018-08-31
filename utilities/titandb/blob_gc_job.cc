@@ -114,7 +114,7 @@ Status BlobGCJob::Run() {
 Status BlobGCJob::SampleCandidateFiles() {
   std::vector<std::shared_ptr<BlobFileMeta>> result;
   for (const auto& file : blob_gc_->candidate_files()) {
-    if (!file->marked_for_sample || SampleOne(file)) {
+    if (!file->marked_for_sample || DoSample(file)) {
       result.push_back(file);
     }
   }
@@ -126,7 +126,7 @@ Status BlobGCJob::SampleCandidateFiles() {
   return Status::OK();
 }
 
-bool BlobGCJob::SampleOne(
+bool BlobGCJob::DoSample(
     const std::shared_ptr<rocksdb::titandb::BlobFileMeta>& file) {
   Status s;
   uint64_t sample_size_window = static_cast<uint64_t>(
@@ -146,18 +146,19 @@ bool BlobGCJob::SampleOne(
 
   uint64_t iterated_size{0};
   uint64_t discardable_size{0};
-  for (iter.Next(), iterated_size = 0, discardable_size = 0;
+  for (iter.Next();
        iterated_size < sample_size_window && iter.status().ok() && iter.Valid();
        iter.Next()) {
     BlobIndex blob_index;
     BlobFileIterator::GetBlobIndex(&iter, &blob_index);
     uint64_t total_length =
-        blob_index.blob_handle.size + kBlobHeaderSize + kBlobTailerSize;
+        blob_index.blob_handle.size + kBlobFixedSize;
     iterated_size += total_length;
     if (DiscardEntry(iter.key(), blob_index)) {
       discardable_size += total_length;
     }
   }
+  assert(iter.status().ok());
 
   return discardable_size >=
          sample_size_window * titan_cf_options_.blob_file_discardable_ratio;
