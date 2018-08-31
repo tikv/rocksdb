@@ -66,10 +66,9 @@ Status TitanDBImpl::BackgroundGC() {
         vset_->current()->GetBlobStorage(column_family_id).get());
     if (!blob_gc) return Status::Corruption("Build BlobGC failed");
 
-    BlobGCJob blob_gc_job(blob_gc.get(), db_options_,
+    BlobGCJob blob_gc_job(blob_gc.get(), db_, cfh, &mutex_, db_options_,
                           titan_cfs_options_[column_family_id], env_,
-                          env_options_, blob_manager_.get(), vset_.get(), db_,
-                          column_family_id, cfh, &mutex_);
+                          env_options_, blob_manager_.get(), vset_.get());
     s = blob_gc_job.Prepare();
     if (!s.ok()) return s;
 

@@ -8,8 +8,11 @@
 namespace rocksdb {
 namespace titandb {
 
-const std::string BlobFileIterator::PROPERTY_FILE_NAME = "PropFileName";
-const std::string BlobFileIterator::PROPERTY_FILE_OFFSET = "PropFileOffset";
+const std::string BlobFileIterator::PROPERTIES_FILE_NUMBER =
+    "PropertiesFileNumber";
+const std::string BlobFileIterator::PROPERTIES_BLOB_OFFSET =
+    "PropertiesBlobOffset";
+const std::string BlobFileIterator::PROPERTIES_BLOB_SIZE = "PropertiesBlobSize";
 
 BlobFileIterator::BlobFileIterator(
     std::unique_ptr<RandomAccessFileReader>&& file, uint64_t file_name,
@@ -17,6 +20,25 @@ BlobFileIterator::BlobFileIterator(
     : file_(std::move(file)), file_name_(file_name), file_size_(file_size) {}
 
 BlobFileIterator::~BlobFileIterator() {}
+
+Status BlobFileIterator::GetBlobIndex(InternalIterator* iter,
+                                      BlobIndex* blob_index) {
+  Status s;
+  std::string prop;
+  s = iter->GetProperty(BlobFileIterator::PROPERTIES_FILE_NUMBER, &prop);
+  if (!s.ok()) return s;
+  blob_index->file_number = *reinterpret_cast<const uint64_t*>(prop.data());
+  s = iter->GetProperty(BlobFileIterator::PROPERTIES_BLOB_OFFSET, &prop);
+  if (!s.ok()) return s;
+  blob_index->blob_handle.offset =
+      *reinterpret_cast<const uint64_t*>(prop.data());
+  s = iter->GetProperty(BlobFileIterator::PROPERTIES_BLOB_SIZE, &prop);
+  if (!s.ok()) return s;
+  blob_index->blob_handle.size =
+      *reinterpret_cast<const uint64_t*>(prop.data());
+
+  return Status::OK();
+}
 
 void BlobFileIterator::SeekToFirst() {
   std::vector<char> buf;
@@ -52,13 +74,16 @@ void BlobFileIterator::GetOneBlock() {
   }
 
   Slice result;
-  char buf[4];
-  status_ = file_->Read(iterate_offset_, 4, &result, buf);
+  char buf[8];
+  status_ = file_->Read(iterate_offset_, 8, &result, buf);
   if (!status_.ok()) return;
-  uint32_t length = *reinterpret_cast<const uint32_t*>(result.data());
+  uint64_t length = *reinterpret_cast<const uint64_t*>(result.data());
+
   current_blob_offset_ = iterate_offset_;
-  iterate_offset_ += 4;
-  iterate_size_ += 4;
+  current_blob_size_ = 8 + length;
+
+  iterate_offset_ += 8;
+  iterate_size_ += 8;
   assert(length > 0);
   buffer_.reserve(length);
   status_ = file_->Read(iterate_offset_, length, &result, buffer_.data());
@@ -69,14 +94,19 @@ void BlobFileIterator::GetOneBlock() {
 }
 
 Status BlobFileIterator::GetProperty(std::string prop_name, std::string* prop) {
-  prop->clear();
   assert(Valid());
-  if (prop_name == PROPERTY_FILE_NAME) {
+
+  prop->clear();
+
+  if (prop_name == PROPERTIES_FILE_NUMBER) {
     prop->assign(reinterpret_cast<const char*>(&file_name_),
                  sizeof(file_name_));
-  } else if (prop_name == PROPERTY_FILE_OFFSET) {
+  } else if (prop_name == PROPERTIES_BLOB_OFFSET) {
     prop->assign(reinterpret_cast<char*>(&current_blob_offset_),
                  sizeof(current_blob_offset_));
+  } else if (prop_name == PROPERTIES_BLOB_SIZE) {
+    prop->assign(reinterpret_cast<char*>(&current_blob_size_),
+                 sizeof(current_blob_size_));
   } else {
     return Status::InvalidArgument("Unknown prop_name: " + prop_name);
   }

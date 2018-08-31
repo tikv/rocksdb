@@ -18,21 +18,21 @@ class BlobGC {
   BlobGC(std::vector<std::shared_ptr<BlobFileMeta>>&& blob_files);
   ~BlobGC();
 
-  const std::vector<std::shared_ptr<BlobFileMeta>>& candidates() {
-    return candidates_;
+  const std::vector<std::shared_ptr<BlobFileMeta>>& candidate_files() {
+    return candidate_files_;
   }
 
-  void set_selected(std::vector<std::shared_ptr<BlobFileMeta>>&& files) {
-    selected_ = std::move(files);
+  void set_selected_files(std::vector<std::shared_ptr<BlobFileMeta>>&& files) {
+    selected_files_ = std::move(files);
   }
 
-  const std::vector<std::shared_ptr<BlobFileMeta>>& selected() {
-    return selected_;
+  const std::vector<std::shared_ptr<BlobFileMeta>>& selected_files() {
+    return selected_files_;
   }
 
  private:
-  std::vector<std::shared_ptr<BlobFileMeta>> candidates_;
-  std::vector<std::shared_ptr<BlobFileMeta>> selected_;
+  std::vector<std::shared_ptr<BlobFileMeta>> candidate_files_;
+  std::vector<std::shared_ptr<BlobFileMeta>> selected_files_;
 };
 
 }  // namespace titandb

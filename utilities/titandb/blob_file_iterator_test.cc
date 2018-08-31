@@ -68,11 +68,11 @@ class BlobFileIteratorTest : public testing::Test {
       ASSERT_EQ(id, blob_file_iterator.key());
       ASSERT_EQ(id, blob_file_iterator.value());
       std::string tmp;
-      blob_file_iterator.GetProperty(BlobFileIterator::PROPERTY_FILE_NAME,
+      blob_file_iterator.GetProperty(BlobFileIterator::PROPERTIES_FILE_NUMBER,
                                      &tmp);
       uint64_t file_number = *reinterpret_cast<const uint64_t*>(tmp.data());
       ASSERT_EQ(file_number_, file_number);
-      blob_file_iterator.GetProperty(BlobFileIterator::PROPERTY_FILE_OFFSET,
+      blob_file_iterator.GetProperty(BlobFileIterator::PROPERTIES_BLOB_OFFSET,
                                      &tmp);
       uint64_t entry_offset = *reinterpret_cast<const uint64_t*>(tmp.data());
       ASSERT_EQ(handles[i].offset, entry_offset);

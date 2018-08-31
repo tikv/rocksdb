@@ -5,6 +5,7 @@
 #ifndef ROCKSDB_BLOB_GC_JOB_H
 #define ROCKSDB_BLOB_GC_JOB_H
 
+#include <db/db_impl.h>
 #include "include/rocksdb/status.h"
 #include "table/internal_iterator.h"
 #include "utilities/titandb/blob_file_builder.h"
@@ -18,11 +19,11 @@ namespace titandb {
 
 class BlobGCJob {
  public:
-  BlobGCJob(BlobGC* blob_gc, const TitanDBOptions& titan_db_options,
+  BlobGCJob(BlobGC* blob_gc, DB* db, ColumnFamilyHandle* cfh,
+            port::Mutex* mutex, const TitanDBOptions& titan_db_options,
             const TitanCFOptions& titan_cf_options, Env* env,
             const EnvOptions& env_options, BlobFileManager* blob_file_manager,
-            VersionSet* version_set, DB* db, uint32_t cf_id,
-            ColumnFamilyHandle* cfh, port::Mutex* mutex);
+            VersionSet* version_set);
   ~BlobGCJob();
 
   // REQUIRE: mutex held
@@ -34,23 +35,32 @@ class BlobGCJob {
 
  private:
   class GarbageCollectionWriteCallback;
+  class PlainInternalKeyComparator;
+  friend class BlobGCJobTest;
 
-  void SampleCandidates();
+  Status SampleCandidateFiles();
+
   bool SampleOne(const std::shared_ptr<BlobFileMeta>& file);
-  Status BuildIterator(InternalIterator** result) const;
-  Status RunGC(InternalIterator* gc_iter);
+
+  Status DoRunGC();
+
+  Status BuildIterator(std::unique_ptr<InternalIterator>* result);
+
+  bool DiscardEntry(const Slice& key, const BlobIndex& blob_index);
 
   BlobGC* blob_gc_;
-  DB* db_;
-  uint32_t cf_id_;
+
+  DB* base_db_;
+  DBImpl* base_db_impl_;
   ColumnFamilyHandle* cfh_;
-  port::Mutex* db_mutex_;
+  port::Mutex* tdb_mutex_;
   TitanDBOptions titan_db_options_;
   TitanCFOptions titan_cf_options_;
   Env* env_;
   EnvOptions env_options_;
   BlobFileManager* blob_file_manager_;
   titandb::VersionSet* version_set_;
+
   std::vector<std::pair<std::unique_ptr<BlobFileHandle>,
                         std::unique_ptr<BlobFileBuilder>>>
       blob_file_builders_;
