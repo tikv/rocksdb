@@ -145,19 +145,20 @@ bool BlobGCJob::SampleOne(
   BlobFileIterator iter(std::move(file_reader), file->file_number,
                         file->file_size);
   iter.IterateForPrev(sample_begin_offset);
+  assert(iter.status().ok());
 
-  PinnableSlice index_entry;
-  uint64_t iterated_size;
-  uint64_t discardable_size;
-  for (iterated_size = 0, discardable_size = 0;
+  uint64_t iterated_size{0};
+  uint64_t discardable_size{0};
+  for (iter.Next(), iterated_size = 0, discardable_size = 0;
        iterated_size < sample_size_window && iter.status().ok() && iter.Valid();
        iter.Next()) {
     BlobIndex blob_index;
     BlobFileIterator::GetBlobIndex(&iter, &blob_index);
+    uint64_t total_length =
+        blob_index.blob_handle.size + kBlobHeaderSize + kBlobTailerSize;
+    iterated_size += total_length;
     if (DiscardEntry(iter.key(), blob_index)) {
-      // TODO Consider compress size here
-      discardable_size += iter.key().size() + iter.value().size();
-      continue;
+      discardable_size += total_length;
     }
   }
 

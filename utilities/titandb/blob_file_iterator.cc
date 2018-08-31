@@ -109,7 +109,8 @@ void BlobFileIterator::IterateForPrev(uint64_t offset) {
   Slice slice;
   uint64_t body_length;
   uint64_t total_length;
-  for (iterate_offset_ = 0; iterate_offset_ < offset; iterate_offset_ += total_length) {
+  for (iterate_offset_ = 0; iterate_offset_ < offset;
+       iterate_offset_ += total_length) {
     Status s = file_->Read(iterate_offset_, kBlobHeaderSize, &slice,
                            reinterpret_cast<char*>(&body_length));
     if (!s.ok()) {

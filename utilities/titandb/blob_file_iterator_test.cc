@@ -128,8 +128,10 @@ TEST_F(BlobFileIteratorTest, IterateForPrev) {
   BlobFileIterator::GetBlobIndex(blob_file_iterator_.get(), &blob_index);
   ASSERT_EQ(handles[idx], blob_index.blob_handle);
 
-  while ((idx = Random::GetTLSInstance()->Uniform(n)) == 0);
-  blob_file_iterator_->IterateForPrev(handles[idx].offset - kBlobHeaderSize - 1);
+  while ((idx = Random::GetTLSInstance()->Uniform(n)) == 0)
+    ;
+  blob_file_iterator_->IterateForPrev(handles[idx].offset - kBlobHeaderSize -
+                                      1);
   ASSERT_OK(blob_file_iterator_->status());
   blob_file_iterator_->Next();
   ASSERT_OK(blob_file_iterator_->status());
