@@ -225,16 +225,14 @@ Status BlobGCJob::DoRunGC() {
     }
   }
 
-  if (gc_iter->status().ok() && s.ok()) {
-    if (blob_file_builder && blob_file_handle) {
-      assert(blob_file_builder->status().ok());
-      blob_file_builders_.emplace_back(std::make_pair(
-          std::move(blob_file_handle), std::move(blob_file_builder)));
-    } else {
-      assert(!blob_file_builder);
-      assert(!blob_file_handle);
-    }
-  } else if (!gc_iter->status().ok()) {
+  if (gc_iter->status().ok() && s.ok()) {if (blob_file_builder && blob_file_handle) {
+    assert(blob_file_builder->status().ok());
+    blob_file_builders_.emplace_back(std::make_pair(
+        std::move(blob_file_handle), std::move(blob_file_builder)));
+  } else {
+    assert(!blob_file_builder);
+    assert(!blob_file_handle);}
+  } else if (!gc_iter->status().ok()){
     return gc_iter->status();
   }
 
