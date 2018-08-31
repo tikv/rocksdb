@@ -108,7 +108,8 @@ BlobFileReader::BlobFileReader(const TitanCFOptions& options,
 Status BlobFileReader::Get(const ReadOptions& /*options*/,
                            const BlobHandle& handle,
                            BlobRecord* record,PinnableSlice* buffer) {
-  Status s; std::stringcache_key;
+  Status s;
+  std::string cache_key;
   Cache::Handle* cache_handle = nullptr;
   if (cache_) {
     EncodeBlobCache(&cache_key, cache_prefix_, handle.offset);

@@ -7,6 +7,9 @@
 namespace rocksdb {
 namespace titandb {
 
+// HEADER:  8 bytes length
+// BODY:    variable length
+// TAIL:    5 bytes length
 void BlobFileBuilder::Add(const BlobRecord& record, BlobHandle* handle) {
   if (!ok()) return;
 
@@ -21,6 +24,8 @@ void BlobFileBuilder::Add(const BlobRecord& record, BlobHandle* handle) {
   handle->offset = file_->GetFileSize();
   handle->size = output.size();
 
+  status_ =
+      file_->Append({static_cast<const char*>(&handle->size), kBlobHeaderSize});
   status_ = file_->Append(output);
   if (ok()) {
     char tailer[kBlobTailerSize];

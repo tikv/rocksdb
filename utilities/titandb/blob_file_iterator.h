@@ -44,7 +44,7 @@ class BlobFileIterator final : public InternalIterator {
 
  private:
   const std::unique_ptr<RandomAccessFileReader> file_;
-  const uint64_t file_name_;
+  const uint64_t file_number_;
   const uint64_t file_size_;
   Status status_;
   uint64_t iterate_offset_ = 0;

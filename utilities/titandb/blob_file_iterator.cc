@@ -15,9 +15,10 @@ const std::string BlobFileIterator::PROPERTIES_BLOB_OFFSET =
 const std::string BlobFileIterator::PROPERTIES_BLOB_SIZE = "PropertiesBlobSize";
 
 BlobFileIterator::BlobFileIterator(
-    std::unique_ptr<RandomAccessFileReader>&& file, uint64_t file_name,
+    std::unique_ptr<RandomAccessFileReader>&& file,
+    uint64_t file_name,
     uint64_t file_size)
-    : file_(std::move(file)), file_name_(file_name), file_size_(file_size) {}
+    : file_(std::move(file)), file_number_(file_name), file_size_(file_size) {}
 
 BlobFileIterator::~BlobFileIterator() {}
 
@@ -78,7 +79,7 @@ void BlobFileIterator::GetOneBlock() {
   uint64_t length = *reinterpret_cast<const uint64_t*>(result.data());
 
   current_blob_offset_ = iterate_offset_;
-  current_blob_size_ = 8 + length;
+  current_blob_size_ = length;
 
   iterate_offset_ += 8;
   iterate_size_ += 8;
@@ -90,6 +91,7 @@ void BlobFileIterator::GetOneBlock() {
   if (!status_.ok()) return;
   iterate_offset_ += length;
   iterate_size_ += length;
+  valid_ = true;
 }
 
 Status BlobFileIterator::GetProperty(std::string prop_name, std::string* prop) {
@@ -98,8 +100,8 @@ Status BlobFileIterator::GetProperty(std::string prop_name, std::string* prop) {
   prop->clear();
 
   if (prop_name == PROPERTIES_FILE_NUMBER) {
-    prop->assign(reinterpret_cast<const char*>(&file_name_),
-                 sizeof(file_name_));
+    prop->assign(reinterpret_cast<const char*>(&file_number_),
+                 sizeof(file_number_));
   } else if (prop_name == PROPERTIES_BLOB_OFFSET) {
     prop->assign(reinterpret_cast<char*>(&current_blob_offset_),
                  sizeof(current_blob_offset_));
@@ -115,19 +117,27 @@ Status BlobFileIterator::GetProperty(std::string prop_name, std::string* prop) {
 
 void BlobFileIterator::IterateForPrev(uint64_t offset) {
   if (offset >= blocks_size_) {
-    iterate_size_ = blocks_size_ + 1;
+    iterate_offset_ = offset;
+    status_ = Status::InvalidArgument("Out of bound");
     return;
   }
 
-  Slice result;
-  uint32_t length = 0;
-  for (current_blob_offset_ = 0;
-       current_blob_offset_ < blocks_size_ && current_blob_offset_ < offset;
-       current_blob_offset_ += length) {
-    file_->Read(current_blob_offset_, 4, &result,
-                reinterpret_cast<char*>(&length));
+  Slice slice;
+  uint64_t length;
+  for (iterate_offset_ = 0;
+       iterate_offset_ < blocks_size_ && iterate_offset_ < offset;
+       iterate_offset_ += kBlobHeaderSize + length + kBlobTailerSize) {
+    Status s = file_->Read(current_blob_offset_,
+                    kBlobHeaderSize,
+                    &slice,
+                    reinterpret_cast<char*>(&length));
+    if (!s.ok()) {
+      status_ = s;
+      return;
+    }
   }
-  if (current_blob_offset_ > offset) current_blob_offset_ -= length;
+
+  if (iterate_offset_ > offset) iterate_offset_ -= length;
 }
 
 }  // namespace titandb

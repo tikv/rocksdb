@@ -1546,8 +1546,7 @@ TITANDB_TESTS = \
 	titandb_blob_file_test \
 	titandb_table_builder_test \
 	titandb_version_test \
-	titandb_db_test \
-	titandb_util_test
+	titandb_util_test \
 	titandb_db_test \
 	titandb_blob_file_iterator_test \
 	titandb_blob_gc_picker_test \
