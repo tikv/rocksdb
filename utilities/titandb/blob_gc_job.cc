@@ -176,7 +176,7 @@ Status BlobGCJob::DoRunGC() {
   // base DB, which is guaranteed to be no smaller than the sequence of
   // current key. We use a WriteCallback on write to check the key sequence
   // on write. If the key sequence is larger than latest_seq, we know
-  // a new versions is inserted and the old blob can be disgard.
+  // a new versions is inserted and the old blob can be discard.
   //
   // We cannot use OptimisticTransaction because we need to pass
   // is_blob_index flag to GetImpl.
@@ -247,8 +247,8 @@ Status BlobGCJob::BuildIterator(std::unique_ptr<InternalIterator>* result) {
   std::size_t i;
   for (i = 0; i < inputs.size(); ++i) {
     std::unique_ptr<RandomAccessFileReader> file;
-    s = NewBlobFileReader(inputs[i]->file_number, 0, this->titan_db_options_,
-                          this->env_options_, this->env_, &file);
+    s = NewBlobFileReader(inputs[i]->file_number, 0, titan_db_options_,
+                          env_options_, env_, &file);
     if (!s.ok()) {
       break;
     }
