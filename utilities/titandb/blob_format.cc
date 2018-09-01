@@ -81,16 +81,14 @@ void BlobFileMeta::EncodeTo(std::string* dst) const {
 }
 
 Status BlobFileMeta::DecodeFrom(Slice* src) {
-  if (!GetVarint64(src, &file_number) ||
-      !GetVarint64(src, &file_size)) {
+  if (!GetVarint64(src, &file_number) || !GetVarint64(src, &file_size)) {
     return Status::Corruption("BlobFileMeta");
   }
   return Status::OK();
 }
 
 bool operator==(const BlobFileMeta& lhs, const BlobFileMeta& rhs) {
-  return (lhs.file_number == rhs.file_number &&
-          lhs.file_size == rhs.file_size);
+  return (lhs.file_number == rhs.file_number && lhs.file_size == rhs.file_size);
 }
 
 void BlobFileFooter::EncodeTo(std::string* dst) const {

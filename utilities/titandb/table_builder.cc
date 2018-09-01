@@ -64,11 +64,11 @@ Status TitanTableBuilder::Finish() {
   if (blob_builder_) {
     blob_builder_->Finish();
     if (ok()) {
-      BlobFileMeta file;
-      file.file_number = blob_handle_->GetNumber();
-      file.file_size = blob_handle_->GetFile()->GetFileSize();
-      status_ = blob_manager_->FinishFile(cf_id_, file,
-                                          std::move(blob_handle_));
+      std::shared_ptr<BlobFileMeta> file = std::make_shared<BlobFileMeta>();
+      file->file_number = blob_handle_->GetNumber();
+      file->file_size = blob_handle_->GetFile()->GetFileSize();
+      status_ =
+          blob_manager_->FinishFile(cf_id_, file, std::move(blob_handle_));
     } else {
       status_ = blob_manager_->DeleteFile(std::move(blob_handle_));
     }

@@ -2,7 +2,8 @@
 
 #include "util/testharness.h"
 #include "util/filename.h"
-#include "utilities/titandb/db.h"
+#include "utilities/titandb/titan_db.h"
+#include "util/random.h"
 
 namespace rocksdb {
 namespace titandb {
@@ -35,9 +36,8 @@ class TitanDBTest : public testing::Test {
   }
 
   void Open() {
-    if (cf_names_.empty()) {
-      ASSERT_OK(TitanDB::Open(options_, dbname_, &db_));
-    } else {
+   if (cf_names_.empty()) { ASSERT_OK(TitanDB::Open(options_, dbname_, &db_));
+  }else {
       TitanDBOptions db_options(options_);
       TitanCFOptions cf_options(options_);
       cf_names_.clear();
@@ -160,7 +160,7 @@ class TitanDBTest : public testing::Test {
   Env* env_ {Env::Default()};
   std::string dbname_;
   TitanOptions options_;
-  TitanDB* db_ {nullptr};
+  TitanDB* db_{nullptr};
   std::vector<std::string> cf_names_;
   std::vector<ColumnFamilyHandle*> cf_handles_;
 };

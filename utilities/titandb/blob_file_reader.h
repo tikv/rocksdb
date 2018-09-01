@@ -1,13 +1,18 @@
 #pragma once
 
 #include "util/file_reader_writer.h"
-#include "utilities/titandb/options.h"
 #include "utilities/titandb/blob_format.h"
+#include "utilities/titandb/options.h"
 
 namespace rocksdb {
 namespace titandb {
 
 class BlobBuffer;
+
+Status NewBlobFileReader(uint64_t file_number, uint64_t readahead_size,
+                         const TitanDBOptions& db_options,
+                         const EnvOptions& env_options, Env* env,
+                         std::unique_ptr<RandomAccessFileReader>* result);
 
 class BlobFileReader {
  public:
@@ -21,8 +26,7 @@ class BlobFileReader {
   // Gets the blob record pointed by the handle in this file. The data
   // of the record is stored in the provided buffer, so the buffer
   // must be valid when the record is used.
-  Status Get(const ReadOptions& options,
-             const BlobHandle& handle,
+  Status Get(const ReadOptions& options, const BlobHandle& handle,
              BlobRecord* record, PinnableSlice* buffer);
 
  private:

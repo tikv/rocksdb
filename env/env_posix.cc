@@ -826,12 +826,12 @@ class PosixEnv : public Env {
 
   // Allow increasing the number of worker threads.
   virtual void SetBackgroundThreads(int num, Priority pri) override {
-    assert(pri >= Priority::BOTTOM && pri <= Priority::HIGH);
+    assert(pri >= Priority::GC && pri <= Priority::HIGH);
     thread_pools_[pri].SetBackgroundThreads(num);
   }
 
   virtual int GetBackgroundThreads(Priority pri) override {
-    assert(pri >= Priority::BOTTOM && pri <= Priority::HIGH);
+    assert(pri >= Priority::GC && pri <= Priority::HIGH);
     return thread_pools_[pri].GetBackgroundThreads();
   }
 
@@ -842,12 +842,12 @@ class PosixEnv : public Env {
 
   // Allow increasing the number of worker threads.
   virtual void IncBackgroundThreadsIfNeeded(int num, Priority pri) override {
-    assert(pri >= Priority::BOTTOM && pri <= Priority::HIGH);
+    assert(pri >= Priority::GC && pri <= Priority::HIGH);
     thread_pools_[pri].IncBackgroundThreadsIfNeeded(num);
   }
 
   virtual void LowerThreadPoolIOPriority(Priority pool = LOW) override {
-    assert(pool >= Priority::BOTTOM && pool <= Priority::HIGH);
+    assert(pool >= Priority::GC && pool <= Priority::HIGH);
 #ifdef OS_LINUX
     thread_pools_[pool].LowerIOPriority();
 #else
@@ -856,7 +856,7 @@ class PosixEnv : public Env {
   }
 
   virtual void LowerThreadPoolCPUPriority(Priority pool = LOW) override {
-    assert(pool >= Priority::BOTTOM && pool <= Priority::HIGH);
+    assert(pool >= Priority::GC && pool <= Priority::HIGH);
 #ifdef OS_LINUX
     thread_pools_[pool].LowerCPUPriority();
 #else
@@ -971,7 +971,7 @@ PosixEnv::PosixEnv()
 
 void PosixEnv::Schedule(void (*function)(void* arg1), void* arg, Priority pri,
                         void* tag, void (*unschedFunction)(void* arg)) {
-  assert(pri >= Priority::BOTTOM && pri <= Priority::HIGH);
+  assert(pri >= Priority::GC && pri <= Priority::HIGH);
   thread_pools_[pri].Schedule(function, arg, tag, unschedFunction);
 }
 
@@ -980,7 +980,7 @@ int PosixEnv::UnSchedule(void* arg, Priority pri) {
 }
 
 unsigned int PosixEnv::GetThreadPoolQueueLen(Priority pri) const {
-  assert(pri >= Priority::BOTTOM && pri <= Priority::HIGH);
+  assert(pri >= Priority::GC && pri <= Priority::HIGH);
   return thread_pools_[pri].GetQueueLen();
 }
 

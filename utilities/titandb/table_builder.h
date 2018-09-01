@@ -1,17 +1,16 @@
 #pragma once
 
 #include "table/table_builder.h"
-#include "utilities/titandb/options.h"
 #include "utilities/titandb/blob_file_builder.h"
 #include "utilities/titandb/blob_file_manager.h"
+#include "utilities/titandb/options.h"
 
 namespace rocksdb {
 namespace titandb {
 
 class TitanTableBuilder : public TableBuilder {
  public:
-  TitanTableBuilder(uint32_t cf_id,
-                    const TitanCFOptions& options,
+  TitanTableBuilder(uint32_t cf_id, const TitanCFOptions& options,
                     std::unique_ptr<TableBuilder> base_builder,
                     std::shared_ptr<BlobFileManager> blob_manager)
       : cf_id_(cf_id),

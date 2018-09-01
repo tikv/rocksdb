@@ -1,18 +1,46 @@
 #pragma once
 
+#include <db/log_writer.h>
+#include <include/rocksdb/options.h>
+#include <include/rocksdb/status.h>
+#include <port/port_posix.h>
+#include <stdint.h>
+#include <atomic>
+#include "blob_file_cache.h"
 #include "db/log_reader.h"
 #include "db/log_writer.h"
+#include "options.h"
+#include "rocksdb/options.h"
 #include "util/mutexlock.h"
+#include "utilities/titandb/blob_file_cache.h"
 #include "utilities/titandb/options.h"
 #include "utilities/titandb/version.h"
+#include "utilities/titandb/version_builder.h"
 #include "utilities/titandb/version_edit.h"
 
 namespace rocksdb {
 namespace titandb {
 
+struct ObsoleteFiles {
+  ObsoleteFiles() = default;
+
+  ObsoleteFiles(const ObsoleteFiles&) = delete;
+  ObsoleteFiles& operator=(const ObsoleteFiles&) = delete;
+  ObsoleteFiles(ObsoleteFiles&&) = delete;
+  ObsoleteFiles& operator=(ObsoleteFiles&&) = delete;
+
+  void Swap(ObsoleteFiles* obsolete_file) {
+    blob_files.swap(obsolete_file->blob_files);
+    manifests.swap(obsolete_file->manifests);
+  }
+
+  std::vector<std::shared_ptr<BlobFileMeta>> blob_files;
+  std::vector<std::string> manifests;
+};
+
 class VersionSet {
  public:
-  VersionSet(const TitanDBOptions& options);
+  explicit VersionSet(const TitanDBOptions& options);
 
   // Sets up the storage specified in "options.dirname".
   // If the manifest doesn't exist, it will create one.
@@ -41,7 +69,15 @@ class VersionSet {
   // Allocates a new file number.
   uint64_t NewFileNumber() { return next_file_number_.fetch_add(1); }
 
+  // REQUIRES: *mutex is held
+  void GetObsoleteFiles(ObsoleteFiles* obsolete_files) {
+    obsolete_files->Swap(&obsolete_files_);
+  }
+
  private:
+  friend class Version;
+  friend class BlobFileSizeCollectorTest;
+
   Status Recover();
 
   Status OpenManifest(uint64_t number);
@@ -56,7 +92,9 @@ class VersionSet {
 
   VersionList versions_;
   std::unique_ptr<log::Writer> manifest_;
-  std::atomic<uint64_t> next_file_number_ {1};
+  std::atomic<uint64_t> next_file_number_{1};
+
+  ObsoleteFiles obsolete_files_;
 };
 
 }  // namespace titandb

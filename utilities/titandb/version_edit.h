@@ -15,11 +15,9 @@ class VersionEdit {
     next_file_number_ = v;
   }
 
-  void SetColumnFamilyID(uint32_t v) {
-    column_family_id_ = v;
-  }
+  void SetColumnFamilyID(uint32_t v) { column_family_id_ = v; }
 
-  void AddBlobFile(const BlobFileMeta& file) {
+  void AddBlobFile(std::shared_ptr<BlobFileMeta> file) {
     added_files_.push_back(file);
   }
 
@@ -36,11 +34,11 @@ class VersionEdit {
   friend class VersionSet;
   friend class VersionBuilder;
 
-  bool has_next_file_number_ {false};
-  uint64_t next_file_number_ {0};
-  uint32_t column_family_id_ {0};
+  bool has_next_file_number_{false};
+  uint64_t next_file_number_{0};
+  uint32_t column_family_id_{0};
 
-  std::vector<BlobFileMeta> added_files_;
+  std::vector<std::shared_ptr<BlobFileMeta>> added_files_;
   std::vector<uint64_t> deleted_files_;
 };
 

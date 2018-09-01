@@ -8,9 +8,14 @@
 namespace rocksdb {
 namespace titandb {
 
+// 8 bytes body length
+const uint32_t kBlobHeaderSize = 8;
+
 // compression  : char
 // checksum     : fixed32
 const uint32_t kBlobTailerSize = 5;
+
+const uint32_t kBlobFixedSize = kBlobHeaderSize + kBlobTailerSize;
 
 // Blob record format:
 //
@@ -19,6 +24,9 @@ const uint32_t kBlobTailerSize = 5;
 struct BlobRecord {
   Slice key;
   Slice value;
+  struct MetaData {
+    SequenceNumber seq_num;
+  } metadata;
 
   void EncodeTo(std::string* dst) const;
   Status DecodeFrom(Slice* src);
@@ -31,8 +39,8 @@ struct BlobRecord {
 // offset       : varint64
 // size         : varint64
 struct BlobHandle {
-  uint64_t offset {0};
-  uint64_t size {0};
+  uint64_t offset{0};
+  uint64_t size{0};
 
   void EncodeTo(std::string* dst) const;
   Status DecodeFrom(Slice* src);
@@ -49,7 +57,7 @@ struct BlobIndex {
   enum Type : unsigned char {
     kBlobRecord = 1,
   };
-  uint64_t file_number {0};
+  uint64_t file_number{0};
   BlobHandle blob_handle;
 
   void EncodeTo(std::string* dst) const;
@@ -63,8 +71,28 @@ struct BlobIndex {
 // file_number      : varint64
 // file_size        : varint64
 struct BlobFileMeta {
-  uint64_t file_number {0};
-  uint64_t file_size {0};
+  BlobFileMeta(){};
+  BlobFileMeta(uint64_t _file_number, uint64_t _file_size,
+               uint64_t _discardable_size = 0, bool _being_gc = false,
+               bool _marked_for_sample = true)
+      : file_number(_file_number),
+        file_size(_file_size),
+        discardable_size(_discardable_size),
+        marked_for_sample(_marked_for_sample),
+        being_gc(_being_gc) {}
+
+  // Persistent field, we should never modify it.
+  uint64_t file_number{0};
+  uint64_t file_size{0};
+
+  // Not persistent field
+  // These fields maybe are mutate, need to be protected by db.mutex_
+  uint64_t discardable_size{0};
+  bool marked_for_gc = false;
+  bool marked_for_sample = true;
+
+  // This field can be modified concurrently
+  std::atomic_bool being_gc{false};
 
   void EncodeTo(std::string* dst) const;
   Status DecodeFrom(Slice* src);
@@ -81,9 +109,7 @@ struct BlobFileMeta {
 struct BlobFileFooter {
   // The first 64bits from $(echo titandb/blob | sha1sum).
   static const uint64_t kMagicNumber {0xcd3f52ea0fe14511ull};
-  static const uint64_t kEncodedLength {
-      BlockHandle::kMaxEncodedLength + 8 + 4
-  };
+  static const uint64_t kEncodedLength{BlockHandle::kMaxEncodedLength + 8 + 4};
 
   BlockHandle meta_index_handle {BlockHandle::NullBlockHandle()};
 

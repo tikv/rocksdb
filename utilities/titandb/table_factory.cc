@@ -10,14 +10,14 @@ Status TitanTableFactory::NewTableReader(
     std::unique_ptr<RandomAccessFileReader>&& file, uint64_t file_size,
     std::unique_ptr<TableReader>* result,
     bool prefetch_index_and_filter_in_cache) const {
-  return base_factory_->NewTableReader(
-      options, std::move(file), file_size, result,
-      prefetch_index_and_filter_in_cache);
+  return base_factory_->NewTableReader(options, std::move(file), file_size,
+                                       result,
+                                       prefetch_index_and_filter_in_cache);
 }
 
 TableBuilder* TitanTableFactory::NewTableBuilder(
-    const TableBuilderOptions& options,
-    uint32_t column_family_id, WritableFileWriter* file) const {
+    const TableBuilderOptions& options, uint32_t column_family_id,
+    WritableFileWriter* file) const {
   std::unique_ptr<TableBuilder> base_builder(
       base_factory_->NewTableBuilder(options, column_family_id, file));
   return new TitanTableBuilder(column_family_id, options_,

@@ -28,14 +28,14 @@ class VersionBuilder {
    public:
     Builder(std::shared_ptr<BlobStorage> base) : base_(base) {}
 
-    void AddFile(const BlobFileMeta& file);
+    void AddFile(const std::shared_ptr<BlobFileMeta>& file);
     void DeleteFile(uint64_t number);
 
     std::shared_ptr<BlobStorage> Build();
 
    private:
     std::shared_ptr<BlobStorage> base_;
-    std::map<uint64_t, BlobFileMeta> added_files_;
+    std::map<uint64_t, std::shared_ptr<BlobFileMeta>> added_files_;
     std::set<uint64_t> deleted_files_;
   };
 

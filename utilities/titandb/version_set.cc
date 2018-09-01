@@ -25,7 +25,7 @@ VersionSet::VersionSet(const TitanDBOptions& options)
 Status VersionSet::Open(
     const std::map<uint32_t, TitanCFOptions>& column_families) {
   // Sets up initial column families.
-  AddColumnFamilies(column_families);
+  AddColumnFamilies( column_families) ;
 
   Status s = env_->FileExists(CurrentFileName(dirname_));
   if (s.ok()) {
@@ -35,8 +35,8 @@ Status VersionSet::Open(
     return s;
   }
   if (!db_options_.create_if_missing) {
-    return Status::InvalidArgument(
-        dirname_, "does't exist (create_if_missing is false)");
+    return Status::InvalidArgument(dirname_,
+                                   "does't exist (create_if_missing is false)");
   }
   return OpenManifest(NewFileNumber());
 }
@@ -77,8 +77,8 @@ Status VersionSet::Recover() {
   {
     LogReporter reporter;
     reporter.status = &s;
-    log::Reader reader(nullptr, std::move(file), &reporter,
-                       true /*checksum*/, 0 /*initial_offset*/, 0);
+    log::Reader reader(nullptr, std::move(file), &reporter, true /*checksum*/,
+                       0 /*initial_offset*/, 0);
     Slice record;
     std::string scratch;
     while (reader.ReadRecord(&record, &scratch) && s.ok()) {
@@ -98,12 +98,26 @@ Status VersionSet::Recover() {
   }
   next_file_number_.store(next_file_number);
 
-  auto v = new Version;
+  auto v = new Version(this);
   {
     builder.SaveTo(v);
     versions_.Append(v);
   }
-  return OpenManifest(NewFileNumber());
+
+  // Make sure perform gc on all files at the beginning
+  v = versions_.current();
+  for (auto& blob_storage : v->column_families_) {
+    for (auto& blob_file : blob_storage.second->files_) {
+      blob_file.second->marked_for_gc = true;
+    }
+  }
+
+  s = OpenManifest(NewFileNumber());
+  if (!s.ok()) return s;
+
+  obsolete_files_.manifests.emplace_back(std::move(file_name));
+
+  return Status::OK();
 }
 
 Status VersionSet::OpenManifest(uint64_t file_number) {
@@ -133,7 +147,8 @@ Status VersionSet::OpenManifest(uint64_t file_number) {
 
   if (!s.ok()) {
     manifest_.reset();
-    env_->DeleteFile(file_name);
+    //    env_->DeleteFile(file_name);
+    obsolete_files_.manifests.emplace_back(file_name);
   }
   return s;
 }
@@ -178,7 +193,7 @@ Status VersionSet::LogAndApply(VersionEdit* edit, port::Mutex* mutex) {
   }
   if (!s.ok()) return s;
 
-  auto v = new Version;
+  auto v = new Version(this);
   {
     VersionBuilder builder(current());
     builder.Apply(edit);
@@ -190,7 +205,7 @@ Status VersionSet::LogAndApply(VersionEdit* edit, port::Mutex* mutex) {
 
 void VersionSet::AddColumnFamilies(
     const std::map<uint32_t, TitanCFOptions>& column_families) {
-  auto v = new Version;
+  auto v = new Version(this);
   v->column_families_ = current()->column_families_;
   for (auto& cf : column_families) {
     auto file_cache = std::make_shared<BlobFileCache>(
@@ -203,7 +218,7 @@ void VersionSet::AddColumnFamilies(
 
 void VersionSet::DropColumnFamilies(
     const std::vector<uint32_t>& column_families) {
-  auto v = new Version;
+  auto v = new Version(this);
   v->column_families_ = current()->column_families_;
   for (auto& cf : column_families) {
     v->column_families_.erase(cf);
