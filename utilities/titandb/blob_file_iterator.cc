@@ -1,6 +1,5 @@
 #include "utilities/titandb/blob_file_iterator.h"
 
-#include "utilities/titandb/blob_format.h"
 #include "utilities/titandb/util.h"
 
 #include "util/crc32c.h"
@@ -60,7 +59,7 @@ bool BlobFileIterator::Init() {
 
 void BlobFileIterator::SeekToFirst() {
   if (!init_) Init();
-
+  iterate_offset_ = 0;
   PrefetchAndGet();
 }
 
