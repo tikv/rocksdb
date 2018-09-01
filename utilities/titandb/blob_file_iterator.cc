@@ -173,19 +173,27 @@ void BlobFileIterator::PrefetchAndGet() {
 
   if (readahead_begin_offset_ > iterate_offset_ ||
       readahead_end_offset_ < iterate_offset_) {
-    readahead_begin_offset_ = iterate_offset_;
-    readahead_end_offset_ = iterate_offset_;
+    // alignment
+    readahead_begin_offset_ =
+        iterate_offset_ - (iterate_offset_ & (kDefaultPageSize - 1));
+    readahead_end_offset_ = readahead_begin_offset_;
     readahead_size_ = kMinReadaheadSize;
   }
-  if (readahead_end_offset_ <=
-      iterate_offset_ + kBlobFixedSize + titan_cf_options_.min_blob_size)
-    file_->Prefetch(readahead_begin_offset_, readahead_size_);
+  auto min_blob_size =
+      iterate_offset_ + kBlobFixedSize + titan_cf_options_.min_blob_size;
+  if (readahead_end_offset_ <= min_blob_size) {
+    while (readahead_end_offset_ + readahead_size_ <= min_blob_size &&
+           readahead_size_ < kMaxReadaheadSize)
+      readahead_size_ <<= 1;
+    file_->Prefetch(readahead_end_offset_, readahead_size_);
+    readahead_end_offset_ += readahead_size_;
+    readahead_size_ = std::min(kMaxReadaheadSize, readahead_size_ << 1);
+  }
 
   GetBlobRecord();
 
   if (readahead_end_offset_ < iterate_offset_) {
     readahead_end_offset_ = iterate_offset_;
-    readahead_size_ = std::min(kMaxReadaheadSize, readahead_size_ * 2);
   }
 }
 
