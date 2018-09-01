@@ -7,15 +7,26 @@
 namespace rocksdb {
 namespace titandb {
 
+// HEADER:  8 bytes length
+// BODY:    variable length
+// TAIL:    5 bytes length
 void BlobFileBuilder::Add(const BlobRecord& record, BlobHandle* handle) {
   if (!ok()) return;
 
   buffer_.clear();
+  assert(!record.key.empty());
+  assert(!record.value.empty());
   record.EncodeTo(&buffer_);
 
   CompressionType compression;
   auto output = Compress(compression_ctx_, buffer_,
                          &compressed_buffer_, &compression);
+
+  uint64_t body_length = output.size();
+  status_ = file_->Append(
+      Slice{reinterpret_cast<const char*>(&body_length), kBlobHeaderSize});
+  if (!ok()) return;
+
   handle->offset = file_->GetFileSize();
   handle->size = output.size();
 

@@ -2,9 +2,26 @@
 
 #include "util/crc32c.h"
 #include "utilities/titandb/util.h"
+#include "util/filename.h"
 
 namespace rocksdb {
 namespace titandb {
+
+Status NewBlobFileReader(uint64_t file_number, uint64_t readahead_size,
+                         const TitanDBOptions& db_options,
+                         const EnvOptions& env_options, Env* env,
+                         std::unique_ptr<RandomAccessFileReader>* result) {
+  std::unique_ptr<RandomAccessFile> file;
+  auto file_name = BlobFileName(db_options.dirname, file_number);
+  Status s = env->NewRandomAccessFile(file_name, &file, env_options);
+  if (!s.ok()) return s;
+
+  if (readahead_size > 0) {
+    file = NewReadaheadRandomAccessFile(std::move(file), readahead_size);
+  }
+  result->reset(new RandomAccessFileReader(std::move(file), file_name));
+  return s;
+}
 
 const uint64_t kMinReadaheadSize = 4 << 10;
 const uint64_t kMaxReadaheadSize = 256 << 10;
@@ -90,7 +107,7 @@ BlobFileReader::BlobFileReader(const TitanCFOptions& options,
 
 Status BlobFileReader::Get(const ReadOptions& /*options*/,
                            const BlobHandle& handle,
-                           BlobRecord* record, PinnableSlice* buffer) {
+                           BlobRecord* record,PinnableSlice* buffer) {
   Status s;
   std::string cache_key;
   Cache::Handle* cache_handle = nullptr;
@@ -126,9 +143,10 @@ Status BlobFileReader::Get(const ReadOptions& /*options*/,
 
 Status BlobFileReader::ReadBlob(const BlobHandle& handle, BlobBuffer* buffer) {
   Slice blob;
-  size_t blob_size = handle.size + kBlobTailerSize;
+  size_t blob_size =handle.size+ kBlobTailerSize;
   std::unique_ptr<char[]> compressed(new char[blob_size]);
-  Status s = file_->Read(handle.offset, blob_size, &blob, compressed.get());
+  Status s = file_->Read(handle.offset, blob_size,
+                         &blob, compressed.get());
   if (!s.ok()) return s;
 
   auto tailer = blob.data() + handle.size;

@@ -1,9 +1,9 @@
 #pragma once
 
 #include "rocksdb/options.h"
-#include "utilities/titandb/options.h"
-#include "utilities/titandb/blob_format.h"
 #include "utilities/titandb/blob_file_reader.h"
+#include "utilities/titandb/blob_format.h"
+#include "utilities/titandb/options.h"
 
 namespace rocksdb {
 namespace titandb {
@@ -12,8 +12,7 @@ class BlobFileCache {
  public:
   // Constructs a blob file cache to cache opened files.
   BlobFileCache(const TitanDBOptions& db_options,
-                const TitanCFOptions& cf_options,
-                std::shared_ptr<Cache> cache);
+                const TitanCFOptions& cf_options, std::shared_ptr<Cache> cache);
 
   // Gets the blob record pointed by the handle in the specified file
   // number. The corresponding file size must be exactly "file_size"
@@ -26,8 +25,7 @@ class BlobFileCache {
              BlobRecord* record, PinnableSlice* buffer);
 
   // Creates a prefetcher for the specified file number.
-  Status NewPrefetcher(uint64_t file_number,
-                       uint64_t file_size,
+  Status NewPrefetcher(uint64_t file_number, uint64_t file_size,
                        std::unique_ptr<BlobFilePrefetcher>* result);
 
   // Evicts the file cache for the specified file number.

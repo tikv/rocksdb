@@ -5,8 +5,9 @@
 namespace rocksdb {
 namespace titandb {
 
-void VersionBuilder::Builder::AddFile(const BlobFileMeta& file) {
-  auto number = file.file_number;
+void VersionBuilder::Builder::AddFile(
+    const std::shared_ptr<BlobFileMeta>& file) {
+  auto number = file->file_number;
   if (base_->files_.find(number) != base_->files_.end() ||
       added_files_.find(number) != added_files_.end()) {
     fprintf(stderr, "blob file %" PRIu64 " has been added before\n", number);
@@ -43,6 +44,7 @@ std::shared_ptr<BlobStorage> VersionBuilder::Builder::Build() {
   for (auto& file : deleted_files_) {
     vs->files_.erase(file);
   }
+  vs->ComputeGCScore();
   return vs;
 }
 
@@ -53,9 +55,7 @@ VersionBuilder::VersionBuilder(Version* base) : base_(base) {
   }
 }
 
-VersionBuilder::~VersionBuilder() {
-  base_->Unref();
-}
+VersionBuilder::~VersionBuilder() { base_->Unref(); }
 
 void VersionBuilder::Apply(VersionEdit* edit) {
   auto cf_id = edit->column_family_id_;

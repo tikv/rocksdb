@@ -1,12 +1,11 @@
-#include "utilities/titandb/db.h"
+#include "utilities/titandb/titan_db.h"
 
-#include "utilities/titandb/db_impl.h"
+#include "utilities/titandb/titan_db_impl.h"
 
 namespace rocksdb {
 namespace titandb {
 
-Status TitanDB::Open(const TitanOptions& options,
-                     const std::string& dbname,
+Status TitanDB::Open(const TitanOptions& options, const std::string& dbname,
                      TitanDB** db) {
   TitanDBOptions db_options(options);
   TitanCFOptions cf_options(options);
@@ -25,8 +24,7 @@ Status TitanDB::Open(const TitanOptions& options,
 Status TitanDB::Open(const TitanDBOptions& db_options,
                      const std::string& dbname,
                      const std::vector<TitanCFDescriptor>& descs,
-                     std::vector<ColumnFamilyHandle*>* handles,
-                     TitanDB** db) {
+                     std::vector<ColumnFamilyHandle*>* handles, TitanDB** db) {
   auto impl = new TitanDBImpl(db_options, dbname);
   auto s = impl->Open(descs, handles);
   if (s.ok()) {
