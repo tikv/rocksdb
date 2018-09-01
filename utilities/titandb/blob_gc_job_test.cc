@@ -87,7 +87,8 @@ class BlobGCJobTest : public testing::Test {
     if (!s.ok()) {
       return s;
     }
-    *iter = new BlobFileIterator(std::move(file), file_number, file_size);
+    *iter = new BlobFileIterator(std::move(file), file_number, file_size,
+                                 TitanCFOptions());
     return Status::OK();
   }
 

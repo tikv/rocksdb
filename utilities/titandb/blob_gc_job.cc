@@ -136,7 +136,7 @@ bool BlobGCJob::DoSample(
                         env_, &file_reader);
   assert(s.ok());
   BlobFileIterator iter(std::move(file_reader), file->file_number,
-                        file->file_size);
+                        file->file_size, titan_cf_options_);
   iter.IterateForPrev(sample_begin_offset);
   assert(iter.status().ok());
 
@@ -251,7 +251,7 @@ Status BlobGCJob::BuildIterator(std::unique_ptr<InternalIterator>* result) {
       break;
     }
     list[i] = new BlobFileIterator(std::move(file), inputs[i]->file_number,
-                                   inputs[i]->file_size);
+                                   inputs[i]->file_size, titan_cf_options_);
   }
 
   if (s.ok()) {
