@@ -1,7 +1,3 @@
-//
-// Created by 郑志铨 on 2018/8/21.
-//
-
 #include "utilities/titandb/blob_gc_picker.h"
 
 namespace rocksdb {

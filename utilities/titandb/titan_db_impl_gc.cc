@@ -1,7 +1,3 @@
-//
-// Created by 郑志铨 on 2018/8/20.
-//
-
 #include "utilities/titandb/titan_db_impl.h"
 
 #include "blob_file_builder.h"

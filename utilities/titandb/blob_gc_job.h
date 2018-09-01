@@ -1,7 +1,3 @@
-//
-// Created by 郑志铨 on 2018/8/18.
-//
-
 #ifndef ROCKSDB_BLOB_GC_JOB_H
 #define ROCKSDB_BLOB_GC_JOB_H
 

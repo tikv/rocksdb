@@ -1,7 +1,3 @@
-//
-// Created by 郑志铨 on 2018/8/14.
-//
-
 #ifndef ROCKSDB_BLOB_GC_STATISTIS_H
 #define ROCKSDB_BLOB_GC_STATISTIS_H
 

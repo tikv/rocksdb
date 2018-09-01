@@ -1,7 +1,3 @@
-//
-// Created by 郑志铨 on 2018/8/18.
-//
-
 #include "utilities/titandb/blob_gc_job.h"
 #include "db/column_family.h"
 #include "db/db_impl.h"

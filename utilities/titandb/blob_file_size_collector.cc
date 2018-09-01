@@ -1,7 +1,3 @@
-//
-// Created by 郑志铨 on 2018/8/14.
-//
-
 #include "utilities/titandb/blob_file_size_collector.h"
 
 namespace rocksdb {

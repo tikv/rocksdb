@@ -1,7 +1,3 @@
-//
-// Created by 郑志铨 on 2018/8/9.
-//
-
 #ifndef ROCKSDB_BLOB_FILE_ITERATOR_H
 #define ROCKSDB_BLOB_FILE_ITERATOR_H
 

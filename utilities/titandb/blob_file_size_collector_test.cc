@@ -1,7 +1,3 @@
-//
-// Created by 郑志铨 on 2018/8/22.
-//
-
 #include "utilities/titandb/blob_file_size_collector.h"
 #include "util/filename.h"
 #include "util/testharness.h"

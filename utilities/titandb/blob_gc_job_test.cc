@@ -1,7 +1,3 @@
-//
-// Created by 郑志铨 on 2018/8/27.
-//
-
 #include "utilities/titandb/blob_gc_job.h"
 #include "util/filename.h"
 #include "util/testharness.h"

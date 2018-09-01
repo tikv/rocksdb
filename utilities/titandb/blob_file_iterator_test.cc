@@ -1,7 +1,3 @@
-//
-// Created by 郑志铨 on 2018/8/13.
-//
-
 #include "utilities/titandb/blob_file_iterator.h"
 #include "util/filename.h"
 #include "util/testharness.h"
