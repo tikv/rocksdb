@@ -118,6 +118,20 @@ TEST_F(BlobFileIteratorTest, IterateForPrev) {
 
   NewBlobFileIterator();
 
+  int i = n / 2;
+  blob_file_iterator_->IterateForPrev(handles[i].offset);
+  ASSERT_OK(blob_file_iterator_->status());
+  for (blob_file_iterator_->Next(); i < n; i++, blob_file_iterator_->Next()) {
+    ASSERT_OK(blob_file_iterator_->status());
+    ASSERT_EQ(blob_file_iterator_->Valid(), true);
+    BlobIndex blob_index;
+    BlobFileIterator::GetBlobIndex(blob_file_iterator_.get(), &blob_index);
+    ASSERT_EQ(handles[i], blob_index.blob_handle);
+    auto id = std::to_string(i);
+    ASSERT_EQ(id, blob_file_iterator_->key());
+    ASSERT_EQ(id, blob_file_iterator_->value());
+  }
+
   auto idx = Random::GetTLSInstance()->Uniform(n);
   blob_file_iterator_->IterateForPrev(handles[idx].offset);
   ASSERT_OK(blob_file_iterator_->status());
