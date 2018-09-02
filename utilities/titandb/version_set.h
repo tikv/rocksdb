@@ -77,6 +77,7 @@ class VersionSet {
  private:
   friend class Version;
   friend class BlobFileSizeCollectorTest;
+  friend class VersionTest;
 
   Status Recover();
 
