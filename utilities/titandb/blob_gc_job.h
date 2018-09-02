@@ -34,18 +34,7 @@ class BlobGCJob {
   class PlainInternalKeyComparator;
   friend class BlobGCJobTest;
 
-  Status SampleCandidateFiles();
-
-  bool DoSample(const std::shared_ptr<BlobFileMeta>& file);
-
-  Status DoRunGC();
-
-  Status BuildIterator(std::unique_ptr<InternalIterator>* result);
-
-  bool DiscardEntry(const Slice& key, const BlobIndex& blob_index);
-
   BlobGC* blob_gc_;
-
   DB* base_db_;
   DBImpl* base_db_impl_;
   ColumnFamilyHandle* cfh_;
@@ -62,6 +51,15 @@ class BlobGCJob {
       blob_file_builders_;
   std::vector<std::pair<WriteBatch, GarbageCollectionWriteCallback>>
       rewrite_batches_;
+
+  Status SampleCandidateFiles();
+  bool DoSample(const std::shared_ptr<BlobFileMeta>& file);
+  Status DoRunGC();
+  Status BuildIterator(std::unique_ptr<InternalIterator>* result);
+  bool DiscardEntry(const Slice& key, const BlobIndex& blob_index);
+  Status InstallOutputBlobFiles();
+  Status RewriteValidKeyToLSM();
+  Status DeleteInputBlobFiles() const;
 };
 
 }  // namespace titandb

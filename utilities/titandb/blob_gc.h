@@ -26,6 +26,8 @@ class BlobGC {
     return selected_files_;
   }
 
+  void ClearSelectedFiles() { selected_files_.clear(); }
+
  private:
   std::vector<std::shared_ptr<BlobFileMeta>> candidate_files_;
   std::vector<std::shared_ptr<BlobFileMeta>> selected_files_;
