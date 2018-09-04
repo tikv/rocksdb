@@ -34,7 +34,7 @@ struct ObsoleteFiles {
     manifests.swap(obsolete_file->manifests);
   }
 
-  std::vector<std::shared_ptr<BlobFileMeta>> blob_files;
+  std::vector<uint32_t> blob_files;
   std::vector<std::string> manifests;
 };
 
@@ -69,13 +69,17 @@ class VersionSet {
   // Allocates a new file number.
   uint64_t NewFileNumber() { return next_file_number_.fetch_add(1); }
 
-  // REQUIRES: *mutex is held
+  // REQUIRES: mutex is held
   void GetObsoleteFiles(ObsoleteFiles* obsolete_files) {
     obsolete_files->Swap(&obsolete_files_);
   }
 
+  void AddObsoleteBlobFiles(const std::vector<uint32_t>& blob_files) {
+    obsolete_files_.blob_files.insert(obsolete_files_.blob_files.end(),
+                                      blob_files.begin(), blob_files.end());
+  }
+
  private:
-  friend class Version;
   friend class BlobFileSizeCollectorTest;
   friend class VersionTest;
 

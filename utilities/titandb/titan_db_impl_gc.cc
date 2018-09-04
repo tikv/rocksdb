@@ -16,7 +16,7 @@ namespace titandb {
 void TitanDBImpl::MaybeScheduleGC() {
   if (db_options_.disable_background_gc) return;
   bg_gc_scheduled_++;
-  env_->Schedule(&TitanDBImpl::BGWorkGC, this, Env::Priority::LOW, this);
+  env_->Schedule(&TitanDBImpl::BGWorkGC, this, Env::Priority::GC, this);
 }
 
 void TitanDBImpl::BGWorkGC(void* db) {
@@ -52,17 +52,17 @@ Status TitanDBImpl::BackgroundGC() {
     auto* cfh = db_impl_->GetColumnFamilyHandleUnlocked(column_family_id);
     assert(cfh != nullptr);
 
-    // Build BlobGC
     std::unique_ptr<BlobGC> blob_gc;
+    auto current = vset_->current();
+    auto bs = current->GetBlobStorage(column_family_id).lock().get();
+    const auto& titan_cf_options = bs->titan_cf_options();
     std::shared_ptr<BlobGCPicker> blob_gc_picker =
-        std::make_shared<BasicBlobGCPicker>(
-            titan_cfs_options_[column_family_id]);
-    blob_gc = blob_gc_picker->PickBlobGC(
-        vset_->current()->GetBlobStorage(column_family_id).get());
+        std::make_shared<BasicBlobGCPicker>(titan_cf_options);
+    blob_gc = blob_gc_picker->PickBlobGC(bs);
     if (!blob_gc) return Status::Corruption("Build BlobGC failed");
 
     BlobGCJob blob_gc_job(blob_gc.get(), db_, cfh, &mutex_, db_options_,
-                          titan_cfs_options_[column_family_id], env_,
+                          titan_cf_options, env_,
                           env_options_, blob_manager_.get(), vset_.get());
     s = blob_gc_job.Prepare();
     if (!s.ok()) return s;

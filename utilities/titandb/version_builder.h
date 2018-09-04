@@ -34,7 +34,7 @@ class VersionBuilder {
     std::shared_ptr<BlobStorage> Build();
 
    private:
-    std::shared_ptr<BlobStorage> base_;
+    std::weak_ptr<BlobStorage> base_;
     std::map<uint64_t, std::shared_ptr<BlobFileMeta>> added_files_;
     std::set<uint64_t> deleted_files_;
   };

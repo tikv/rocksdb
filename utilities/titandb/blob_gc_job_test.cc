@@ -1,14 +1,9 @@
 #include "utilities/titandb/blob_gc_job.h"
-#include "util/filename.h"
 #include "util/testharness.h"
-#include "utilities/titandb/blob_file_builder.h"
-#include "utilities/titandb/blob_file_cache.h"
 #include "utilities/titandb/blob_file_iterator.h"
-#include "utilities/titandb/blob_file_reader.h"
 #include "utilities/titandb/blob_gc_picker.h"
 #include "utilities/titandb/titan_db.h"
 #include "utilities/titandb/titan_db_impl.h"
-#include "utilities/titandb/version.h"
 
 namespace rocksdb {
 namespace titandb {
@@ -50,18 +45,21 @@ class BlobGCJobTest : public testing::Test {
     auto* cfh = base_db_->DefaultColumnFamily();
 
     // Build BlobGC
+    TitanCFOptions cf_options;
+    cf_options.min_gc_batch_size = 0;
+
     std::unique_ptr<BlobGC> blob_gc;
     {
       std::shared_ptr<BlobGCPicker> blob_gc_picker =
-          std::make_shared<BasicBlobGCPicker>(TitanCFOptions());
+          std::make_shared<BasicBlobGCPicker>(cf_options);
       blob_gc = blob_gc_picker->PickBlobGC(
-          version_set_->current()->GetBlobStorage(cfh->GetID()).get());
+          version_set_->current()->GetBlobStorage(cfh->GetID()).lock().get());
     }
     ASSERT_TRUE(blob_gc);
 
     BlobGCJob blob_gc_job(
         blob_gc.get(), base_db_, cfh, mutex_, tdb_->db_options_,
-        tdb_->titan_cfs_options_[cfh->GetID()], tdb_->env_, EnvOptions(),
+        cf_options, tdb_->env_, EnvOptions(),
         tdb_->blob_manager_.get(), version_set_);
 
     s = blob_gc_job.Prepare();
@@ -96,6 +94,79 @@ class BlobGCJobTest : public testing::Test {
                     const BlobIndex& blob_index) {
     return b->DiscardEntry(key, blob_index);
   }
+
+  void TestRunGC() {
+    NewDB();
+    for (int i = 0; i < MAX_KEY_NUM; i++) {
+      std::string key = std::to_string(i);
+      std::string value(key.data(), 10240);
+      db_->Put(WriteOptions(), key, value);
+    }
+    FlushOptions flush_options;
+    flush_options.wait = true;
+    db_->Flush(flush_options);
+    std::string result;
+    ASSERT_OK(db_->Get(ReadOptions(), std::to_string(0), &result));
+    ASSERT_OK(db_->Get(ReadOptions(), std::to_string(2), &result));
+    for (int i = 0; i < MAX_KEY_NUM; i++) {
+      if (i % 2 != 0) continue;
+      std::string key = std::to_string(i);
+      db_->Delete(WriteOptions(), key);
+    }
+    db_->Flush(flush_options);
+    ASSERT_NOK(db_->Get(ReadOptions(), std::to_string(0), &result));
+    ASSERT_NOK(db_->Get(ReadOptions(), std::to_string(2), &result));
+    Version* v = nullptr;
+    {
+      MutexLock l(mutex_);
+      v = version_set_->current();
+    }
+    ASSERT_TRUE(v != nullptr);
+    auto b = v->GetBlobStorage(base_db_->DefaultColumnFamily()->GetID()).lock();
+    ASSERT_EQ(b->files_.size(), 1);
+    auto old = b->files_.begin()->first;
+    for (auto& f : b->files_) {
+      f.second->marked_for_sample = false;
+    }
+    InternalIterator* iter;
+    ASSERT_OK(NewIterator(b->files_.begin()->second->file_number,
+                          b->files_.begin()->second->file_size, &iter));
+    iter->SeekToFirst();
+    for (int i = 0; i < MAX_KEY_NUM; i++, iter->Next()) {
+      ASSERT_OK(iter->status());
+      ASSERT_TRUE(iter->Valid());
+      //    std::string key = std::to_string(i);
+      //    ASSERT_TRUE(iter->key().size() == key.size());
+      //    ASSERT_TRUE(iter->key().compare(Slice(key)) == 0);
+      //    fprintf(stderr, "%s, ", iter->key().data());
+    }
+    //  fprintf(stderr, "\n\n");
+    RunGC();
+    {
+      MutexLock l(mutex_);
+      v = version_set_->current();
+    }
+    b = v->GetBlobStorage(base_db_->DefaultColumnFamily()->GetID()).lock();
+    ASSERT_EQ(b->files_.size(), 1);
+    auto new1 = b->files_.begin()->first;
+    ASSERT_TRUE(old != new1);
+    ASSERT_OK(NewIterator(b->files_.begin()->second->file_number,
+                          b->files_.begin()->second->file_size, &iter));
+    iter->SeekToFirst();
+    for (int i = 0; i < MAX_KEY_NUM; i++) {
+      if (i % 2 == 0) continue;
+      ASSERT_OK(iter->status());
+      ASSERT_TRUE(iter->Valid());
+      //    std::string key = std::to_string(i);
+      //    ASSERT_TRUE(iter->key().size() == key.size());
+      //    ASSERT_TRUE(iter->key().compare(Slice(key)) == 0);
+      //    fprintf(stderr, "%s, ", iter->key().data());
+      ASSERT_OK(db_->Get(ReadOptions(), iter->key(), &result));
+      ASSERT_TRUE(iter->value().size() == result.size());
+      ASSERT_TRUE(iter->value().compare(result) == 0);
+      iter->Next();
+    }
+  }
 };
 
 TEST_F(BlobGCJobTest, DiscardEntry) {
@@ -121,76 +192,7 @@ TEST_F(BlobGCJobTest, DiscardEntry) {
 }
 
 TEST_F(BlobGCJobTest, RunGC) {
-  NewDB();
-  for (int i = 0; i < MAX_KEY_NUM; i++) {
-    std::string key = std::to_string(i);
-    std::string value(key.data(), 10240);
-    db_->Put(WriteOptions(), key, value);
-  }
-  FlushOptions flush_options;
-  flush_options.wait = true;
-  db_->Flush(flush_options);
-  std::string result;
-  ASSERT_OK(db_->Get(ReadOptions(), std::to_string(0), &result));
-  ASSERT_OK(db_->Get(ReadOptions(), std::to_string(2), &result));
-  for (int i = 0; i < MAX_KEY_NUM; i++) {
-    if (i % 2 != 0) continue;
-    std::string key = std::to_string(i);
-    db_->Delete(WriteOptions(), key);
-  }
-  db_->Flush(flush_options);
-  ASSERT_NOK(db_->Get(ReadOptions(), std::to_string(0), &result));
-  ASSERT_NOK(db_->Get(ReadOptions(), std::to_string(2), &result));
-  Version* v = nullptr;
-  {
-    MutexLock l(mutex_);
-    v = version_set_->current();
-  }
-  ASSERT_TRUE(v != nullptr);
-  auto b = v->GetBlobStorage(base_db_->DefaultColumnFamily()->GetID());
-  ASSERT_EQ(b->files().size(), 1);
-  auto old = b->files().begin()->first;
-  for (auto& f : *b->mutable_files()) {
-    f.second->marked_for_sample = false;
-  }
-  InternalIterator* iter;
-  ASSERT_OK(NewIterator(b->files().begin()->second->file_number,
-                        b->files().begin()->second->file_size, &iter));
-  iter->SeekToFirst();
-  for (int i = 0; i < MAX_KEY_NUM; i++, iter->Next()) {
-    ASSERT_OK(iter->status());
-    ASSERT_TRUE(iter->Valid());
-    //    std::string key = std::to_string(i);
-    //    ASSERT_TRUE(iter->key().size() == key.size());
-    //    ASSERT_TRUE(iter->key().compare(Slice(key)) == 0);
-    //    fprintf(stderr, "%s, ", iter->key().data());
-  }
-  //  fprintf(stderr, "\n\n");
-  RunGC();
-  {
-    MutexLock l(mutex_);
-    v = version_set_->current();
-  }
-  b = v->GetBlobStorage(base_db_->DefaultColumnFamily()->GetID());
-  ASSERT_EQ(b->files().size(), 1);
-  auto new1 = b->files().begin()->first;
-  ASSERT_TRUE(old != new1);
-  ASSERT_OK(NewIterator(b->files().begin()->second->file_number,
-                        b->files().begin()->second->file_size, &iter));
-  iter->SeekToFirst();
-  for (int i = 0; i < MAX_KEY_NUM; i++) {
-    if (i % 2 == 0) continue;
-    ASSERT_OK(iter->status());
-    ASSERT_TRUE(iter->Valid());
-    //    std::string key = std::to_string(i);
-    //    ASSERT_TRUE(iter->key().size() == key.size());
-    //    ASSERT_TRUE(iter->key().compare(Slice(key)) == 0);
-    //    fprintf(stderr, "%s, ", iter->key().data());
-    ASSERT_OK(db_->Get(ReadOptions(), iter->key(), &result));
-    ASSERT_TRUE(iter->value().size() == result.size());
-    ASSERT_TRUE(iter->value().compare(result) == 0);
-    iter->Next();
-  }
+  TestRunGC();
 }
 
 }  // namespace titandb

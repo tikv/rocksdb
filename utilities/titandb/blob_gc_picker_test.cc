@@ -13,16 +13,17 @@ namespace titandb {
 class BlobGCPickerTest : public testing::Test {
  public:
   std::unique_ptr<BlobStorage> blob_storage_;
-  BasicBlobGCPicker basic_blob_gc_picker_{TitanCFOptions()};
+  std::unique_ptr<BlobGCPicker> basic_blob_gc_picker_;
 
   BlobGCPickerTest() {}
   ~BlobGCPickerTest() {}
 
-  void NewBlobStorage(const TitanDBOptions& titan_db_options,
-                      const TitanCFOptions& titan_cf_options) {
+  void NewBlobStorageAndPicker(const TitanDBOptions& titan_db_options,
+                               const TitanCFOptions& titan_cf_options) {
     auto blob_file_cache = std::make_shared<BlobFileCache>(
         titan_db_options, titan_cf_options, NewLRUCache(128));
-    blob_storage_.reset(new BlobStorage(TitanCFOptions(), blob_file_cache));
+    blob_storage_.reset(new BlobStorage(titan_cf_options, blob_file_cache));
+    basic_blob_gc_picker_.reset(new BasicBlobGCPicker(titan_cf_options));
   }
 
   void AddBlobFile(uint64_t file_number, uint64_t file_size,
@@ -37,10 +38,12 @@ class BlobGCPickerTest : public testing::Test {
 TEST_F(BlobGCPickerTest, Basic) {
   TitanDBOptions titan_db_options;
   TitanCFOptions titan_cf_options;
-  NewBlobStorage(titan_db_options, titan_cf_options);
+  titan_cf_options.min_gc_batch_size = 0;
+  NewBlobStorageAndPicker(titan_db_options, titan_cf_options);
   AddBlobFile(1U, 1U, 0U);
   UpdateBlobStorage();
-  auto blob_gc = basic_blob_gc_picker_.PickBlobGC(blob_storage_.get());
+  auto blob_gc = basic_blob_gc_picker_->PickBlobGC(blob_storage_.get());
+  ASSERT_TRUE(blob_gc != nullptr);
   ASSERT_EQ(blob_gc->candidate_files().size(), 1);
   ASSERT_EQ(blob_gc->candidate_files()[0]->file_number, 1U);
 }
@@ -48,16 +51,17 @@ TEST_F(BlobGCPickerTest, Basic) {
 TEST_F(BlobGCPickerTest, BeingGC) {
   TitanDBOptions titan_db_options;
   TitanCFOptions titan_cf_options;
-  NewBlobStorage(titan_db_options, titan_cf_options);
+  titan_cf_options.min_gc_batch_size = 0;
+  NewBlobStorageAndPicker(titan_db_options, titan_cf_options);
   AddBlobFile(1U, 1U, 0U, true);
   UpdateBlobStorage();
-  auto blob_gc = basic_blob_gc_picker_.PickBlobGC(blob_storage_.get());
-  ASSERT_EQ(blob_gc, nullptr);
-  NewBlobStorage(titan_db_options, titan_cf_options);
+  auto blob_gc = basic_blob_gc_picker_->PickBlobGC(blob_storage_.get());
+  ASSERT_EQ(nullptr, blob_gc);
+  NewBlobStorageAndPicker(titan_db_options, titan_cf_options);
   AddBlobFile(1U, 1U, 0U, true);
   AddBlobFile(2U, 1U, 0U);
   UpdateBlobStorage();
-  blob_gc = basic_blob_gc_picker_.PickBlobGC(blob_storage_.get());
+  blob_gc = basic_blob_gc_picker_->PickBlobGC(blob_storage_.get());
   ASSERT_EQ(blob_gc->candidate_files().size(), 1);
   ASSERT_EQ(blob_gc->candidate_files()[0]->file_number, 2U);
 }

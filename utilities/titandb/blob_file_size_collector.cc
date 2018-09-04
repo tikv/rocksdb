@@ -116,20 +116,17 @@ void BlobDiscardableSizeListener::OnCompactionCompleted(
     MutexLock l(db_mutex_);
     Version* current = versions_->current();
     current->Ref();
-    auto& files = *current->GetBlobStorage(ci.cf_id)->mutable_files();
+    auto bs = current->GetBlobStorage(ci.cf_id).lock();
     for (const auto& bfs : blob_files_size) {
-      // blob file size < 0 means discardable size
+      // blob file size < 0 means discardable size > 0
       if (bfs.second > 0) {
         continue;
       }
-      auto iter = files.find(bfs.first);
-      if (iter == files.end()) {
-        continue;
-      }
-      iter->second->discardable_size += -bfs.second;
+      auto file = bs->FindFile(bfs.first).lock();
+      file->discardable_size += static_cast<uint64_t>(-bfs.second);
     }
+    bs->ComputeGCScore();
     current->Unref();
-
     if (db_ != nullptr) {
       db_->AddToGCQueue(ci.cf_id);
       db_->MaybeScheduleGC();

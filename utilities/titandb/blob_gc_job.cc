@@ -100,15 +100,13 @@ Status BlobGCJob::Run() {
   if (!s.ok()) return s;
 
   s = DoRunGC();
-  if (!s.ok()) {
-    return s;
-  }
+  if (!s.ok()) return s;
 
   return Status::OK();
 }
 
 Status BlobGCJob::SampleCandidateFiles() {
-  std::vector<std::shared_ptr<BlobFileMeta>> result;
+  std::vector<BlobFileMeta*> result;
   for (const auto& file : blob_gc_->candidate_files()) {
     if (!file->marked_for_sample || DoSample(file)) {
       result.push_back(file);
@@ -122,8 +120,7 @@ Status BlobGCJob::SampleCandidateFiles() {
   return Status::OK();
 }
 
-bool BlobGCJob::DoSample(
-    const std::shared_ptr<rocksdb::titandb::BlobFileMeta>& file) {
+bool BlobGCJob::DoSample(const BlobFileMeta* file) {
   Status s;
   uint64_t sample_size_window = static_cast<uint64_t>(
       file->file_size * titan_cf_options_.sample_flie_size_ratio);

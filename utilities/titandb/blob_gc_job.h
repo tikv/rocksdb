@@ -53,7 +53,7 @@ class BlobGCJob {
       rewrite_batches_;
 
   Status SampleCandidateFiles();
-  bool DoSample(const std::shared_ptr<BlobFileMeta>& file);
+  bool DoSample(const BlobFileMeta* file);
   Status DoRunGC();
   Status BuildIterator(std::unique_ptr<InternalIterator>* result);
   bool DiscardEntry(const Slice& key, const BlobIndex& blob_index);

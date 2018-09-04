@@ -1,9 +1,9 @@
+#include "utilities/titandb/version.h"
 #include <util/filename.h>
 #include "util/testharness.h"
 #include "utilities/titandb/util.h"
-#include "utilities/titandb/version.h"
-#include "utilities/titandb/version_edit.h"
 #include "utilities/titandb/version_builder.h"
+#include "utilities/titandb/version_edit.h"
 #include "utilities/titandb/version_set.h"
 
 namespace rocksdb {
@@ -174,21 +174,21 @@ TEST_F(VersionTest, ObsoleteFiles) {
   std::map<uint32_t, TitanCFOptions> m;
   m.insert({1, TitanCFOptions()});
   vset_->AddColumnFamilies(m);
-  auto add1_0_4 = AddBlobFilesEdit(1, 0, 4);
   {
+    auto add1_0_4 = AddBlobFilesEdit(1, 0, 4);
     MutexLock l(&mutex_);
     vset_->LogAndApply(&add1_0_4, &mutex_);
   }
   ObsoleteFiles of;
   vset_->GetObsoleteFiles(&of);
-//  ASSERT_EQ(of.blob_files.size(), 0);
-  auto del1_3_4 = DeleteBlobFilesEdit(1, 3, 4);
+  ASSERT_EQ(of.blob_files.size(), 0);
   {
+    auto del1_3_4 = DeleteBlobFilesEdit(1, 3, 4);
     MutexLock l(&mutex_);
     vset_->LogAndApply(&del1_3_4, &mutex_);
   }
   vset_->GetObsoleteFiles(&of);
-//  ASSERT_EQ(of.blob_files.size(), 1);
+  ASSERT_EQ(of.blob_files.size(), 1);
 }
 
 }  // namespace titandb

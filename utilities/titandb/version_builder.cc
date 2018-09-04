@@ -8,7 +8,8 @@ namespace titandb {
 void VersionBuilder::Builder::AddFile(
     const std::shared_ptr<BlobFileMeta>& file) {
   auto number = file->file_number;
-  if (base_->files_.find(number) != base_->files_.end() ||
+  auto sb = base_.lock();
+  if (sb->files_.find(number) != sb->files_.end() ||
       added_files_.find(number) != added_files_.end()) {
     fprintf(stderr, "blob file %" PRIu64 " has been added before\n", number);
     abort();
@@ -21,7 +22,8 @@ void VersionBuilder::Builder::AddFile(
 }
 
 void VersionBuilder::Builder::DeleteFile(uint64_t number) {
-  if (base_->files_.find(number) == base_->files_.end() &&
+  auto sb = base_.lock();
+  if (sb->files_.find(number) == sb->files_.end() &&
       added_files_.find(number) == added_files_.end()) {
     fprintf(stderr, "blob file %" PRIu64 " doesn't exist before\n", number);
     abort();
@@ -36,10 +38,10 @@ void VersionBuilder::Builder::DeleteFile(uint64_t number) {
 std::shared_ptr<BlobStorage> VersionBuilder::Builder::Build() {
   // If nothing is changed, we can reuse the base;
   if (added_files_.empty() && deleted_files_.empty()) {
-    return base_;
+    return base_.lock();
   }
 
-  auto vs = std::make_shared<BlobStorage>(*base_);
+  auto vs = std::make_shared<BlobStorage>(*base_.lock());
   vs->files_.insert(added_files_.begin(), added_files_.end());
   for (auto& file : deleted_files_) {
     vs->files_.erase(file);
