@@ -1,7 +1,3 @@
-//
-// Created by 郑志铨 on 2018/8/21.
-//
-
 #include "utilities/titandb/blob_gc_picker.h"
 
 namespace rocksdb {
@@ -15,31 +11,30 @@ BasicBlobGCPicker::~BasicBlobGCPicker() {}
 std::unique_ptr<BlobGC> BasicBlobGCPicker::PickBlobGC(
     BlobStorage* blob_storage) {
   Status s;
-  std::vector<std::shared_ptr<BlobFileMeta>> blob_files;
-  std::shared_ptr<BlobFileMeta> blob_file = nullptr;
+  std::vector<BlobFileMeta*> blob_files;
 
   uint64_t batch_size = 0;
   for (auto& gc_score : blob_storage->gc_score()) {
-    s = blob_storage->FindFile(gc_score.file_number, &blob_file);
-    assert(s.ok());
+    auto blob_file = blob_storage->FindFile(gc_score.file_number);
+    assert(!blob_file.expired());
 
-    if (!CheckForPick(blob_file, gc_score)) continue;
-    MarkedForPick(blob_file);
-    blob_files.push_back(blob_file);
+    if (!CheckForPick(blob_file.lock().get(), gc_score)) continue;
+    MarkedForPick(blob_file.lock().get());
+    blob_files.push_back(blob_file.lock().get());
 
-    batch_size += blob_file->file_size;
-    if (batch_size >= titan_cf_options_.blob_gc_batch_size) break;
+    batch_size += blob_file.lock()->file_size;
+    if (batch_size >= titan_cf_options_.max_gc_batch_size) break;
   }
 
-  if (blob_files.empty()) return nullptr;
+  if (blob_files.empty() || batch_size < titan_cf_options_.min_gc_batch_size)
+    return nullptr;
   std::unique_ptr<BlobGC> blob_gc(new BlobGC(std::move(blob_files)));
 
   return blob_gc;
 }
 
-bool BasicBlobGCPicker::CheckForPick(
-    const std::shared_ptr<rocksdb::titandb::BlobFileMeta>& blob_file,
-    const GCScore& gc_score) const {
+bool BasicBlobGCPicker::CheckForPick(BlobFileMeta* blob_file,
+                                     const GCScore& gc_score) const {
   if (blob_file->being_gc.load(std::memory_order_acquire))
     return false;
   if (gc_score.score >= titan_cf_options_.blob_file_discardable_ratio)
@@ -47,8 +42,7 @@ bool BasicBlobGCPicker::CheckForPick(
   return true;
 }
 
-void BasicBlobGCPicker::MarkedForPick(
-    std::shared_ptr<rocksdb::titandb::BlobFileMeta> blob_file) {
+void BasicBlobGCPicker::MarkedForPick(BlobFileMeta* blob_file) {
   blob_file->being_gc = true;
 }
 

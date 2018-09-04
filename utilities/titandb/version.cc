@@ -6,31 +6,30 @@ namespace titandb {
 
 Status BlobStorage::Get(const ReadOptions& options, const BlobIndex& index,
                         BlobRecord* record, PinnableSlice* buffer) {
-  std::shared_ptr<BlobFileMeta> file;
-  Status s = FindFile(index.file_number, &file);
-  if (!s.ok()) return s;
-  return file_cache_->Get(options, file->file_number, file->file_size,
+  auto sfile = FindFile(index.file_number).lock();
+  if (!sfile)
+    return Status::Corruption("Missing blob file: " +
+                              std::to_string(index.file_number));
+  return file_cache_->Get(options, sfile->file_number, sfile->file_size,
                           index.blob_handle, record, buffer);
 }
 
-Status BlobStorage::NewPrefetcher(
-                              uint64_t file_number,
-                              std::unique_ptr<BlobFilePrefetcher>* result) {
-  std::shared_ptr< BlobFileMeta> file;
-  Status s = FindFile(file_number, &file);
-  if (!s.ok()) return s;
-  return file_cache_->NewPrefetcher( file->file_number, file->file_size, result);
+Status BlobStorage::NewPrefetcher(uint64_t file_number,
+                                  std::unique_ptr<BlobFilePrefetcher>* result) {
+  auto sfile = FindFile(file_number).lock();
+  if (!sfile)
+    return Status::Corruption("Missing blob wfile: " +
+                              std::to_string(file_number));
+  return file_cache_->NewPrefetcher(sfile->file_number, sfile->file_size,
+                                    result);
 }
 
-Status BlobStorage::FindFile(uint64_t file_number,
-                             std::shared_ptr<BlobFileMeta>* file) {
+std::weak_ptr<BlobFileMeta> BlobStorage::FindFile(uint64_t file_number) {
   auto it = files_.find(file_number);
   if (it != files_.end()) {
-    *file = it->second;
-    return Status::OK();
+    return it->second;
   }
-  auto number = std::to_string(file_number);
-  return Status::Corruption("missing blob file " + number);
+  return std::weak_ptr<BlobFileMeta>();
 }
 
 void BlobStorage::ComputeGCScore() {
@@ -42,7 +41,7 @@ void BlobStorage::ComputeGCScore() {
     if (file.second->marked_for_gc) {
       gcs.score = 1;
       file.second->marked_for_gc = false;
-    } else if (file.second->file_size < options_.merge_small_file_threashold) {
+    } else if (file.second->file_size < titan_cf_options_.merge_small_file_threashold) {
       gcs.score = 1;
     } else {
       gcs.score = file.second->discardable_size / file.second->file_size;
@@ -65,13 +64,15 @@ Version::~Version() {
   // Drop references to files
   // Close DB will also destruct this class and add live file to here.
   // But don't worry, ~Version will call after all our code executed.
+  std::vector<uint32_t> obsolete_blob_files;
   for (auto& b : this->column_families_) {
     if (b.second.use_count() > 1) continue;
-    for (auto& f : *b.second->mutable_files()) {
+    for (auto& f : b.second->files_) {
       if (f.second.use_count() > 1) continue;
-      vset_->obsolete_files_.blob_files.emplace_back(std::move(f.second));
+      obsolete_blob_files.emplace_back(f.second->file_number);
     }
   }
+  vset_ != nullptr ? vset_->AddObsoleteBlobFiles(obsolete_blob_files) : void();
 }
 
 void Version::Ref() { refs_++; }
@@ -83,12 +84,12 @@ void Version::Unref() {
   }
 }
 
-std::shared_ptr<BlobStorage> Version::GetBlobStorage(uint32_t cf_id) {
+std::weak_ptr<BlobStorage> Version::GetBlobStorage(uint32_t cf_id) {
   auto it = column_families_.find(cf_id);
   if (it != column_families_.end()) {
     return it->second;
   }
-  return nullptr;
+  return std::weak_ptr<BlobStorage>();
 }
 
 VersionList::VersionList() { Append(new Version(nullptr)); }

@@ -31,7 +31,7 @@ class TitanSnapshot : public Snapshot {
 class TitanDBIterator : public Iterator {
  public:
   TitanDBIterator(const ReadOptions& options,
-                  std::shared_ptr<BlobStorage> storage,
+                  BlobStorage* storage,
                   std::shared_ptr<ManagedSnapshot> snap,
                   std::unique_ptr<ArenaWrappedDBIter> iter)
       : options_(options),
@@ -109,7 +109,7 @@ class TitanDBIterator : public Iterator {
   PinnableSlice buffer_;
 
   ReadOptions options_;
-  std::shared_ptr<BlobStorage> storage_;
+  BlobStorage* storage_;
   std::shared_ptr<ManagedSnapshot> snap_;
   std::unique_ptr<ArenaWrappedDBIter> iter_;
   std::map<uint64_t, std::unique_ptr<BlobFilePrefetcher>> files_;

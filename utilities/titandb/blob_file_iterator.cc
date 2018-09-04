@@ -1,10 +1,5 @@
-//
-// Created by 郑志铨 on 2018/8/9.
-//
-
 #include "utilities/titandb/blob_file_iterator.h"
 
-#include "utilities/titandb/blob_format.h"
 #include "utilities/titandb/util.h"
 
 #include "util/crc32c.h"
@@ -20,8 +15,11 @@ const std::string BlobFileIterator::PROPERTIES_BLOB_SIZE = "PropertiesBlobSize";
 
 BlobFileIterator::BlobFileIterator(
     std::unique_ptr<RandomAccessFileReader>&& file, uint64_t file_name,
-    uint64_t file_size)
-    : file_(std::move(file)), file_number_(file_name), file_size_(file_size) {}
+    uint64_t file_size, const TitanCFOptions& titan_cf_options)
+    : file_(std::move(file)),
+      file_number_(file_name),
+      file_size_(file_size),
+      titan_cf_options_(titan_cf_options) {}
 
 BlobFileIterator::~BlobFileIterator() {}
 
@@ -61,15 +59,15 @@ bool BlobFileIterator::Init() {
 
 void BlobFileIterator::SeekToFirst() {
   if (!init_) Init();
-
-  GetOneBlobRecord();
+  iterate_offset_ = 0;
+  PrefetchAndGet();
 }
 
 bool BlobFileIterator::Valid() const { return valid_; }
 
 void BlobFileIterator::Next() {
   assert(init_);
-  GetOneBlobRecord();
+  PrefetchAndGet();
 }
 
 Slice BlobFileIterator::key() const { return cur_blob_record_.key; }
@@ -124,21 +122,7 @@ void BlobFileIterator::IterateForPrev(uint64_t offset) {
   valid_ = false;
 }
 
-void BlobFileIterator::Prefetch() {
-  readahead_size_ =
-      std::min(total_blocks_size_ - iterate_offset_, readahead_size_);
-  file_->Prefetch(iterate_offset_, readahead_size_);
-  readahead_offset = iterate_offset_ + readahead_size_;
-}
-
-void BlobFileIterator::GetOneBlobRecord() {
-  if (iterate_offset_ >= total_blocks_size_) {
-    valid_ = false;
-    return;
-  }
-
-  Prefetch();
-
+void BlobFileIterator::GetBlobRecord() {
   // read header
   Slice slice;
   uint64_t body_length;
@@ -179,6 +163,38 @@ void BlobFileIterator::GetOneBlobRecord() {
   cur_record_size_ = body_length;
   iterate_offset_ += left_size;
   valid_ = true;
+}
+
+void BlobFileIterator::PrefetchAndGet() {
+  if (iterate_offset_ >= total_blocks_size_) {
+    valid_ = false;
+    return;
+  }
+
+  if (readahead_begin_offset_ > iterate_offset_ ||
+      readahead_end_offset_ < iterate_offset_) {
+    // alignment
+    readahead_begin_offset_ =
+        iterate_offset_ - (iterate_offset_ & (kDefaultPageSize - 1));
+    readahead_end_offset_ = readahead_begin_offset_;
+    readahead_size_ = kMinReadaheadSize;
+  }
+  auto min_blob_size =
+      iterate_offset_ + kBlobFixedSize + titan_cf_options_.min_blob_size;
+  if (readahead_end_offset_ <= min_blob_size) {
+    while (readahead_end_offset_ + readahead_size_ <= min_blob_size &&
+           readahead_size_ < kMaxReadaheadSize)
+      readahead_size_ <<= 1;
+    file_->Prefetch(readahead_end_offset_, readahead_size_);
+    readahead_end_offset_ += readahead_size_;
+    readahead_size_ = std::min(kMaxReadaheadSize, readahead_size_ << 1);
+  }
+
+  GetBlobRecord();
+
+  if (readahead_end_offset_ < iterate_offset_) {
+    readahead_end_offset_ = iterate_offset_;
+  }
 }
 
 }  // namespace titandb

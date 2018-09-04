@@ -14,7 +14,7 @@ struct TitanDBOptions : public DBOptions {
 
   // Maximum number of concurrent background GC jobs.
   //
-  // Default: 2
+  // Default: 4
   int max_background_gc{4};
 
   // Disable background GC
@@ -48,10 +48,15 @@ struct TitanCFOptions : public ColumnFamilyOptions {
   // Default: nullptr
   std::shared_ptr<Cache> blob_cache;
 
-  // Batch size for gc
+  // Max batch size for gc
   //
   // Default: 1GB
-  uint64_t blob_gc_batch_size{1 << 30};
+  uint64_t max_gc_batch_size{1 << 30};
+
+  // Min batch size for gc
+  //
+  // Default: 512MB
+  uint64_t min_gc_batch_size{512 << 20};
 
   // The ratio of how much discardable size of a blob file can be GC
   //

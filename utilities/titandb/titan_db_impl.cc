@@ -130,6 +130,9 @@ Status TitanDBImpl::Open(const std::vector<TitanCFDescriptor>& descs,
   s = env_->LockFile(LockFileName(dirname_), &lock_);
   if (!s.ok()) return s;
 
+  env_->IncBackgroundThreadsIfNeeded(db_options_.max_background_gc,
+                                     Env::Priority::GC);
+
   std::vector<ColumnFamilyDescriptor> base_descs;
   for (auto& desc : descs) {
     base_descs.emplace_back(desc.name, desc.options);
@@ -255,7 +258,7 @@ Status TitanDBImpl::GetImpl(const ReadOptions& options,
                             ColumnFamilyHandle* handle, const Slice& key,
                             PinnableSlice* value) {
   auto snap = reinterpret_cast<const TitanSnapshot*>(options.snapshot);
-  auto storage = snap->current()->GetBlobStorage(handle->GetID());
+  auto storage = snap->current()->GetBlobStorage(handle->GetID()).lock();
 
   Status s;
   bool is_blob_index = false;
@@ -327,7 +330,7 @@ Iterator* TitanDBImpl::NewIteratorImpl(
   std::unique_ptr<ArenaWrappedDBIter> iter(db_impl_->NewIteratorImpl(
       options, cfd, snap->GetSequenceNumber(), nullptr /*read_callback*/,
       true /*allow_blob*/));
-  return new TitanDBIterator(options, storage, snapshot, std::move(iter));
+  return new TitanDBIterator(options, storage.lock().get(), snapshot, std::move(iter));
 }
 
 Status TitanDBImpl::NewIterators(
