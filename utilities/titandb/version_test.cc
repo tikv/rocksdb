@@ -37,6 +37,8 @@ class VersionTest : public testing::Test {
   VersionTest() : dbname_(test::TmpDir()), env_(Env::Default()) {
     db_options_.dirname = dbname_ + "/titandb";
     db_options_.create_if_missing = true;
+    env_->CreateDirIfMissing(dbname_);
+    env_->CreateDirIfMissing(db_options_.dirname);
     auto cache = NewLRUCache(db_options_.max_open_files);
     file_cache_.reset(new BlobFileCache(db_options_, cf_options_, cache));
     Reset();
