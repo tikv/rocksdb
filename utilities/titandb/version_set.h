@@ -94,12 +94,13 @@ class VersionSet {
   EnvOptions env_options_;
   TitanDBOptions db_options_;
   std::shared_ptr<Cache> file_cache_;
+  // This field will be call when Version is destructed, so we have to make
+  // sure this field is destructed after Version does.
+  ObsoleteFiles obsolete_files_;
 
   VersionList versions_;
   std::unique_ptr<log::Writer> manifest_;
   std::atomic<uint64_t> next_file_number_{1};
-
-  ObsoleteFiles obsolete_files_;
 };
 
 }  // namespace titandb
