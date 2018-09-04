@@ -1,7 +1,3 @@
-//
-// Created by 郑志铨 on 2018/8/13.
-//
-
 #include "utilities/titandb/blob_file_iterator.h"
 #include "util/filename.h"
 #include "util/testharness.h"
@@ -68,8 +64,8 @@ class BlobFileIteratorTest : public testing::Test {
     ASSERT_OK(env_->GetFileSize(file_name_, &file_size));
     NewBlobFileReader(file_number_, 0, titan_options_, env_options_, env_,
                       &readable_file_);
-    blob_file_iterator_.reset(new BlobFileIterator{std::move(readable_file_),
-                                                   file_number_, file_size});
+    blob_file_iterator_.reset(new BlobFileIterator{
+        std::move(readable_file_), file_number_, file_size, TitanCFOptions()});
   }
 
   void TestBlobFileIterator() {

@@ -17,12 +17,13 @@ class BlobStorage {
   BlobStorage(const BlobStorage& bs) {
     this->files_ = bs.files_;
     this->file_cache_ = bs.file_cache_;
+    this->titan_cf_options_ = bs.titan_cf_options_;
   }
 
-  explicit BlobStorage(const TitanCFOptions& options,
-              std::shared_ptr<BlobFileCache> file_cache)
-      : options_(options),
-        file_cache_(file_cache) {}
+  BlobStorage(const TitanCFOptions& _options,
+              std::shared_ptr<BlobFileCache> _file_cache)
+      : titan_cf_options_(_options),
+        file_cache_(_file_cache) {}
 
   // Gets the blob record pointed by the blob index. The provided
   // buffer is used to store the record data, so the buffer must be
@@ -31,37 +32,38 @@ class BlobStorage {
              BlobRecord* record, PinnableSlice* buffer);
 
   // Creates a prefetcher for the specified file number.
-
-  Status NewPrefetcher(
-                   uint64_t file_number,
-                   std::unique_ptr<BlobFilePrefetcher>* result);
+  // REQUIRES: mutex is held
+  Status NewPrefetcher(uint64_t file_number,
+                       std::unique_ptr<BlobFilePrefetcher>* result);
 
   // Finds the blob file meta for the specified file number. It is a
   // corruption if the file doesn't exist in the specific version.
-  Status FindFile(uint64_t file_number, std::shared_ptr<BlobFileMeta>* file);
+  std::weak_ptr<BlobFileMeta> FindFile(uint64_t file_number);
 
-  const std::map<uint64_t, std::shared_ptr<BlobFileMeta>> files() {
-    return files_;
-  }
-
-  std::map<uint64_t, std::shared_ptr<BlobFileMeta>>* mutable_files() {
-    return &files_;
+  void MarkAllFilesForGC() {
+    for (auto& file : files_)
+      file.second->marked_for_gc = true;
   }
 
   const std::vector<GCScore> gc_score() { return gc_score_; }
 
   void ComputeGCScore();
 
+  const TitanCFOptions& titan_cf_options() {
+    return titan_cf_options_;
+  }
+
  private:
   friend class Version;
   friend class VersionSet;
-  friend class VersionTest;
   friend class VersionBuilder;
+  friend class VersionTest;
   friend class BlobGCPickerTest;
   friend class BlobGCJobTest;
   friend class BlobFileSizeCollectorTest;
 
-  TitanCFOptions options_;
+  TitanCFOptions titan_cf_options_;
+  // Only BlobStorage OWNS BlobFileMeta
   std::map<uint64_t, std::shared_ptr<BlobFileMeta>> files_;
   std::shared_ptr<BlobFileCache> file_cache_;
 
@@ -79,12 +81,21 @@ class Version {
 
   // Returns the blob storage for the specific column family.
   // The version must be valid when the blob storage is used.
-  std::shared_ptr<BlobStorage> GetBlobStorage(uint32_t cf_id);
+  // Except Version, Nobody else can extend the life time of
+  // BlobStorage. Otherwise, It's a wrong design. Because
+  // BlobStorage only belongs to Version, Others only have
+  // the right to USE it.
+  std::weak_ptr<BlobStorage> GetBlobStorage(uint32_t cf_id);
+
+  void MarkAllFilesForGC() {
+    for(auto& cf : column_families_)
+      cf.second->MarkAllFilesForGC();
+  }
 
  private:
-  friend class VersionSet;
   friend class VersionList;
   friend class VersionBuilder;
+  friend class VersionSet;
   friend class VersionTest;
   friend class BlobFileSizeCollectorTest;
 

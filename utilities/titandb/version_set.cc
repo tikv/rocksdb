@@ -104,18 +104,35 @@ Status VersionSet::Recover() {
     versions_.Append(v);
   }
 
-  // Make sure perform gc on all files at the beginning
-  v = versions_.current();
-  for (auto& blob_storage : v->column_families_) {
-    for (auto& blob_file : blob_storage.second->files_) {
-      blob_file.second->marked_for_gc = true;
-    }
-  }
-
-  s = OpenManifest(NewFileNumber());
+  auto new_manifest_file_number = NewFileNumber();
+  s = OpenManifest(new_manifest_file_number);
   if (!s.ok()) return s;
 
-  obsolete_files_.manifests.emplace_back(std::move(file_name));
+  v = versions_.current();
+
+  // Make sure perform gc on all files at the beginning
+  v->MarkAllFilesForGC();
+
+  // Purge inactive files at start
+  std::set<uint32_t> alive_files;
+  alive_files.insert(new_manifest_file_number);
+  for (const auto& bs : v->column_families_) {
+    for (const auto& f : bs.second->files_) {
+      alive_files.insert(f.second->file_number);
+    }
+  }
+  std::vector<std::string> files;
+  env_->GetChildren(dirname_, &files);
+  for (const auto& f : files) {
+    uint64_t file_number;
+    FileType file_type;
+    if (!ParseFileName(f, &file_number, &file_type)) continue;
+    if (alive_files.find(file_number) != alive_files.end()) continue;
+    if (file_type != FileType::kBlobFile && file_type != FileType::kDescriptorFile)
+      continue;
+
+    env_->DeleteFile(dirname_ + "/" + f);
+  }
 
   return Status::OK();
 }
@@ -147,7 +164,6 @@ Status VersionSet::OpenManifest(uint64_t file_number) {
 
   if (!s.ok()) {
     manifest_.reset();
-    //    env_->DeleteFile(file_name);
     obsolete_files_.manifests.emplace_back(file_name);
   }
   return s;

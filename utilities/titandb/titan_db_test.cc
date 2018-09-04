@@ -27,6 +27,7 @@ class TitanDBTest : public testing::Test {
     options_.dirname = dbname_ + "/titandb";
     options_.create_if_missing = true;
     options_.min_blob_size = 32;
+    options_.min_gc_batch_size = 1;
     DeleteDir(env_, options_.dirname);
     DeleteDir(env_, dbname_);
   }

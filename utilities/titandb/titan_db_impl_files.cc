@@ -1,7 +1,3 @@
-//
-// Created by 郑志铨 on 2018/8/29.
-//
-
 #include "utilities/titandb/titan_db_impl.h"
 
 namespace rocksdb {
@@ -17,7 +13,7 @@ void TitanDBImpl::PurgeObsoleteFiles() {
     std::vector<std::string> candidate_files;
     for (auto& blob_file : obsolete_files.blob_files) {
       candidate_files.emplace_back(
-          BlobFileName(db_options_.dirname, blob_file->file_number));
+          BlobFileName(db_options_.dirname, blob_file));
     }
     for (auto& manifest : obsolete_files.manifests) {
       candidate_files.emplace_back(std::move(manifest));

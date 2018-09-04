@@ -110,8 +110,6 @@ class TitanDBImpl : public TitanDB {
   EnvOptions env_options_;
   DBImpl* db_impl_;
   TitanDBOptions db_options_;
-  // TODO Need to deal with cf destroy and options update
-  std::map<uint32_t, TitanCFOptions> titan_cfs_options_;
 
   std::unique_ptr<VersionSet> vset_;
   std::set<uint64_t> pending_outputs_;
