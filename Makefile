@@ -1006,7 +1006,7 @@ rocksdb.h rocksdb.cc: build_tools/amalgamate.py Makefile $(LIB_SOURCES) unity.cc
 	build_tools/amalgamate.py -I. -i./include unity.cc -x include/rocksdb/c.h -H rocksdb.h -o rocksdb.cc
 
 clean:
-	rm -f $(BENCHMARKS) $(TOOLS) $(TESTS) $(LIBRARY) $(SHARED)
+	rm -f $(BENCHMARKS) $(TOOLS) $(TESTS) $(LIBRARY) $(SHARED) $(TITANDB_TESTS)
 	rm -rf $(CLEAN_FILES) ios-x86 ios-arm scan_build_report
 	$(FIND) . -name "*.[oda]" -exec rm -f {} \;
 	$(FIND) . -type f -regex ".*\.\(\(gcda\)\|\(gcno\)\)" -exec rm {} \;
@@ -1529,6 +1529,64 @@ range_del_aggregator_test: db/range_del_aggregator_test.o db/db_test_util.o $(LI
 
 blob_db_test: utilities/blob_db/blob_db_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
+
+TITANDB_TESTS = \
+	titandb_blob_file_iterator_test \
+	titandb_blob_file_size_collector_test \
+	titandb_blob_file_test \
+	titandb_blob_format_test \
+	titandb_blob_gc_job_test \
+	titandb_blob_gc_picker_test \
+	titandb_db_test \
+	titandb_table_builder_test \
+	titandb_util_test \
+	titandb_version_test \
+
+titandb_blob_file_iterator_test: utilities/titandb/blob_file_iterator_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(AM_LINK)
+
+titandb_blob_file_size_collector_test: utilities/titandb/blob_file_size_collector_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(AM_LINK)
+
+titandb_blob_file_test: utilities/titandb/blob_file_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(AM_LINK)
+
+titandb_blob_format_test: utilities/titandb/blob_format_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(AM_LINK)
+
+titandb_blob_gc_job_test: utilities/titandb/blob_gc_job_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(AM_LINK)
+
+titandb_blob_gc_picker_test: utilities/titandb/blob_gc_picker_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(AM_LINK)
+
+titandb_db_test: utilities/titandb/titan_db_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(AM_LINK)
+
+titandb_table_builder_test: utilities/titandb/table_builder_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(AM_LINK)
+
+titandb_util_test: utilities/titandb/util_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(AM_LINK)
+
+titandb_version_test: utilities/titandb/version_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(AM_LINK)
+
+titandb_check: $(TITANDB_TESTS)
+	for t in $(TITANDB_TESTS); \
+	do \
+		echo "======== Running $$t ========"; \
+		./$$t || exit 1; \
+	done;
+
+titandb_valgrind_check: $(TITANDB_TESTS)
+	for t in $(TITANDB_TESTS); do \
+		$(VALGRIND_VER) $(VALGRIND_OPTS) ./$$t; \
+		code=$$?; \
+		if [ $$code -ne 0 ]; then \
+			exit $$code; \
+		fi; \
+	done;
 
 #-------------------------------------------------
 # make install related stuff
