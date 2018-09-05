@@ -22,7 +22,7 @@ class BlobFileSizeCollectorFactory final
 
 class BlobFileSizeCollector final : public TablePropertiesCollector {
  public:
-  const static std::string PROPERTIES_NAME;
+  const static std::string kPropertiesName;
 
   static bool Encode(const std::map<uint64_t, uint64_t>& blob_files_size,
                      std::string* result);

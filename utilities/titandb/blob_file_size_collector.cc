@@ -9,7 +9,7 @@ BlobFileSizeCollectorFactory::CreateTablePropertiesCollector(
   return new BlobFileSizeCollector();
 }
 
-const std::string BlobFileSizeCollector::PROPERTIES_NAME =
+const std::string BlobFileSizeCollector::kPropertiesName =
     "TitanDB.blob_discardable_size";
 
 bool BlobFileSizeCollector::Encode(
@@ -68,7 +68,7 @@ Status BlobFileSizeCollector::AddUserKey(const Slice& /* key */,
 Status BlobFileSizeCollector::Finish(UserCollectedProperties* properties) {
   std::string res;
   Encode(blob_files_size_, &res);
-  *properties = UserCollectedProperties{{PROPERTIES_NAME, res}};
+  *properties = UserCollectedProperties{{kPropertiesName, res}};
   return Status::OK();
 }
 
@@ -90,7 +90,7 @@ void BlobDiscardableSizeListener::OnCompactionCompleted(
         continue;
       }
       auto ucp_iter = tp_iter->second->user_collected_properties.find(
-          BlobFileSizeCollector::PROPERTIES_NAME);
+          BlobFileSizeCollector::kPropertiesName);
       if (ucp_iter == tp_iter->second->user_collected_properties.end()) {
         continue;
       }
