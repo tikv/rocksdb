@@ -3,8 +3,9 @@
 
 #include <stdint.h>
 #include <queue>
-#include "include/rocksdb/slice.h"
-#include "include/rocksdb/status.h"
+
+#include "rocksdb/slice.h"
+#include "rocksdb/status.h"
 #include "table/internal_iterator.h"
 #include "util/file_reader_writer.h"
 #include "utilities/titandb/blob_format.h"

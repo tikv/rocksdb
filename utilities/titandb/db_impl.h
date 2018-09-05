@@ -2,7 +2,7 @@
 
 #include "db/db_impl.h"
 #include "utilities/titandb/blob_file_manager.h"
-#include "utilities/titandb/titan_db.h"
+#include "utilities/titandb/db.h"
 #include "utilities/titandb/version_set.h"
 
 namespace rocksdb {

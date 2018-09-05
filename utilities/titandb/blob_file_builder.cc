@@ -18,9 +18,8 @@ void BlobFileBuilder::Add(const BlobRecord& record, BlobHandle* handle) {
   assert(!record.value.empty());
   record.EncodeTo(&buffer_);
 
-  CompressionType compression;
-  auto output = Compress(compression_ctx_, buffer_,
-                         &compressed_buffer_, &compression);
+  CompressionType compression = options_.blob_file_compression;
+  auto output = Compress(&compression, buffer_, &compressed_buffer_);
 
   uint64_t body_length = output.size();
   status_ = file_->Append(

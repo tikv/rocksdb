@@ -15,23 +15,22 @@ void CheckCodec(const T& input) {
   ASSERT_EQ(output, input);
 }
 
-// Compresses the input data according to the compression context.
-// Returns a slice with the output data and sets "*type" to the
+// Compresses the input data according to the compression type.
+// Returns a slice with the output data and sets "*type" to the output
 // compression type.
 //
 // If compression is actually performed, fills "*output" with the
 // compressed data. However, if the compression ratio is not good, it
 // returns the input slice directly and sets "*type" to
 // kNoCompression.
-Slice Compress(const CompressionContext& ctx,
+Slice Compress(CompressionType* type,
                const Slice& input,
-               std::string* output,
-               CompressionType* type);
+               std::string* output);
 
-// Uncompresses the input data according to the uncompression context.
+// Uncompresses the input data according to the uncompression type.
 // If successful, fills "*buffer" with the uncompressed data and
 // points "*output" to it.
-Status Uncompress(const UncompressionContext& ctx,
+Status Uncompress(CompressionType type,
                   const Slice& input,
                   Slice* output,
                   std::unique_ptr<char[]>* buffer);

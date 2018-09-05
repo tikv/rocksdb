@@ -1,5 +1,7 @@
 #include "utilities/titandb/blob_file_iterator.h"
+
 #include <cinttypes>
+
 #include "util/filename.h"
 #include "util/testharness.h"
 #include "utilities/titandb/blob_file_builder.h"

@@ -1,9 +1,13 @@
-#include "utilities/titandb/titan_db_impl.h"
+#include "utilities/titandb/db_impl.h"
 
-#include "blob_file_iterator.h"
-#include "blob_gc_job.h"
-#include "table/merging_iterator.h"
+#include "utilities/titandb/blob_file_builder.h"
+#include "utilities/titandb/blob_file_iterator.h"
+#include "utilities/titandb/blob_gc_job.h"
+#include "utilities/titandb/blob_file_size_collector.h"
+#include "utilities/titandb/blob_gc.h"
 #include "utilities/titandb/blob_gc_picker.h"
+#include "utilities/titandb/db_iter.h"
+#include "utilities/titandb/table_factory.h"
 
 namespace rocksdb {
 namespace titandb {

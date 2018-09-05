@@ -3,15 +3,14 @@
 
 #include <memory>
 
+#include "db/column_family.h"
+#include "db/write_callback.h"
+#include "rocksdb/status.h"
+#include "util/filename.h"
 #include "utilities/titandb/blob_file_manager.h"
 #include "utilities/titandb/blob_format.h"
 #include "utilities/titandb/blob_gc.h"
 #include "utilities/titandb/version.h"
-
-#include "db/column_family.h"
-#include "db/write_callback.h"
-#include "include/rocksdb/status.h"
-#include "util/filename.h"
 
 namespace rocksdb {
 namespace titandb {
