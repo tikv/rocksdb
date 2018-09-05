@@ -104,8 +104,8 @@ void BlobFileIterator::GetBlobRecord() {
   if (compression == kNoCompression) {
     slice = {buffer_.data(), body_length};
   } else {
-    status_ =
-        Uncompress(compression, {buffer_.data(), body_length}, &slice, &uncompressed);
+    status_ = Uncompress(compression, {buffer_.data(), body_length}, &slice,
+                         &uncompressed);
     if (!status_.ok()) return;
   }
   status_ = DecodeInto(slice, &cur_blob_record_);

@@ -988,7 +988,7 @@ if(WITH_TESTS)
         utilities/titandb/blob_gc_job_test.cc
         utilities/titandb/blob_gc_picker_test.cc
         utilities/titandb/table_builder_test.cc
-        utilities/titandb/db_test.cc
+        utilities/titandb/titan_db_test.cc
         utilities/titandb/util_test.cc
         utilities/titandb/version_test.cc
   )

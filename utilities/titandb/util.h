@@ -2,6 +2,8 @@
 
 #include "rocksdb/cache.h"
 #include "util/compression.h"
+#include "util/testharness.h"
+#include "utilities/titandb/blob_format.h"
 
 namespace rocksdb {
 namespace titandb {
@@ -23,16 +25,12 @@ void CheckCodec(const T& input) {
 // compressed data. However, if the compression ratio is not good, it
 // returns the input slice directly and sets "*type" to
 // kNoCompression.
-Slice Compress(CompressionType* type,
-               const Slice& input,
-               std::string* output);
+Slice Compress(CompressionType* type, const Slice& input, std::string* output);
 
 // Uncompresses the input data according to the uncompression type.
 // If successful, fills "*buffer" with the uncompressed data and
 // points "*output" to it.
-Status Uncompress(CompressionType type,
-                  const Slice& input,
-                  Slice* output,
+Status Uncompress(CompressionType type, const Slice& input, Slice* output,
                   std::unique_ptr<char[]>* buffer);
 
 void UnrefCacheHandle(void* cache, void* handle);

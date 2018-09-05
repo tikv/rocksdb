@@ -11,9 +11,7 @@ bool GoodCompressionRatio(size_t compressed_size, size_t raw_size) {
   return compressed_size < raw_size - (raw_size / 8u);
 }
 
-Slice Compress(CompressionType* type,
-               const Slice& input,
-               std::string* output) {
+Slice Compress(CompressionType* type, const Slice& input, std::string* output) {
   if (*type == kNoCompression) {
     return input;
   }
@@ -32,29 +30,29 @@ Slice Compress(CompressionType* type,
       }
       break;
     case kZlibCompression:
-      if (Zlib_Compress(opts, kCompressionFormat,
-                        input.data(), input.size(), output) &&
+      if (Zlib_Compress(opts, kCompressionFormat, input.data(), input.size(),
+                        output) &&
           GoodCompressionRatio(output->size(), input.size())) {
         return *output;
       }
       break;
     case kBZip2Compression:
-      if (BZip2_Compress(opts, kCompressionFormat,
-                         input.data(), input.size(), output) &&
+      if (BZip2_Compress(opts, kCompressionFormat, input.data(), input.size(),
+                         output) &&
           GoodCompressionRatio(output->size(), input.size())) {
         return *output;
       }
       break;
     case kLZ4Compression:
-      if (LZ4_Compress(opts, kCompressionFormat,
-                       input.data(), input.size(), output) &&
+      if (LZ4_Compress(opts, kCompressionFormat, input.data(), input.size(),
+                       output) &&
           GoodCompressionRatio(output->size(), input.size())) {
         return *output;
       }
       break;
     case kLZ4HCCompression:
-      if (LZ4HC_Compress(opts, kCompressionFormat,
-                         input.data(), input.size(), output) &&
+      if (LZ4HC_Compress(opts, kCompressionFormat, input.data(), input.size(),
+                         output) &&
           GoodCompressionRatio(output->size(), input.size())) {
         return *output;
       }
@@ -81,9 +79,7 @@ Slice Compress(CompressionType* type,
   return input;
 }
 
-Status Uncompress(CompressionType type,
-                  const Slice& input,
-                  Slice* output,
+Status Uncompress(CompressionType type, const Slice& input, Slice* output,
                   std::unique_ptr<char[]>* buffer) {
   int size = 0;
   assert(type != kNoCompression);
@@ -102,8 +98,8 @@ Status Uncompress(CompressionType type,
       break;
     }
     case kZlibCompression:
-      buffer->reset(Zlib_Uncompress(
-          input.data(), input.size(), &size, kCompressionFormat));
+      buffer->reset(Zlib_Uncompress(input.data(), input.size(), &size,
+                                    kCompressionFormat));
       if (!buffer->get()) {
         return Status::Corruption("Corrupted compressed blob", "Zlib");
       }
@@ -118,16 +114,16 @@ Status Uncompress(CompressionType type,
       *output = Slice(buffer->get(), size);
       break;
     case kLZ4Compression:
-      buffer->reset(LZ4_Uncompress(
-          input.data(), input.size(), &size, kCompressionFormat));
+      buffer->reset(LZ4_Uncompress(input.data(), input.size(), &size,
+                                   kCompressionFormat));
       if (!buffer->get()) {
         return Status::Corruption("Corrupted compressed blob", "LZ4");
       }
       *output = Slice(buffer->get(), size);
       break;
     case kLZ4HCCompression:
-      buffer->reset(LZ4_Uncompress(
-          input.data(), input.size(), &size, kCompressionFormat));
+      buffer->reset(LZ4_Uncompress(input.data(), input.size(), &size,
+                                   kCompressionFormat));
       if (!buffer->get()) {
         return Status::Corruption("Corrupted compressed blob", "LZ4HC");
       }

@@ -129,9 +129,6 @@ Status TitanDBImpl::Open(const std::vector<TitanCFDescriptor>& descs,
   s = env_->LockFile(LockFileName(dirname_), &lock_);
   if (!s.ok()) return s;
 
-  env_->IncBackgroundThreadsIfNeeded(db_options_.max_background_gc,
-                                     Env::Priority::GC);
-
   std::vector<ColumnFamilyDescriptor> base_descs;
   for (auto& desc : descs) {
     base_descs.emplace_back(desc.name, desc.options);

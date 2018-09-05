@@ -1547,7 +1547,7 @@ titandb_blob_gc_job_test: utilities/titandb/blob_gc_job_test.o $(LIBOBJECTS) $(T
 titandb_blob_gc_picker_test: utilities/titandb/blob_gc_picker_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-titandb_db_test: utilities/titandb/db_test.o $(LIBOBJECTS) $(TESTHARNESS)
+titandb_db_test: utilities/titandb/titan_db_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
 titandb_table_builder_test: utilities/titandb/table_builder_test.o $(LIBOBJECTS) $(TESTHARNESS)

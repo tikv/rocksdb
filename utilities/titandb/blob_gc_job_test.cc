@@ -26,8 +26,24 @@ class BlobGCJobTest : public testing::Test {
   }
   ~BlobGCJobTest() {}
 
+  void ClearDir() {
+    std::vector<std::string> filenames;
+    options_.env->GetChildren(options_.dirname, &filenames);
+    for (auto& fname : filenames) {
+      if (fname != "." && fname != "..")
+        ASSERT_OK(options_.env->DeleteFile(options_.dirname + "/" + fname));
+    }
+    ASSERT_OK(options_.env->DeleteDir(options_.dirname));
+    filenames.clear();
+    options_.env->GetChildren(dbname_, &filenames);
+    for (auto& fname : filenames) {
+      if (fname != "." && fname != "..")
+        ASSERT_OK(options_.env->DeleteFile(dbname_ + "/" + fname));
+    }
+  }
+
   void NewDB() {
-    options_.env->DeleteDir(dbname_);
+    ClearDir();
     ASSERT_OK(TitanDB::Open(options_, dbname_, &db_));
     tdb_ = reinterpret_cast<TitanDBImpl*>(db_);
     version_set_ = tdb_->vset_.get();

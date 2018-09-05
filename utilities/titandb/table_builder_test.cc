@@ -1,4 +1,3 @@
-#include "rocksdb/options.h"
 #include "table/table_builder.h"
 #include "table/table_reader.h"
 #include "util/filename.h"
@@ -143,10 +142,10 @@ class TableBuilderTest : public testing::Test {
 
   void NewTableBuilder(WritableFileWriter* file,
                        std::unique_ptr<TableBuilder>* result) {
-    TableBuilderOptions options(cf_ioptions_, cf_moptions_,
-                                cf_ioptions_.internal_comparator, &collectors_,
-                                kNoCompression, CompressionOptions(), nullptr,
-                                false, kDefaultColumnFamilyName, 0);
+    TableBuilderOptions options(cf_ioptions_, cf_ioptions_.internal_comparator,
+                                &collectors_, kNoCompression,
+                                CompressionOptions(), nullptr, false,
+                                kDefaultColumnFamilyName, 0);
     result->reset(table_factory_->NewTableBuilder(options, 0, file));
   }
 

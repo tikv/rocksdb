@@ -3,21 +3,17 @@
 #include <stdint.h>
 #include <atomic>
 
-#include "db/log_writer.h"
 #include "db/log_reader.h"
+#include "db/log_writer.h"
+#include "port/port_posix.h"
 #include "rocksdb/options.h"
 #include "rocksdb/status.h"
-#include "port/port_posix.h"
-#include "db/log_writer.h"
-#include "options.h"
-#include "rocksdb/options.h"
 #include "util/mutexlock.h"
 #include "utilities/titandb/blob_file_cache.h"
 #include "utilities/titandb/options.h"
 #include "utilities/titandb/version.h"
 #include "utilities/titandb/version_builder.h"
 #include "utilities/titandb/version_edit.h"
-#include "utilities/titandb/blob_file_cache.h"
 
 namespace rocksdb {
 namespace titandb {

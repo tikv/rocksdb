@@ -1,6 +1,5 @@
 #include "utilities/titandb/blob_file_builder.h"
 
-#include "util/coding.h"
 #include "util/crc32c.h"
 #include "utilities/titandb/util.h"
 

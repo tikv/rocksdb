@@ -1,7 +1,7 @@
 #ifndef ROCKSDB_BLOB_FILE_ITERATOR_H
 #define ROCKSDB_BLOB_FILE_ITERATOR_H
 
-#include <stdint.h>
+#include <cstdint>
 #include <queue>
 
 #include "rocksdb/slice.h"

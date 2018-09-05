@@ -12,11 +12,6 @@ struct TitanDBOptions : public DBOptions {
   // Default: {dbname}/titandb
   std::string dirname;
 
-  // Maximum number of concurrent background GC jobs.
-  //
-  // Default: 4
-  int max_background_gc{4};
-
   // Disable background GC
   //
   // Default: true

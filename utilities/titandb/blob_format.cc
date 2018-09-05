@@ -1,6 +1,5 @@
 #include "utilities/titandb/blob_format.h"
 
-#include "util/coding.h"
 #include "util/crc32c.h"
 
 namespace rocksdb {
