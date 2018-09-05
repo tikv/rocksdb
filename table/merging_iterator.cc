@@ -283,11 +283,6 @@ class MergingIterator : public InternalIterator {
     return current_->value();
   }
 
-  Status GetProperty(std::string prop_name, std::string* prop) override {
-    assert(Valid());
-    return current_->GetProperty(prop_name, prop);
-  }
-
   virtual void SetPinnedItersMgr(
       PinnedIteratorsManager* pinned_iters_mgr) override {
     pinned_iters_mgr_ = pinned_iters_mgr;

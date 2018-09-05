@@ -148,6 +148,7 @@ inline ValueType ExtractValueType(const Slice& internal_key) {
 // the user key portion and breaks ties by decreasing sequence number.
 class InternalKeyComparator
 #ifdef NDEBUG
+    final
 #endif
     : public Comparator {
  private:

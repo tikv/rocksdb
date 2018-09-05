@@ -24,8 +24,6 @@ Env::~Env() {
 
 std::string Env::PriorityToString(Env::Priority priority) {
   switch (priority) {
-    case Env::Priority::GC:
-      return "GC";
     case Env::Priority::BOTTOM:
       return "Bottom";
     case Env::Priority::LOW:

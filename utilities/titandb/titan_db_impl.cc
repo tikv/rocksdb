@@ -194,7 +194,7 @@ Status TitanDBImpl::Close() {
 }
 
 Status TitanDBImpl::CloseImpl() {
-  int gc_unscheduled = env_->UnSchedule(this, Env::Priority::GC);
+  int gc_unscheduled = env_->UnSchedule(this, Env::Priority::LOW);
   {
     MutexLock l(&mutex_);
     bg_gc_scheduled_ -= gc_unscheduled;
