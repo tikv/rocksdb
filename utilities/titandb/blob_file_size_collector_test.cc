@@ -14,7 +14,7 @@ const static uint32_t kDefauleColumnFamilyID = 0x77;
 class BlobFileSizeCollectorTest : public testing::Test {
  public:
   port::Mutex mutex_;
-  VersionSet* vset_;
+  std::unique_ptr<VersionSet> vset_;
 
   BlobFileSizeCollectorTest() {}
   ~BlobFileSizeCollectorTest() {}
@@ -23,11 +23,11 @@ class BlobFileSizeCollectorTest : public testing::Test {
                      const TitanCFOptions& titan_cf_options) {
     auto blob_file_cache = std::make_shared<BlobFileCache>(
         titan_db_options, titan_cf_options, NewLRUCache(128));
-    auto v = new Version(vset_);
+    auto v = new Version(vset_.get());
     auto storage =
         std::make_shared<BlobStorage>(TitanCFOptions(), blob_file_cache);
     v->column_families_.emplace(kDefauleColumnFamilyID, storage);
-    vset_ = new VersionSet(titan_db_options);
+    vset_.reset(new VersionSet(titan_db_options));
     vset_->versions_.Append(v);
   }
 
@@ -76,7 +76,7 @@ class BlobFileSizeCollectorTest : public testing::Test {
     cji.table_properties["2"] = tp2;
     cji.output_files.emplace_back("2");
     port::Mutex mutex;
-    BlobDiscardableSizeListener listener(nullptr, &mutex, vset_);
+    BlobDiscardableSizeListener listener(nullptr, &mutex, vset_.get());
     listener.OnCompactionCompleted(nullptr, cji);
     ASSERT_EQ(file->discardable_size, 25);
   }

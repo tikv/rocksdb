@@ -7,12 +7,6 @@
 namespace rocksdb {
 namespace titandb {
 
-const std::string BlobFileIterator::PROPERTIES_FILE_NUMBER =
-    "PropertiesFileNumber";
-const std::string BlobFileIterator::PROPERTIES_BLOB_OFFSET =
-    "PropertiesBlobOffset";
-const std::string BlobFileIterator::PROPERTIES_BLOB_SIZE = "PropertiesBlobSize";
-
 BlobFileIterator::BlobFileIterator(
     std::unique_ptr<RandomAccessFileReader>&& file, uint64_t file_name,
     uint64_t file_size, const TitanCFOptions& titan_cf_options)
@@ -22,25 +16,6 @@ BlobFileIterator::BlobFileIterator(
       titan_cf_options_(titan_cf_options) {}
 
 BlobFileIterator::~BlobFileIterator() {}
-
-Status BlobFileIterator::GetBlobIndex(InternalIterator* iter,
-                                      BlobIndex* blob_index) {
-  Status s;
-  std::string prop;
-  s = iter->GetProperty(BlobFileIterator::PROPERTIES_FILE_NUMBER, &prop);
-  if (!s.ok()) return s;
-  blob_index->file_number = *reinterpret_cast<const uint64_t*>(prop.data());
-  s = iter->GetProperty(BlobFileIterator::PROPERTIES_BLOB_OFFSET, &prop);
-  if (!s.ok()) return s;
-  blob_index->blob_handle.offset =
-      *reinterpret_cast<const uint64_t*>(prop.data());
-  s = iter->GetProperty(BlobFileIterator::PROPERTIES_BLOB_SIZE, &prop);
-  if (!s.ok()) return s;
-  blob_index->blob_handle.size =
-      *reinterpret_cast<const uint64_t*>(prop.data());
-
-  return Status::OK();
-}
 
 bool BlobFileIterator::Init() {
   char buf[BlobFileFooter::kEncodedLength];
@@ -73,27 +48,6 @@ void BlobFileIterator::Next() {
 Slice BlobFileIterator::key() const { return cur_blob_record_.key; }
 
 Slice BlobFileIterator::value() const { return cur_blob_record_.value; }
-
-Status BlobFileIterator::GetProperty(std::string prop_name, std::string* prop) {
-  assert(Valid());
-
-  prop->clear();
-
-  if (prop_name == PROPERTIES_FILE_NUMBER) {
-    prop->assign(reinterpret_cast<const char*>(&file_number_),
-                 sizeof(file_number_));
-  } else if (prop_name == PROPERTIES_BLOB_OFFSET) {
-    prop->assign(reinterpret_cast<char*>(&cur_record_offset_),
-                 sizeof(cur_record_offset_));
-  } else if (prop_name == PROPERTIES_BLOB_SIZE) {
-    prop->assign(reinterpret_cast<char*>(&cur_record_size_),
-                 sizeof(cur_record_size_));
-  } else {
-    return Status::InvalidArgument("Unknown prop_name: " + prop_name);
-  }
-
-  return Status::OK();
-}
 
 void BlobFileIterator::IterateForPrev(uint64_t offset) {
   if (!init_) Init();
@@ -195,6 +149,46 @@ void BlobFileIterator::PrefetchAndGet() {
   if (readahead_end_offset_ < iterate_offset_) {
     readahead_end_offset_ = iterate_offset_;
   }
+}
+
+BlobFileMergeIterator::BlobFileMergeIterator(
+    std::vector<std::unique_ptr<BlobFileIterator>>&& blob_file_iterators)
+    : blob_file_iterators_(std::move(blob_file_iterators)) {}
+
+bool BlobFileMergeIterator::Valid() const {
+  if (current_ == nullptr) return false;
+  return current_->Valid();
+}
+
+void BlobFileMergeIterator::SeekToFirst() {
+  for (auto& iter : blob_file_iterators_) {
+    iter->SeekToFirst();
+    if (iter->status().ok() && iter->Valid()) min_heap_.push(iter.get());
+  }
+  if (!min_heap_.empty()) {
+    current_ = min_heap_.top();
+    min_heap_.pop();
+  } else {
+    status_ = Status::Aborted("No iterator is valid");
+  }
+}
+
+void BlobFileMergeIterator::Next() {
+  assert(current_ != nullptr);
+  current_->Next();
+  if (current_->status().ok() && current_->Valid()) min_heap_.push(current_);
+  current_ = min_heap_.top();
+  min_heap_.pop();
+}
+
+Slice BlobFileMergeIterator::key() const {
+  assert(current_ != nullptr);
+  return current_->key();
+}
+
+Slice BlobFileMergeIterator::value() const {
+  assert(current_ != nullptr);
+  return current_->value();
 }
 
 }  // namespace titandb

@@ -58,19 +58,6 @@ class BlobGCJob::GarbageCollectionWriteCallback : public WriteCallback {
   SequenceNumber upper_bound_;
 };
 
-class BlobGCJob::PlainInternalKeyComparator final
-    : public InternalKeyComparator {
- public:
-  explicit PlainInternalKeyComparator(const Comparator* c)
-      : InternalKeyComparator(c) {}
-
-  virtual ~PlainInternalKeyComparator() {}
-
-  virtual int Compare(const Slice& a, const Slice& b) const override {
-    return user_comparator()->Compare(a, b);
-  }
-};
-
 BlobGCJob::BlobGCJob(BlobGC* blob_gc, DB* db, ColumnFamilyHandle* cfh,
                      port::Mutex* mutex, const TitanDBOptions& titan_db_options,
                      const TitanCFOptions& titan_cf_options, Env* env,
@@ -89,7 +76,9 @@ BlobGCJob::BlobGCJob(BlobGC* blob_gc, DB* db, ColumnFamilyHandle* cfh,
       blob_file_manager_(blob_file_manager),
       version_set_(version_set) {}
 
-BlobGCJob::~BlobGCJob() {}
+BlobGCJob::~BlobGCJob() {
+  if (cmp_) delete cmp_;
+}
 
 Status BlobGCJob::Prepare() { return Status::OK(); }
 
@@ -142,8 +131,7 @@ bool BlobGCJob::DoSample(const BlobFileMeta* file) {
   for (iter.Next();
        iterated_size < sample_size_window && iter.status().ok() && iter.Valid();
        iter.Next()) {
-    BlobIndex blob_index;
-    BlobFileIterator::GetBlobIndex(&iter, &blob_index);
+    BlobIndex blob_index = iter.GetBlobIndex();
     uint64_t total_length = blob_index.blob_handle.size + kBlobFixedSize;
     iterated_size += total_length;
     if (DiscardEntry(iter.key(), blob_index)) {
@@ -159,7 +147,7 @@ bool BlobGCJob::DoSample(const BlobFileMeta* file) {
 Status BlobGCJob::DoRunGC() {
   Status s;
 
-  std::unique_ptr<InternalIterator> gc_iter;
+  std::unique_ptr<BlobFileMergeIterator> gc_iter;
   s = BuildIterator(&gc_iter);
   if (!s.ok()) return s;
   if (!gc_iter) return Status::Aborted("Build iterator for gc failed");
@@ -180,8 +168,7 @@ Status BlobGCJob::DoRunGC() {
     // This API is very lightweight
     SequenceNumber latest_seq = base_db_->GetLatestSequenceNumber();
 
-    BlobIndex blob_index;
-    BlobFileIterator::GetBlobIndex(gc_iter.get(), &blob_index);
+    BlobIndex blob_index = gc_iter->GetBlobIndex();
     if (DiscardEntry(gc_iter->key(), blob_index)) {
       continue;
     }
@@ -236,33 +223,24 @@ Status BlobGCJob::DoRunGC() {
   return s;
 }
 
-Status BlobGCJob::BuildIterator(std::unique_ptr<InternalIterator>* result) {
+Status BlobGCJob::BuildIterator(unique_ptr<BlobFileMergeIterator>* result) {
   Status s;
   const auto& inputs = blob_gc_->selected_files();
   assert(!inputs.empty());
-  auto list = new InternalIterator*[inputs.size()];
-  std::size_t i;
-  for (i = 0; i < inputs.size(); ++i) {
+  std::vector<std::unique_ptr<BlobFileIterator>> list;
+  for (std::size_t i = 0; i < inputs.size(); ++i) {
     std::unique_ptr<RandomAccessFileReader> file;
     s = NewBlobFileReader(inputs[i]->file_number, 0, titan_db_options_,
                           env_options_, env_, &file);
     if (!s.ok()) {
       break;
     }
-    list[i] = new BlobFileIterator(std::move(file), inputs[i]->file_number,
-                                   inputs[i]->file_size, titan_cf_options_);
+    list.emplace_back(std::unique_ptr<BlobFileIterator>(
+        new BlobFileIterator(std::move(file), inputs[i]->file_number,
+                             inputs[i]->file_size, titan_cf_options_)));
   }
 
-  if (s.ok()) {
-    InternalKeyComparator* cmp =
-        new PlainInternalKeyComparator(BytewiseComparator());
-    result->reset(
-        NewMergingIterator(cmp, list, static_cast<int>(inputs.size())));
-  } else if (i > 0) {
-    for (std::size_t j = 0; j < i; j++) delete list[j];
-  }
-
-  delete[] list;
+  if (s.ok()) result->reset(new BlobFileMergeIterator(std::move(list)));
 
   return s;
 }

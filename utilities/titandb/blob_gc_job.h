@@ -1,10 +1,10 @@
 #ifndef ROCKSDB_BLOB_GC_JOB_H
 #define ROCKSDB_BLOB_GC_JOB_H
 
-#include <db/db_impl.h>
-#include "include/rocksdb/status.h"
-#include "table/internal_iterator.h"
+#include "db/db_impl.h"
+#include "rocksdb/status.h"
 #include "utilities/titandb/blob_file_builder.h"
+#include "utilities/titandb/blob_file_iterator.h"
 #include "utilities/titandb/blob_file_manager.h"
 #include "utilities/titandb/blob_gc.h"
 #include "utilities/titandb/options.h"
@@ -31,7 +31,6 @@ class BlobGCJob {
 
  private:
   class GarbageCollectionWriteCallback;
-  class PlainInternalKeyComparator;
   friend class BlobGCJobTest;
 
   BlobGC* blob_gc_;
@@ -51,11 +50,12 @@ class BlobGCJob {
       blob_file_builders_;
   std::vector<std::pair<WriteBatch, GarbageCollectionWriteCallback>>
       rewrite_batches_;
+  InternalKeyComparator* cmp_{nullptr};
 
   Status SampleCandidateFiles();
   bool DoSample(const BlobFileMeta* file);
   Status DoRunGC();
-  Status BuildIterator(std::unique_ptr<InternalIterator>* result);
+  Status BuildIterator(std::unique_ptr<BlobFileMergeIterator>* result);
   bool DiscardEntry(const Slice& key, const BlobIndex& blob_index);
   Status InstallOutputBlobFiles();
   Status RewriteValidKeyToLSM();

@@ -72,7 +72,7 @@ Version::~Version() {
       obsolete_blob_files.emplace_back(f.second->file_number);
     }
   }
-  vset_ != nullptr ? vset_->AddObsoleteBlobFiles(obsolete_blob_files) : void();
+  if (vset_ != nullptr) vset_->AddObsoleteBlobFiles(obsolete_blob_files);
 }
 
 void Version::Ref() { refs_++; }

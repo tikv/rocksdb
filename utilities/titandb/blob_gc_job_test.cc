@@ -1,6 +1,5 @@
 #include "utilities/titandb/blob_gc_job.h"
 #include "util/testharness.h"
-#include "utilities/titandb/blob_file_iterator.h"
 #include "utilities/titandb/blob_gc_picker.h"
 #include "utilities/titandb/titan_db.h"
 #include "utilities/titandb/titan_db_impl.h"
@@ -12,31 +11,32 @@ const static int MAX_KEY_NUM = 1000;
 
 class BlobGCJobTest : public testing::Test {
  public:
+  std::string dbname_;
   TitanDB* db_;
   DBImpl* base_db_;
   TitanDBImpl* tdb_;
   VersionSet* version_set_;
-  TitanDBOptions tdb_options_;
   TitanOptions options_;
   port::Mutex* mutex_;
 
-  BlobGCJobTest() {}
+  BlobGCJobTest() : dbname_(test::TmpDir()) {
+    options_.dirname = dbname_ + "/titandb";
+    options_.create_if_missing = true;
+    options_.disable_background_gc = true;
+  }
   ~BlobGCJobTest() {}
 
   void NewDB() {
-    Status s;
-    options_.create_if_missing = true;
-    options_.disable_background_gc = true;
-    s = TitanDB::Open(options_,
-                      "/tmp/titandb/" +
-                          std::to_string(Random::GetTLSInstance()->Next()) +
-                          "/",
-                      &db_);
-    ASSERT_OK(s);
+    options_.env->DeleteDir(dbname_);
+    ASSERT_OK(TitanDB::Open(options_, dbname_, &db_));
     tdb_ = reinterpret_cast<TitanDBImpl*>(db_);
     version_set_ = tdb_->vset_.get();
     mutex_ = &tdb_->mutex_;
     base_db_ = reinterpret_cast<DBImpl*>(tdb_->GetRootDB());
+  }
+
+  void DestoyDB() {
+    db_->Close();
   }
 
   void RunGC() {
@@ -77,7 +77,7 @@ class BlobGCJobTest : public testing::Test {
   }
 
   Status NewIterator(uint64_t file_number, uint64_t file_size,
-                     InternalIterator** iter) {
+                     std::unique_ptr<BlobFileIterator>* iter) {
     std::unique_ptr<RandomAccessFileReader> file;
     Status s = NewBlobFileReader(file_number, 0, tdb_->db_options_,
                                  tdb_->env_options_, tdb_->env_, &file);
@@ -85,14 +85,30 @@ class BlobGCJobTest : public testing::Test {
     if (!s.ok()) {
       return s;
     }
-    *iter = new BlobFileIterator(std::move(file), file_number, file_size,
-                                 TitanCFOptions());
+    iter->reset(new BlobFileIterator(std::move(file), file_number, file_size,
+                                     TitanCFOptions()));
     return Status::OK();
   }
 
-  bool DiscardEntry(BlobGCJob* b, const std::string& key,
-                    const BlobIndex& blob_index) {
-    return b->DiscardEntry(key, blob_index);
+  void TestDiscardEntry() {
+    NewDB();
+    auto* cfh = base_db_->DefaultColumnFamily();
+    BlobIndex blob_index;
+    blob_index.file_number = 0x81;
+    blob_index.blob_handle.offset = 0x98;
+    blob_index.blob_handle.size = 0x17;
+    std::string res;
+    blob_index.EncodeTo(&res);
+    std::string key = "test_discard_entry";
+    WriteBatch wb;
+    ASSERT_OK(WriteBatchInternal::PutBlobIndex(&wb, cfh->GetID(), key, res));
+    auto rewrite_status = base_db_->Write(WriteOptions(), &wb);
+
+    BlobGCJob blob_gc_job(nullptr, base_db_, cfh, mutex_, TitanDBOptions(),
+                          TitanCFOptions(), Env::Default(), EnvOptions(),
+                          nullptr, version_set_);
+    ASSERT_FALSE(blob_gc_job.DiscardEntry(key, blob_index));
+    DestoyDB();
   }
 
   void TestRunGC() {
@@ -128,7 +144,7 @@ class BlobGCJobTest : public testing::Test {
     for (auto& f : b->files_) {
       f.second->marked_for_sample = false;
     }
-    InternalIterator* iter;
+    std::unique_ptr<BlobFileIterator> iter;
     ASSERT_OK(NewIterator(b->files_.begin()->second->file_number,
                           b->files_.begin()->second->file_size, &iter));
     iter->SeekToFirst();
@@ -166,30 +182,11 @@ class BlobGCJobTest : public testing::Test {
       ASSERT_TRUE(iter->value().compare(result) == 0);
       iter->Next();
     }
+    DestoyDB();
   }
 };
 
-TEST_F(BlobGCJobTest, DiscardEntry) {
-  NewDB();
-  auto* cfh = base_db_->DefaultColumnFamily();
-  BlobIndex blob_index;
-  blob_index.file_number = 0x81;
-  blob_index.blob_handle.offset = 0x98;
-  blob_index.blob_handle.size = 0x17;
-  std::string res;
-  blob_index.EncodeTo(&res);
-  std::string key = "test_discard_entry";
-  WriteBatch wb;
-  ASSERT_TRUE(
-      WriteBatchInternal::PutBlobIndex(&wb, cfh->GetID(), key, res).ok());
-  auto rewrite_status = base_db_->Write(WriteOptions(), &wb);
-
-  BlobGCJob blob_gc_job(nullptr, base_db_, cfh, mutex_, TitanDBOptions(),
-                        TitanCFOptions(), Env::Default(), EnvOptions(), nullptr,
-                        version_set_);
-
-  ASSERT_TRUE(!DiscardEntry(&blob_gc_job, key, blob_index));
-}
+TEST_F(BlobGCJobTest, DiscardEntry) { TestDiscardEntry(); }
 
 TEST_F(BlobGCJobTest, RunGC) {
   TestRunGC();

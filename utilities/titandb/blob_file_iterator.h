@@ -2,47 +2,44 @@
 #define ROCKSDB_BLOB_FILE_ITERATOR_H
 
 #include <stdint.h>
+#include <queue>
 #include "include/rocksdb/slice.h"
 #include "include/rocksdb/status.h"
-#include "utilities/titandb/options.h"
 #include "table/internal_iterator.h"
 #include "util/file_reader_writer.h"
 #include "utilities/titandb/blob_format.h"
+#include "utilities/titandb/options.h"
 
 namespace rocksdb {
 namespace titandb {
 
-class BlobFileIterator final : public InternalIterator {
+class BlobFileIterator {
  public:
-  static const std::string PROPERTIES_FILE_NUMBER;
-  static const std::string PROPERTIES_BLOB_OFFSET;
-  static const std::string PROPERTIES_BLOB_SIZE;
-
   const uint64_t kMinReadaheadSize = 4 << 10;
   const uint64_t kMaxReadaheadSize = 256 << 10;
-
-  static Status GetBlobIndex(InternalIterator* iter, BlobIndex* blob_index);
 
   BlobFileIterator(std::unique_ptr<RandomAccessFileReader>&& file,
                    uint64_t file_name, uint64_t file_size,
                    const TitanCFOptions& titan_cf_options);
-  ~BlobFileIterator() override;
+  ~BlobFileIterator();
 
   bool Init();
-  bool Valid() const override;
-  void SeekToFirst() override;
-  void SeekToLast() override { assert(false); }
-  void Seek(const Slice& /* target */) override { assert(false); }
-  void SeekForPrev(const Slice& /* target */) override { assert(false); }
-  void Next() override;
-  void Prev() override { assert(false); }
-  Slice key() const override;
-  Slice value() const override;
-  Status status() const override { return status_; }
-  Status GetProperty(std::string prop_name, std::string* prop) override;
+  bool Valid() const;
+  void SeekToFirst();
+  void Next();
+  Slice key() const;
+  Slice value() const;
+  Status status() const { return status_; }
 
-  void Iterate(uint64_t) { assert(false); }
   void IterateForPrev(uint64_t);
+
+  BlobIndex GetBlobIndex() {
+    BlobIndex blob_index;
+    blob_index.file_number = file_number_;
+    blob_index.blob_handle.offset = cur_record_offset_;
+    blob_index.blob_handle.size = cur_record_size_;
+    return blob_index;
+  }
 
  private:
   // Blob file info
@@ -70,6 +67,44 @@ class BlobFileIterator final : public InternalIterator {
 
   void PrefetchAndGet();
   void GetBlobRecord();
+};
+
+class BlobFileMergeIterator {
+ public:
+  explicit BlobFileMergeIterator(
+      std::vector<std::unique_ptr<BlobFileIterator>>&&);
+
+  ~BlobFileMergeIterator() = default;
+
+  bool Valid() const;
+  void SeekToFirst();
+  void Next();
+  Slice key() const;
+  Slice value() const;
+  Status status() const {
+    if (current_ != nullptr && !current_->status().ok())
+      return current_->status();
+    return status_;
+  }
+
+  BlobIndex GetBlobIndex() { return current_->GetBlobIndex(); }
+
+ private:
+  class IternalComparator {
+   public:
+    // Smaller value get Higher priority
+    bool operator()(const BlobFileIterator* iter1,
+                    const BlobFileIterator* iter2) {
+      return BytewiseComparator()->Compare(iter1->key(), iter2->key()) > 0;
+    }
+  };
+
+  Status status_;
+  std::vector<std::unique_ptr<BlobFileIterator>> blob_file_iterators_;
+  std::priority_queue<BlobFileIterator*, std::vector<BlobFileIterator*>,
+                      IternalComparator>
+      min_heap_;
+  BlobFileIterator* current_ = nullptr;
 };
 
 }  // namespace titandb
