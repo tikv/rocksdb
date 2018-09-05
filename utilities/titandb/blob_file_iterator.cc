@@ -1,8 +1,7 @@
 #include "utilities/titandb/blob_file_iterator.h"
 
-#include "utilities/titandb/util.h"
-
 #include "util/crc32c.h"
+#include "utilities/titandb/util.h"
 
 namespace rocksdb {
 namespace titandb {
@@ -105,9 +104,8 @@ void BlobFileIterator::GetBlobRecord() {
   if (compression == kNoCompression) {
     slice = {buffer_.data(), body_length};
   } else {
-    UncompressionContext ctx(compression);
     status_ =
-        Uncompress(ctx, {buffer_.data(), body_length}, &slice, &uncompressed);
+        Uncompress(compression, {buffer_.data(), body_length}, &slice, &uncompressed);
     if (!status_.ok()) return;
   }
   status_ = DecodeInto(slice, &cur_blob_record_);

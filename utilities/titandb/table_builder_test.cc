@@ -1,5 +1,5 @@
-#include "table/table_builder.h"
 #include "rocksdb/options.h"
+#include "table/table_builder.h"
 #include "table/table_reader.h"
 #include "util/filename.h"
 #include "util/testharness.h"
@@ -135,7 +135,7 @@ class TableBuilderTest : public testing::Test {
     NewBaseFileReader(&file);
     uint64_t file_size = 0;
     ASSERT_OK(env_->GetFileSize(file->file_name(), &file_size));
-    TableReaderOptions options(cf_ioptions_, nullptr, env_options_,
+    TableReaderOptions options(cf_ioptions_, env_options_,
                                cf_ioptions_.internal_comparator);
     ASSERT_OK(table_factory_->NewTableReader(options, std::move(file),
                                              file_size, result));

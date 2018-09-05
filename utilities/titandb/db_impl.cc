@@ -1,8 +1,7 @@
-#include "utilities/titandb/titan_db_impl.h"
-#include <table/merging_iterator.h>
+#include "utilities/titandb/db_impl.h"
 
-#include "blob_file_builder.h"
-#include "blob_file_iterator.h"
+#include "utilities/titandb/blob_file_builder.h"
+#include "utilities/titandb/blob_file_iterator.h"
 #include "utilities/titandb/blob_file_size_collector.h"
 #include "utilities/titandb/blob_gc.h"
 #include "utilities/titandb/db_iter.h"

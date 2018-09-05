@@ -1,8 +1,8 @@
 #include "utilities/titandb/blob_file_reader.h"
 
 #include "util/crc32c.h"
-#include "utilities/titandb/util.h"
 #include "util/filename.h"
+#include "utilities/titandb/util.h"
 
 namespace rocksdb {
 namespace titandb {
@@ -158,10 +158,9 @@ Status BlobFileReader::ReadBlob(const BlobHandle& handle, BlobBuffer* buffer) {
   if (compression == kNoCompression) {
     buffer->assign(std::move(compressed), handle.size);
   } else {
-    UncompressionContext ctx(compression);
     Slice output;
     std::unique_ptr<char[]> uncompressed;
-    s = Uncompress(ctx, blob, &output, &uncompressed);
+    s = Uncompress(compression, blob, &output, &uncompressed);
     if (!s.ok()) return s;
     buffer->assign(std::move(uncompressed), output.size());
   }

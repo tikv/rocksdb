@@ -1,10 +1,10 @@
 #ifndef ROCKSDB_BLOB_GC_STATISTIS_H
 #define ROCKSDB_BLOB_GC_STATISTIS_H
 
-#include "include/rocksdb/listener.h"
-#include "include/rocksdb/table_properties.h"
+#include "rocksdb/listener.h"
+#include "rocksdb/table_properties.h"
 #include "util/coding.h"
-#include "utilities/titandb/titan_db_impl.h"
+#include "utilities/titandb/db_impl.h"
 #include "utilities/titandb/version.h"
 #include "utilities/titandb/version_set.h"
 

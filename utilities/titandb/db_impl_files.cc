@@ -1,4 +1,4 @@
-#include "utilities/titandb/titan_db_impl.h"
+#include "utilities/titandb/db_impl.h"
 
 namespace rocksdb {
 namespace titandb {

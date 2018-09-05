@@ -1518,45 +1518,45 @@ blob_db_test: utilities/blob_db/blob_db_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
 TITANDB_TESTS = \
-	titandb_blob_format_test \
-	titandb_blob_file_test \
-	titandb_table_builder_test \
-	titandb_version_test \
-	titandb_util_test \
 	titandb_blob_file_iterator_test \
-	titandb_blob_gc_picker_test \
 	titandb_blob_file_size_collector_test \
+	titandb_blob_file_test \
+	titandb_blob_format_test \
 	titandb_blob_gc_job_test \
+	titandb_blob_gc_picker_test \
 	titandb_db_test \
-
-titandb_blob_format_test: utilities/titandb/blob_format_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(AM_LINK)
-
-titandb_blob_file_test: utilities/titandb/blob_file_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(AM_LINK)
-
-titandb_table_builder_test: utilities/titandb/table_builder_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(AM_LINK)
-
-titandb_version_test: utilities/titandb/version_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(AM_LINK)
-
-titandb_db_test: utilities/titandb/titan_db_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(AM_LINK)
+	titandb_table_builder_test \
+	titandb_util_test \
+	titandb_version_test \
 
 titandb_blob_file_iterator_test: utilities/titandb/blob_file_iterator_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(AM_LINK)
-
-titandb_blob_gc_picker_test: utilities/titandb/blob_gc_picker_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
 titandb_blob_file_size_collector_test: utilities/titandb/blob_file_size_collector_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
+titandb_blob_file_test: utilities/titandb/blob_file_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(AM_LINK)
+
+titandb_blob_format_test: utilities/titandb/blob_format_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(AM_LINK)
+
 titandb_blob_gc_job_test: utilities/titandb/blob_gc_job_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
+titandb_blob_gc_picker_test: utilities/titandb/blob_gc_picker_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(AM_LINK)
+
+titandb_db_test: utilities/titandb/db_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(AM_LINK)
+
+titandb_table_builder_test: utilities/titandb/table_builder_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(AM_LINK)
+
 titandb_util_test: utilities/titandb/util_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(AM_LINK)
+
+titandb_version_test: utilities/titandb/version_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
 titandb_check: $(TITANDB_TESTS)
