@@ -4047,7 +4047,7 @@ const char* rocksdb_pinnableslice_value(const rocksdb_pinnableslice_t* v,
 
 // TitanDB
 
-#include "utilities/titandb/titan_db.h"
+#include "utilities/titandb/db.h"
 
 using rocksdb::titandb::TitanDB;
 using rocksdb::titandb::TitanOptions;
@@ -4075,10 +4075,7 @@ void titandb_options_destroy(titandb_options_t* options) {
 
 void titandb_options_set_rocksdb(
     titandb_options_t* options, rocksdb_options_t* rocksdb) {
-  static_cast<DBOptions&>(options->rep) =
-      static_cast<DBOptions&>(rocksdb->rep);
-  static_cast<ColumnFamilyOptions&>(options->rep) =
-      static_cast<ColumnFamilyOptions&>(rocksdb->rep);
+  options->rep = rocksdb->rep;
 }
 
 void titandb_options_set_dirname(
