@@ -42,7 +42,7 @@ class BlobBuffer {
     buffer->PinSlice(slice(), cleanup, data_.release(), nullptr);
   }
 
-  static void cleanup(void *arg1, void* /*arg2*/) {
+  static void cleanup(void* arg1, void* /*arg2*/) {
     delete[] reinterpret_cast<char*>(arg1);
   }
 
@@ -68,7 +68,7 @@ void EncodeBlobCache(std::string* dst, const Slice& prefix, uint64_t offset) {
   PutVarint64(dst, offset);
 }
 
-}
+}  // namespace
 
 Status BlobFileReader::Open(const TitanCFOptions& options,
                             std::unique_ptr<RandomAccessFileReader> file,
@@ -80,9 +80,9 @@ Status BlobFileReader::Open(const TitanCFOptions& options,
 
   char footer_space[BlobFileFooter::kEncodedLength];
   Slice footer_input;
-  Status s = file->Read(file_size - BlobFileFooter::kEncodedLength,
-                        BlobFileFooter::kEncodedLength,
-                        &footer_input, footer_space);
+  Status s =
+      file->Read(file_size - BlobFileFooter::kEncodedLength,
+                 BlobFileFooter::kEncodedLength, &footer_input, footer_space);
   if (!s.ok()) return s;
 
   BlobFileFooter footer;
@@ -97,17 +97,15 @@ Status BlobFileReader::Open(const TitanCFOptions& options,
 
 BlobFileReader::BlobFileReader(const TitanCFOptions& options,
                                std::unique_ptr<RandomAccessFileReader> file)
-    : options_(options),
-      file_(std::move(file)),
-      cache_(options.blob_cache) {
+    : options_(options), file_(std::move(file)), cache_(options.blob_cache) {
   if (cache_) {
     GenerateCachePrefix(&cache_prefix_, cache_.get(), file_->file());
   }
 }
 
 Status BlobFileReader::Get(const ReadOptions& /*options*/,
-                           const BlobHandle& handle,
-                           BlobRecord* record,PinnableSlice* buffer) {
+                           const BlobHandle& handle, BlobRecord* record,
+                           PinnableSlice* buffer) {
   Status s;
   std::string cache_key;
   Cache::Handle* cache_handle = nullptr;
@@ -132,8 +130,8 @@ Status BlobFileReader::Get(const ReadOptions& /*options*/,
     auto cache_value = new BlobBuffer(std::move(blob));
     cache_->Insert(cache_key, cache_value, cache_value->cache_size(),
                    &DeleteCacheValue<BlobBuffer>, &cache_handle);
-    buffer->PinSlice(cache_value->slice(), UnrefCacheHandle,
-                     cache_.get(), cache_handle);
+    buffer->PinSlice(cache_value->slice(), UnrefCacheHandle, cache_.get(),
+                     cache_handle);
   } else {
     blob.release(buffer);
   }
@@ -143,10 +141,9 @@ Status BlobFileReader::Get(const ReadOptions& /*options*/,
 
 Status BlobFileReader::ReadBlob(const BlobHandle& handle, BlobBuffer* buffer) {
   Slice blob;
-  size_t blob_size =handle.size+ kBlobTailerSize;
+  size_t blob_size = handle.size + kBlobTailerSize;
   std::unique_ptr<char[]> compressed(new char[blob_size]);
-  Status s = file_->Read(handle.offset, blob_size,
-                         &blob, compressed.get());
+  Status s = file_->Read(handle.offset, blob_size, &blob, compressed.get());
   if (!s.ok()) return s;
 
   auto tailer = blob.data() + handle.size;
@@ -169,8 +166,8 @@ Status BlobFileReader::ReadBlob(const BlobHandle& handle, BlobBuffer* buffer) {
 }
 
 Status BlobFilePrefetcher::Get(const ReadOptions& options,
-                               const BlobHandle& handle,
-                               BlobRecord* record, PinnableSlice* buffer) {
+                               const BlobHandle& handle, BlobRecord* record,
+                               PinnableSlice* buffer) {
   if (handle.offset == last_offset_) {
     last_offset_ = handle.offset + handle.size;
     if (handle.offset + handle.size > readahead_limit_) {

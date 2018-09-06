@@ -39,8 +39,7 @@ class BasicBlobGCPicker final : public BlobGCPicker {
 
   // Check if blob_file needs to gc, return true means we need pick this
   // file for gc
-  bool CheckForPick(BlobFileMeta* blob_file,
-                    const GCScore& gc_score) const;
+  bool CheckForPick(BlobFileMeta* blob_file, const GCScore& gc_score) const;
   // Mark that blob_file is picked for gc
   // REQUIRE: call CheckForPick first
   void MarkedForPick(BlobFileMeta* blob_file);

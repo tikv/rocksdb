@@ -41,7 +41,8 @@ void BlobStorage::ComputeGCScore() {
     if (file.second->marked_for_gc) {
       gcs.score = 1;
       file.second->marked_for_gc = false;
-    } else if (file.second->file_size < titan_cf_options_.merge_small_file_threashold) {
+    } else if (file.second->file_size <
+               titan_cf_options_.merge_small_file_threshold) {
       gcs.score = 1;
     } else {
       gcs.score = file.second->discardable_size / file.second->file_size;
