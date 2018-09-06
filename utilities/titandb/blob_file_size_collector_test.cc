@@ -45,7 +45,10 @@ class BlobFileSizeCollectorTest : public testing::Test {
     CompactionJobInfo cji;
     cji.cf_id = kDefauleColumnFamilyID;
     AddBlobFile(1, 100, 5);
-    auto file = vset_->current()->GetBlobStorage(kDefauleColumnFamilyID).lock()->files_[1];
+    auto file = vset_->current()
+                    ->GetBlobStorage(kDefauleColumnFamilyID)
+                    .lock()
+                    ->files_[1];
     ASSERT_EQ(file->discardable_size, 5);
     TablePropertiesCollectorFactory::Context context;
     context.column_family_id = kDefauleColumnFamilyID;
@@ -83,9 +86,7 @@ class BlobFileSizeCollectorTest : public testing::Test {
   }
 };
 
-TEST_F(BlobFileSizeCollectorTest, Basic) {
-  TestBasic();
-}
+TEST_F(BlobFileSizeCollectorTest, Basic) { TestBasic(); }
 
 }  // namespace titandb
 }  // namespace rocksdb

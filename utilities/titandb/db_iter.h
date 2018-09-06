@@ -30,8 +30,7 @@ class TitanSnapshot : public Snapshot {
 
 class TitanDBIterator : public Iterator {
  public:
-  TitanDBIterator(const ReadOptions& options,
-                  BlobStorage* storage,
+  TitanDBIterator(const ReadOptions& options, BlobStorage* storage,
                   std::shared_ptr<ManagedSnapshot> snap,
                   std::unique_ptr<ArenaWrappedDBIter> iter)
       : options_(options),
