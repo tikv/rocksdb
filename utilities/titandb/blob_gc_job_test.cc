@@ -201,7 +201,7 @@ class BlobGCJobTest : public testing::Test {
 
 TEST_F(BlobGCJobTest, DiscardEntry) { TestDiscardEntry(); }
 
-EST_F(BlobGCJobTest, RunGC) { TestRunGC(); }
+TEST_F(BlobGCJobTest, RunGC) { TestRunGC(); }
 
 }  // namespace titandb
 }  // namespace rocksdb
