@@ -39,8 +39,7 @@ void BlobHandle::EncodeTo(std::string* dst) const {
 }
 
 Status BlobHandle::DecodeFrom(Slice* src) {
-  if (!GetVarint64(src, &offset) ||
-      !GetVarint64(src, &size)) {
+  if (!GetVarint64(src, &offset) || !GetVarint64(src, &size)) {
     return Status::Corruption("BlobHandle");
   }
   return Status::OK();

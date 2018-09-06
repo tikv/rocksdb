@@ -8,7 +8,7 @@
 namespace rocksdb {
 namespace titandb {
 
-template<typename T>
+template <typename T>
 void CheckCodec(const T& input) {
   std::string buffer;
   input.EncodeTo(&buffer);
@@ -35,7 +35,7 @@ Status Uncompress(CompressionType type, const Slice& input, Slice* output,
 
 void UnrefCacheHandle(void* cache, void* handle);
 
-template<class T>
+template <class T>
 void DeleteCacheValue(const Slice&, void* value) {
   delete reinterpret_cast<T*>(value);
 }

@@ -113,7 +113,7 @@ Status BlobGCJob::SampleCandidateFiles() {
 bool BlobGCJob::DoSample(const BlobFileMeta* file) {
   Status s;
   uint64_t sample_size_window = static_cast<uint64_t>(
-      file->file_size * titan_cf_options_.sample_flie_size_ratio);
+      file->file_size * titan_cf_options_.sample_file_size_ratio);
   Random64 random64(file->file_size);
   uint64_t sample_begin_offset =
       random64.Uniform(file->file_size - sample_size_window);

@@ -326,7 +326,8 @@ Iterator* TitanDBImpl::NewIteratorImpl(
   std::unique_ptr<ArenaWrappedDBIter> iter(db_impl_->NewIteratorImpl(
       options, cfd, snap->GetSequenceNumber(), nullptr /*read_callback*/,
       true /*allow_blob*/));
-  return new TitanDBIterator(options, storage.lock().get(), snapshot, std::move(iter));
+  return new TitanDBIterator(options, storage.lock().get(), snapshot,
+                             std::move(iter));
 }
 
 Status TitanDBImpl::NewIterators(

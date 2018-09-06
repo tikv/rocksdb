@@ -1,4 +1,3 @@
-#include "util/testharness.h"
 #include "utilities/titandb/util.h"
 
 namespace rocksdb {
@@ -8,8 +7,8 @@ class UtilTest : public testing::Test {};
 
 TEST(UtilTest, Compression) {
   Slice input("aaaaaaaaaaaaaaaaaaaaaaaaaa");
-  for (auto compression : {
-      kSnappyCompression, kZlibCompression, kLZ4Compression, kZSTD}) {
+  for (auto compression :
+       {kSnappyCompression, kZlibCompression, kLZ4Compression, kZSTD}) {
     std::string buffer;
     auto compressed = Compress(&compression, input, &buffer);
     ASSERT_TRUE(compressed.size() <= input.size());

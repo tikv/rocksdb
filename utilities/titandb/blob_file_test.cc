@@ -60,8 +60,8 @@ class BlobFileTest : public testing::Test {
       expect.value = id;
       BlobRecord record;
       PinnableSlice buffer;
-      ASSERT_OK(cache.Get(ro, file_number_, file_size, handles[i],
-                          &record, &buffer));
+      ASSERT_OK(
+          cache.Get(ro, file_number_, file_size, handles[i], &record, &buffer));
       ASSERT_EQ(record, expect);
       buffer.Reset();
       ASSERT_OK(

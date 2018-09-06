@@ -35,8 +35,7 @@ std::unique_ptr<BlobGC> BasicBlobGCPicker::PickBlobGC(
 
 bool BasicBlobGCPicker::CheckForPick(BlobFileMeta* blob_file,
                                      const GCScore& gc_score) const {
-  if (blob_file->being_gc.load(std::memory_order_acquire))
-    return false;
+  if (blob_file->being_gc.load(std::memory_order_acquire)) return false;
   if (gc_score.score >= titan_cf_options_.blob_file_discardable_ratio)
     blob_file->marked_for_sample = false;
   return true;
