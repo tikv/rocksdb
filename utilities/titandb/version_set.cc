@@ -25,7 +25,7 @@ VersionSet::VersionSet(const TitanDBOptions& options)
 Status VersionSet::Open(
     const std::map<uint32_t, TitanCFOptions>& column_families) {
   // Sets up initial column families.
-  AddColumnFamilies( column_families) ;
+  AddColumnFamilies(column_families);
 
   Status s = env_->FileExists(CurrentFileName(dirname_));
   if (s.ok()) {
@@ -128,7 +128,8 @@ Status VersionSet::Recover() {
     FileType file_type;
     if (!ParseFileName(f, &file_number, &file_type)) continue;
     if (alive_files.find(file_number) != alive_files.end()) continue;
-    if (file_type != FileType::kBlobFile && file_type != FileType::kDescriptorFile)
+    if (file_type != FileType::kBlobFile &&
+        file_type != FileType::kDescriptorFile)
       continue;
 
     env_->DeleteFile(dirname_ + "/" + f);
@@ -224,8 +225,8 @@ void VersionSet::AddColumnFamilies(
   auto v = new Version(this);
   v->column_families_ = current()->column_families_;
   for (auto& cf : column_families) {
-    auto file_cache = std::make_shared<BlobFileCache>(
-        db_options_, cf.second, file_cache_);
+    auto file_cache =
+        std::make_shared<BlobFileCache>(db_options_, cf.second, file_cache_);
     auto blob_storage = std::make_shared<BlobStorage>(cf.second, file_cache);
     v->column_families_.emplace(cf.first, blob_storage);
   }

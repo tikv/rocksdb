@@ -28,8 +28,8 @@ class TitanDB : public StackableDB {
   TitanDB() : StackableDB(nullptr) {}
 
   using StackableDB::CreateColumnFamily;
-  Status CreateColumnFamily(
-      const TitanCFDescriptor& desc, ColumnFamilyHandle** handle) {
+  Status CreateColumnFamily(const TitanCFDescriptor& desc,
+                            ColumnFamilyHandle** handle) {
     std::vector<ColumnFamilyHandle*> handles;
     Status s = CreateColumnFamilies({desc}, &handles);
     if (s.ok()) {

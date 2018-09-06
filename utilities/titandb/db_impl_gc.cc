@@ -61,8 +61,8 @@ Status TitanDBImpl::BackgroundGC() {
     if (!blob_gc) return Status::Corruption("Build BlobGC failed");
 
     BlobGCJob blob_gc_job(blob_gc.get(), db_, cfh, &mutex_, db_options_,
-                          titan_cf_options, env_,
-                          env_options_, blob_manager_.get(), vset_.get());
+                          titan_cf_options, env_, env_options_,
+                          blob_manager_.get(), vset_.get());
     s = blob_gc_job.Prepare();
     if (!s.ok()) return s;
 

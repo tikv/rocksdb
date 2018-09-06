@@ -1,7 +1,6 @@
 #include "utilities/titandb/blob_file_cache.h"
 
 #include "util/filename.h"
-#include "util/file_reader_writer.h"
 #include "utilities/titandb/util.h"
 
 namespace rocksdb {
@@ -38,9 +37,8 @@ Status BlobFileCache::Get(const ReadOptions& options, uint64_t file_number,
 }
 
 Status BlobFileCache::NewPrefetcher(
-                                uint64_t file_number,
-                                uint64_t file_size,
-                                std::unique_ptr<BlobFilePrefetcher>* result) {
+    uint64_t file_number, uint64_t file_size,
+    std::unique_ptr<BlobFilePrefetcher>* result) {
   Cache::Handle* cache_handle = nullptr;
   Status s = FindFile(file_number, file_size, &cache_handle);
   if (!s.ok()) return s;
@@ -56,8 +54,7 @@ void BlobFileCache::Evict(uint64_t file_number) {
   cache_->Erase(EncodeFileNumber(&file_number));
 }
 
-Status BlobFileCache::FindFile(uint64_t file_number,
-                               uint64_t file_size,
+Status BlobFileCache::FindFile(uint64_t file_number, uint64_t file_size,
                                Cache::Handle** handle) {
   Status s;
   Slice cache_key = EncodeFileNumber(&file_number);

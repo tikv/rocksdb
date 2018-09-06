@@ -70,7 +70,7 @@ Slice Compress(CompressionType* type, const Slice& input, std::string* output) {
         return *output;
       }
       break;
-    default: {} // Do not recognize this compression type
+    default: {}  // Do not recognize this compression type
   }
 
   // Compression method is not supported, or not good compression
@@ -106,8 +106,8 @@ Status Uncompress(CompressionType type, const Slice& input, Slice* output,
       *output = Slice(buffer->get(), size);
       break;
     case kBZip2Compression:
-      buffer->reset(BZip2_Uncompress(
-          input.data(), input.size(), &size, kCompressionFormat));
+      buffer->reset(BZip2_Uncompress(input.data(), input.size(), &size,
+                                     kCompressionFormat));
       if (!buffer->get()) {
         return Status::Corruption("Corrupted compressed blob", "Bzip2");
       }
