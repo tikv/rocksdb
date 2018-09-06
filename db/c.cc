@@ -4044,6 +4044,70 @@ const char* rocksdb_pinnableslice_value(const rocksdb_pinnableslice_t* v,
   *vlen = v->rep.size();
   return v->rep.data();
 }
+
+// TitanDB
+
+#include "utilities/titandb/db.h"
+
+using rocksdb::titandb::TitanDB;
+using rocksdb::titandb::TitanOptions;
+
+struct titandb_options_t { TitanOptions rep; };
+
+rocksdb_t* titandb_open(const titandb_options_t* options,
+                        const char* name, char** errptr) {
+  TitanDB* db;
+  if (SaveError(errptr, TitanDB::Open(options->rep, name, &db))) {
+    return nullptr;
+  }
+  rocksdb_t* result = new rocksdb_t;
+  result->rep = db;
+  return result;
+}
+
+titandb_options_t* titandb_options_create() {
+  return new titandb_options_t;
+}
+
+void titandb_options_destroy(titandb_options_t* options) {
+  delete options;
+}
+
+void titandb_options_set_rocksdb(
+    titandb_options_t* options, rocksdb_options_t* rocksdb) {
+  options->rep = rocksdb->rep;
+}
+
+void titandb_options_set_dirname(
+    titandb_options_t* options, const char* name) {
+  options->rep.dirname = name;
+}
+
+void titandb_options_set_min_blob_size(
+    titandb_options_t* options, uint64_t size) {
+  options->rep.min_blob_size = size;
+}
+
+void titandb_options_set_blob_file_compression(
+    titandb_options_t* options, int compression) {
+  options->rep.blob_file_compression =
+      static_cast<CompressionType>(compression);
+}
+
+void titandb_options_set_blob_cache(
+    titandb_options_t* options, rocksdb_cache_t* blob_cache) {
+  if (blob_cache) {
+    options->rep.blob_cache = blob_cache->rep;
+  } else {
+    options->rep.blob_cache.reset();
+  }
+}
+
+void titandb_options_set_disable_background_gc(
+    titandb_options_t* options, unsigned char disable) {
+  options->rep.disable_background_gc = disable;
+}
+
 }  // end extern "C"
 
 #endif  // !ROCKSDB_LITE
