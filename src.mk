@@ -227,6 +227,7 @@ LIB_SOURCES =                                                   \
   utilities/titandb/options.cc                                  \
   utilities/titandb/table_builder.cc                            \
   utilities/titandb/table_factory.cc                            \
+  utilities/titandb/titan_c.cc                                  \
   utilities/titandb/util.cc                                     \
   utilities/titandb/version.cc                                  \
   utilities/titandb/version_builder.cc                          \
