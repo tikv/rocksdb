@@ -53,9 +53,7 @@ class BlobGCJobTest : public testing::Test {
     base_db_ = reinterpret_cast<DBImpl*>(tdb_->GetRootDB());
   }
 
-  void DestoyDB() {
-    db_->Close();
-  }
+  void DestoyDB() { db_->Close(); }
 
   void RunGC() {
     MutexLock l(mutex_);
@@ -76,9 +74,8 @@ class BlobGCJobTest : public testing::Test {
     ASSERT_TRUE(blob_gc);
 
     BlobGCJob blob_gc_job(
-        blob_gc.get(), base_db_, cfh, mutex_, tdb_->db_options_,
-        cf_options, tdb_->env_, EnvOptions(),
-        tdb_->blob_manager_.get(), version_set_);
+        blob_gc.get(), base_db_, cfh, mutex_, tdb_->db_options_, cf_options,
+        tdb_->env_, EnvOptions(), tdb_->blob_manager_.get(), version_set_);
 
     s = blob_gc_job.Prepare();
     ASSERT_OK(s);
@@ -206,9 +203,7 @@ class BlobGCJobTest : public testing::Test {
 
 TEST_F(BlobGCJobTest, DiscardEntry) { TestDiscardEntry(); }
 
-TEST_F(BlobGCJobTest, RunGC) {
-  TestRunGC();
-}
+TEST_F(BlobGCJobTest, RunGC) { TestRunGC(); }
 
 }  // namespace titandb
 }  // namespace rocksdb

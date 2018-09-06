@@ -32,9 +32,7 @@ class TitanDBTest : public testing::Test {
     DeleteDir(env_, dbname_);
   }
 
-  ~TitanDBTest() {
-    Close();
-  }
+  ~TitanDBTest() { Close(); }
 
   void Open() {
     if (cf_names_.empty()) {
@@ -159,7 +157,7 @@ class TitanDBTest : public testing::Test {
     }
   }
 
-  Env* env_ {Env::Default()};
+  Env* env_{Env::Default()};
   std::string dbname_;
   TitanOptions options_;
   TitanDB* db_{nullptr};
@@ -178,8 +176,8 @@ TEST_F(TitanDBTest, Basic) {
       VerifyDB(data);
       AddCF(std::to_string(i));
       if (i % 3 == 0) {
-        DropCF(std::to_string(i-1));
-        DropCF(std::to_string(i-2));
+        DropCF(std::to_string(i - 1));
+        DropCF(std::to_string(i - 2));
       }
     }
     for (uint64_t k = 1; k <= kNumKeys; k++) {

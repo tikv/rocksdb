@@ -32,7 +32,7 @@ void BlobFileBuilder::Add(const BlobRecord& record, BlobHandle* handle) {
   if (ok()) {
     char tailer[kBlobTailerSize];
     tailer[0] = compression;
-    EncodeFixed32(tailer+1, crc32c::Value(output.data(), output.size()));
+    EncodeFixed32(tailer + 1, crc32c::Value(output.data(), output.size()));
     status_ = file_->Append(Slice(tailer, sizeof(tailer)));
   }
 }

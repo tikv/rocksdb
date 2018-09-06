@@ -1,8 +1,8 @@
 #pragma once
 
+#include "rocksdb/options.h"
 #include "rocksdb/slice.h"
 #include "rocksdb/status.h"
-#include "rocksdb/options.h"
 #include "table/format.h"
 
 namespace rocksdb {
@@ -108,10 +108,10 @@ struct BlobFileMeta {
 // checksum             : fixed32
 struct BlobFileFooter {
   // The first 64bits from $(echo titandb/blob | sha1sum).
-  static const uint64_t kMagicNumber {0xcd3f52ea0fe14511ull};
+  static const uint64_t kMagicNumber{0xcd3f52ea0fe14511ull};
   static const uint64_t kEncodedLength{BlockHandle::kMaxEncodedLength + 8 + 4};
 
-  BlockHandle meta_index_handle {BlockHandle::NullBlockHandle()};
+  BlockHandle meta_index_handle{BlockHandle::NullBlockHandle()};
 
   void EncodeTo(std::string* dst) const;
   Status DecodeFrom(Slice* src);
@@ -120,7 +120,7 @@ struct BlobFileFooter {
 };
 
 // A convenient template to decode a const slice.
-template<typename T>
+template <typename T>
 Status DecodeInto(const Slice& src, T* target) {
   auto tmp = src;
   auto s = target->DecodeFrom(&tmp);

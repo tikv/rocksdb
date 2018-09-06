@@ -14,7 +14,7 @@ struct TitanDBOptions : public DBOptions {
 
   // Disable background GC
   //
-  // Default: true
+  // Default: false
   bool disable_background_gc{false};
 
   TitanDBOptions() = default;
@@ -61,12 +61,12 @@ struct TitanCFOptions : public ColumnFamilyOptions {
   // The ratio of how much size of a blob file need to be sample before GC
   //
   // Default: 0.1
-  float sample_flie_size_ratio{0.1};
+  float sample_file_size_ratio{0.1};
 
   // The blob file size less than this option will be mark gc
   //
   // Default: 8MB
-  uint64_t merge_small_file_threashold{8 << 20};
+  uint64_t merge_small_file_threshold{8 << 20};
 
   TitanCFOptions() = default;
   explicit TitanCFOptions(const ColumnFamilyOptions& options)

@@ -22,8 +22,7 @@ class BlobStorage {
 
   BlobStorage(const TitanCFOptions& _options,
               std::shared_ptr<BlobFileCache> _file_cache)
-      : titan_cf_options_(_options),
-        file_cache_(_file_cache) {}
+      : titan_cf_options_(_options), file_cache_(_file_cache) {}
 
   // Gets the blob record pointed by the blob index. The provided
   // buffer is used to store the record data, so the buffer must be
@@ -41,17 +40,14 @@ class BlobStorage {
   std::weak_ptr<BlobFileMeta> FindFile(uint64_t file_number);
 
   void MarkAllFilesForGC() {
-    for (auto& file : files_)
-      file.second->marked_for_gc = true;
+    for (auto& file : files_) file.second->marked_for_gc = true;
   }
 
   const std::vector<GCScore> gc_score() { return gc_score_; }
 
   void ComputeGCScore();
 
-  const TitanCFOptions& titan_cf_options() {
-    return titan_cf_options_;
-  }
+  const TitanCFOptions& titan_cf_options() { return titan_cf_options_; }
 
  private:
   friend class Version;
@@ -88,8 +84,7 @@ class Version {
   std::weak_ptr<BlobStorage> GetBlobStorage(uint32_t cf_id);
 
   void MarkAllFilesForGC() {
-    for(auto& cf : column_families_)
-      cf.second->MarkAllFilesForGC();
+    for (auto& cf : column_families_) cf.second->MarkAllFilesForGC();
   }
 
  private:
