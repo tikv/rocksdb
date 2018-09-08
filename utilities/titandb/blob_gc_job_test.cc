@@ -23,6 +23,8 @@ class BlobGCJobTest : public testing::Test {
     options_.dirname = dbname_ + "/titandb";
     options_.create_if_missing = true;
     options_.disable_background_gc = true;
+    options_.env->CreateDirIfMissing(dbname_);
+    options_.env->CreateDirIfMissing(options_.dirname);
   }
   ~BlobGCJobTest() {}
 
