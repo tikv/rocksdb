@@ -155,9 +155,10 @@ Status BlobFileReader::ReadBlob(const BlobHandle& handle, BlobBuffer* buffer) {
   if (compression == kNoCompression) {
     buffer->assign(std::move(compressed), handle.size);
   } else {
+    Slice input(blob.data(), handle.size);
     Slice output;
     std::unique_ptr<char[]> uncompressed;
-    s = Uncompress(compression, blob, &output, &uncompressed);
+    s = Uncompress(compression, input, &output, &uncompressed);
     if (!s.ok()) return s;
     buffer->assign(std::move(uncompressed), output.size());
   }

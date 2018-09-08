@@ -37,10 +37,11 @@ class BlobFileTest : public testing::Test {
         new BlobFileBuilder(cf_options, file.get()));
 
     for (int i = 0; i < n; i++) {
-      auto id = std::to_string(i);
+      auto key = std::to_string(i);
+      auto value = std::string(1024, i);
       BlobRecord record;
-      record.key = id;
-      record.value = id;
+      record.key = key;
+      record.value = value;
       builder->Add(record, &handles[i]);
       ASSERT_OK(builder->status());
     }
@@ -54,10 +55,11 @@ class BlobFileTest : public testing::Test {
     std::unique_ptr<BlobFilePrefetcher> prefetcher;
     ASSERT_OK(cache.NewPrefetcher(file_number_, file_size, &prefetcher));
     for (int i = 0; i < n; i++) {
-      auto id = std::to_string(i);
+      auto key = std::to_string(i);
+      auto value = std::string(1024, i);
       BlobRecord expect;
-      expect.key = id;
-      expect.value = id;
+      expect.key = key;
+      expect.value = value;
       BlobRecord record;
       PinnableSlice buffer;
       ASSERT_OK(
@@ -88,7 +90,7 @@ TEST_F(BlobFileTest, Basic) {
   TestBlobFile(options);
   options.blob_cache = NewLRUCache(1 << 20);
   TestBlobFile(options);
-  options.blob_file_compression = kZSTD;
+  options.blob_file_compression = kLZ4Compression;
   TestBlobFile(options);
 }
 
