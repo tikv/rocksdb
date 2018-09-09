@@ -58,6 +58,7 @@ class BlobFileIterator {
 
   uint64_t iterate_offset_{0};
   std::vector<char> buffer_;
+  std::unique_ptr<char[]> uncompressed_;
   BlobRecord cur_blob_record_;
   uint64_t cur_record_offset_;
   uint64_t cur_record_size_;
