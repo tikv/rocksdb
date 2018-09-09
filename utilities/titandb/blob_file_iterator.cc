@@ -100,12 +100,11 @@ void BlobFileIterator::GetBlobRecord() {
     return;
   }
   auto compression = static_cast<CompressionType>(*tailer);
-  std::unique_ptr<char[]> uncompressed;
   if (compression == kNoCompression) {
     slice = {buffer_.data(), body_length};
   } else {
     status_ = Uncompress(compression, {buffer_.data(), body_length}, &slice,
-                         &uncompressed);
+                         &uncompressed_);
     if (!status_.ok()) return;
   }
   status_ = DecodeInto(slice, &cur_blob_record_);
