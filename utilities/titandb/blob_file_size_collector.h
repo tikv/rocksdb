@@ -1,5 +1,4 @@
-#ifndef ROCKSDB_BLOB_GC_STATISTIS_H
-#define ROCKSDB_BLOB_GC_STATISTIS_H
+#pragma once
 
 #include "rocksdb/listener.h"
 #include "rocksdb/table_properties.h"
@@ -57,5 +56,3 @@ class BlobDiscardableSizeListener final : public EventListener {
 
 }  // namespace titandb
 }  // namespace rocksdb
-
-#endif  // ROCKSDB_BLOB_GC_STATISTIS_H

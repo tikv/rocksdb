@@ -130,7 +130,7 @@ class BlobGCJobTest : public testing::Test {
     NewDB();
     for (int i = 0; i < MAX_KEY_NUM; i++) {
       std::string key = std::to_string(i);
-      std::string value(key.data(), 10240);
+      std::string value(10240, i);
       db_->Put(WriteOptions(), key, value);
     }
     FlushOptions flush_options;

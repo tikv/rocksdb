@@ -1,5 +1,4 @@
-#ifndef ROCKSDB_BLOB_FILE_ITERATOR_H
-#define ROCKSDB_BLOB_FILE_ITERATOR_H
+#pragma once
 
 #include <cstdint>
 #include <queue>
@@ -111,5 +110,3 @@ class BlobFileMergeIterator {
 
 }  // namespace titandb
 }  // namespace rocksdb
-
-#endif  // ROCKSDB_BLOB_FILE_ITERATOR_H
