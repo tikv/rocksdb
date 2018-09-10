@@ -1,5 +1,4 @@
-#ifndef ROCKSDB_BLOB_GC_PICKER_H
-#define ROCKSDB_BLOB_GC_PICKER_H
+#pragma once
 
 #include <memory>
 
@@ -47,5 +46,3 @@ class BasicBlobGCPicker final : public BlobGCPicker {
 
 }  // namespace titandb
 }  // namespace rocksdb
-
-#endif  // ROCKSDB_BLOB_GC_PICKER_H
