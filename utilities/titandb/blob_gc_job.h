@@ -1,5 +1,4 @@
-#ifndef ROCKSDB_BLOB_GC_JOB_H
-#define ROCKSDB_BLOB_GC_JOB_H
+#pragma once
 
 #include "db/db_impl.h"
 #include "rocksdb/status.h"
@@ -64,5 +63,3 @@ class BlobGCJob {
 
 }  // namespace titandb
 }  // namespace rocksdb
-
-#endif  // ROCKSDB_BLOB_GC_JOB_H
