@@ -1,5 +1,4 @@
-#ifndef ROCKSDB_BLOB_GC_H
-#define ROCKSDB_BLOB_GC_H
+#pragma once
 
 #include <memory>
 
@@ -38,5 +37,3 @@ struct GCScore {
 
 }  // namespace titandb
 }  // namespace rocksdb
-
-#endif  // ROCKSDB_BLOB_GC_H
