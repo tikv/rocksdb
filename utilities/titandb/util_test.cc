@@ -6,18 +6,16 @@ namespace titandb {
 class UtilTest : public testing::Test {};
 
 TEST(UtilTest, Compression) {
-  Slice input("aaaaaaaaaaaaaaaaaaaaaaaaaa");
+  std::string input(1024, 'a');
   for (auto compression :
        {kSnappyCompression, kZlibCompression, kLZ4Compression, kZSTD}) {
-    std::string buffer;
     CompressionContext compression_ctx(compression);
+    std::string buffer;
     auto compressed = Compress(compression_ctx, input, &buffer, &compression);
     ASSERT_TRUE(compressed.size() <= input.size());
     UncompressionContext uncompression_ctx(compression);
-    Slice output;
-    std::unique_ptr<char[]> uncompressed;
-    ASSERT_OK(
-        Uncompress(uncompression_ctx, compressed, &output, &uncompressed));
+    OwnedSlice output;
+    ASSERT_OK(Uncompress(uncompression_ctx, compressed, &output));
     ASSERT_EQ(output, input);
   }
 }
