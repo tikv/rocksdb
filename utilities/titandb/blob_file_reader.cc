@@ -2,7 +2,6 @@
 
 #include "util/crc32c.h"
 #include "util/filename.h"
-#include "utilities/titandb/util.h"
 
 namespace rocksdb {
 namespace titandb {
@@ -25,31 +24,6 @@ Status NewBlobFileReader(uint64_t file_number, uint64_t readahead_size,
 
 const uint64_t kMinReadaheadSize = 4 << 10;
 const uint64_t kMaxReadaheadSize = 256 << 10;
-
-// Represents a buffer cached in the blob cache.
-class BlobBuffer {
- public:
-  Slice slice() const { return Slice(data_.get(), size_); }
-
-  size_t cache_size() const { return size_ + sizeof(size_); }
-
-  void assign(std::unique_ptr<char[]> data, size_t size) {
-    data_ = std::move(data);
-    size_ = size;
-  }
-
-  void release(PinnableSlice* buffer) {
-    buffer->PinSlice(slice(), cleanup, data_.release(), nullptr);
-  }
-
-  static void cleanup(void* arg1, void* /*arg2*/) {
-    delete[] reinterpret_cast<char*>(arg1);
-  }
-
- private:
-  std::unique_ptr<char[]> data_;
-  size_t size_;
-};
 
 namespace {
 
@@ -113,33 +87,33 @@ Status BlobFileReader::Get(const ReadOptions& /*options*/,
     EncodeBlobCache(&cache_key, cache_prefix_, handle.offset);
     cache_handle = cache_->Lookup(cache_key);
     if (cache_handle) {
-      auto blob = reinterpret_cast<BlobBuffer*>(cache_->Value(cache_handle));
-      auto slice = blob->slice();
-      buffer->PinSlice(slice, UnrefCacheHandle, cache_.get(), cache_handle);
-      return DecodeInto(slice, record);
+      auto blob = reinterpret_cast<OwnedSlice*>(cache_->Value(cache_handle));
+      buffer->PinSlice(*blob, UnrefCacheHandle, cache_.get(), cache_handle);
+      return DecodeInto(*blob, record);
     }
   }
 
-  BlobBuffer blob;
+  OwnedSlice blob;
   s = ReadBlob(handle, &blob);
   if (!s.ok()) return s;
-  s = DecodeInto(blob.slice(), record);
+  s = DecodeInto(blob, record);
   if (!s.ok()) return s;
 
   if (cache_) {
-    auto cache_value = new BlobBuffer(std::move(blob));
-    cache_->Insert(cache_key, cache_value, cache_value->cache_size(),
-                   &DeleteCacheValue<BlobBuffer>, &cache_handle);
-    buffer->PinSlice(cache_value->slice(), UnrefCacheHandle, cache_.get(),
+    auto cache_value = new OwnedSlice(std::move(blob));
+    auto cache_size = cache_value->size() + sizeof(*cache_value);
+    cache_->Insert(cache_key, cache_value, cache_size,
+                   &DeleteCacheValue<OwnedSlice>, &cache_handle);
+    buffer->PinSlice(*cache_value, UnrefCacheHandle, cache_.get(),
                      cache_handle);
   } else {
-    blob.release(buffer);
+    buffer->PinSlice(blob, OwnedSlice::CleanupFunc, blob.release(), nullptr);
   }
 
   return s;
 }
 
-Status BlobFileReader::ReadBlob(const BlobHandle& handle, BlobBuffer* buffer) {
+Status BlobFileReader::ReadBlob(const BlobHandle& handle, OwnedSlice* output) {
   Slice blob;
   size_t blob_size = handle.size + kBlobTailerSize;
   std::unique_ptr<char[]> compressed(new char[blob_size]);
@@ -153,15 +127,12 @@ Status BlobFileReader::ReadBlob(const BlobHandle& handle, BlobBuffer* buffer) {
   }
   auto compression = static_cast<CompressionType>(*tailer);
   if (compression == kNoCompression) {
-    buffer->assign(std::move(compressed), handle.size);
+    output->reset(std::move(compressed), handle.size);
   } else {
     UncompressionContext ctx(compression);
     Slice input(blob.data(), handle.size);
-    Slice output;
-    std::unique_ptr<char[]> uncompressed;
-    s = Uncompress(ctx, input, &output, &uncompressed);
+    s = Uncompress(ctx, input, output);
     if (!s.ok()) return s;
-    buffer->assign(std::move(uncompressed), output.size());
   }
 
   return s;
