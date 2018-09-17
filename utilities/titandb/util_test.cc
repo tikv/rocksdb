@@ -10,11 +10,14 @@ TEST(UtilTest, Compression) {
   for (auto compression :
        {kSnappyCompression, kZlibCompression, kLZ4Compression, kZSTD}) {
     std::string buffer;
-    auto compressed = Compress(&compression, input, &buffer);
+    CompressionContext compression_ctx(compression);
+    auto compressed = Compress(compression_ctx, input, &buffer, &compression);
     ASSERT_TRUE(compressed.size() <= input.size());
+    UncompressionContext uncompression_ctx(compression);
     Slice output;
     std::unique_ptr<char[]> uncompressed;
-    ASSERT_OK(Uncompress(compression, compressed, &output, &uncompressed));
+    ASSERT_OK(
+        Uncompress(uncompression_ctx, compressed, &output, &uncompressed));
     ASSERT_EQ(output, input);
   }
 }

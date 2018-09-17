@@ -66,7 +66,7 @@ Status VersionSet::Recover() {
     s = env_->NewSequentialFile(file_name, &f,
                                 env_->OptimizeForManifestRead(env_options_));
     if (!s.ok()) return s;
-    file.reset(new SequentialFileReader(std::move(f)));
+    file.reset(new SequentialFileReader(std::move(f), file_name));
   }
 
   bool has_next_file_number = false;

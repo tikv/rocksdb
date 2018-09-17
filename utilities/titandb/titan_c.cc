@@ -58,7 +58,7 @@ void titandb_options_destroy(titandb_options_t* options) { delete options; }
 
 void titandb_options_set_rocksdb(titandb_options_t* options,
                                  rocksdb_options_t* rocksdb) {
-  options->rep = rocksdb->rep;
+  options->rep = TitanOptions(rocksdb->rep);
 }
 
 void titandb_options_set_dirname(titandb_options_t* options, const char* name) {
