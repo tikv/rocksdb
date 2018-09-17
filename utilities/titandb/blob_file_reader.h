@@ -3,11 +3,10 @@
 #include "util/file_reader_writer.h"
 #include "utilities/titandb/blob_format.h"
 #include "utilities/titandb/options.h"
+#include "utilities/titandb/util.h"
 
 namespace rocksdb {
 namespace titandb {
-
-class BlobBuffer;
 
 Status NewBlobFileReader(uint64_t file_number, uint64_t readahead_size,
                          const TitanDBOptions& db_options,
@@ -35,7 +34,7 @@ class BlobFileReader {
   BlobFileReader(const TitanCFOptions& options,
                  std::unique_ptr<RandomAccessFileReader> file);
 
-  Status ReadBlob(const BlobHandle& handle, BlobBuffer* buffer);
+  Status ReadBlob(const BlobHandle& handle, OwnedSlice* output);
 
   TitanCFOptions options_;
   std::unique_ptr<RandomAccessFileReader> file_;

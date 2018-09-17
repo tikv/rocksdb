@@ -79,8 +79,9 @@ Slice Compress(const CompressionContext& ctx, const Slice& input,
 }
 
 Status Uncompress(const UncompressionContext& ctx, const Slice& input,
-                  Slice* output, std::unique_ptr<char[]>* buffer) {
+                  OwnedSlice* output) {
   int size = 0;
+  std::unique_ptr<char[]> ubuf;
   assert(ctx.type() != kNoCompression);
 
   switch (ctx.type()) {
@@ -89,59 +90,59 @@ Status Uncompress(const UncompressionContext& ctx, const Slice& input,
       if (!Snappy_GetUncompressedLength(input.data(), input.size(), &usize)) {
         return Status::Corruption("Corrupted compressed blob", "Snappy");
       }
-      buffer->reset(new char[usize]);
-      if (!Snappy_Uncompress(input.data(), input.size(), buffer->get())) {
+      ubuf.reset(new char[usize]);
+      if (!Snappy_Uncompress(input.data(), input.size(), ubuf.get())) {
         return Status::Corruption("Corrupted compressed blob", "Snappy");
       }
-      *output = Slice(buffer->get(), usize);
+      output->reset(std::move(ubuf), usize);
       break;
     }
     case kZlibCompression:
-      buffer->reset(Zlib_Uncompress(ctx, input.data(), input.size(), &size,
-                                    kCompressionFormat));
-      if (!buffer->get()) {
+      ubuf.reset(Zlib_Uncompress(ctx, input.data(), input.size(), &size,
+                                 kCompressionFormat));
+      if (!ubuf.get()) {
         return Status::Corruption("Corrupted compressed blob", "Zlib");
       }
-      *output = Slice(buffer->get(), size);
+      output->reset(std::move(ubuf), size);
       break;
     case kBZip2Compression:
-      buffer->reset(BZip2_Uncompress(input.data(), input.size(), &size,
-                                     kCompressionFormat));
-      if (!buffer->get()) {
+      ubuf.reset(BZip2_Uncompress(input.data(), input.size(), &size,
+                                  kCompressionFormat));
+      if (!ubuf.get()) {
         return Status::Corruption("Corrupted compressed blob", "Bzip2");
       }
-      *output = Slice(buffer->get(), size);
+      output->reset(std::move(ubuf), size);
       break;
     case kLZ4Compression:
-      buffer->reset(LZ4_Uncompress(ctx, input.data(), input.size(), &size,
-                                   kCompressionFormat));
-      if (!buffer->get()) {
+      ubuf.reset(LZ4_Uncompress(ctx, input.data(), input.size(), &size,
+                                kCompressionFormat));
+      if (!ubuf.get()) {
         return Status::Corruption("Corrupted compressed blob", "LZ4");
       }
-      *output = Slice(buffer->get(), size);
+      output->reset(std::move(ubuf), size);
       break;
     case kLZ4HCCompression:
-      buffer->reset(LZ4_Uncompress(ctx, input.data(), input.size(), &size,
-                                   kCompressionFormat));
-      if (!buffer->get()) {
+      ubuf.reset(LZ4_Uncompress(ctx, input.data(), input.size(), &size,
+                                kCompressionFormat));
+      if (!ubuf.get()) {
         return Status::Corruption("Corrupted compressed blob", "LZ4HC");
       }
-      *output = Slice(buffer->get(), size);
+      output->reset(std::move(ubuf), size);
       break;
     case kXpressCompression:
-      buffer->reset(XPRESS_Uncompress(input.data(), input.size(), &size));
-      if (!buffer->get()) {
+      ubuf.reset(XPRESS_Uncompress(input.data(), input.size(), &size));
+      if (!ubuf.get()) {
         return Status::Corruption("Corrupted compressed blob", "Xpress");
       }
-      *output = Slice(buffer->get(), size);
+      output->reset(std::move(ubuf), size);
       break;
     case kZSTD:
     case kZSTDNotFinalCompression:
-      buffer->reset(ZSTD_Uncompress(ctx, input.data(), input.size(), &size));
-      if (!buffer->get()) {
+      ubuf.reset(ZSTD_Uncompress(ctx, input.data(), input.size(), &size));
+      if (!ubuf.get()) {
         return Status::Corruption("Corrupted compressed blob", "ZSTD");
       }
-      *output = Slice(buffer->get(), size);
+      output->reset(std::move(ubuf), size);
       break;
     default:
       return Status::Corruption("bad compression type");
