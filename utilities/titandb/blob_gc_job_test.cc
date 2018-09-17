@@ -32,15 +32,17 @@ class BlobGCJobTest : public testing::Test {
     std::vector<std::string> filenames;
     options_.env->GetChildren(options_.dirname, &filenames);
     for (auto& fname : filenames) {
-      if (fname != "." && fname != "..")
+      if (fname != "." && fname != "..") {
         ASSERT_OK(options_.env->DeleteFile(options_.dirname + "/" + fname));
+      }
     }
     ASSERT_OK(options_.env->DeleteDir(options_.dirname));
     filenames.clear();
     options_.env->GetChildren(dbname_, &filenames);
     for (auto& fname : filenames) {
-      if (fname != "." && fname != "..")
+      if (fname != "." && fname != "..") {
         ASSERT_OK(options_.env->DeleteFile(dbname_ + "/" + fname));
+      }
     }
   }
 

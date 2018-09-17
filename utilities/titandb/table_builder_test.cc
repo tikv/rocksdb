@@ -134,7 +134,7 @@ class TableBuilderTest : public testing::Test {
     NewBaseFileReader(&file);
     uint64_t file_size = 0;
     ASSERT_OK(env_->GetFileSize(file->file_name(), &file_size));
-    TableReaderOptions options(cf_ioptions_, env_options_,
+    TableReaderOptions options(cf_ioptions_, nullptr, env_options_,
                                cf_ioptions_.internal_comparator);
     ASSERT_OK(table_factory_->NewTableReader(options, std::move(file),
                                              file_size, result));
@@ -142,10 +142,10 @@ class TableBuilderTest : public testing::Test {
 
   void NewTableBuilder(WritableFileWriter* file,
                        std::unique_ptr<TableBuilder>* result) {
-    TableBuilderOptions options(cf_ioptions_, cf_ioptions_.internal_comparator,
-                                &collectors_, kNoCompression,
-                                CompressionOptions(), nullptr, false,
-                                kDefaultColumnFamilyName, 0);
+    TableBuilderOptions options(cf_ioptions_, cf_moptions_,
+                                cf_ioptions_.internal_comparator, &collectors_,
+                                kNoCompression, CompressionOptions(), nullptr,
+                                false, kDefaultColumnFamilyName, 0);
     result->reset(table_factory_->NewTableBuilder(options, 0, file));
   }
 
