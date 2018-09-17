@@ -37,7 +37,9 @@ class BlobFileBuilder {
   // is building in "*file". Does not close the file. It is up to the
   // caller to sync and close the file after calling Finish().
   BlobFileBuilder(const TitanCFOptions& options, WritableFileWriter* file)
-      : options_(options), file_(file) {}
+      : options_(options),
+        file_(file),
+        compression_ctx_(options_.blob_file_compression) {}
 
   // Adds the record to the file and points the handle to it.
   void Add(const BlobRecord& record, BlobHandle* handle);
@@ -63,6 +65,7 @@ class BlobFileBuilder {
   Status status_;
   std::string buffer_;
   std::string compressed_buffer_;
+  CompressionContext compression_ctx_;
 };
 
 }  // namespace titandb

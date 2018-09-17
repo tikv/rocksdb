@@ -75,7 +75,11 @@ struct TitanCFOptions : public ColumnFamilyOptions {
   std::string ToString() const;
 };
 
-struct TitanOptions : public TitanDBOptions, public TitanCFOptions {};
+struct TitanOptions : public TitanDBOptions, public TitanCFOptions {
+  TitanOptions() = default;
+  explicit TitanOptions(const Options& options)
+      : TitanDBOptions(options), TitanCFOptions(options) {}
+};
 
 }  // namespace titandb
 }  // namespace rocksdb
