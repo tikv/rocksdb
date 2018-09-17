@@ -3,7 +3,6 @@
 #include "rocksdb/cache.h"
 #include "util/compression.h"
 #include "util/testharness.h"
-#include "utilities/titandb/blob_format.h"
 
 namespace rocksdb {
 namespace titandb {
@@ -16,6 +15,29 @@ void CheckCodec(const T& input) {
   ASSERT_OK(DecodeInto(buffer, &output));
   ASSERT_EQ(output, input);
 }
+
+// A slice pointed to an owned buffer.
+class OwnedSlice : public Slice {
+ public:
+  void reset(std::unique_ptr<char[]> _data, size_t _size) {
+    data_ = _data.get();
+    size_ = _size;
+    buffer_ = std::move(_data);
+  }
+
+  char* release() {
+    data_ = nullptr;
+    size_ = 0;
+    return buffer_.release();
+  }
+
+  static void CleanupFunc(void* buffer, void*) {
+    delete[] reinterpret_cast<char*>(buffer);
+  }
+
+ private:
+  std::unique_ptr<char[]> buffer_;
+};
 
 // Compresses the input data according to the compression context.
 // Returns a slice with the output data and sets "*type" to the output
@@ -32,7 +54,7 @@ Slice Compress(const CompressionContext& ctx, const Slice& input,
 // If successful, fills "*buffer" with the uncompressed data and
 // points "*output" to it.
 Status Uncompress(const UncompressionContext& ctx, const Slice& input,
-                  Slice* output, std::unique_ptr<char[]>* buffer);
+                  OwnedSlice* output);
 
 void UnrefCacheHandle(void* cache, void* handle);
 
