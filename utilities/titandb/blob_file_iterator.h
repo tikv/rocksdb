@@ -56,6 +56,7 @@ class BlobFileIterator {
   Status status_;
   bool valid_{false};
 
+  BlobDecoder decoder_;
   uint64_t iterate_offset_{0};
   std::vector<char> buffer_;
   OwnedSlice uncompressed_;

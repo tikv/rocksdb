@@ -4,18 +4,17 @@
 #include "rocksdb/slice.h"
 #include "rocksdb/status.h"
 #include "table/format.h"
+#include "utilities/titandb/util.h"
 
 namespace rocksdb {
 namespace titandb {
 
-// 8 bytes body length
-const uint32_t kBlobHeaderSize = 8;
-
+// Blob header format:
+//
+// crc          : fixed32
+// size         : fixed32
 // compression  : char
-// checksum     : fixed32
-const uint32_t kBlobTailerSize = 5;
-
-const uint32_t kBlobFixedSize = kBlobHeaderSize + kBlobTailerSize;
+const uint64_t kBlobHeaderSize = 9;
 
 // Blob record format:
 //
@@ -24,14 +23,44 @@ const uint32_t kBlobFixedSize = kBlobHeaderSize + kBlobTailerSize;
 struct BlobRecord {
   Slice key;
   Slice value;
-  struct MetaData {
-    SequenceNumber seq_num;
-  } metadata;
 
   void EncodeTo(std::string* dst) const;
   Status DecodeFrom(Slice* src);
 
   friend bool operator==(const BlobRecord& lhs, const BlobRecord& rhs);
+};
+
+class BlobEncoder {
+ public:
+  BlobEncoder(CompressionType compression) : compression_ctx_(compression) {}
+
+  void EncodeRecord(const BlobRecord& record);
+
+  Slice GetHeader() const { return Slice(header_, sizeof(header_)); }
+  Slice GetRecord() const { return record_; }
+
+  size_t GetEncodedSize() const { return sizeof(header_) + record_.size(); }
+
+ private:
+  char header_[kBlobHeaderSize];
+  Slice record_;
+  std::string record_buffer_;
+  std::string compressed_buffer_;
+  CompressionContext compression_ctx_;
+};
+
+class BlobDecoder {
+ public:
+  Status DecodeHeader(Slice* src);
+  Status DecodeRecord(Slice* src, BlobRecord* record, OwnedSlice* buffer);
+
+  size_t GetRecordSize() const { return record_size_; }
+
+ private:
+  uint32_t crc_{0};
+  uint32_t header_crc_{0};
+  uint32_t record_size_{0};
+  CompressionType compression_{kNoCompression};
 };
 
 // Blob handle format:

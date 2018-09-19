@@ -33,6 +33,56 @@ bool operator==(const BlobRecord& lhs, const BlobRecord& rhs) {
   return lhs.key == rhs.key && lhs.value == rhs.value;
 }
 
+void BlobEncoder::EncodeRecord(const BlobRecord& record) {
+  record_buffer_.clear();
+  compressed_buffer_.clear();
+
+  CompressionType compression;
+  record.EncodeTo(&record_buffer_);
+  record_ = Compress(compression_ctx_, record_buffer_, &compressed_buffer_,
+                     &compression);
+
+  EXPECT(record_.size() < std::numeric_limits<uint32_t>::max());
+  EncodeFixed32(header_ + 4, record_.size());
+  header_[8] = compression;
+
+  uint32_t crc = crc32c::Value(header_ + 4, sizeof(header_) - 4);
+  crc = crc32c::Extend(crc, record_.data(), record_.size());
+  EncodeFixed32(header_, crc);
+}
+
+Status BlobDecoder::DecodeHeader(Slice* src) {
+  if (!GetFixed32(src, &crc_)) {
+    return Status::Corruption("BlobHeader");
+  }
+  header_crc_ = crc32c::Value(src->data(), kBlobHeaderSize - 4);
+
+  unsigned char compression;
+  if (!GetFixed32(src, &record_size_) || !GetChar(src, &compression)) {
+    return Status::Corruption("BlobHeader");
+  }
+  compression_ = static_cast<CompressionType>(compression);
+
+  return Status::OK();
+}
+
+Status BlobDecoder::DecodeRecord(Slice* src, BlobRecord* record,
+                                 OwnedSlice* buffer) {
+  Slice input(src->data(), record_size_);
+  src->remove_prefix(record_size_);
+  uint32_t crc = crc32c::Extend(header_crc_, input.data(), input.size());
+  if (crc != crc_) {
+    return Status::Corruption("BlobRecord", "checksum mismatch");
+  }
+
+  if (compression_ == kNoCompression) {
+    return DecodeInto(input, record);
+  }
+  UncompressionContext ctx(compression_);
+  TRY(Uncompress(ctx, input, buffer));
+  return DecodeInto(*buffer, record);
+}
+
 void BlobHandle::EncodeTo(std::string* dst) const {
   PutVarint64(dst, offset);
   PutVarint64(dst, size);
