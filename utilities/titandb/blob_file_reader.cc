@@ -52,21 +52,17 @@ Status BlobFileReader::Open(const TitanCFOptions& options,
     return Status::Corruption("file is too short to be a blob file");
   }
 
-  char footer_space[BlobFileFooter::kEncodedLength];
-  Slice footer_input;
-  Status s =
-      file->Read(file_size - BlobFileFooter::kEncodedLength,
-                 BlobFileFooter::kEncodedLength, &footer_input, footer_space);
-  if (!s.ok()) return s;
+  FixedSlice<BlobFileFooter::kEncodedLength> buffer;
+  TRY(file->Read(file_size - BlobFileFooter::kEncodedLength,
+                 BlobFileFooter::kEncodedLength, &buffer, buffer.get()));
 
   BlobFileFooter footer;
-  s = DecodeInto(footer_input, &footer);
-  if (!s.ok()) return s;
+  TRY(DecodeInto(buffer, &footer));
 
   auto reader = new BlobFileReader(options, std::move(file));
   reader->footer_ = footer;
   result->reset(reader);
-  return s;
+  return Status::OK();
 }
 
 BlobFileReader::BlobFileReader(const TitanCFOptions& options,
@@ -80,7 +76,6 @@ BlobFileReader::BlobFileReader(const TitanCFOptions& options,
 Status BlobFileReader::Get(const ReadOptions& /*options*/,
                            const BlobHandle& handle, BlobRecord* record,
                            PinnableSlice* buffer) {
-  Status s;
   std::string cache_key;
   Cache::Handle* cache_handle = nullptr;
   if (cache_) {
@@ -94,10 +89,7 @@ Status BlobFileReader::Get(const ReadOptions& /*options*/,
   }
 
   OwnedSlice blob;
-  s = ReadBlob(handle, &blob);
-  if (!s.ok()) return s;
-  s = DecodeInto(blob, record);
-  if (!s.ok()) return s;
+  TRY(ReadRecord(handle, record, &blob));
 
   if (cache_) {
     auto cache_value = new OwnedSlice(std::move(blob));
@@ -110,32 +102,20 @@ Status BlobFileReader::Get(const ReadOptions& /*options*/,
     buffer->PinSlice(blob, OwnedSlice::CleanupFunc, blob.release(), nullptr);
   }
 
-  return s;
+  return Status::OK();
 }
 
-Status BlobFileReader::ReadBlob(const BlobHandle& handle, OwnedSlice* output) {
+Status BlobFileReader::ReadRecord(const BlobHandle& handle, BlobRecord* record,
+                                  OwnedSlice* buffer) {
   Slice blob;
-  size_t blob_size = handle.size + kBlobTailerSize;
-  std::unique_ptr<char[]> compressed(new char[blob_size]);
-  Status s = file_->Read(handle.offset, blob_size, &blob, compressed.get());
-  if (!s.ok()) return s;
+  std::unique_ptr<char[]> ubuf(new char[handle.size]);
+  TRY(file_->Read(handle.offset, handle.size, &blob, ubuf.get()));
 
-  auto tailer = blob.data() + handle.size;
-  auto checksum = DecodeFixed32(tailer + 1);
-  if (crc32c::Value(blob.data(), handle.size) != checksum) {
-    return Status::Corruption("BlobRecord", "checksum");
-  }
-  auto compression = static_cast<CompressionType>(*tailer);
-  if (compression == kNoCompression) {
-    output->reset(std::move(compressed), handle.size);
-  } else {
-    UncompressionContext ctx(compression);
-    Slice input(blob.data(), handle.size);
-    s = Uncompress(ctx, input, output);
-    if (!s.ok()) return s;
-  }
-
-  return s;
+  BlobDecoder decoder;
+  TRY(decoder.DecodeHeader(&blob));
+  buffer->reset(std::move(ubuf), blob);
+  TRY(decoder.DecodeRecord(&blob, record, buffer));
+  return Status::OK();
 }
 
 Status BlobFilePrefetcher::Get(const ReadOptions& options,

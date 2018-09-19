@@ -57,18 +57,16 @@ void BlobFileIterator::IterateForPrev(uint64_t offset) {
     return;
   }
 
-  Slice slice;
-  uint64_t body_length;
-  uint64_t total_length;
+  uint64_t total_length = 0;
+  FixedSlice<kBlobHeaderSize> header_buffer;
   for (iterate_offset_ = 0; iterate_offset_ < offset;
        iterate_offset_ += total_length) {
-    Status s = file_->Read(iterate_offset_, kBlobHeaderSize, &slice,
-                           reinterpret_cast<char*>(&body_length));
-    if (!s.ok()) {
-      status_ = s;
-      return;
-    }
-    total_length = kBlobHeaderSize + body_length + kBlobTailerSize;
+    status_ = file_->Read(iterate_offset_, kBlobHeaderSize, &header_buffer,
+                          header_buffer.get());
+    if (!status_.ok()) return;
+    status_ = decoder_.DecodeHeader(&header_buffer);
+    if (!status_.ok()) return;
+    total_length = kBlobHeaderSize + decoder_.GetRecordSize();
   }
 
   if (iterate_offset_ > offset) iterate_offset_ -= total_length;
@@ -76,44 +74,27 @@ void BlobFileIterator::IterateForPrev(uint64_t offset) {
 }
 
 void BlobFileIterator::GetBlobRecord() {
-  // read header
-  Slice slice;
-  uint64_t body_length;
-  status_ = file_->Read(iterate_offset_, kBlobHeaderSize, &slice,
-                        reinterpret_cast<char*>(&body_length));
+  FixedSlice<kBlobHeaderSize> header_buffer;
+  status_ = file_->Read(iterate_offset_, kBlobHeaderSize, &header_buffer,
+                        header_buffer.get());
   if (!status_.ok()) return;
-  body_length = *reinterpret_cast<const uint64_t*>(slice.data());
-  assert(body_length > 0);
-  iterate_offset_ += kBlobHeaderSize;
-
-  // read body and tailer
-  uint64_t left_size = body_length + kBlobTailerSize;
-  buffer_.reserve(left_size);
-  status_ = file_->Read(iterate_offset_, left_size, &slice, buffer_.data());
+  status_ = decoder_.DecodeHeader(&header_buffer);
   if (!status_.ok()) return;
 
-  // parse body and tailer
-  auto tailer = buffer_.data() + body_length;
-  auto checksum = DecodeFixed32(tailer + 1);
-  if (crc32c::Value(buffer_.data(), body_length) != checksum) {
-    status_ = Status::Corruption("BlobRecord", "checksum");
-    return;
+  Slice record_slice;
+  auto record_size = decoder_.GetRecordSize();
+  buffer_.reserve(record_size);
+  status_ = file_->Read(iterate_offset_ + kBlobHeaderSize, record_size,
+                        &record_slice, buffer_.data());
+  if (status_.ok()) {
+    status_ =
+        decoder_.DecodeRecord(&record_slice, &cur_blob_record_, &uncompressed_);
   }
-  auto compression = static_cast<CompressionType>(*tailer);
-  if (compression == kNoCompression) {
-    slice = {buffer_.data(), body_length};
-  } else {
-    UncompressionContext ctx(compression);
-    status_ = Uncompress(ctx, {buffer_.data(), body_length}, &uncompressed_);
-    if (!status_.ok()) return;
-    slice = uncompressed_;
-  }
-  status_ = DecodeInto(slice, &cur_blob_record_);
   if (!status_.ok()) return;
 
   cur_record_offset_ = iterate_offset_;
-  cur_record_size_ = body_length;
-  iterate_offset_ += left_size;
+  cur_record_size_ = kBlobHeaderSize + record_size;
+  iterate_offset_ += cur_record_size_;
   valid_ = true;
 }
 
@@ -132,7 +113,7 @@ void BlobFileIterator::PrefetchAndGet() {
     readahead_size_ = kMinReadaheadSize;
   }
   auto min_blob_size =
-      iterate_offset_ + kBlobFixedSize + titan_cf_options_.min_blob_size;
+      iterate_offset_ + kBlobHeaderSize + titan_cf_options_.min_blob_size;
   if (readahead_end_offset_ <= min_blob_size) {
     while (readahead_end_offset_ + readahead_size_ <= min_blob_size &&
            readahead_size_ < kMaxReadaheadSize)
