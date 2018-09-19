@@ -133,7 +133,7 @@ bool BlobGCJob::DoSample(const BlobFileMeta* file) {
        iterated_size < sample_size_window && iter.status().ok() && iter.Valid();
        iter.Next()) {
     BlobIndex blob_index = iter.GetBlobIndex();
-    uint64_t total_length = blob_index.blob_handle.size + kBlobFixedSize;
+    uint64_t total_length = blob_index.blob_handle.size;
     iterated_size += total_length;
     if (DiscardEntry(iter.key(), blob_index)) {
       discardable_size += total_length;

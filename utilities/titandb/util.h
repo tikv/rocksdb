@@ -7,6 +7,17 @@
 namespace rocksdb {
 namespace titandb {
 
+#define TRY(expr)          \
+  do {                     \
+    auto s = (expr);       \
+    if (!s.ok()) return s; \
+  } while (0)
+
+#define EXPECT(expr)      \
+  do {                    \
+    if (!(expr)) abort(); \
+  } while (0)
+
 template <typename T>
 void CheckCodec(const T& input) {
   std::string buffer;
@@ -25,6 +36,12 @@ class OwnedSlice : public Slice {
     buffer_ = std::move(_data);
   }
 
+  void reset(std::unique_ptr<char[]> buffer, const Slice& s) {
+    data_ = s.data();
+    size_ = s.size();
+    buffer_ = std::move(buffer);
+  }
+
   char* release() {
     data_ = nullptr;
     size_ = 0;
@@ -37,6 +54,18 @@ class OwnedSlice : public Slice {
 
  private:
   std::unique_ptr<char[]> buffer_;
+};
+
+// A slice pointed to a fixed size buffer.
+template <size_t T>
+class FixedSlice : public Slice {
+ public:
+  FixedSlice() : Slice(buffer_, T) {}
+
+  char* get() { return buffer_; }
+
+ private:
+  char buffer_[T];
 };
 
 // Compresses the input data according to the compression context.
