@@ -28,6 +28,12 @@ class TitanDB : public StackableDB {
   TitanDB() : StackableDB(nullptr) {}
 
   using StackableDB::CreateColumnFamily;
+  Status CreateColumnFamily(const ColumnFamilyOptions& options,
+                            const std::string& name,
+                            ColumnFamilyHandle** handle) override {
+    TitanCFDescriptor desc(name, TitanCFOptions(options));
+    return CreateColumnFamily(desc, handle);
+  }
   Status CreateColumnFamily(const TitanCFDescriptor& desc,
                             ColumnFamilyHandle** handle) {
     std::vector<ColumnFamilyHandle*> handles;
@@ -39,6 +45,25 @@ class TitanDB : public StackableDB {
   }
 
   using StackableDB::CreateColumnFamilies;
+  Status CreateColumnFamilies(
+      const ColumnFamilyOptions& options,
+      const std::vector<std::string>& names,
+      std::vector<ColumnFamilyHandle*>* handles) override {
+    std::vector<TitanCFDescriptor> descs;
+    for (auto& name : names) {
+      descs.emplace_back(name, TitanCFOptions(options));
+    }
+    return CreateColumnFamilies(descs, handles);
+  }
+  Status CreateColumnFamilies(
+      const std::vector<ColumnFamilyDescriptor>& base_descs,
+      std::vector<ColumnFamilyHandle*>* handles) override {
+    std::vector<TitanCFDescriptor> descs;
+    for (auto& desc : base_descs) {
+      descs.emplace_back(desc.name, TitanCFOptions(desc.options));
+    }
+    return CreateColumnFamilies(descs, handles);
+  }
   virtual Status CreateColumnFamilies(
       const std::vector<TitanCFDescriptor>& descs,
       std::vector<ColumnFamilyHandle*>* handles) = 0;
