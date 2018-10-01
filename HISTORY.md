@@ -1,5 +1,6 @@
 # Rocksdb Change Log
 ### Bug Fixes
+* Fix crash caused when `CompactFiles` run with `CompactionOptions::compression == CompressionType::kDisableCompressionOption`. Now that setting causes the compression type to be chosen according to the column family-wide compression options.
 * Fix ingested file and directory not being fsync.
 
 ### 5.15.10 (9/13/2018)
