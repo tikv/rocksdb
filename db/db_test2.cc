@@ -2321,9 +2321,9 @@ TEST_F(DBTest2, RateLimitedCompactionReads) {
         options.rate_limiter->GetTotalBytesThrough(Env::IO_LOW);
     // Include the explicit prefetch of the footer in direct I/O case.
     size_t direct_io_extra = use_direct_io ? 512 * 1024 : 0;
-    ASSERT_GE(rate_limited_bytes,
-              static_cast<size_t>(kNumKeysPerFile * kBytesPerKey * kNumL0Files +
-                                  direct_io_extra));
+    ASSERT_GE(
+        rate_limited_bytes,
+        static_cast<size_t>(kNumKeysPerFile * kBytesPerKey * kNumL0Files));
     ASSERT_LT(
         rate_limited_bytes,
         static_cast<size_t>(2 * kNumKeysPerFile * kBytesPerKey * kNumL0Files +
@@ -2545,6 +2545,230 @@ TEST_F(DBTest2, PinnableSliceAndMmapReads) {
   ASSERT_TRUE(pinned_value.IsPinned());
   ASSERT_EQ(pinned_value.ToString(), "bar");
 #endif
+}
+
+TEST_F(DBTest2, DISABLED_IteratorPinnedMemory) {
+  Options options = CurrentOptions();
+  options.create_if_missing = true;
+  options.statistics = rocksdb::CreateDBStatistics();
+  BlockBasedTableOptions bbto;
+  bbto.no_block_cache = false;
+  bbto.cache_index_and_filter_blocks = false;
+  bbto.block_cache = NewLRUCache(100000);
+  bbto.block_size = 400;  // small block size
+  options.table_factory.reset(new BlockBasedTableFactory(bbto));
+  Reopen(options);
+
+  Random rnd(301);
+  std::string v = RandomString(&rnd, 400);
+
+  // Since v is the size of a block, each key should take a block
+  // of 400+ bytes.
+  Put("1", v);
+  Put("3", v);
+  Put("5", v);
+  Put("7", v);
+  ASSERT_OK(Flush());
+
+  ASSERT_EQ(0, bbto.block_cache->GetPinnedUsage());
+
+  // Verify that iterators don't pin more than one data block in block cache
+  // at each time.
+  {
+    unique_ptr<Iterator> iter(db_->NewIterator(ReadOptions()));
+    iter->SeekToFirst();
+
+    for (int i = 0; i < 4; i++) {
+      ASSERT_TRUE(iter->Valid());
+      // Block cache should contain exactly one block.
+      ASSERT_GT(bbto.block_cache->GetPinnedUsage(), 0);
+      ASSERT_LT(bbto.block_cache->GetPinnedUsage(), 800);
+      iter->Next();
+    }
+    ASSERT_FALSE(iter->Valid());
+
+    iter->Seek("4");
+    ASSERT_TRUE(iter->Valid());
+
+    ASSERT_GT(bbto.block_cache->GetPinnedUsage(), 0);
+    ASSERT_LT(bbto.block_cache->GetPinnedUsage(), 800);
+
+    iter->Seek("3");
+    ASSERT_TRUE(iter->Valid());
+
+    ASSERT_GT(bbto.block_cache->GetPinnedUsage(), 0);
+    ASSERT_LT(bbto.block_cache->GetPinnedUsage(), 800);
+  }
+  ASSERT_EQ(0, bbto.block_cache->GetPinnedUsage());
+
+  // Test compaction case
+  Put("2", v);
+  Put("5", v);
+  Put("6", v);
+  Put("8", v);
+  ASSERT_OK(Flush());
+
+  // Clear existing data in block cache
+  bbto.block_cache->SetCapacity(0);
+  bbto.block_cache->SetCapacity(100000);
+
+  // Verify compaction input iterators don't hold more than one data blocks at
+  // one time.
+  std::atomic<bool> finished(false);
+  std::atomic<int> block_newed(0);
+  std::atomic<int> block_destroyed(0);
+  rocksdb::SyncPoint::GetInstance()->SetCallBack(
+      "Block::Block:0", [&](void* /*arg*/) {
+        if (finished) {
+          return;
+        }
+        // Two iterators. At most 2 outstanding blocks.
+        EXPECT_GE(block_newed.load(), block_destroyed.load());
+        EXPECT_LE(block_newed.load(), block_destroyed.load() + 1);
+        block_newed.fetch_add(1);
+      });
+  rocksdb::SyncPoint::GetInstance()->SetCallBack(
+      "Block::~Block", [&](void* /*arg*/) {
+        if (finished) {
+          return;
+        }
+        // Two iterators. At most 2 outstanding blocks.
+        EXPECT_GE(block_newed.load(), block_destroyed.load() + 1);
+        EXPECT_LE(block_newed.load(), block_destroyed.load() + 2);
+        block_destroyed.fetch_add(1);
+      });
+  rocksdb::SyncPoint::GetInstance()->SetCallBack(
+      "CompactionJob::Run:BeforeVerify",
+      [&](void* /*arg*/) { finished = true; });
+  rocksdb::SyncPoint::GetInstance()->EnableProcessing();
+
+  ASSERT_OK(db_->CompactRange(CompactRangeOptions(), nullptr, nullptr));
+
+  // Two input files. Each of them has 4 data blocks.
+  ASSERT_EQ(8, block_newed.load());
+  ASSERT_EQ(8, block_destroyed.load());
+
+  rocksdb::SyncPoint::GetInstance()->DisableProcessing();
+}
+
+TEST_F(DBTest2, TestBBTTailPrefetch) {
+  std::atomic<bool> called(false);
+  size_t expected_lower_bound = 512 * 1024;
+  size_t expected_higher_bound = 512 * 1024;
+  rocksdb::SyncPoint::GetInstance()->SetCallBack(
+      "BlockBasedTable::Open::TailPrefetchLen", [&](void* arg) {
+        size_t* prefetch_size = static_cast<size_t*>(arg);
+        EXPECT_LE(expected_lower_bound, *prefetch_size);
+        EXPECT_GE(expected_higher_bound, *prefetch_size);
+        called = true;
+      });
+  rocksdb::SyncPoint::GetInstance()->EnableProcessing();
+
+  Put("1", "1");
+  Put("9", "1");
+  Flush();
+
+  expected_lower_bound = 0;
+  expected_higher_bound = 8 * 1024;
+
+  Put("1", "1");
+  Put("9", "1");
+  Flush();
+
+  Put("1", "1");
+  Put("9", "1");
+  Flush();
+
+  // Full compaction to make sure there is no L0 file after the open.
+  ASSERT_OK(db_->CompactRange(CompactRangeOptions(), nullptr, nullptr));
+
+  ASSERT_TRUE(called.load());
+  called = false;
+
+  rocksdb::SyncPoint::GetInstance()->DisableProcessing();
+  rocksdb::SyncPoint::GetInstance()->ClearAllCallBacks();
+
+  std::atomic<bool> first_call(true);
+  rocksdb::SyncPoint::GetInstance()->SetCallBack(
+      "BlockBasedTable::Open::TailPrefetchLen", [&](void* arg) {
+        size_t* prefetch_size = static_cast<size_t*>(arg);
+        if (first_call) {
+          EXPECT_EQ(4 * 1024, *prefetch_size);
+          first_call = false;
+        } else {
+          EXPECT_GE(4 * 1024, *prefetch_size);
+        }
+        called = true;
+      });
+  rocksdb::SyncPoint::GetInstance()->EnableProcessing();
+
+  Options options = CurrentOptions();
+  options.max_file_opening_threads = 1;  // one thread
+  BlockBasedTableOptions table_options;
+  table_options.cache_index_and_filter_blocks = true;
+  options.table_factory.reset(NewBlockBasedTableFactory(table_options));
+  options.max_open_files = -1;
+  Reopen(options);
+
+  Put("1", "1");
+  Put("9", "1");
+  Flush();
+
+  Put("1", "1");
+  Put("9", "1");
+  Flush();
+
+  ASSERT_TRUE(called.load());
+  called = false;
+
+  // Parallel loading SST files
+  options.max_file_opening_threads = 16;
+  Reopen(options);
+
+  ASSERT_OK(db_->CompactRange(CompactRangeOptions(), nullptr, nullptr));
+
+  ASSERT_TRUE(called.load());
+
+  rocksdb::SyncPoint::GetInstance()->DisableProcessing();
+  rocksdb::SyncPoint::GetInstance()->ClearAllCallBacks();
+}
+
+TEST_F(DBTest2, TestGetColumnFamilyHandleUnlocked) {
+  // Setup sync point dependency to reproduce the race condition of
+  // DBImpl::GetColumnFamilyHandleUnlocked
+  rocksdb::SyncPoint::GetInstance()->LoadDependency(
+      { {"TestGetColumnFamilyHandleUnlocked::GetColumnFamilyHandleUnlocked1",
+         "TestGetColumnFamilyHandleUnlocked::PreGetColumnFamilyHandleUnlocked2"},
+        {"TestGetColumnFamilyHandleUnlocked::GetColumnFamilyHandleUnlocked2",
+         "TestGetColumnFamilyHandleUnlocked::ReadColumnFamilyHandle1"},
+      });
+  SyncPoint::GetInstance()->EnableProcessing();
+
+  CreateColumnFamilies({"test1", "test2"}, Options());
+  ASSERT_EQ(handles_.size(), 2);
+
+  DBImpl* dbi = reinterpret_cast<DBImpl*>(db_);
+  port::Thread user_thread1([&]() {
+    auto cfh = dbi->GetColumnFamilyHandleUnlocked(handles_[0]->GetID());
+    ASSERT_EQ(cfh->GetID(), handles_[0]->GetID());
+    TEST_SYNC_POINT("TestGetColumnFamilyHandleUnlocked::GetColumnFamilyHandleUnlocked1");
+    TEST_SYNC_POINT("TestGetColumnFamilyHandleUnlocked::ReadColumnFamilyHandle1");
+    ASSERT_EQ(cfh->GetID(), handles_[0]->GetID());
+  });
+
+  port::Thread user_thread2([&]() {
+    TEST_SYNC_POINT("TestGetColumnFamilyHandleUnlocked::PreGetColumnFamilyHandleUnlocked2");
+    auto cfh = dbi->GetColumnFamilyHandleUnlocked(handles_[1]->GetID());
+    ASSERT_EQ(cfh->GetID(), handles_[1]->GetID());
+    TEST_SYNC_POINT("TestGetColumnFamilyHandleUnlocked::GetColumnFamilyHandleUnlocked2");
+    ASSERT_EQ(cfh->GetID(), handles_[1]->GetID());
+  });
+
+  user_thread1.join();
+  user_thread2.join();
+
+  rocksdb::SyncPoint::GetInstance()->DisableProcessing();
+  rocksdb::SyncPoint::GetInstance()->ClearAllCallBacks();
 }
 
 }  // namespace rocksdb
