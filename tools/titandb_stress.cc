@@ -2629,7 +2629,7 @@ class NonBatchedOpsStressTest : public StressTest {
       WriteOptions& write_opts, const ReadOptions& read_opts,
       const std::vector<int>& rand_column_families,
       const std::vector<int64_t>& rand_keys,
-      char (&value) [100], std::unique_ptr<MutexLock>& lock) {
+      char (&value) [kValueMaxLen], std::unique_ptr<MutexLock>& lock) {
     auto shared = thread->shared;
     int64_t max_key = shared->GetMaxKey();
     int64_t rand_key = rand_keys[0];
@@ -2964,7 +2964,7 @@ class BatchedOpsStressTest : public StressTest {
   virtual Status TestPut(ThreadState* thread,
       WriteOptions& write_opts, const ReadOptions& /* read_opts */,
       const std::vector<int>& rand_column_families, const std::vector<int64_t>& rand_keys,
-      char (&value)[100], std::unique_ptr<MutexLock>& /* lock */) {
+      char (&value)[kValueMaxLen], std::unique_ptr<MutexLock>& /* lock */) {
     uint32_t value_base =
         thread->rand.Next() % thread->shared->UNKNOWN_SENTINEL;
     size_t sz = GenerateValue(value_base, value, sizeof(value));
