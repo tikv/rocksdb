@@ -82,6 +82,11 @@ struct TitanCFOptions : public ColumnFamilyOptions {
   explicit TitanCFOptions(const ColumnFamilyOptions& options)
       : ColumnFamilyOptions(options) {}
 
+  TitanCFOptions& operator=(const ColumnFamilyOptions& options) {
+    *dynamic_cast<ColumnFamilyOptions*>(this) = options;
+    return *this;
+  }
+
   std::string ToString() const;
 };
 
@@ -89,8 +94,14 @@ struct TitanOptions : public TitanDBOptions, public TitanCFOptions {
   TitanOptions() = default;
   explicit TitanOptions(const Options& options)
       : TitanDBOptions(options), TitanCFOptions(options) {}
+      
+  TitanOptions& operator=(const Options& options) {
+    *dynamic_cast<TitanDBOptions*>(this) = options;
+    *dynamic_cast<TitanCFOptions*>(this) = options;
+    return *this;
+  }
 
-  Options GetBaseDBOptions() {
+  operator Options() {
     Options options;
     *dynamic_cast<DBOptions*>(&options) = *dynamic_cast<DBOptions*>(this);
     *dynamic_cast<ColumnFamilyOptions*>(&options) =
