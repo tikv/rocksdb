@@ -1,8 +1,8 @@
 #pragma once
 
 #include "db/db_impl.h"
+#include "rocksdb/utilities/titandb/db.h"
 #include "utilities/titandb/blob_file_manager.h"
-#include "utilities/titandb/db.h"
 #include "utilities/titandb/version_set.h"
 
 namespace rocksdb {
@@ -120,7 +120,7 @@ class TitanDBImpl : public TitanDB {
   std::deque<uint32_t> gc_queue_;
   std::set<uint32_t> pending_gc_;
 
-  int bg_gc_scheduled_{0};
+  std::atomic_int bg_gc_scheduled_{0};
 };
 
 }  // namespace titandb

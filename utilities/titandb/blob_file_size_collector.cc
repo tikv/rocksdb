@@ -117,12 +117,21 @@ void BlobDiscardableSizeListener::OnCompactionCompleted(
     Version* current = versions_->current();
     current->Ref();
     auto bs = current->GetBlobStorage(ci.cf_id).lock();
+    if (!bs) {
+      current->Unref();
+      return;
+    }
+
     for (const auto& bfs : blob_files_size) {
       // blob file size < 0 means discardable size > 0
       if (bfs.second > 0) {
         continue;
       }
       auto file = bs->FindFile(bfs.first).lock();
+      if (!file) {
+        // file has been gc out
+        continue;
+      }
       file->discardable_size += static_cast<uint64_t>(-bfs.second);
     }
     bs->ComputeGCScore();

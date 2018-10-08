@@ -1,9 +1,9 @@
 #include <inttypes.h>
 
+#include "rocksdb/utilities/titandb/db.h"
 #include "util/filename.h"
 #include "util/random.h"
 #include "util/testharness.h"
-#include "utilities/titandb/db.h"
 
 namespace rocksdb {
 namespace titandb {
