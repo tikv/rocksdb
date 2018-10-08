@@ -115,8 +115,9 @@ bool BlobGCJob::DoSample(const BlobFileMeta* file) {
       random64.Uniform(file->file_size - sample_size_window);
 
   std::unique_ptr<RandomAccessFileReader> file_reader;
-  s = NewBlobFileReader(file->file_number, 0, titan_db_options_, env_options_,
-                        env_, &file_reader);
+  const int readahead = 256 << 10;
+  s = NewBlobFileReader(file->file_number, readahead, titan_db_options_,
+                        env_options_, env_, &file_reader);
   assert(s.ok());
   BlobFileIterator iter(std::move(file_reader), file->file_number,
                         file->file_size, blob_gc_->titan_cf_options());
@@ -160,14 +161,26 @@ Status BlobGCJob::DoRunGC() {
   // is_blob_index flag to GetImpl.
   std::unique_ptr<BlobFileHandle> blob_file_handle;
   std::unique_ptr<BlobFileBuilder> blob_file_builder;
+
+  std::string last_key;
+  bool last_key_valid = false;
   for (gc_iter->SeekToFirst(); gc_iter->status().ok() && gc_iter->Valid();
        gc_iter->Next()) {
-    // TODO(@DorianZheng) same key optimization
+    if (!last_key.empty() && !gc_iter->key().compare(last_key)) {
+      if (last_key_valid) {
+        continue;
+      }
+    } else {
+      last_key = gc_iter->key().ToString();
+      last_key_valid = false;
+    }
 
     BlobIndex blob_index = gc_iter->GetBlobIndex();
     if (DiscardEntry(gc_iter->key(), blob_index)) {
       continue;
     }
+
+    last_key_valid = true;
 
     // Rewrite entry to new blob file
     if (!blob_file_handle && !blob_file_builder) {
