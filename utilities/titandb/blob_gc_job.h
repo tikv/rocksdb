@@ -16,9 +16,8 @@ class BlobGCJob {
  public:
   BlobGCJob(BlobGC* blob_gc, DB* db, ColumnFamilyHandle* cfh,
             port::Mutex* mutex, const TitanDBOptions& titan_db_options,
-            const TitanCFOptions& titan_cf_options, Env* env,
-            const EnvOptions& env_options, BlobFileManager* blob_file_manager,
-            VersionSet* version_set);
+            Env* env, const EnvOptions& env_options,
+            BlobFileManager* blob_file_manager, VersionSet* version_set);
   ~BlobGCJob();
 
   // REQUIRE: mutex held
@@ -38,7 +37,6 @@ class BlobGCJob {
   ColumnFamilyHandle* cfh_;
   port::Mutex* tdb_mutex_;
   TitanDBOptions titan_db_options_;
-  TitanCFOptions titan_cf_options_;
   Env* env_;
   EnvOptions env_options_;
   BlobFileManager* blob_file_manager_;

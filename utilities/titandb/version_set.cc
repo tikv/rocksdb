@@ -87,6 +87,7 @@ Status VersionSet::Recover() {
       if (!s.ok()) return s;
       builder.Apply(&edit);
       if (edit.has_next_file_number_) {
+        assert(edit.next_file_number_ >= next_file_number);
         next_file_number = edit.next_file_number_;
         has_next_file_number = true;
       }
