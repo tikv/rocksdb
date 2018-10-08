@@ -1,20 +1,19 @@
 #include "utilities/titandb/db_impl.h"
 
-#include "utilities/titandb/blob_file_builder.h"
 #include "utilities/titandb/blob_file_iterator.h"
-#include "utilities/titandb/blob_file_size_collector.h"
-#include "utilities/titandb/blob_gc.h"
 #include "utilities/titandb/blob_gc_job.h"
 #include "utilities/titandb/blob_gc_picker.h"
-#include "utilities/titandb/db_iter.h"
-#include "utilities/titandb/table_factory.h"
 
 namespace rocksdb {
 namespace titandb {
 
 void TitanDBImpl::MaybeScheduleGC() {
   if (db_options_.disable_background_gc) return;
-  bg_gc_scheduled_++;
+  if (bg_gc_scheduled_.load(std::memory_order_acquire) >=
+      db_options_.max_background_gc)
+    return;
+
+  bg_gc_scheduled_.fetch_add(1, std::memory_order_release);
   env_->Schedule(&TitanDBImpl::BGWorkGC, this, Env::Priority::LOW, this);
 }
 
@@ -45,39 +44,45 @@ void TitanDBImpl::BackgroundCallGC() {
 }
 
 Status TitanDBImpl::BackgroundGC() {
+  mutex_.AssertHeld();
+
+  std::unique_ptr<BlobGC> blob_gc;
+  std::unique_ptr<ColumnFamilyHandle> cfh;
   Status s;
+
   if (!gc_queue_.empty()) {
     uint32_t column_family_id = PopFirstFromGCQueue();
-    auto* cfh = db_impl_->GetColumnFamilyHandleUnlocked(column_family_id);
-    assert(cfh != nullptr);
 
-    std::unique_ptr<BlobGC> blob_gc;
     auto current = vset_->current();
     auto bs = current->GetBlobStorage(column_family_id).lock().get();
     const auto& titan_cf_options = bs->titan_cf_options();
     std::shared_ptr<BlobGCPicker> blob_gc_picker =
         std::make_shared<BasicBlobGCPicker>(titan_cf_options);
     blob_gc = blob_gc_picker->PickBlobGC(bs);
-    if (!blob_gc) return Status::Corruption("Build BlobGC failed");
 
-    BlobGCJob blob_gc_job(blob_gc.get(), db_, cfh, &mutex_, db_options_,
-                          titan_cf_options, env_, env_options_,
-                          blob_manager_.get(), vset_.get());
+    cfh = db_impl_->GetColumnFamilyHandleUnlocked(column_family_id);
+  }
+
+  if (blob_gc) {
+    assert(cfh);
+    BlobGCJob blob_gc_job(blob_gc.get(), db_, cfh.get(), &mutex_, db_options_,
+                          env_, env_options_, blob_manager_.get(), vset_.get());
     s = blob_gc_job.Prepare();
-    if (!s.ok()) return s;
 
-    {
+    if (s.ok()) {
       mutex_.Unlock();
       s = blob_gc_job.Run();
       mutex_.Lock();
     }
-    if (!s.ok()) return s;
 
-    s = blob_gc_job.Finish();
-    if (!s.ok()) return s;
+    if (s.ok()) {
+      s = blob_gc_job.Finish();
+    }
+  } else {
+    // Nothing to do
   }
 
-  return Status::OK();
+  return s;
 }
 
 }  // namespace titandb

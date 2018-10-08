@@ -9,6 +9,18 @@ namespace titandb {
 
 const static int MAX_KEY_NUM = 1000;
 
+std::string GenKey(int i) {
+  char buffer[32];
+  snprintf(buffer, sizeof(buffer), "k-%08d", i);
+  return buffer;
+}
+
+std::string GenValue(int i) {
+  char buffer[32];
+  snprintf(buffer, sizeof(buffer), "v-%08d", i);
+  return buffer;
+}
+
 class BlobGCJobTest : public testing::Test {
  public:
   std::string dbname_;
@@ -23,6 +35,7 @@ class BlobGCJobTest : public testing::Test {
     options_.dirname = dbname_ + "/titandb";
     options_.create_if_missing = true;
     options_.disable_background_gc = true;
+    options_.min_blob_size = 0;
     options_.env->CreateDirIfMissing(dbname_);
     options_.env->CreateDirIfMissing(options_.dirname);
   }
@@ -36,12 +49,12 @@ class BlobGCJobTest : public testing::Test {
         ASSERT_OK(options_.env->DeleteFile(options_.dirname + "/" + fname));
       }
     }
-    ASSERT_OK(options_.env->DeleteDir(options_.dirname));
+    options_.env->DeleteDir(options_.dirname);
     filenames.clear();
     options_.env->GetChildren(dbname_, &filenames);
     for (auto& fname : filenames) {
       if (fname != "." && fname != "..") {
-        ASSERT_OK(options_.env->DeleteFile(dbname_ + "/" + fname));
+        options_.env->DeleteFile(dbname_ + "/" + fname);
       }
     }
   }
@@ -75,9 +88,9 @@ class BlobGCJobTest : public testing::Test {
     }
     ASSERT_TRUE(blob_gc);
 
-    BlobGCJob blob_gc_job(
-        blob_gc.get(), base_db_, cfh, mutex_, tdb_->db_options_, cf_options,
-        tdb_->env_, EnvOptions(), tdb_->blob_manager_.get(), version_set_);
+    BlobGCJob blob_gc_job(blob_gc.get(), base_db_, cfh, mutex_,
+                          tdb_->db_options_, tdb_->env_, EnvOptions(),
+                          tdb_->blob_manager_.get(), version_set_);
 
     s = blob_gc_job.Prepare();
     ASSERT_OK(s);
@@ -98,7 +111,6 @@ class BlobGCJobTest : public testing::Test {
     std::unique_ptr<RandomAccessFileReader> file;
     Status s = NewBlobFileReader(file_number, 0, tdb_->db_options_,
                                  tdb_->env_options_, tdb_->env_, &file);
-    // TODO memory leak here
     if (!s.ok()) {
       return s;
     }
@@ -122,8 +134,7 @@ class BlobGCJobTest : public testing::Test {
     auto rewrite_status = base_db_->Write(WriteOptions(), &wb);
 
     BlobGCJob blob_gc_job(nullptr, base_db_, cfh, mutex_, TitanDBOptions(),
-                          TitanCFOptions(), Env::Default(), EnvOptions(),
-                          nullptr, version_set_);
+                          Env::Default(), EnvOptions(), nullptr, version_set_);
     ASSERT_FALSE(blob_gc_job.DiscardEntry(key, blob_index));
     DestoyDB();
   }
@@ -131,24 +142,17 @@ class BlobGCJobTest : public testing::Test {
   void TestRunGC() {
     NewDB();
     for (int i = 0; i < MAX_KEY_NUM; i++) {
-      std::string key = std::to_string(i);
-      std::string value(10240, i);
-      db_->Put(WriteOptions(), key, value);
+      db_->Put(WriteOptions(), GenKey(i), GenValue(i));
     }
     FlushOptions flush_options;
     flush_options.wait = true;
     db_->Flush(flush_options);
     std::string result;
-    ASSERT_OK(db_->Get(ReadOptions(), std::to_string(0), &result));
-    ASSERT_OK(db_->Get(ReadOptions(), std::to_string(2), &result));
     for (int i = 0; i < MAX_KEY_NUM; i++) {
       if (i % 2 != 0) continue;
-      std::string key = std::to_string(i);
-      db_->Delete(WriteOptions(), key);
+      db_->Delete(WriteOptions(), GenKey(i));
     }
     db_->Flush(flush_options);
-    ASSERT_NOK(db_->Get(ReadOptions(), std::to_string(0), &result));
-    ASSERT_NOK(db_->Get(ReadOptions(), std::to_string(2), &result));
     Version* v = nullptr;
     {
       MutexLock l(mutex_);
@@ -168,12 +172,8 @@ class BlobGCJobTest : public testing::Test {
     for (int i = 0; i < MAX_KEY_NUM; i++, iter->Next()) {
       ASSERT_OK(iter->status());
       ASSERT_TRUE(iter->Valid());
-      //    std::string key = std::to_string(i);
-      //    ASSERT_TRUE(iter->key().size() == key.size());
-      //    ASSERT_TRUE(iter->key().compare(Slice(key)) == 0);
-      //    fprintf(stderr, "%s, ", iter->key().data());
+      ASSERT_TRUE(iter->key().compare(Slice(GenKey(i))) == 0);
     }
-    //  fprintf(stderr, "\n\n");
     RunGC();
     {
       MutexLock l(mutex_);
@@ -186,19 +186,26 @@ class BlobGCJobTest : public testing::Test {
     ASSERT_OK(NewIterator(b->files_.begin()->second->file_number,
                           b->files_.begin()->second->file_size, &iter));
     iter->SeekToFirst();
+    auto* db_iter = db_->NewIterator(ReadOptions(), db_->DefaultColumnFamily());
+    db_iter->SeekToFirst();
     for (int i = 0; i < MAX_KEY_NUM; i++) {
       if (i % 2 == 0) continue;
       ASSERT_OK(iter->status());
       ASSERT_TRUE(iter->Valid());
-      //    std::string key = std::to_string(i);
-      //    ASSERT_TRUE(iter->key().size() == key.size());
-      //    ASSERT_TRUE(iter->key().compare(Slice(key)) == 0);
-      //    fprintf(stderr, "%s, ", iter->key().data());
+      ASSERT_TRUE(iter->key().compare(Slice(GenKey(i))) == 0);
+      ASSERT_TRUE(iter->value().compare(Slice(GenValue(i))) == 0);
       ASSERT_OK(db_->Get(ReadOptions(), iter->key(), &result));
       ASSERT_TRUE(iter->value().size() == result.size());
       ASSERT_TRUE(iter->value().compare(result) == 0);
+
+      ASSERT_OK(db_iter->status());
+      ASSERT_TRUE(db_iter->Valid());
+      ASSERT_TRUE(db_iter->key().compare(Slice(GenKey(i))) == 0);
+      ASSERT_TRUE(db_iter->value().compare(Slice(GenValue(i))) == 0);
       iter->Next();
+      db_iter->Next();
     }
+    ASSERT_FALSE(iter->Valid() || !iter->status().ok());
     DestoyDB();
   }
 };

@@ -3,6 +3,7 @@
 #include <memory>
 
 #include "utilities/titandb/blob_format.h"
+#include "utilities/titandb/options.h"
 
 namespace rocksdb {
 namespace titandb {
@@ -10,7 +11,8 @@ namespace titandb {
 // A BlobGC encapsulates information about a blob gc.
 class BlobGC {
  public:
-  BlobGC(std::vector<BlobFileMeta*>&& blob_files);
+  BlobGC(std::vector<BlobFileMeta*>&& blob_files,
+         TitanCFOptions&& _titan_cf_options);
   ~BlobGC();
 
   const std::vector<BlobFileMeta*>& candidate_files() {
@@ -25,9 +27,12 @@ class BlobGC {
 
   void ClearSelectedFiles() { selected_files_.clear(); }
 
+  const TitanCFOptions& titan_cf_options() { return titan_cf_options_; }
+
  private:
   std::vector<BlobFileMeta*> candidate_files_;
   std::vector<BlobFileMeta*> selected_files_;
+  TitanCFOptions titan_cf_options_;
 };
 
 struct GCScore {

@@ -17,8 +17,18 @@ struct TitanDBOptions : public DBOptions {
   // Default: false
   bool disable_background_gc{false};
 
+  // Max background GC thread
+  //
+  // Default: 1
+  int32_t max_background_gc{1};
+
   TitanDBOptions() = default;
   explicit TitanDBOptions(const DBOptions& options) : DBOptions(options) {}
+
+  TitanDBOptions& operator=(const DBOptions& options) {
+    *dynamic_cast<DBOptions*>(this) = options;
+    return *this;
+  }
 };
 
 struct TitanCFOptions : public ColumnFamilyOptions {
@@ -72,6 +82,11 @@ struct TitanCFOptions : public ColumnFamilyOptions {
   explicit TitanCFOptions(const ColumnFamilyOptions& options)
       : ColumnFamilyOptions(options) {}
 
+  TitanCFOptions& operator=(const ColumnFamilyOptions& options) {
+    *dynamic_cast<ColumnFamilyOptions*>(this) = options;
+    return *this;
+  }
+
   std::string ToString() const;
 };
 
@@ -79,6 +94,20 @@ struct TitanOptions : public TitanDBOptions, public TitanCFOptions {
   TitanOptions() = default;
   explicit TitanOptions(const Options& options)
       : TitanDBOptions(options), TitanCFOptions(options) {}
+      
+  TitanOptions& operator=(const Options& options) {
+    *dynamic_cast<TitanDBOptions*>(this) = options;
+    *dynamic_cast<TitanCFOptions*>(this) = options;
+    return *this;
+  }
+
+  operator Options() {
+    Options options;
+    *dynamic_cast<DBOptions*>(&options) = *dynamic_cast<DBOptions*>(this);
+    *dynamic_cast<ColumnFamilyOptions*>(&options) =
+        *dynamic_cast<ColumnFamilyOptions*>(this);
+    return options;
+  }
 };
 
 }  // namespace titandb

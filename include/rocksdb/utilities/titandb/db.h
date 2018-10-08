@@ -80,6 +80,13 @@ class TitanDB : public StackableDB {
                const Slice& /*value*/) override {
     return Status::NotSupported("TitanDB doesn't support this operation");
   }
+
+  using rocksdb::StackableDB::SingleDelete;
+  virtual Status SingleDelete(const WriteOptions& /*wopts*/,
+                              ColumnFamilyHandle* /*column_family*/,
+                              const Slice& /*key*/) override {
+    return Status::NotSupported("Not supported operation in titan db.");
+  }
 };
 
 }  // namespace titandb
