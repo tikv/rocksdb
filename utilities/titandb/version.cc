@@ -27,6 +27,7 @@ Status BlobStorage::NewPrefetcher(uint64_t file_number,
 std::weak_ptr<BlobFileMeta> BlobStorage::FindFile(uint64_t file_number) {
   auto it = files_.find(file_number);
   if (it != files_.end()) {
+    assert(file_number == it->second->file_number);
     return it->second;
   }
   return std::weak_ptr<BlobFileMeta>();

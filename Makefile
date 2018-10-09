@@ -572,6 +572,7 @@ TOOLS = \
 	rocksdb_dump \
 	rocksdb_undump \
 	blob_dump \
+	titandb_stress \
 
 TEST_LIBS = \
 	librocksdb_env_basic_test.a
@@ -1052,6 +1053,9 @@ memtablerep_bench: memtable/memtablerep_bench.o $(LIBOBJECTS) $(TESTUTIL)
 	$(AM_LINK)
 
 db_stress: tools/db_stress.o $(LIBOBJECTS) $(TESTUTIL)
+	$(AM_LINK)
+
+titandb_stress: tools/titandb_stress.o $(LIBOBJECTS) $(TESTUTIL)
 	$(AM_LINK)
 
 write_stress: tools/write_stress.o $(LIBOBJECTS) $(TESTUTIL)

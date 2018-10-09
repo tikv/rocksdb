@@ -37,7 +37,7 @@ void BlobFileIterator::SeekToFirst() {
   PrefetchAndGet();
 }
 
-bool BlobFileIterator::Valid() const { return valid_; }
+bool BlobFileIterator::Valid() const { return valid_ && status().ok(); }
 
 void BlobFileIterator::Next() {
   assert(init_);
@@ -136,7 +136,8 @@ BlobFileMergeIterator::BlobFileMergeIterator(
 
 bool BlobFileMergeIterator::Valid() const {
   if (current_ == nullptr) return false;
-  return current_->Valid();
+  if (!status().ok()) return false;
+  return current_->Valid() && current_->status().ok();
 }
 
 void BlobFileMergeIterator::SeekToFirst() {
