@@ -85,7 +85,11 @@ class TitanDBIterator : public Iterator {
 
  private:
   void GetBlobValue() {
-    if (!iter_->Valid() || !iter_->IsBlob()) return;
+    if (!iter_->Valid() || !iter_->IsBlob()) {
+      status_ = iter_->status();
+      return;
+    }
+    assert(iter_->status().ok());
 
     BlobIndex index;
     status_ = DecodeInto(iter_->value(), &index);

@@ -166,6 +166,21 @@ Status TitanDBImpl::Open(const std::vector<TitanCFDescriptor>& descs,
       std::make_shared<BlobDiscardableSizeListener>(this, &this->mutex_,
                                                     this->vset_.get()));
 
+  static bool has_init_background_threads = false;
+  if (!has_init_background_threads) {
+    auto low_pri_threads_num = env_->GetBackgroundThreads(Env::Priority::LOW);
+    assert(low_pri_threads_num > 0);
+    if (!db_options_.disable_background_gc &&
+        db_options_.max_background_gc > 0) {
+      env_->IncBackgroundThreadsIfNeeded(
+          db_options_.max_background_gc + low_pri_threads_num,
+          Env::Priority::LOW);
+    }
+    assert(env_->GetBackgroundThreads(Env::Priority::LOW) >
+           low_pri_threads_num);
+    has_init_background_threads = true;
+  }
+
   s = DB::Open(db_options_, dbname_, base_descs, handles, &db_);
   if (s.ok()) {
     db_impl_ = reinterpret_cast<DBImpl*>(db_->GetRootDB());
@@ -213,13 +228,16 @@ Status TitanDBImpl::CreateColumnFamilies(
         new TitanTableFactory(desc.options, blob_manager_));
     base_descs.emplace_back(desc.name, options);
   }
+
+  MutexLock l(&mutex_);
+
   Status s = db_impl_->CreateColumnFamilies(base_descs, handles);
+  assert(handles->size() == descs.size());
   if (s.ok()) {
     std::map<uint32_t, TitanCFOptions> column_families;
     for (size_t i = 0; i < descs.size(); i++) {
       column_families.emplace((*handles)[i]->GetID(), descs[i].options);
     }
-    MutexLock l(&mutex_);
     vset_->AddColumnFamilies(column_families);
   }
   return s;
@@ -231,9 +249,11 @@ Status TitanDBImpl::DropColumnFamilies(
   for (auto& handle : handles) {
     column_families.push_back(handle->GetID());
   }
+
+  MutexLock l(&mutex_);
+
   Status s = db_impl_->DropColumnFamilies(handles);
   if (s.ok()) {
-    MutexLock l(&mutex_);
     vset_->DropColumnFamilies(column_families);
   }
   return s;
@@ -264,6 +284,7 @@ Status TitanDBImpl::GetImpl(const ReadOptions& options,
 
   BlobIndex index;
   s = index.DecodeFrom(value);
+  assert(s.ok());
   if (!s.ok()) return s;
 
   BlobRecord record;
@@ -361,10 +382,10 @@ const Snapshot* TitanDBImpl::GetSnapshot() {
 
 void TitanDBImpl::ReleaseSnapshot(const Snapshot* snapshot) {
   auto s = reinterpret_cast<const TitanSnapshot*>(snapshot);
+  db_->ReleaseSnapshot(s->snapshot());
   {
     MutexLock l(&mutex_);
     s->current()->Unref();
-    db_->ReleaseSnapshot(s->snapshot());
   }
   delete s;
 }

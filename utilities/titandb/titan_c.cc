@@ -1,6 +1,6 @@
 #include "rocksdb/utilities/titan_c.h"
 #include "rocksdb/db.h"
-#include "utilities/titandb/db.h"
+#include "rocksdb/utilities/titandb/db.h"
 
 using rocksdb::Cache;
 using rocksdb::CompressionType;
