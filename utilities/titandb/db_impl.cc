@@ -285,6 +285,7 @@ Status TitanDBImpl::GetImpl(const ReadOptions& options,
   BlobIndex index;
   s = index.DecodeFrom(value);
   assert(s.ok());
+  if (!s.ok()) return s;
 
   BlobRecord record;
   PinnableSlice buffer;

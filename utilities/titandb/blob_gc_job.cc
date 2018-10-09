@@ -38,6 +38,8 @@ class BlobGCJob::GarbageCollectionWriteCallback : public WriteCallback {
       BlobIndex other_blob_index;
       s = other_blob_index.DecodeFrom(&index_entry);
       assert(s.ok());
+      if (!s.ok()) return s;
+
       if (!(blob_index_ == other_blob_index)) {
         s = Status::Busy("key overwritten with other blob");
       }
