@@ -73,7 +73,7 @@ class TitanDB : public StackableDB {
   }
 
   virtual Status DropColumnFamilies(
-      const std::vector<ColumnFamilyHandle*>& handles) = 0;
+      const std::vector<ColumnFamilyHandle*>& handles) override = 0;
 
   using StackableDB::Merge;
   Status Merge(const WriteOptions&, ColumnFamilyHandle*, const Slice& /*key*/,
