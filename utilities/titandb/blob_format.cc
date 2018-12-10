@@ -43,7 +43,7 @@ void BlobEncoder::EncodeRecord(const BlobRecord& record) {
                      &compression);
 
   EXPECT(record_.size() < std::numeric_limits<uint32_t>::max());
-  EncodeFixed32(header_ + 4, record_.size());
+  EncodeFixed32(header_ + 4, static_cast<uint32_t>(record_.size()));
   header_[8] = compression;
 
   uint32_t crc = crc32c::Value(header_ + 4, sizeof(header_) - 4);

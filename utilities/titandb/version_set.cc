@@ -115,7 +115,7 @@ Status VersionSet::Recover() {
   v->MarkAllFilesForGC();
 
   // Purge inactive files at start
-  std::set<uint32_t> alive_files;
+  std::set<uint64_t> alive_files;
   alive_files.insert(new_manifest_file_number);
   for (const auto& bs : v->column_families_) {
     for (const auto& f : bs.second->files_) {
