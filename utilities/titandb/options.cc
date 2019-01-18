@@ -1,5 +1,9 @@
 #include "utilities/titandb/options.h"
 
+#ifndef __STDC_FORMAT_MACROS
+#define __STDC_FORMAT_MACROS
+#endif
+
 #include <inttypes.h>
 
 #include "rocksdb/convenience.h"
