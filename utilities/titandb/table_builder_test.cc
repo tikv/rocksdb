@@ -281,6 +281,28 @@ TEST_F(TableBuilderTest, Abandon) {
   BlobFileExists(false);
 }
 
+TEST_F(TableBuilderTest, NumEntries) {
+  std::unique_ptr<WritableFileWriter> base_file;
+  NewBaseFileWriter(&base_file);
+  std::unique_ptr<TableBuilder> table_builder;
+  NewTableBuilder(base_file.get(), &table_builder);
+
+  // Build a base table and a blob file.
+  const int n = 100;
+  for (char i = 0; i < n; i++) {
+    std::string key(1, i);
+    InternalKey ikey(key, 1, kTypeValue);
+    std::string value;
+    if (i % 2 == 0) {
+      value = std::string(1, i);
+    } else {
+      value = std::string(kMinBlobSize, i);
+    }
+    table_builder->Add(ikey.Encode(), value);
+  }
+  ASSERT_EQ(n, table_builder->NumEntries());
+}
+
 }  // namespace titandb
 }  // namespace rocksdb
 

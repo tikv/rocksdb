@@ -1,92 +1,33 @@
 #include "utilities/titandb/blob_file_size_collector.h"
 
-#include "base_db_listener.h"
+#include "utilities/titandb/base_db_listener.h"
+#include "util/testharness.h"
+#include "utilities/titandb/util.h"
 
 namespace rocksdb {
 namespace titandb {
 
-const static uint32_t kDefauleColumnFamilyID = 0x77;
+class BlobFileSizeCollectorTest : public testing::Test { };
 
-class BlobFileSizeCollectorTest : public testing::Test {
- public:
-  port::Mutex mutex_;
-  std::unique_ptr<VersionSet> vset_;
+TEST_F(BlobFileSizeCollectorTest, Basic) {
+  BlockBasedTableOptions op;
+  std::unique_ptr<TableFactory> block_based_table_fac(
+      NewBlockBasedTableFactory());
+  std::unique_ptr<WritableFile> file;
+  ASSERT_OK(Env::Default()->NewWritableFile("Test", &file, EnvOptions()));
+  std::unique_ptr<WritableFileWriter> file_writer(new WritableFileWriter(std::move(file), EnvOptions()));
+  std::vector<std::unique_ptr<IntTblPropCollectorFactory>>
+      int_tbl_prop_collector_factories;
+  TablePropertiesCollectorFactory::Context context;
+  context.column_family_id = 0;
+  std::unique_ptr<TablePropertiesCollector> collector(
+      BlobFileSizeCollectorFactory().CreateTablePropertiesCollector(context));
+  int_tbl_prop_collector_factories.emplace_back(collector);
+  std::string compression_dict;
+  TableBuilderOptions tboptions(ImmutableCFOptions(), MutableCFOptions(), InternalKeyComparator(BytewiseComparator()), &int_tbl_prop_collector_factories, CompressionType::kNoCompression, CompressionOptions(), &compression_dict, true, "TEST", 0);
+  std::unique_ptr<TableBuilder> table_builder(block_based_table_fac->NewTableBuilder(tboptions, 0, file_writer.get()));
 
-  BlobFileSizeCollectorTest() {}
-  ~BlobFileSizeCollectorTest() {}
-
-  void NewVersionSet(const TitanDBOptions& titan_db_options,
-                     const TitanCFOptions& titan_cf_options) {
-    auto blob_file_cache = std::make_shared<BlobFileCache>(
-        titan_db_options, titan_cf_options, NewLRUCache(128));
-    auto v = new Version(vset_.get());
-    auto storage =
-        std::make_shared<BlobStorage>(TitanCFOptions(), blob_file_cache);
-    v->column_families_.emplace(kDefauleColumnFamilyID, storage);
-    vset_.reset(new VersionSet(titan_db_options));
-    vset_->versions_.Append(v);
-  }
-
-  void AddBlobFile(uint64_t file_number, uint64_t file_size,
-                   uint64_t discardable_size, bool being_gc = false) {
-    auto f = std::make_shared<BlobFileMeta>(file_number, file_size);
-    f->AddDiscardableSize(discardable_size);
-    if (being_gc) {
-      f->FileStateTransit(BlobFileMeta::FileEvent::kGCBegin);
-    } else {
-      f->FileStateTransit(BlobFileMeta::FileEvent::kDbRestart);
-    }
-    vset_->current()->column_families_[kDefauleColumnFamilyID]->files_[file_number] = f;
-  }
-
-  void TestBasic() {
-    NewVersionSet(TitanDBOptions(), TitanCFOptions());
-    CompactionJobInfo cji;
-    cji.cf_id = kDefauleColumnFamilyID;
-    AddBlobFile(1, 100, 5);
-    auto file = vset_->current()
-                    ->GetBlobStorage(kDefauleColumnFamilyID)
-                    .lock()
-                    ->files_[1];
-    ASSERT_EQ(file->discardable_size(), 5);
-    TablePropertiesCollectorFactory::Context context;
-    context.column_family_id = kDefauleColumnFamilyID;
-    BlobFileSizeCollectorFactory factory;
-    std::shared_ptr<TablePropertiesCollector> c(
-        factory.CreateTablePropertiesCollector(context));
-    BlobIndex bi;
-    bi.file_number = 1;
-    bi.blob_handle.size = 80;
-    std::string tmp;
-    bi.EncodeTo(&tmp);
-    ASSERT_OK(c->AddUserKey("random", tmp, EntryType::kEntryBlobIndex, 0, 0));
-    std::shared_ptr<TableProperties> tp = std::make_shared<TableProperties>();
-    UserCollectedProperties u;
-    c->Finish(&u);
-    tp->user_collected_properties.insert(u.begin(), u.end());
-    cji.table_properties["1"] = tp;
-    cji.input_files.emplace_back("1");
-    c.reset(factory.CreateTablePropertiesCollector(context));
-    bi.file_number = 1;
-    bi.blob_handle.size = 60;
-    tmp.clear();
-    bi.EncodeTo(&tmp);
-    ASSERT_OK(c->AddUserKey("random2", tmp, EntryType::kEntryBlobIndex, 0, 0));
-    u.clear();
-    c->Finish(&u);
-    std::shared_ptr<TableProperties> tp2 = std::make_shared<TableProperties>();
-    tp2->user_collected_properties.insert(u.begin(), u.end());
-    cji.table_properties["2"] = tp2;
-    cji.output_files.emplace_back("2");
-    port::Mutex mutex;
-//    BaseDbListener listener(nullptr);
-//    listener.OnCompactionCompleted(nullptr, cji);
-//    ASSERT_EQ(file->discardable_size(), 25);
-    // TODO(@DorianZheng) complete test
-  }
-};
-
-TEST_F(BlobFileSizeCollectorTest, Basic) { TestBasic(); }
+}
 
 }  // namespace titandb
 }  // namespace rocksdb

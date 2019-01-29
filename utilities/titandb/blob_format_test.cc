@@ -45,6 +45,23 @@ TEST(BlobFormatTest, BlobFileFooter) {
   CheckCodec(input);
 }
 
+TEST(BlobFormatTest, BlobFileStateTransit) {
+  BlobFileMeta blob_file;
+  ASSERT_EQ(blob_file.file_state(), BlobFileMeta::FileState::kInit);
+  blob_file.FileStateTransit(BlobFileMeta::FileEvent::kDbRestart);
+  ASSERT_EQ(blob_file.file_state(), BlobFileMeta::FileState::kNormal);
+  blob_file.FileStateTransit(BlobFileMeta::FileEvent::kGCBegin);
+  ASSERT_EQ(blob_file.file_state(), BlobFileMeta::FileState::kBeingGC);
+  blob_file.FileStateTransit(BlobFileMeta::FileEvent::kGCCompleted);
+
+  BlobFileMeta compaction_output;
+  ASSERT_EQ(compaction_output.file_state(), BlobFileMeta::FileState::kInit);
+  blob_file.FileStateTransit(BlobFileMeta::FileEvent::kFlushOrCompactionOutput);
+  ASSERT_EQ(blob_file.file_state(), BlobFileMeta::FileState::kPendingLSM);
+  blob_file.FileStateTransit(BlobFileMeta::FileEvent::kCompactionCompleted);
+  ASSERT_EQ(blob_file.file_state(), BlobFileMeta::FileState::kNormal);
+}
+
 }  // namespace titandb
 }  // namespace rocksdb
 
