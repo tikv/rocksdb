@@ -57,9 +57,12 @@ TEST(BlobFormatTest, BlobFileStateTransit) {
 
   BlobFileMeta compaction_output;
   ASSERT_EQ(compaction_output.file_state(), BlobFileMeta::FileState::kInit);
-  compaction_output.FileStateTransit(BlobFileMeta::FileEvent::kFlushOrCompactionOutput);
-  ASSERT_EQ(compaction_output.file_state(), BlobFileMeta::FileState::kPendingLSM);
-  compaction_output.FileStateTransit(BlobFileMeta::FileEvent::kCompactionCompleted);
+  compaction_output.FileStateTransit(
+      BlobFileMeta::FileEvent::kFlushOrCompactionOutput);
+  ASSERT_EQ(compaction_output.file_state(),
+            BlobFileMeta::FileState::kPendingLSM);
+  compaction_output.FileStateTransit(
+      BlobFileMeta::FileEvent::kCompactionCompleted);
   ASSERT_EQ(compaction_output.file_state(), BlobFileMeta::FileState::kNormal);
 }
 
