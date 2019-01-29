@@ -69,7 +69,6 @@ class BlobFileSizeCollectorTest : public testing::Test {
                                cf_ioptions_.internal_comparator);
     uint64_t file_size = 0;
     ASSERT_OK(env_->GetFileSize(file->file_name(), &file_size));
-    std::cout<< file->file_name() << std::endl;
     ASSERT_TRUE(file_size > 0);
     ASSERT_OK(table_factory_->NewTableReader(options, std::move(file),
                                              file_size, result));
