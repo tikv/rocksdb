@@ -301,6 +301,7 @@ TEST_F(TableBuilderTest, NumEntries) {
     table_builder->Add(ikey.Encode(), value);
   }
   ASSERT_EQ(n, table_builder->NumEntries());
+  ASSERT_OK(table_builder->Finish());
 }
 
 }  // namespace titandb

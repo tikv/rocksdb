@@ -17,15 +17,6 @@ namespace titandb {
     if (!(expr)) abort(); \
   } while (0)
 
-template <typename T>
-void CheckCodec(const T& input) {
-  std::string buffer;
-  input.EncodeTo(&buffer);
-  T output;
-  ASSERT_OK(DecodeInto(buffer, &output));
-  ASSERT_EQ(output, input);
-}
-
 // A slice pointed to an owned buffer.
 class OwnedSlice : public Slice {
  public:

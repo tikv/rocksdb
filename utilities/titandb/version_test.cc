@@ -1,6 +1,7 @@
 #include "utilities/titandb/version.h"
 #include "util/filename.h"
 #include "util/testharness.h"
+#include "utilities/titandb/testutil.h"
 #include "utilities/titandb/util.h"
 #include "utilities/titandb/version_builder.h"
 #include "utilities/titandb/version_edit.h"

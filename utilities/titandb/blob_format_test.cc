@@ -1,5 +1,6 @@
 #include "utilities/titandb/blob_format.h"
 #include "util/testharness.h"
+#include "utilities/titandb/testutil.h"
 #include "utilities/titandb/util.h"
 
 namespace rocksdb {
@@ -56,10 +57,10 @@ TEST(BlobFormatTest, BlobFileStateTransit) {
 
   BlobFileMeta compaction_output;
   ASSERT_EQ(compaction_output.file_state(), BlobFileMeta::FileState::kInit);
-  blob_file.FileStateTransit(BlobFileMeta::FileEvent::kFlushOrCompactionOutput);
-  ASSERT_EQ(blob_file.file_state(), BlobFileMeta::FileState::kPendingLSM);
-  blob_file.FileStateTransit(BlobFileMeta::FileEvent::kCompactionCompleted);
-  ASSERT_EQ(blob_file.file_state(), BlobFileMeta::FileState::kNormal);
+  compaction_output.FileStateTransit(BlobFileMeta::FileEvent::kFlushOrCompactionOutput);
+  ASSERT_EQ(compaction_output.file_state(), BlobFileMeta::FileState::kPendingLSM);
+  compaction_output.FileStateTransit(BlobFileMeta::FileEvent::kCompactionCompleted);
+  ASSERT_EQ(compaction_output.file_state(), BlobFileMeta::FileState::kNormal);
 }
 
 }  // namespace titandb
