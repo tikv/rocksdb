@@ -9,7 +9,7 @@ namespace titandb {
 
 template <typename T>
 void CheckCodec(const T& input) {
-  std::__1::string buffer;
+  std::string buffer;
   input.EncodeTo(&buffer);
   T output;
   ASSERT_OK(DecodeInto(buffer, &output));
