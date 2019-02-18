@@ -57,6 +57,18 @@ void BlobStorage::ComputeGCScore() {
             });
 }
 
+void BlobStorage::AddBlobFiles(
+    const std::map<uint64_t, std::shared_ptr<BlobFileMeta>>& files) {
+  files_.insert(files.begin(), files.end());
+}
+
+void BlobStorage::DeleteBlobFiles(const std::set<uint64_t>& files) {
+  for (const auto& f : files) {
+    files_.erase(f);
+    file_cache_->Evict(f);
+  }
+}
+
 Version::~Version() {
   assert(refs_ == 0);
 

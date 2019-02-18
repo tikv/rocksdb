@@ -54,6 +54,10 @@ class BlobStorage {
 
   const TitanCFOptions& titan_cf_options() { return titan_cf_options_; }
 
+  void AddBlobFiles(
+      const std::map<uint64_t, std::shared_ptr<BlobFileMeta>>& files);
+  void DeleteBlobFiles(const std::set<uint64_t>& files);
+
  private:
   friend class Version;
   friend class VersionSet;

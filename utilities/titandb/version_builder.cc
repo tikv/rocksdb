@@ -42,10 +42,8 @@ std::shared_ptr<BlobStorage> VersionBuilder::Builder::Build() {
   }
 
   auto vs = std::make_shared<BlobStorage>(*base_.lock());
-  vs->files_.insert(added_files_.begin(), added_files_.end());
-  for (auto& file : deleted_files_) {
-    vs->files_.erase(file);
-  }
+  vs->AddBlobFiles(added_files_);
+  vs->DeleteBlobFiles(deleted_files_);
   vs->ComputeGCScore();
   return vs;
 }
