@@ -128,7 +128,10 @@ TEST_F(OptionsTest, GetOptionsFromMapTest) {
       {"skip_log_error_on_recovery", "false"},
       {"stats_dump_period_sec", "46"},
       {"stats_persist_period_sec", "57"},
+<<<<<<< HEAD
       {"persist_stats_to_disk", "false"},
+=======
+>>>>>>> c4f5d0aa1... add GetStatsHistory to retrieve stats snapshots (#4748)
       {"stats_history_buffer_size", "69"},
       {"advise_random_on_open", "true"},
       {"use_adaptive_mutex", "false"},
@@ -264,7 +267,10 @@ TEST_F(OptionsTest, GetOptionsFromMapTest) {
   ASSERT_EQ(new_db_opt.skip_log_error_on_recovery, false);
   ASSERT_EQ(new_db_opt.stats_dump_period_sec, 46U);
   ASSERT_EQ(new_db_opt.stats_persist_period_sec, 57U);
+<<<<<<< HEAD
   ASSERT_EQ(new_db_opt.persist_stats_to_disk, false);
+=======
+>>>>>>> c4f5d0aa1... add GetStatsHistory to retrieve stats snapshots (#4748)
   ASSERT_EQ(new_db_opt.stats_history_buffer_size, 69U);
   ASSERT_EQ(new_db_opt.advise_random_on_open, true);
   ASSERT_EQ(new_db_opt.use_adaptive_mutex, false);

@@ -1,8 +1,23 @@
 # Rocksdb Change Log
+<<<<<<< HEAD
 ## Cherry-picks
 * Fix ingested file and directory not being fsync.
 * Fix crash when memtable prefix bloom is enabled and read/write a key out of domain of prefix extractor.
 * Fix SstFileReader not able to open file ingested with write_glbal_seqno=true.
+=======
+
+## 6.0.0 (2/19/2019)
+### New Features
+* Enabled checkpoint on readonly db (DBImplReadOnly).
+* Make DB ignore dropped column families while committing results of atomic flush.
+* RocksDB may choose to preopen some files even if options.max_open_files != -1. This may make DB open slightly longer.
+* For users of dictionary compression with ZSTD v0.7.0+, we now reuse the same digested dictionary when compressing each of an SST file's data blocks for faster compression speeds.
+* For all users of dictionary compression who set `cache_index_and_filter_blocks == true`, we now store dictionary data used for decompression in the block cache for better control over memory usage. For users of ZSTD v1.1.4+ who compile with -DZSTD_STATIC_LINKING_ONLY, this includes a digested dictionary, which is used to increase decompression speed.
+* Add support for block checksums verification for external SST files before ingestion.
+* Introduce stats history which periodically saves Statistics snapshots and added `GetStatsHistory` API to retrieve these snapshots.
+* Add a place holder in manifest which indicate a record from future that can be safely ignored.
+* Add support for trace sampling.
+>>>>>>> c4f5d0aa1... add GetStatsHistory to retrieve stats snapshots (#4748)
 * Enable properties block checksum verification for block-based tables.
 * Add support for block checksums verification for external SST files before ingestion.
 * Disallow CompactionFilter::IgnoreSnapshots() = false, because it is not very useful and the behavior is confusing. The filter will filter everything if there is no snapshot declared by the time the compaction starts. However, users can define a snapshot after the compaction starts and before it finishes and this new snapshot won't be repeatable, because after the compaction finishes, some keys may be dropped. 

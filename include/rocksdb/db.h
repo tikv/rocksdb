@@ -52,6 +52,7 @@ struct ExternalSstFileInfo;
 class WriteBatch;
 class Env;
 class EventListener;
+class StatsHistoryIterator;
 class TraceWriter;
 #ifdef ROCKSDB_LITE
 class CompactionJobInfo;

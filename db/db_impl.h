@@ -64,6 +64,7 @@ namespace rocksdb {
 
 class Arena;
 class ArenaWrappedDBIter;
+class InMemoryStatsHistoryIterator;
 class MemTable;
 class PersistentStatsHistoryIterator;
 class TableCache;
@@ -515,7 +516,10 @@ class DBImpl : public DB {
   int TEST_BGCompactionsAllowed() const;
   int TEST_BGFlushesAllowed() const;
   size_t TEST_GetWalPreallocateBlockSize(uint64_t write_buffer_size) const;
-  void TEST_WaitForTimedTaskRun(std::function<void()> callback) const;
+  void TEST_WaitForDumpStatsRun(std::function<void()> callback) const;
+  void TEST_WaitForPersistStatsRun(std::function<void()> callback) const;
+  bool TEST_IsPersistentStatsEnabled() const;
+  size_t TEST_EstimateInMemoryStatsHistorySize() const;
 
 #endif  // NDEBUG
 
@@ -760,13 +764,6 @@ class DBImpl : public DB {
   bool FindStatsByTime(uint64_t start_time, uint64_t end_time,
                        uint64_t* new_time,
                        std::map<std::string, uint64_t>* stats_map);
-
-#ifndef NDEBUG
-  void TEST_WaitForDumpStatsRun(std::function<void()> callback) const;
-  void TEST_WaitForPersistStatsRun(std::function<void()> callback) const;
-  bool TEST_IsPersistentStatsEnabled() const;
-  size_t TEST_EstimateInMemoryStatsHistorySize() const;
-#endif  // NDEBUG
 
  protected:
   Env* const env_;
@@ -1227,6 +1224,8 @@ class DBImpl : public DB {
   // Lock over the persistent DB state.  Non-nullptr iff successfully acquired.
   FileLock* db_lock_;
 
+  // In addition to mutex_, log_write_mutex_ protected writes to stats_history_
+  InstrumentedMutex stats_history_mutex_;
   // In addition to mutex_, log_write_mutex_ protected writes to logs_ and
   // logfile_number_. With two_write_queues it also protects alive_log_files_,
   // and log_empty_. Refer to the definition of each variable below for more
@@ -1353,6 +1352,36 @@ class DBImpl : public DB {
   autovector<log::Writer*> logs_to_free_;
 
   bool is_snapshot_supported_;
+
+  std::map<uint64_t, std::map<std::string, uint64_t>> stats_history_;
+
+  std::map<std::string, uint64_t> stats_slice_;
+
+  bool stats_slice_initialized_ = false;
+
+  // Class to maintain directories for all database paths other than main one.
+  class Directories {
+   public:
+    Status SetDirectories(Env* env, const std::string& dbname,
+                          const std::string& wal_dir,
+                          const std::vector<DbPath>& data_paths);
+
+    Directory* GetDataDir(size_t path_id) const;
+
+    Directory* GetWalDir() {
+      if (wal_dir_) {
+        return wal_dir_.get();
+      }
+      return db_dir_.get();
+    }
+
+    Directory* GetDbDir() { return db_dir_.get(); }
+
+   private:
+    std::unique_ptr<Directory> db_dir_;
+    std::vector<std::unique_ptr<Directory>> data_dirs_;
+    std::unique_ptr<Directory> wal_dir_;
+  };
 
   Directories directories_;
 
@@ -1573,9 +1602,13 @@ class DBImpl : public DB {
   // Only to be set during initialization
   std::unique_ptr<PreReleaseCallback> recoverable_state_pre_release_callback_;
 
-  // handle for scheduling jobs at fixed intervals
+  // handle for scheduling stats dumping at fixed intervals
   // REQUIRES: mutex locked
   std::unique_ptr<rocksdb::RepeatableThread> thread_dump_stats_;
+
+  // handle for scheduling stats snapshoting at fixed intervals
+  // REQUIRES: mutex locked
+  std::unique_ptr<rocksdb::RepeatableThread> thread_persist_stats_;
 
   // No copying allowed
   DBImpl(const DBImpl&);

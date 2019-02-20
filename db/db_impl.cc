@@ -72,6 +72,7 @@
 #include "rocksdb/env.h"
 #include "rocksdb/merge_operator.h"
 #include "rocksdb/statistics.h"
+#include "rocksdb/stats_history.h"
 #include "rocksdb/status.h"
 #include "rocksdb/table.h"
 #include "rocksdb/write_buffer_manager.h"
@@ -394,16 +395,15 @@ void DBImpl::CancelAllBackgroundWork(bool wait) {
   ROCKS_LOG_INFO(immutable_db_options_.info_log,
                  "Shutdown: canceling all background work");
 
-  InstrumentedMutexLock l(&mutex_);
-  // To avoid deadlock, `thread_dump_stats_->cancel()` needs to be called
-  // before grabbing db mutex because the actual worker function
-  // `DBImpl::DumpStats()` also holds db mutex
   if (thread_dump_stats_ != nullptr) {
-    mutex_.Unlock();
     thread_dump_stats_->cancel();
-    mutex_.Lock();
     thread_dump_stats_.reset();
   }
+  if (thread_persist_stats_ != nullptr) {
+    thread_persist_stats_->cancel();
+    thread_persist_stats_.reset();
+  }
+  InstrumentedMutexLock l(&mutex_);
   if (!shutting_down_.load(std::memory_order_acquire) &&
       has_unpersisted_data_.load(std::memory_order_relaxed) &&
       !mutable_db_options_.avoid_flush_during_shutdown) {
@@ -634,6 +634,7 @@ void DBImpl::PrintStatistics() {
 
 void DBImpl::StartTimedTasks() {
   unsigned int stats_dump_period_sec = 0;
+  unsigned int stats_persist_period_sec = 0;
   {
     InstrumentedMutexLock l(&mutex_);
     stats_dump_period_sec = mutable_db_options_.stats_dump_period_sec;
@@ -650,6 +651,14 @@ void DBImpl::StartTimedTasks() {
         thread_persist_stats_.reset(new rocksdb::RepeatableThread(
             [this]() { DBImpl::PersistStats(); }, "pst_st", env_,
             static_cast<uint64_t>(stats_persist_period_sec) * kMicrosInSecond));
+      }
+    }
+    stats_persist_period_sec = mutable_db_options_.stats_persist_period_sec;
+    if (stats_persist_period_sec > 0) {
+      if (!thread_persist_stats_) {
+        thread_persist_stats_.reset(new rocksdb::RepeatableThread(
+            [this]() { DBImpl::PersistStats(); }, "pst_st", env_,
+            stats_persist_period_sec * 1000000));
       }
     }
   }
@@ -976,6 +985,21 @@ Status DBImpl::SetDBOptions(
               [this]() { DBImpl::PersistStats(); }, "pst_st", env_,
               static_cast<uint64_t>(new_options.stats_persist_period_sec) *
                   kMicrosInSecond));
+        } else {
+          thread_persist_stats_.reset();
+        }
+      }
+      if (new_options.stats_persist_period_sec !=
+          mutable_db_options_.stats_persist_period_sec) {
+        if (thread_persist_stats_) {
+          mutex_.Unlock();
+          thread_persist_stats_->cancel();
+          mutex_.Lock();
+        }
+        if (new_options.stats_persist_period_sec > 0) {
+          thread_persist_stats_.reset(new rocksdb::RepeatableThread(
+              [this]() { DBImpl::PersistStats(); }, "pst_st", env_,
+              new_options.stats_persist_period_sec * 1000000));
         } else {
           thread_persist_stats_.reset();
         }
