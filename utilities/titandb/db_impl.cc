@@ -445,12 +445,12 @@ const Snapshot* TitanDBImpl::GetSnapshot() {
   std::map<ColumnFamilyData*, SuperVersion*> svs;
   {
     MutexLock l(&mutex_);
-    current = vset_->current();
-    current->Ref();
     snapshot = db_->GetSnapshot();
     for (auto cfd : cfds_) {
       svs.emplace(cfd, db_impl_->GetReferencedSuperVersion(cfd));
     }
+    current = vset_->current();
+    current->Ref();
   }
   return new TitanSnapshot(current, snapshot, &svs);
 }
