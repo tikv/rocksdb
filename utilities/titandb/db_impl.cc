@@ -61,6 +61,7 @@ class TitanDBImpl::FileManager : public BlobFileManager {
       s = db_->vset_->LogAndApply(&edit, &db_->mutex_);
       for (const auto& file : files)
         db_->pending_outputs_.erase(file.second->GetNumber());
+      ROCKS_LOG_WARN(db_->db_options_.info_log, "Titan version update finish");
     }
     return s;
   }
@@ -445,12 +446,17 @@ const Snapshot* TitanDBImpl::GetSnapshot() {
   std::map<ColumnFamilyData*, SuperVersion*> svs;
   {
     MutexLock l(&mutex_);
+    Version* current1 = vset_->current();
     snapshot = db_->GetSnapshot();
     for (auto cfd : cfds_) {
       svs.emplace(cfd, db_impl_->GetReferencedSuperVersion(cfd));
     }
     current = vset_->current();
     current->Ref();
+    if (current1 != current) {
+      ROCKS_LOG_WARN(db_options_.info_log, "different current before and after");
+      abort();
+    }
   }
   return new TitanSnapshot(current, snapshot, &svs);
 }

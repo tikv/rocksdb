@@ -103,6 +103,10 @@ Status TitanDBImpl::BackgroundGC(LogBuffer* log_buffer) {
 
     if (s.ok()) {
       s = blob_gc_job.Finish();
+      const Snapshot *snapshot = db_->GetSnapshot();
+      ROCKS_LOG_WARN(db_options_.info_log, "sequence number is %llu after gc job",
+        snapshot->GetSequenceNumber());
+      db_->ReleaseSnapshot(snapshot);
     }
 
     blob_gc->ReleaseGcFiles();

@@ -139,9 +139,10 @@ class TitanDBIterator : public Iterator {
       // corresponding blob file has already been GCed out, so we
       // cannot abort here.
       if (status_.IsCorruption()) {
-        fprintf(stderr, "key:%s GetBlobValue err:%s\n",
+        fprintf(stderr, "key:%s GetBlobValue err:%s with sequence number:%lu \n",
                 iter_->key().ToString(true).c_str(),
-                status_.ToString().c_str());
+                status_.ToString().c_str(),
+                snap_->snapshot()->GetSequenceNumber());
         assert(false);
         return false;
       }
