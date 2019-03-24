@@ -142,7 +142,7 @@ class TitanDBIterator : public Iterator {
         fprintf(stderr, "key:%s GetBlobValue err:%s with sequence number:%lu \n",
                 iter_->key().ToString(true).c_str(),
                 status_.ToString().c_str(),
-                snap_->snapshot()->GetSequenceNumber());
+                options_.snapshot->GetSequenceNumber());
         assert(false);
         return false;
       }
