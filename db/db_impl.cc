@@ -1000,10 +1000,13 @@ static void CleanupIteratorState(void* arg1, void* /*arg2*/) {
 }
 }  // namespace
 
-InternalIterator* DBImpl::NewInternalIterator(
-    const ReadOptions& read_options, ColumnFamilyData* cfd,
-    SuperVersion* super_version, Arena* arena,
-    RangeDelAggregator* range_del_agg) {
+InternalIterator* DBImpl::NewInternalIterator(const ReadOptions& read_options,
+                                              ColumnFamilyData* cfd,
+                                              SuperVersion* super_version,
+                                              Arena* arena,
+                                              RangeDelAggregator* range_del_agg,
+                                              SequenceNumber sequence,
+                                              bool is_user_sv) {
   InternalIterator* internal_iter;
   assert(arena != nullptr);
   assert(range_del_agg != nullptr);
@@ -1038,10 +1041,12 @@ InternalIterator* DBImpl::NewInternalIterator(
                                            &merge_iter_builder, range_del_agg);
     }
     internal_iter = merge_iter_builder.Finish();
-    IterState* cleanup =
-        new IterState(this, &mutex_, super_version,
-                      read_options.background_purge_on_iterator_cleanup);
-    internal_iter->RegisterCleanup(CleanupIteratorState, cleanup, nullptr);
+    if (!is_user_sv) {
+      IterState* cleanup =
+          new IterState(this, &mutex_, super_version,
+                        read_options.background_purge_on_iterator_cleanup);
+      internal_iter->RegisterCleanup(CleanupIteratorState, cleanup, nullptr);
+    }
 
     return internal_iter;
   } else {
@@ -1636,7 +1641,12 @@ ArenaWrappedDBIter* DBImpl::NewIteratorImpl(const ReadOptions& read_options,
                                             ReadCallback* read_callback,
                                             bool allow_blob, bool allow_refresh,
                                             SuperVersion* sv) {
-  if (sv == nullptr) sv = cfd->GetReferencedSuperVersion(&mutex_);
+  bool is_user_sv = false;
+  if (sv == nullptr) {
+    sv = cfd->GetReferencedSuperVersion(&mutex_);
+  } else {
+    is_user_sv = true;
+  }
 
   // Try to generate a DB iterator tree in continuous memory area to be
   // cache friendly. Here is an example of result:
@@ -1689,7 +1699,7 @@ ArenaWrappedDBIter* DBImpl::NewIteratorImpl(const ReadOptions& read_options,
 
   InternalIterator* internal_iter =
       NewInternalIterator(read_options, cfd, sv, db_iter->GetArena(),
-                          db_iter->GetRangeDelAggregator());
+                          db_iter->GetRangeDelAggregator(), snapshot, is_user_sv);
   db_iter->SetIterUnderDBIter(internal_iter);
 
   return db_iter;
