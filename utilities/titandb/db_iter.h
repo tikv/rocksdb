@@ -139,11 +139,11 @@ class TitanDBIterator : public Iterator {
       // corresponding blob file has already been GCed out, so we
       // cannot abort here.
       if (status_.IsCorruption()) {
-        fprintf(stderr, "key:%s GetBlobValue err:%s\n",
+        fprintf(stderr, "key:%s GetBlobValue err:%s with sequence number:%lu \n",
                 iter_->key().ToString(true).c_str(),
-                status_.ToString().c_str());
-        assert(false);
-        return false;
+                status_.ToString().c_str(),
+                options_.snapshot->GetSequenceNumber());
+        abort();
       }
       if (!status_.ok()) return true;
       it = files_.emplace(index.file_number, std::move(prefetcher)).first;
