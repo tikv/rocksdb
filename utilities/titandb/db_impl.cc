@@ -51,7 +51,7 @@ class TitanDBImpl::FileManager : public BlobFileManager {
       }
       if (!s.ok()) return s;
 
-      ROCKS_LOG_WARN(db_->db_options_.info_log, "Titan adding blob file [%llu]",
+      ROCKS_LOG_INFO(db_->db_options_.info_log, "Titan adding blob file [%llu]",
                      file.first->file_number());
       edit.AddBlobFile(file.first);
     }
