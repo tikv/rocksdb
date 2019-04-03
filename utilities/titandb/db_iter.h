@@ -139,7 +139,6 @@ class TitanDBIterator : public Iterator {
                 iter_->key().ToString(true).c_str(),
                 status_.ToString().c_str(),
                 options_.snapshot->GetSequenceNumber());
-        abort();
       }
       if (!status_.ok()) return true;
       it = files_.emplace(index.file_number, std::move(prefetcher)).first;
