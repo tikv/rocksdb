@@ -176,6 +176,9 @@ void BlobFileMeta::FileStateTransit(const FileEvent& event) {
       assert(state_ == FileState::kInit);
       state_ = FileState::kNormal;
       break;
+    case FileEvent::kDelete:
+      assert(state_ != FileState::kObsolete);
+      state_ = FileState::kObsolete;
     default:
       fprintf(stderr,
               "Unknown file event[%d], file number[%lu], file state[%d]",

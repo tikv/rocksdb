@@ -11,9 +11,8 @@
 #include "util/mutexlock.h"
 #include "utilities/titandb/blob_file_cache.h"
 #include "utilities/titandb/options.h"
-#include "utilities/titandb/version.h"
-#include "utilities/titandb/version_builder.h"
 #include "utilities/titandb/version_edit.h"
+#include "utilities/titandb/blob_storage.h"
 
 namespace rocksdb {
 namespace titandb {
@@ -26,12 +25,7 @@ struct ObsoleteFiles {
   ObsoleteFiles(ObsoleteFiles&&) = delete;
   ObsoleteFiles& operator=(ObsoleteFiles&&) = delete;
 
-  void Swap(ObsoleteFiles* obsolete_file) {
-    blob_files.swap(obsolete_file->blob_files);
-    manifests.swap(obsolete_file->manifests);
-  }
-
-  std::vector<uint32_t> blob_files;
+  std::list<std::pair<uint64_t, SequenceNumber>> blob_files;
   std::vector<std::string> manifests;
 };
 
@@ -60,22 +54,25 @@ class VersionSet {
   // REQUIRES: mutex is held
   void DropColumnFamilies(const std::vector<uint32_t>& column_families);
 
-  // Returns the current version.
-  Version* current() { return versions_.current(); }
-
   // Allocates a new file number.
   uint64_t NewFileNumber() { return next_file_number_.fetch_add(1); }
 
+  std::weak_ptr<BlobStorage> GetBlobStorage(uint32_t cf_id) {
+    auto it = column_families_.find(cf_id);
+    if (it != column_families_.end()) {
+      return it->second;
+    }
+    return std::weak_ptr<BlobStorage>();
+  }
+
   // REQUIRES: mutex is held
-  void GetObsoleteFiles(ObsoleteFiles* obsolete_files) {
-    obsolete_files->Swap(&obsolete_files_);
-  }
+  void GetObsoleteFiles(ObsoleteFiles* obsolete_files, SequenceNumber oldest_sequence);
 
-  void AddObsoleteBlobFiles(const std::vector<uint32_t>& blob_files) {
-    obsolete_files_.blob_files.insert(obsolete_files_.blob_files.end(),
-                                      blob_files.begin(), blob_files.end());
+  void MarkAllFilesForGC() {
+    for (auto& cf : column_families_) {
+      cf.second->MarkAllFilesForGC();
+    }
   }
-
  private:
   friend class BlobFileSizeCollectorTest;
   friend class VersionTest;
@@ -85,6 +82,8 @@ class VersionSet {
   Status OpenManifest(uint64_t number);
 
   Status WriteSnapshot(log::Writer* log);
+  
+  void Apply(VersionEdit* edit);
 
   std::string dirname_;
   Env* env_;
@@ -95,7 +94,7 @@ class VersionSet {
   // sure this field is destructed after Version does.
   ObsoleteFiles obsolete_files_;
 
-  VersionList versions_;
+  std::map<uint32_t, std::shared_ptr<BlobStorage>> column_families_;
   std::unique_ptr<log::Writer> manifest_;
   std::atomic<uint64_t> next_file_number_{1};
 };

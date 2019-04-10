@@ -8,8 +8,6 @@
 namespace rocksdb {
 namespace titandb {
 
-class VersionSet;
-
 // Provides methods to access the blob storage for a specific
 // version. The version must be valid when this storage is used.
 class BlobStorage {
@@ -54,14 +52,12 @@ class BlobStorage {
 
   const TitanCFOptions& titan_cf_options() { return titan_cf_options_; }
 
-  void AddBlobFiles(
-      const std::map<uint64_t, std::shared_ptr<BlobFileMeta>>& files);
-  void DeleteBlobFiles(const std::set<uint64_t>& files);
+  void AddBlobFile(std::shared_ptr<BlobFileMeta>& file);
+
+  void DeleteBlobFile(uint64_t file);
 
  private:
-  friend class Version;
   friend class VersionSet;
-  friend class VersionBuilder;
   friend class VersionTest;
   friend class BlobGCPickerTest;
   friend class BlobGCJobTest;
@@ -73,59 +69,6 @@ class BlobStorage {
   std::shared_ptr<BlobFileCache> file_cache_;
 
   std::vector<GCScore> gc_score_;
-};
-
-class Version {
- public:
-  Version(VersionSet* vset) : vset_(vset), prev_(this), next_(this) {}
-
-  // Reference count management.
-  void Ref();
-  void Unref();
-
-  // Returns the blob storage for the specific column family.
-  // The version must be valid when the blob storage is used.
-  // Except Version, Nobody else can extend the life time of
-  // BlobStorage. Otherwise, It's a wrong design. Because
-  // BlobStorage only belongs to Version, Others only have
-  // the right to USE it.
-  std::weak_ptr<BlobStorage> GetBlobStorage(uint32_t cf_id);
-
-  void MarkAllFilesForGC() {
-    for (auto& cf : column_families_) {
-      cf.second->MarkAllFilesForGC();
-    }
-  }
-
- private:
-  friend class VersionList;
-  friend class VersionBuilder;
-  friend class VersionSet;
-  friend class VersionTest;
-  friend class BlobFileSizeCollectorTest;
-
-  ~Version();
-
-  VersionSet* vset_;
-  std::atomic_int refs_{0};
-  Version* prev_;
-  Version* next_;
-  std::map<uint32_t, std::shared_ptr<BlobStorage>> column_families_;
-};
-
-class VersionList {
- public:
-  VersionList();
-
-  ~VersionList();
-
-  Version* current() { return current_; }
-
-  void Append(Version* v);
-
- private:
-  Version list_{nullptr};
-  Version* current_{nullptr};
 };
 
 }  // namespace titandb

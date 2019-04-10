@@ -86,8 +86,8 @@ class BlobGCJobTest : public testing::Test {
       std::shared_ptr<BlobGCPicker> blob_gc_picker =
           std::make_shared<BasicBlobGCPicker>(db_options, cf_options);
       blob_gc = blob_gc_picker->PickBlobGC(
-          version_set_->current()->GetBlobStorage(cfh->GetID()).lock().get());
-      blob_gc->SetInputVersion(cfh, version_set_->current());
+          version_set_->GetBlobStorage(cfh->GetID()).lock().get());
+      blob_gc->SetColumnFamily(cfh);
     }
     ASSERT_TRUE(blob_gc);
 
@@ -138,7 +138,7 @@ class BlobGCJobTest : public testing::Test {
 
     std::vector<BlobFileMeta*> tmp;
     BlobGC blob_gc(std::move(tmp), TitanCFOptions());
-    blob_gc.SetInputVersion(cfh, version_set_->current());
+    blob_gc.SetColumnFamily(cfh);
     BlobGCJob blob_gc_job(&blob_gc, base_db_, mutex_, TitanDBOptions(),
                           Env::Default(), EnvOptions(), nullptr, version_set_,
                           nullptr, nullptr);
@@ -160,13 +160,7 @@ class BlobGCJobTest : public testing::Test {
       db_->Delete(WriteOptions(), GenKey(i));
     }
     db_->Flush(flush_options);
-    Version* v = nullptr;
-    {
-      MutexLock l(mutex_);
-      v = version_set_->current();
-    }
-    ASSERT_TRUE(v != nullptr);
-    auto b = v->GetBlobStorage(base_db_->DefaultColumnFamily()->GetID()).lock();
+    auto b = version_set_->GetBlobStorage(base_db_->DefaultColumnFamily()->GetID()).lock();
     ASSERT_EQ(b->files_.size(), 1);
     auto old = b->files_.begin()->first;
 //    for (auto& f : b->files_) {
@@ -182,11 +176,7 @@ class BlobGCJobTest : public testing::Test {
       ASSERT_TRUE(iter->key().compare(Slice(GenKey(i))) == 0);
     }
     RunGC();
-    {
-      MutexLock l(mutex_);
-      v = version_set_->current();
-    }
-    b = v->GetBlobStorage(base_db_->DefaultColumnFamily()->GetID()).lock();
+    b = version_set_->GetBlobStorage(base_db_->DefaultColumnFamily()->GetID()).lock();
     ASSERT_EQ(b->files_.size(), 1);
     auto new1 = b->files_.begin()->first;
     ASSERT_TRUE(old != new1);

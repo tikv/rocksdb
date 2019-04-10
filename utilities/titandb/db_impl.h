@@ -1,6 +1,7 @@
 #pragma once
 
 #include "db/db_impl.h"
+#include "util/timer_queue.h"
 #include "rocksdb/utilities/titandb/db.h"
 #include "utilities/titandb/blob_file_manager.h"
 #include "utilities/titandb/version_set.h"
@@ -64,6 +65,7 @@ class TitanDBImpl : public TitanDB {
 
   void OnCompactionCompleted(const CompactionJobInfo& compaction_job_info);
 
+  void StartBackgroundTasks();
  private:
   class FileManager;
   friend class FileManager;
@@ -104,7 +106,20 @@ class TitanDBImpl : public TitanDB {
   Status BackgroundGC(LogBuffer* log_buffer);
 
   // REQUIRES: mutex_ held;
-  void PurgeObsoleteFiles();
+  std::pair<bool, int64_t> PurgeObsoleteFiles(bool aborted);
+
+  SequenceNumber GetOldestSnapshotSequence() {
+    SequenceNumber oldest_snapshot = kMaxSequenceNumber;
+    {
+      // Need to lock DBImpl mutex before access snapshot list.
+      InstrumentedMutexLock l(db_impl_->mutex());
+      auto& snapshots = db_impl_->snapshots();
+      if (!snapshots.empty()) {
+        oldest_snapshot = snapshots.oldest()->GetSequenceNumber();
+      }
+    }
+    return oldest_snapshot;
+  }
 
   FileLock* lock_{nullptr};
   // The lock sequence must be Titan.mutex_.Lock() -> Base DB mutex_.Lock()
@@ -122,6 +137,8 @@ class TitanDBImpl : public TitanDB {
   EnvOptions env_options_;
   DBImpl* db_impl_;
   TitanDBOptions db_options_;
+
+  TimerQueue tqueue_;
 
   std::unique_ptr<VersionSet> vset_;
   std::set<uint64_t> pending_outputs_;

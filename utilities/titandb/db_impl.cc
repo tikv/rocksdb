@@ -118,6 +118,15 @@ TitanDBImpl::TitanDBImpl(const TitanDBOptions& options,
 
 TitanDBImpl::~TitanDBImpl() { Close(); }
 
+// how often to schedule delete obs files periods
+static constexpr uint32_t kDeleteObsoleteFilesPeriodMillisecs = 10 * 1000;
+
+void TitanDBImpl::StartBackgroundTasks() {
+  tqueue_.add(
+    kDeleteObsoleteFilesPeriodMillisecs,
+    std::bind(&TitanDBImpl::PurgeObsoleteFiles, this, std::placeholders::_1));
+}
+
 Status TitanDBImpl::Open(const std::vector<TitanCFDescriptor>& descs,
                          std::vector<ColumnFamilyHandle*>* handles) {
   // Sets up directories for base DB and Titan.
@@ -321,20 +330,12 @@ Status TitanDBImpl::Get(const ReadOptions& options, ColumnFamilyHandle* handle,
 Status TitanDBImpl::GetImpl(const ReadOptions& options,
                             ColumnFamilyHandle* handle, const Slice& key,
                             PinnableSlice* value) {
-  auto snap = reinterpret_cast<const TitanSnapshot*>(options.snapshot);
-  auto storage = snap->current()->GetBlobStorage(handle->GetID()).lock();
-
-  auto* cfd = reinterpret_cast<ColumnFamilyHandleImpl*>(handle)->cfd();
-  auto* sv = snap->GetSuperVersion(cfd);
-  if (sv == nullptr) {
-    fprintf(stderr, "GetSuperVersion failed\n");
-    abort();
-  }
+  auto storage = vset_->GetBlobStorage(handle->GetID()).lock();
 
   Status s;
   bool is_blob_index = false;
   s = db_impl_->GetImpl(options, handle, key, value, nullptr /*value_found*/,
-                        nullptr /*read_callback*/, &is_blob_index, sv);
+                        nullptr /*read_callback*/, &is_blob_index);
   if (!s.ok() || !is_blob_index) return s;
 
   BlobIndex index;
@@ -409,14 +410,11 @@ Iterator* TitanDBImpl::NewIteratorImpl(
     std::shared_ptr<ManagedSnapshot> snapshot) {
   auto cfd = reinterpret_cast<ColumnFamilyHandleImpl*>(handle)->cfd();
   auto snap = reinterpret_cast<const TitanSnapshot*>(options.snapshot);
-  auto storage = snap->current()->GetBlobStorage(handle->GetID());
-  auto* sv = snap->GetSuperVersion(cfd);
-  if (sv == nullptr) {
-    return nullptr;
-  }
+  auto storage = vset_->GetBlobStorage(handle->GetID());
+
   std::unique_ptr<ArenaWrappedDBIter> iter(db_impl_->NewIteratorImpl(
       options, cfd, snap->GetSequenceNumber(), nullptr /*read_callback*/,
-      true /*allow_blob*/, true /*allow_refresh*/, sv));
+      true /*allow_blob*/, true /*allow_refresh*/));
   return new TitanDBIterator(options, storage.lock().get(), snapshot,
                              std::move(iter));
 }
@@ -440,29 +438,12 @@ Status TitanDBImpl::NewIterators(
 }
 
 const Snapshot* TitanDBImpl::GetSnapshot() {
-  Version* current;
-  const Snapshot* snapshot;
-  std::map<ColumnFamilyData*, SuperVersion*> svs;
-  {
-    MutexLock l(&mutex_);
-    current = vset_->current();
-    current->Ref();
-    snapshot = db_->GetSnapshot();
-    for (auto cfd : cfds_) {
-      svs.emplace(cfd, db_impl_->GetReferencedSuperVersion(cfd));
-    }
-  }
-  return new TitanSnapshot(current, snapshot, &svs);
+  return new TitanSnapshot(db_->GetSnapshot());
 }
 
 void TitanDBImpl::ReleaseSnapshot(const Snapshot* snapshot) {
   auto s = reinterpret_cast<const TitanSnapshot*>(snapshot);
   db_->ReleaseSnapshot(s->snapshot());
-  for (auto sv : s->svs()) {
-    db_impl_->CleanupSuperVersion(sv.second);
-  }
-
-  s->current()->Unref();
 
   delete s;
 }
@@ -490,10 +471,7 @@ void TitanDBImpl::OnFlushCompleted(const FlushJobInfo& flush_job_info) {
 
   {
     MutexLock l(&mutex_);
-
-    Version* current = vset_->current();
-    current->Ref();
-    auto blob_storage = current->GetBlobStorage(flush_job_info.cf_id).lock();
+    auto blob_storage = vset_->GetBlobStorage(flush_job_info.cf_id).lock();
     if (!blob_storage) {
       fprintf(stderr, "Column family id:%u Not Found\n", flush_job_info.cf_id);
       abort();
@@ -506,7 +484,6 @@ void TitanDBImpl::OnFlushCompleted(const FlushJobInfo& flush_job_info) {
       }
       file->FileStateTransit(BlobFileMeta::FileEvent::kFlushCompleted);
     }
-    current->Unref();
   }
 }
 
@@ -563,13 +540,10 @@ void TitanDBImpl::OnCompactionCompleted(
 
   {
     MutexLock l(&mutex_);
-    Version* current = vset_->current();
-    current->Ref();
-    auto bs = current->GetBlobStorage(compaction_job_info.cf_id).lock();
+    auto bs = vset_->GetBlobStorage(compaction_job_info.cf_id).lock();
     if (!bs) {
       fprintf(stderr, "Column family id:%u Not Found\n",
               compaction_job_info.cf_id);
-      current->Unref();
       return;
     }
     for (const auto& o : outputs) {
@@ -594,7 +568,6 @@ void TitanDBImpl::OnCompactionCompleted(
       file->AddDiscardableSize(static_cast<uint64_t>(-bfs.second));
     }
     bs->ComputeGCScore();
-    current->Unref();
 
     AddToGCQueue(compaction_job_info.cf_id);
     MaybeScheduleGC();

@@ -1,9 +1,7 @@
-#include "utilities/titandb/version.h"
 #include "util/filename.h"
 #include "util/testharness.h"
 #include "utilities/titandb/testutil.h"
 #include "utilities/titandb/util.h"
-#include "utilities/titandb/version_builder.h"
 #include "utilities/titandb/version_edit.h"
 #include "utilities/titandb/version_set.h"
 
@@ -27,7 +25,6 @@ class VersionTest : public testing::Test {
  public:
   TitanDBOptions db_options_;
   TitanCFOptions cf_options_;
-  std::unique_ptr<VersionList> versions_;
   std::shared_ptr<BlobFileCache> file_cache_;
   std::map<uint32_t, std::shared_ptr<BlobStorage>> column_families_;
   std::unique_ptr<VersionSet> vset_;
@@ -49,18 +46,15 @@ class VersionTest : public testing::Test {
     DeleteDir(env_, dbname_);
     vset_.reset(new VersionSet(db_options_));
     ASSERT_OK(vset_->Open({}));
-    versions_.reset(new VersionList);
     column_families_.clear();
     // Sets up some column families.
-    auto v = new Version(nullptr);
     for (uint32_t id = 0; id < 10; id++) {
       std::shared_ptr<BlobStorage> storage;
       storage.reset(new BlobStorage(cf_options_, file_cache_));
       column_families_.emplace(id, storage);
       storage.reset(new BlobStorage(cf_options_, file_cache_));
-      v->column_families_.emplace(id, storage);
+      vset_->column_families_.emplace(id, storage);
     }
-    versions_->Append(v);
   }
 
   void AddBlobFiles(uint32_t cf_id, uint64_t start, uint64_t end) {
@@ -79,14 +73,10 @@ class VersionTest : public testing::Test {
   }
 
   void BuildAndCheck(std::vector<VersionEdit> edits) {
-    VersionBuilder builder(versions_->current());
     for (auto& edit : edits) {
-      builder.Apply(&edit);
+      vset_->Apply(&edit);
     }
-    Version* v = new Version(vset_.get());
-    builder.SaveTo(v);
-    versions_->Append(v);
-    for (auto& it : v->column_families_) {
+    for (auto& it : vset_->column_families_) {
       auto& storage = column_families_[it.first];
       ASSERT_EQ(storage->files_.size(), it.second->files_.size());
       for (auto& f : storage->files_) {
@@ -175,14 +165,14 @@ TEST_F(VersionTest, ObsoleteFiles) {
     vset_->LogAndApply(&add1_0_4, &mutex_);
   }
   ObsoleteFiles of;
-  vset_->GetObsoleteFiles(&of);
+  vset_->GetObsoleteFiles(&of, kMaxSequenceNumber);
   ASSERT_EQ(of.blob_files.size(), 0);
   {
     auto del1_3_4 = DeleteBlobFilesEdit(1, 3, 4);
     MutexLock l(&mutex_);
     vset_->LogAndApply(&del1_3_4, &mutex_);
   }
-  vset_->GetObsoleteFiles(&of);
+  vset_->GetObsoleteFiles(&of, kMaxSequenceNumber);
   ASSERT_EQ(of.blob_files.size(), 1);
 }
 
