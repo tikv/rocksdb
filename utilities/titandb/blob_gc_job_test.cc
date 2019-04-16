@@ -107,6 +107,10 @@ class BlobGCJobTest : public testing::Test {
 
     s = blob_gc_job.Finish();
     ASSERT_OK(s);
+
+    mutex_->Unlock();
+    tdb_->PurgeObsoleteFiles();
+    mutex_->Lock();
   }
 
   Status NewIterator(uint64_t file_number, uint64_t file_size,

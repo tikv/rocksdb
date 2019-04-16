@@ -695,7 +695,6 @@ set(SOURCES
         utilities/titandb/blob_gc.cc
         utilities/titandb/blob_gc_job.cc
         utilities/titandb/blob_gc_picker.cc
-        utilities/titandb/blob_storage.cc
         utilities/titandb/db.cc
         utilities/titandb/db_impl.cc
         utilities/titandb/db_impl_files.cc
@@ -705,6 +704,7 @@ set(SOURCES
         utilities/titandb/table_factory.cc
         utilities/titandb/titan_c.cc
         utilities/titandb/util.cc
+        utilities/titandb/version.cc
         utilities/titandb/version_edit.cc
         utilities/titandb/version_set.cc
         $<TARGET_OBJECTS:build_version>)

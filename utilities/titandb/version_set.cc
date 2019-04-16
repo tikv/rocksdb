@@ -2,6 +2,7 @@
 
 #include <inttypes.h>
 
+#include "util/testharness.h"
 #include "util/filename.h"
 
 namespace rocksdb {
@@ -267,21 +268,24 @@ void VersionSet::DropColumnFamilies(
 }
 
 void VersionSet::GetObsoleteFiles(ObsoleteFiles* obsolete_files, SequenceNumber oldest_sequence) {
-  for (auto it = obsolete_files_.blob_files.begin(); it != obsolete_files_.blob_files.end(); ++it) {
+  for (auto it = obsolete_files_.blob_files.begin(); it != obsolete_files_.blob_files.end();) {
     auto& file_number = it->first;
     auto& obsolete_sequence = it->second;
     // We check whether the oldest snapshot is no less than the last sequence
     // by the time the blob file become obsolete. If so, the blob file is not
     // visible to all existing snapshots.
-    if (oldest_sequence < obsolete_sequence) {
+    if (oldest_sequence > obsolete_sequence) {
       ROCKS_LOG_INFO(db_options_.info_log,
         "Obsolete blob file %" PRIu64 " (obsolete at %" PRIu64
-        ") visible to oldest snapshot %" PRIu64 ".",
+        ") not visible to oldest snapshot %" PRIu64 ", delete it.",
         file_number, obsolete_sequence, oldest_sequence);
       for (auto& bs: column_families_) {
         bs.second->DeleteBlobFile(file_number);
       }
-      obsolete_files->blob_files.splice(obsolete_files->blob_files.end(), obsolete_files_.blob_files, it);
+      auto now = it++;
+      obsolete_files->blob_files.splice(obsolete_files->blob_files.end(), obsolete_files_.blob_files, now);
+    } else {
+      ++it;
     }
   }
   obsolete_files_.manifests.swap(obsolete_files->manifests);

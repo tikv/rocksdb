@@ -5,25 +5,6 @@
 namespace rocksdb {
 namespace titandb {
 
-// Wraps the current version together with the snapshot from base DB
-// so that we can safely recycle a steal version when it is dropped.
-// This also implies a guarantee that the current version must contain
-// all the data accessible from base DB.
-class TitanSnapshot : public Snapshot {
- public:
-  TitanSnapshot(const Snapshot* _snapshot)
-      : snapshot_(_snapshot) {}
-
-  const Snapshot* snapshot() const { return snapshot_; }
-
-  SequenceNumber GetSequenceNumber() const override {
-    return snapshot_->GetSequenceNumber();
-  }
-
- private:
-  const Snapshot* const snapshot_;
-};
-
 class TitanDBIterator : public Iterator {
  public:
   TitanDBIterator(const ReadOptions& options, BlobStorage* storage,

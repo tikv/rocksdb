@@ -1,9 +1,10 @@
 #include "utilities/titandb/db_impl.h"
+#include "util/testharness.h"
 
 namespace rocksdb {
 namespace titandb {
 
-std::pair<bool, int64_t> TitanDBImpl::PurgeObsoleteFiles(bool aborted) {
+void TitanDBImpl::PurgeObsoleteFiles() {
   Status s;
   ObsoleteFiles obsolete_files;
   {
@@ -40,8 +41,6 @@ std::pair<bool, int64_t> TitanDBImpl::PurgeObsoleteFiles(bool aborted) {
       }
     }
   }
-
-  return std::make_pair(!aborted, -1);
 }
 
 }  // namespace titandb

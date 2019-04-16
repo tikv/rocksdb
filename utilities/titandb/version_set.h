@@ -12,7 +12,7 @@
 #include "utilities/titandb/blob_file_cache.h"
 #include "utilities/titandb/options.h"
 #include "utilities/titandb/version_edit.h"
-#include "utilities/titandb/blob_storage.h"
+#include "utilities/titandb/version.h"
 
 namespace rocksdb {
 namespace titandb {
@@ -49,6 +49,7 @@ class VersionSet {
   // REQUIRES: mutex is held
   void AddColumnFamilies(
       const std::map<uint32_t, TitanCFOptions>& column_families);
+      
   // Drops some column families. The obsolete files will be deleted in
   // background when they will not be accessed anymore.
   // REQUIRES: mutex is held
@@ -57,6 +58,7 @@ class VersionSet {
   // Allocates a new file number.
   uint64_t NewFileNumber() { return next_file_number_.fetch_add(1); }
 
+  // REQUIRES: mutex is held
   std::weak_ptr<BlobStorage> GetBlobStorage(uint32_t cf_id) {
     auto it = column_families_.find(cf_id);
     if (it != column_families_.end()) {
@@ -68,6 +70,7 @@ class VersionSet {
   // REQUIRES: mutex is held
   void GetObsoleteFiles(ObsoleteFiles* obsolete_files, SequenceNumber oldest_sequence);
 
+  // REQUIRES: mutex is held
   void MarkAllFilesForGC() {
     for (auto& cf : column_families_) {
       cf.second->MarkAllFilesForGC();

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "db/db_impl.h"
-#include "util/timer_queue.h"
+#include "util/repeatable_thread.h"
 #include "rocksdb/utilities/titandb/db.h"
 #include "utilities/titandb/blob_file_manager.h"
 #include "utilities/titandb/version_set.h"
@@ -105,8 +105,7 @@ class TitanDBImpl : public TitanDB {
   void BackgroundCallGC();
   Status BackgroundGC(LogBuffer* log_buffer);
 
-  // REQUIRES: mutex_ held;
-  std::pair<bool, int64_t> PurgeObsoleteFiles(bool aborted);
+  void PurgeObsoleteFiles();
 
   SequenceNumber GetOldestSnapshotSequence() {
     SequenceNumber oldest_snapshot = kMaxSequenceNumber;
@@ -138,7 +137,8 @@ class TitanDBImpl : public TitanDB {
   DBImpl* db_impl_;
   TitanDBOptions db_options_;
 
-  TimerQueue tqueue_;
+  // handle for purging obsolete blob files at fixed intervals
+  std::unique_ptr<RepeatableThread> thread_purge_obsolete_;
 
   std::unique_ptr<VersionSet> vset_;
   std::set<uint64_t> pending_outputs_;

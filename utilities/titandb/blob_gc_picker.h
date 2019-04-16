@@ -9,7 +9,7 @@
 #include "utilities/titandb/blob_file_manager.h"
 #include "utilities/titandb/blob_format.h"
 #include "utilities/titandb/blob_gc.h"
-#include "utilities/titandb/blob_storage.h"
+#include "utilities/titandb/version.h"
 
 namespace rocksdb {
 namespace titandb {
