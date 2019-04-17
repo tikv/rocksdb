@@ -98,16 +98,19 @@ Status VersionSet::Recover() {
   s = OpenManifest(new_manifest_file_number);
   if (!s.ok()) return s;
 
-  // Make sure perform gc on all files at the beginning
-  MarkAllFilesForGC();
-
   // Purge inactive files at start
   std::set<uint64_t> alive_files;
   alive_files.insert(new_manifest_file_number);
   for (const auto& bs : this->column_families_) {
     for (const auto& f : bs.second->files_) {
       if (f.second->is_obsolete()) {
+        // delete already obsoleted files at reopen
         bs.second->DeleteBlobFile(f.second->file_number());
+        for (auto it = this->obsolete_files_.blob_files.begin(); it != this->obsolete_files_.blob_files.end(); ++it) {
+          if (std::get<0>(*it) == f.second->file_number())  {
+            this->obsolete_files_.blob_files.erase(it);
+          }
+        }
       } else {
         alive_files.insert(f.second->file_number());
       }
@@ -126,6 +129,9 @@ Status VersionSet::Recover() {
 
     env_->DeleteFile(dirname_ + "/" + f);
   }
+
+  // Make sure perform gc on all files at the beginning
+  MarkAllFilesForGC();
 
   return Status::OK();
 }
@@ -266,7 +272,6 @@ void VersionSet::DropColumnFamilies(const std::vector<uint32_t>& column_families
         ROCKS_LOG_INFO(db_options_.info_log, "Titan add obsolete file [%llu]",
           file.second->file_number());
         edit.DeleteBlobFile(file.first, obsolete_sequence);
-        MarkFileObsolete(file.second, obsolete_sequence, cf);
       }
       // TODO: check status
       LogAndApply(&edit);

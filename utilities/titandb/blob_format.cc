@@ -153,6 +153,10 @@ void BlobFileMeta::FileStateTransit(const FileEvent& event) {
       if (state_ == FileState::kPendingLSM) state_ = FileState::kNormal;
       break;
     case FileEvent::kGCCompleted:
+      // file is marked obsoleted during gc
+      if (state_ == FileState::kObsolete) {
+        break;
+      }
       assert(state_ == FileState::kPendingGC || state_ == FileState::kBeingGC);
       state_ = FileState::kNormal;
       break;

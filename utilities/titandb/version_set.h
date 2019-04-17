@@ -27,7 +27,8 @@ struct ObsoleteFiles {
   ObsoleteFiles(ObsoleteFiles&&) = delete;
   ObsoleteFiles& operator=(ObsoleteFiles&&) = delete;
 
-  // (file_number, obsolete_sequence, cf_id)
+  // TODO: make it map
+  // file_number -> (obsolete_sequence, cf_id)
   std::list<std::tuple<uint64_t, SequenceNumber, uint32_t>> blob_files;
   std::vector<std::string> manifests;
 };
