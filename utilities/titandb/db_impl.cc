@@ -58,7 +58,7 @@ class TitanDBImpl::FileManager : public BlobFileManager {
 
     {
       MutexLock l(&db_->mutex_);
-      s = db_->vset_->LogAndApply(&edit, &db_->mutex_);
+      s = db_->vset_->LogAndApply(&edit);
       for (const auto& file : files)
         db_->pending_outputs_.erase(file.second->GetNumber());
     }
@@ -297,7 +297,8 @@ Status TitanDBImpl::DropColumnFamilies(
 
   Status s = db_impl_->DropColumnFamilies(handles);
   if (s.ok()) {
-    vset_->DropColumnFamilies(column_families);
+    SequenceNumber obsolete_sequence = db_impl_->GetLatestSequenceNumber();
+    vset_->DropColumnFamilies(column_families, obsolete_sequence);
     for (auto cfd : cfds) {
       cfds_.erase(cfd);
     }

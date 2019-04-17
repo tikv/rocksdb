@@ -192,9 +192,7 @@ Status VersionSet::WriteSnapshot(log::Writer* log) {
   return s;
 }
 
-Status VersionSet::LogAndApply(VersionEdit* edit, port::Mutex* mutex) {
-  mutex->AssertHeld();
-
+Status VersionSet::LogAndApply(VersionEdit* edit) {
   // TODO(@huachao): write manifest file unlocked
   std::string record;
   edit->SetNextFileNumber(next_file_number_.load());
@@ -229,8 +227,7 @@ void VersionSet::Apply(VersionEdit* edit) {
       fprintf(stderr, "blob file %" PRIu64 " has been deleted before\n", number);
       abort();
     }
-    obsolete_files_.blob_files.push_back(file);
-    blob_it->second->FileStateTransit(BlobFileMeta::FileEvent::kDelete);
+    MarkFileObsolete(blob_it->second, file.second, cf_id);
   }
 
   for (auto& file : edit->added_files_) {
@@ -250,8 +247,7 @@ void VersionSet::Apply(VersionEdit* edit) {
   it->second->ComputeGCScore();
 }
 
-void VersionSet::AddColumnFamilies(
-    const std::map<uint32_t, TitanCFOptions>& column_families) {
+void VersionSet::AddColumnFamilies(const std::map<uint32_t, TitanCFOptions>& column_families) {
   for (auto& cf : column_families) {
     auto file_cache =
         std::make_shared<BlobFileCache>(db_options_, cf.second, file_cache_);
@@ -260,32 +256,60 @@ void VersionSet::AddColumnFamilies(
   }
 }
 
-void VersionSet::DropColumnFamilies(
-    const std::vector<uint32_t>& column_families) {
+void VersionSet::DropColumnFamilies(const std::vector<uint32_t>& column_families, SequenceNumber obsolete_sequence) {
   for (auto& cf : column_families) {
-    column_families_.erase(cf);
-  }
+    auto it = column_families_.find(cf);
+    if (it != column_families_.end()) {
+      VersionEdit edit;
+      edit.SetColumnFamilyID(it->first);
+      for (auto& file: it->second->files_) {
+        ROCKS_LOG_INFO(db_options_.info_log, "Titan add obsolete file [%llu]",
+          file.second->file_number());
+        edit.DeleteBlobFile(file.first, obsolete_sequence);
+        MarkFileObsolete(file.second, obsolete_sequence, cf);
+      }
+      // TODO: check status
+      LogAndApply(&edit);
+    }
+    obsolete_columns_.insert(cf);
+  }       
+}
+
+void VersionSet::MarkFileObsolete(std::shared_ptr<BlobFileMeta> file, SequenceNumber obsolete_sequence, uint32_t cf_id) {
+    obsolete_files_.blob_files.push_back(std::make_tuple(file->file_number(), obsolete_sequence, cf_id));
+    file->FileStateTransit(BlobFileMeta::FileEvent::kDelete);
 }
 
 void VersionSet::GetObsoleteFiles(ObsoleteFiles* obsolete_files, SequenceNumber oldest_sequence) {
-  for (auto it = obsolete_files_.blob_files.begin(); it != obsolete_files_.blob_files.end();) {
-    auto& file_number = it->first;
-    auto& obsolete_sequence = it->second;
+  for (auto tuple_it = obsolete_files_.blob_files.begin(); tuple_it != obsolete_files_.blob_files.end();) {
+    auto& obsolete_sequence = std::get<1>(*tuple_it);
     // We check whether the oldest snapshot is no less than the last sequence
     // by the time the blob file become obsolete. If so, the blob file is not
     // visible to all existing snapshots.
     if (oldest_sequence > obsolete_sequence) {
+      auto& file_number = std::get<0>(*tuple_it);
+      auto& cf_id = std::get<2>(*tuple_it);
       ROCKS_LOG_INFO(db_options_.info_log,
         "Obsolete blob file %" PRIu64 " (obsolete at %" PRIu64
         ") not visible to oldest snapshot %" PRIu64 ", delete it.",
         file_number, obsolete_sequence, oldest_sequence);
-      for (auto& bs: column_families_) {
-        bs.second->DeleteBlobFile(file_number);
+      // Cleanup obsolete column family when all the blob files for that are deleted.
+      auto it = column_families_.find(cf_id);
+      if (it != column_families_.end()) {
+        it->second->DeleteBlobFile(file_number);
+        if (it->second->files_.empty() && obsolete_columns_.find(cf_id) != obsolete_columns_.end()) {
+          column_families_.erase(it);
+          obsolete_columns_.erase(cf_id);
+        }
+      } else {
+        fprintf(stderr, "column %u not found when deleting obsolete file%" PRIu64 "\n", 
+          cf_id, file_number);
+        abort();        
       }
-      auto now = it++;
+      auto now = tuple_it++;
       obsolete_files->blob_files.splice(obsolete_files->blob_files.end(), obsolete_files_.blob_files, now);
     } else {
-      ++it;
+      ++tuple_it;
     }
   }
   obsolete_files_.manifests.swap(obsolete_files->manifests);

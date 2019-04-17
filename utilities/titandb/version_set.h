@@ -2,6 +2,8 @@
 
 #include <stdint.h>
 #include <atomic>
+#include <unordered_map>
+#include <unordered_set>
 
 #include "db/log_reader.h"
 #include "db/log_writer.h"
@@ -25,7 +27,8 @@ struct ObsoleteFiles {
   ObsoleteFiles(ObsoleteFiles&&) = delete;
   ObsoleteFiles& operator=(ObsoleteFiles&&) = delete;
 
-  std::list<std::pair<uint64_t, SequenceNumber>> blob_files;
+  // (file_number, obsolete_sequence, cf_id)
+  std::list<std::tuple<uint64_t, SequenceNumber, uint32_t>> blob_files;
   std::vector<std::string> manifests;
 };
 
@@ -42,18 +45,18 @@ class VersionSet {
 
   // Applies *edit on the current version to form a new version that is
   // both saved to the manifest and installed as the new current version.
-  // REQUIRES: *mutex is held
-  Status LogAndApply(VersionEdit* edit, port::Mutex* mutex);
+  // REQUIRES: mutex is held
+  Status LogAndApply(VersionEdit* edit);
 
   // Adds some column families with the specified options.
   // REQUIRES: mutex is held
   void AddColumnFamilies(
       const std::map<uint32_t, TitanCFOptions>& column_families);
-      
+
   // Drops some column families. The obsolete files will be deleted in
   // background when they will not be accessed anymore.
   // REQUIRES: mutex is held
-  void DropColumnFamilies(const std::vector<uint32_t>& column_families);
+  void DropColumnFamilies(const std::vector<uint32_t>& column_families, SequenceNumber obsolete_sequence);
 
   // Allocates a new file number.
   uint64_t NewFileNumber() { return next_file_number_.fetch_add(1); }
@@ -88,16 +91,18 @@ class VersionSet {
   
   void Apply(VersionEdit* edit);
 
+  void MarkFileObsolete(std::shared_ptr<BlobFileMeta> file, SequenceNumber obsolete_sequence, uint32_t cf_id);
+
   std::string dirname_;
   Env* env_;
   EnvOptions env_options_;
   TitanDBOptions db_options_;
   std::shared_ptr<Cache> file_cache_;
-  // This field will be call when Version is destructed, so we have to make
-  // sure this field is destructed after Version does.
-  ObsoleteFiles obsolete_files_;
 
-  std::map<uint32_t, std::shared_ptr<BlobStorage>> column_families_;
+  ObsoleteFiles obsolete_files_;
+  std::unordered_set<uint32_t> obsolete_columns_;
+
+  std::unordered_map<uint32_t, std::shared_ptr<BlobStorage>> column_families_;
   std::unique_ptr<log::Writer> manifest_;
   std::atomic<uint64_t> next_file_number_{1};
 };

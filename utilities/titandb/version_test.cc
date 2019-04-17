@@ -162,7 +162,7 @@ TEST_F(VersionTest, ObsoleteFiles) {
   {
     auto add1_0_4 = AddBlobFilesEdit(1, 0, 4);
     MutexLock l(&mutex_);
-    vset_->LogAndApply(&add1_0_4, &mutex_);
+    vset_->LogAndApply(&add1_0_4);
   }
   ObsoleteFiles of;
   vset_->GetObsoleteFiles(&of, kMaxSequenceNumber);
@@ -170,7 +170,7 @@ TEST_F(VersionTest, ObsoleteFiles) {
   {
     auto del1_3_4 = DeleteBlobFilesEdit(1, 3, 4);
     MutexLock l(&mutex_);
-    vset_->LogAndApply(&del1_3_4, &mutex_);
+    vset_->LogAndApply(&del1_3_4);
   }
   vset_->GetObsoleteFiles(&of, kMaxSequenceNumber);
   ASSERT_EQ(of.blob_files.size(), 1);

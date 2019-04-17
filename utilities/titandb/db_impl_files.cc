@@ -1,5 +1,4 @@
 #include "utilities/titandb/db_impl.h"
-#include "util/testharness.h"
 
 namespace rocksdb {
 namespace titandb {
@@ -17,7 +16,7 @@ void TitanDBImpl::PurgeObsoleteFiles() {
     std::vector<std::string> candidate_files;
     for (auto& blob_file : obsolete_files.blob_files) {
       candidate_files.emplace_back(
-          BlobFileName(db_options_.dirname, blob_file.first));
+          BlobFileName(db_options_.dirname, std::get<0>(blob_file)));
     }
     for (auto& manifest : obsolete_files.manifests) {
       candidate_files.emplace_back(std::move(manifest));

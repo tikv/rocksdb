@@ -454,7 +454,7 @@ Status BlobGCJob::DeleteInputBlobFiles() const {
                    file->file_number());
     edit.DeleteBlobFile(file->file_number(), obsolete_sequence);
   }
-  s = version_set_->LogAndApply(&edit, this->mutex_);
+  s = version_set_->LogAndApply(&edit);
   // TODO(@DorianZheng) Purge pending outputs
   // base_db_->pending_outputs_.erase(handle->GetNumber());
   return s;

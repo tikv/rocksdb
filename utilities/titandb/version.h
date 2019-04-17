@@ -9,7 +9,7 @@ namespace rocksdb {
 namespace titandb {
 
 // Provides methods to access the blob storage for a specific
-// version. The version must be valid when this storage is used.
+// column family. The version must be valid when this storage is used.
 class BlobStorage {
  public:
   BlobStorage(const BlobStorage& bs) : mutex_() {
@@ -65,13 +65,11 @@ class BlobStorage {
 
   TitanCFOptions titan_cf_options_;
 
-
-  // Read Write Mutex, which protects all the data structures
-  // HEAVILY TRAFFICKED
+  // Read Write Mutex, which protects the `files_` structures 
   mutable port::RWMutex mutex_;
 
   // Only BlobStorage OWNS BlobFileMeta
-  std::map<uint64_t, std::shared_ptr<BlobFileMeta>> files_;
+  std::unordered_map<uint64_t, std::shared_ptr<BlobFileMeta>> files_;
   std::shared_ptr<BlobFileCache> file_cache_;
 
   std::vector<GCScore> gc_score_;
