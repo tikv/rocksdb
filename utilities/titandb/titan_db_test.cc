@@ -168,13 +168,14 @@ class TitanDBTest : public testing::Test {
       uint64_t file_size = 0;
       std::map<std::string, std::string> file_data;
       for(auto& pf : blob_files) {
+        uint64_t file_number = pf.first;
         std::unique_ptr<RandomAccessFileReader> readable_file;
-        std::string file_name = BlobFileName(options_.dirname, pf.first);
+        std::string file_name = BlobFileName(options_.dirname, file_number);
         ASSERT_OK(env_->GetFileSize(file_name, &file_size));
-        NewBlobFileReader(pf.first, 0, options_, env_opt, env_,
+        NewBlobFileReader(file_number, 0, options_, env_opt, env_,
                           &readable_file);
         BlobFileIterator iter(std::move(readable_file), 
-                              pf.first,
+                              file_number,
                               file_size,
                               options_
                               );
@@ -188,7 +189,7 @@ class TitanDBTest : public testing::Test {
           // Records in blob file are filted
           std::string value = iter.value().ToString();
           ASSERT_TRUE(value.size() >= options_.min_blob_size);
-          file_data.emplace(key, value);
+          ASSERT_TRUE(file_data.emplace(key, value).second); // non-duplicate
           iter.Next();
         }
       }
@@ -338,7 +339,12 @@ TEST_F(TitanDBTest, IngestExternalFiles) {
     std::string key = GenKey(kIngestedStart + i);
     std::string value = GenValue(kIngestedStart + i);
     ASSERT_OK(sst_file_writer.Put(key, value));
-    data.emplace(key, value);
+    auto iter = data.find(key);
+    if(iter != data.end()) {
+      iter->second = value;
+    } else {
+      data.emplace(key, value);
+    }
   }
   ASSERT_OK(sst_file_writer.Finish());
   IngestExternalFileOptions ifo;
