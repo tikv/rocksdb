@@ -78,7 +78,14 @@ class VersionTest : public testing::Test {
     }
     for (auto& it : vset_->column_families_) {
       auto& storage = column_families_[it.first];
-      ASSERT_EQ(storage->files_.size(), it.second->files_.size());
+      // ignore obsolete file
+      auto size = 0;
+      for (auto& file: it.second->files_) {
+        if (!file.second->is_obsolete()) {
+          size++;
+        }
+      }
+      ASSERT_EQ(storage->files_.size(), size);
       for (auto& f : storage->files_) {
         auto iter = it.second->files_.find(f.first);
         ASSERT_TRUE(iter != it.second->files_.end());
@@ -146,12 +153,17 @@ TEST_F(VersionTest, VersionBuilder) {
   DeleteBlobFiles(1, 6, 8);
   DeleteBlobFiles(2, 6, 8);
   BuildAndCheck({del1_6_8, del2_6_8});
-  BuildAndCheck({add1_4_8, del1_4_6, del1_6_8});
 
   // {(0, 4)}, {(4, 6)}
   Reset();
   AddBlobFiles(1, 0, 4);
   AddBlobFiles(2, 4, 6);
+  add1_0_4 = AddBlobFilesEdit(1, 0, 4);
+  add1_4_8 = AddBlobFilesEdit(1, 4, 8);
+  add2_4_8 = AddBlobFilesEdit(2, 4, 8);
+  del1_4_6 = DeleteBlobFilesEdit(1, 4, 6);
+  del1_6_8 = DeleteBlobFilesEdit(1, 6, 8);
+  del2_6_8 = DeleteBlobFilesEdit(2, 6, 8);
   BuildAndCheck({add1_0_4, add1_4_8, del1_4_6, del1_6_8, add2_4_8, del2_6_8});
 }
 
