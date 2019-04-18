@@ -267,7 +267,7 @@ TEST_F(TitanDBTest, ReadAfterDropCF) {
   Flush();
   VerifyDB(data);
   for(auto& handle : cf_handles_) {
-    ASSERT_OK(db_->DropColumnFamily(cf_handles_.front()));
+    ASSERT_OK(db_->DropColumnFamily(handle));
     VerifyDB(data);
   }
 }
