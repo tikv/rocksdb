@@ -108,6 +108,21 @@ class TitanDBTest : public testing::Test {
     }
   }
 
+  std::weak_ptr<BlobStorage> GetBlobStorage(ColumnFamilyHandle* cf_handle = nullptr) {
+    if(cf_handle == nullptr) {
+      cf_handle = db_->DefaultColumnFamily();
+    }
+    std::weak_ptr<BlobStorage> blob;
+    const TitanSnapshot* snapshot = dynamic_cast<const TitanSnapshot*>(
+        db_->GetSnapshot());
+    auto* version(snapshot->current());
+    version->Ref();
+    blob = version->GetBlobStorage(cf_handle->GetID());
+    version->Unref();
+    db_->ReleaseSnapshot(snapshot);
+    return blob;
+  }
+
   void VerifyDB(const std::map<std::string, std::string>& data, ReadOptions ropts = ReadOptions()) {
     for (auto& kv : data) {
       std::string value;
@@ -142,62 +157,48 @@ class TitanDBTest : public testing::Test {
     }
   }
 
-  void VerifyBlob(const std::map<std::string, std::string>& data, bool compacted = true ) {
-    const TitanSnapshot* snapshot = dynamic_cast<const TitanSnapshot*>(
-        db_->GetSnapshot());
-    ASSERT_TRUE(snapshot != nullptr);
-    
-    auto* version(snapshot->current());
-    ASSERT_TRUE(version != nullptr);
-    version->Ref();
-    for(auto& h : cf_handles_) {
-      auto blob = version->GetBlobStorage(h->GetID());
-      ASSERT_TRUE(blob.lock() != nullptr);
-      if( !compacted ){
-        EXPECT_TRUE(blob.lock()->NumBlobFiles() == 0);
-      } else {
-        std::map<uint64_t, std::weak_ptr<BlobFileMeta>> blob_files;
-        blob.lock()->ExportBlobFiles(blob_files);
-        EXPECT_TRUE(blob_files.size() > 0);
-        // Open blob file and iterate in-file records
-        EnvOptions env_opt;
-        uint64_t file_size = 0;
-        std::map<std::string, std::string> file_data;
-        for(auto& pf : blob_files) {
-          std::unique_ptr<RandomAccessFileReader> readable_file;
-          std::string file_name = BlobFileName(options_.dirname, pf.first);
-          ASSERT_OK(env_->GetFileSize(file_name, &file_size));
-          NewBlobFileReader(pf.first, 0, options_, env_opt, env_,
-                            &readable_file);
-          BlobFileIterator iter(std::move(readable_file), 
-                                    pf.first,
-                                    file_size,
-                                    options_
-                                    );
-          iter.SeekToFirst();
-          std::string key = "";
-          while(iter.Valid()) {
-            // Records in blob file are sorted
-            std::string new_key = iter.key().ToString();
-            EXPECT_TRUE(key <= new_key);
-            key = new_key;
-            // Records in blob file are filted
-            std::string value = iter.value().ToString();
-            EXPECT_TRUE(value.size() >= options_.min_blob_size);
-            file_data.emplace(key, value);
-            iter.Next();
-          }
-        }
-        EXPECT_EQ(file_data.size(), data.size());
-        for(auto& kv : file_data) {
-          auto p = data.find(kv.first);
-          EXPECT_TRUE(p != data.end());
-          EXPECT_EQ(p->second, kv.second);
+  void VerifyBlob(const std::map<std::string, std::string>& data) {
+    for(auto& handle : cf_handles_) {
+      auto blob = GetBlobStorage(handle);
+      std::map<uint64_t, std::weak_ptr<BlobFileMeta>> blob_files;
+      blob.lock()->ExportBlobFiles(blob_files);
+      ASSERT_TRUE(blob_files.size() > 0);
+      // Open blob file and iterate in-file records
+      EnvOptions env_opt;
+      uint64_t file_size = 0;
+      std::map<std::string, std::string> file_data;
+      for(auto& pf : blob_files) {
+        std::unique_ptr<RandomAccessFileReader> readable_file;
+        std::string file_name = BlobFileName(options_.dirname, pf.first);
+        ASSERT_OK(env_->GetFileSize(file_name, &file_size));
+        NewBlobFileReader(pf.first, 0, options_, env_opt, env_,
+                          &readable_file);
+        BlobFileIterator iter(std::move(readable_file), 
+                              pf.first,
+                              file_size,
+                              options_
+                              );
+        iter.SeekToFirst();
+        std::string key = "";
+        while(iter.Valid()) {
+          // Records in blob file are sorted
+          std::string new_key = iter.key().ToString();
+          ASSERT_TRUE(key <= new_key);
+          key = new_key;
+          // Records in blob file are filted
+          std::string value = iter.value().ToString();
+          ASSERT_TRUE(value.size() >= options_.min_blob_size);
+          file_data.emplace(key, value);
+          iter.Next();
         }
       }
+      ASSERT_EQ(file_data.size(), data.size());
+      for(auto& kv : file_data) {
+        auto p = data.find(kv.first);
+        ASSERT_TRUE(p != data.end());
+        ASSERT_EQ(p->second, kv.second);
+      }
     }
-    version->Unref();
-    db_->ReleaseSnapshot(snapshot);
   }
 
   std::string GenKey(uint64_t i) {
@@ -324,30 +325,36 @@ TEST_F(TitanDBTest, IngestExternalFiles) {
     Put(i, &data);
   }
   ASSERT_EQ(kNumEntries, data.size());
+  VerifyDB(data);
   Flush();
   VerifyDB(data);
 
   const uint64_t kNumIngestedEntries = 100;
+  // Make sure that keys in SST overlaps with existing keys
+  const uint64_t kIngestedStart = kNumEntries - kNumEntries / 2;
   std::string sst_file = options_.dirname + "/for_ingest.sst";
   ASSERT_OK(sst_file_writer.Open(sst_file));
   for (uint64_t i = 1; i <= kNumIngestedEntries; i++) {
-    std::string key = GenKey(kNumEntries + i);
-    std::string value = GenValue(kNumEntries + i);
+    std::string key = GenKey(kIngestedStart + i);
+    std::string value = GenValue(kIngestedStart + i);
     ASSERT_OK(sst_file_writer.Put(key, value));
     data.emplace(key, value);
   }
   ASSERT_OK(sst_file_writer.Finish());
   IngestExternalFileOptions ifo;
   ASSERT_OK(db_->IngestExternalFile({sst_file}, ifo));
+  VerifyDB(data);
   Flush();
   VerifyDB(data);
-  VerifyBlob(data, false);
+  for(auto& handle : cf_handles_) {
+    auto blob = GetBlobStorage(handle);
+    ASSERT_EQ(0, blob.lock()->NumBlobFiles());
+  }
 
   CompactRangeOptions copt;
   ASSERT_OK(db_->CompactRange(copt, nullptr, nullptr));
-  Flush();
   VerifyDB(data);
-  VerifyBlob(data, true);
+  VerifyBlob(data);
 }
 
 }  // namespace titandb
