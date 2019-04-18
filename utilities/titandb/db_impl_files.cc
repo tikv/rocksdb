@@ -6,9 +6,9 @@ namespace titandb {
 void TitanDBImpl::PurgeObsoleteFiles() {
   Status s;
   ObsoleteFiles obsolete_files;
+  auto oldest_sequence = GetOldestSnapshotSequence();
   {
     MutexLock l(&mutex_);
-    auto oldest_sequence = GetOldestSnapshotSequence();
     vset_->GetObsoleteFiles(&obsolete_files, oldest_sequence);
   }
 
