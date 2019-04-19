@@ -157,48 +157,32 @@ class TitanDBTest : public testing::Test {
     }
   }
 
-  void VerifyBlob(const std::map<std::string, std::string>& data) {
-    for(auto& handle : cf_handles_) {
-      auto blob = GetBlobStorage(handle);
-      std::map<uint64_t, std::weak_ptr<BlobFileMeta>> blob_files;
-      blob.lock()->ExportBlobFiles(blob_files);
-      ASSERT_TRUE(blob_files.size() > 0);
-      // Open blob file and iterate in-file records
-      EnvOptions env_opt;
-      uint64_t file_size = 0;
-      std::map<std::string, std::string> file_data;
-      for(auto& pf : blob_files) {
-        uint64_t file_number = pf.first;
-        std::unique_ptr<RandomAccessFileReader> readable_file;
-        std::string file_name = BlobFileName(options_.dirname, file_number);
-        ASSERT_OK(env_->GetFileSize(file_name, &file_size));
-        NewBlobFileReader(file_number, 0, options_, env_opt, env_,
-                          &readable_file);
-        BlobFileIterator iter(std::move(readable_file), 
-                              file_number,
-                              file_size,
-                              options_
-                              );
-        iter.SeekToFirst();
-        std::string key = "";
-        while(iter.Valid()) {
-          // Records in blob file are sorted
-          std::string new_key = iter.key().ToString();
-          ASSERT_TRUE(key <= new_key);
-          key = new_key;
-          // Records in blob file are filted
-          std::string value = iter.value().ToString();
-          ASSERT_TRUE(value.size() >= options_.min_blob_size);
-          ASSERT_TRUE(file_data.emplace(key, value).second); // non-duplicate
-          iter.Next();
-        }
+  void VerifyBlob(
+      uint64_t file_number,
+      const std::map<std::string, std::string>& data) {
+    // Open blob file and iterate in-file records
+    EnvOptions env_opt;
+    uint64_t file_size = 0;
+    std::map<std::string, std::string> file_data;
+    std::unique_ptr<RandomAccessFileReader> readable_file;
+    std::string file_name = BlobFileName(options_.dirname, file_number);
+    ASSERT_OK(env_->GetFileSize(file_name, &file_size));
+    NewBlobFileReader(file_number, 0, options_, env_opt, env_,
+                      &readable_file);
+    BlobFileIterator iter(std::move(readable_file), 
+                          file_number,
+                          file_size,
+                          options_
+                          );
+    iter.SeekToFirst();
+    for(auto& kv : data) {
+      if(kv.second.size() < options_.min_blob_size) {
+        continue;
       }
-      ASSERT_EQ(file_data.size(), data.size());
-      for(auto& kv : file_data) {
-        auto p = data.find(kv.first);
-        ASSERT_TRUE(p != data.end());
-        ASSERT_EQ(p->second, kv.second);
-      }
+      ASSERT_EQ(iter.Valid(), true);
+      ASSERT_EQ(iter.key(), kv.first);
+      ASSERT_EQ(iter.value(), kv.second);
+      iter.Next();
     }
   }
 
@@ -321,14 +305,17 @@ TEST_F(TitanDBTest, IngestExternalFiles) {
   ASSERT_EQ(sst_file_writer.FileSize(), 0);
 
   const uint64_t kNumEntries = 100;
-  std::map<std::string, std::string> data;
+  std::map<std::string, std::string> total_data;
+  std::map<std::string, std::string> original_data;
+  std::map<std::string, std::string> ingested_data;
   for (uint64_t i = 1; i <= kNumEntries; i++) {
-    Put(i, &data);
+    Put(i, &original_data);
   }
-  ASSERT_EQ(kNumEntries, data.size());
-  VerifyDB(data);
+  ASSERT_EQ(kNumEntries, original_data.size());
+  total_data.insert(original_data.begin(), original_data.end());
+  VerifyDB(total_data);
   Flush();
-  VerifyDB(data);
+  VerifyDB(total_data);
 
   const uint64_t kNumIngestedEntries = 100;
   // Make sure that keys in SST overlaps with existing keys
@@ -339,28 +326,34 @@ TEST_F(TitanDBTest, IngestExternalFiles) {
     std::string key = GenKey(kIngestedStart + i);
     std::string value = GenValue(kIngestedStart + i);
     ASSERT_OK(sst_file_writer.Put(key, value));
-    auto iter = data.find(key);
-    if(iter != data.end()) {
-      iter->second = value;
-    } else {
-      data.emplace(key, value);
-    }
+    total_data[key] = value;
+    ingested_data.emplace(key, value);
   }
   ASSERT_OK(sst_file_writer.Finish());
   IngestExternalFileOptions ifo;
   ASSERT_OK(db_->IngestExternalFile({sst_file}, ifo));
-  VerifyDB(data);
+  VerifyDB(total_data);
   Flush();
-  VerifyDB(data);
+  VerifyDB(total_data);
   for(auto& handle : cf_handles_) {
     auto blob = GetBlobStorage(handle);
-    ASSERT_EQ(0, blob.lock()->NumBlobFiles());
+    ASSERT_EQ(1, blob.lock()->NumBlobFiles());
   }
 
   CompactRangeOptions copt;
   ASSERT_OK(db_->CompactRange(copt, nullptr, nullptr));
-  VerifyDB(data);
-  VerifyBlob(data);
+  VerifyDB(total_data);
+  for(auto& handle : cf_handles_) {
+    auto blob = GetBlobStorage(handle);
+    ASSERT_EQ(2, blob.lock()->NumBlobFiles());
+    std::map<uint64_t, std::weak_ptr<BlobFileMeta>> blob_files;
+    blob.lock()->ExportBlobFiles(blob_files);
+    ASSERT_EQ(2, blob_files.size());
+    auto bf = blob_files.begin();
+    VerifyBlob(bf->first, original_data);
+    bf ++;
+    VerifyBlob(bf->first, ingested_data);
+  }
 }
 
 }  // namespace titandb
