@@ -289,7 +289,7 @@ Status TitanDBImpl::DropColumnFamilies(
   MutexLock l(&mutex_);
 
   // TODO:
-  // As rocksdb described, `DropColumnFamilies()` only records the drop the column family specified by ColumnFamilyHandle.
+  // As rocksdb described, `DropColumnFamilies()` only records the drop of the column family specified by ColumnFamilyHandle.
   // The actual data is not deleted until the client calls `delete column_family`, namely `DestroyColumnFamilyHandle()`.
   // We can still continue using the column family if we have outstanding ColumnFamilyHandle pointer.
   // So we should delete blob files in `DestroyColumnFamilyHandle()` but not here.
