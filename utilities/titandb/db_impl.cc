@@ -198,10 +198,6 @@ Status TitanDBImpl::Open(const std::vector<TitanCFDescriptor>& descs,
   s = DB::Open(db_options_, dbname_, base_descs, handles, &db_);
   if (s.ok()) {
     db_impl_ = reinterpret_cast<DBImpl*>(db_->GetRootDB());
-    for (auto handle : *handles) {
-      auto* cfd = reinterpret_cast<ColumnFamilyHandleImpl*>(handle)->cfd();
-      cfds_.insert(cfd);
-    }
   }
   return s;
 }
@@ -274,9 +270,6 @@ Status TitanDBImpl::CreateColumnFamilies(
     std::map<uint32_t, TitanCFOptions> column_families;
     for (size_t i = 0; i < descs.size(); i++) {
       column_families.emplace((*handles)[i]->GetID(), descs[i].options);
-      auto* cfd =
-          reinterpret_cast<ColumnFamilyHandleImpl*>((*handles)[i])->cfd();
-      cfds_.insert(cfd);
     }
     vset_->AddColumnFamilies(column_families);
   }
@@ -304,9 +297,6 @@ Status TitanDBImpl::DropColumnFamilies(
   if (s.ok()) {
     SequenceNumber obsolete_sequence = db_impl_->GetLatestSequenceNumber();
     vset_->DropColumnFamilies(column_families, obsolete_sequence);
-    for (auto cfd : cfds) {
-      cfds_.erase(cfd);
-    }
   }
   return s;
 }

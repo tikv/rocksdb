@@ -151,8 +151,6 @@ class TitanDBImpl : public TitanDB {
   std::atomic_int bg_gc_scheduled_{0};
 
   std::atomic_bool shuting_down_{false};
-
-  std::unordered_set<ColumnFamilyData*> cfds_;
 };
 
 }  // namespace titandb
