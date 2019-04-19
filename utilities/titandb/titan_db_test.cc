@@ -252,7 +252,7 @@ TEST_F(TitanDBTest, Snapshot) {
     db_->ReleaseSnapshot(snapshot);
 }
 
-TEST_F(TitanDBTest, ReadAfterDropCF) {
+TEST_F(TitanDBTest, DISABLED_ReadAfterDropCF) {
   Open();
   const uint64_t kNumCF = 3;
   for(uint64_t i = 1; i <= kNumCF; i++) {
