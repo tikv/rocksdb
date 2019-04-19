@@ -41,6 +41,11 @@ class BlobGCJobTest : public testing::Test {
   }
   ~BlobGCJobTest() {}
 
+  void CheckBlobNumber(int expected) {
+    auto b = version_set_->GetBlobStorage(base_db_->DefaultColumnFamily()->GetID()).lock();
+    ASSERT_EQ(expected, b->files_.size());
+  }
+
   void ClearDir() {
     std::vector<std::string> filenames;
     options_.env->GetChildren(options_.dirname, &filenames);
@@ -68,7 +73,13 @@ class BlobGCJobTest : public testing::Test {
     base_db_ = reinterpret_cast<DBImpl*>(tdb_->GetRootDB());
   }
 
-  void DestoyDB() { db_->Close(); }
+  void Flush() {
+    FlushOptions fopts;
+    fopts.wait = true;
+    ASSERT_OK(db_->Flush(fopts));
+  }
+
+  void DestroyDB() { db_->Close(); }
 
   void RunGC() {
     MutexLock l(mutex_);
@@ -87,26 +98,29 @@ class BlobGCJobTest : public testing::Test {
           std::make_shared<BasicBlobGCPicker>(db_options, cf_options);
       blob_gc = blob_gc_picker->PickBlobGC(
           version_set_->GetBlobStorage(cfh->GetID()).lock().get());
+    }
+
+    if (blob_gc) {
       blob_gc->SetColumnFamily(cfh);
+
+      BlobGCJob blob_gc_job(blob_gc.get(), base_db_, mutex_, tdb_->db_options_,
+                            tdb_->env_, EnvOptions(), tdb_->blob_manager_.get(),
+                            version_set_, &log_buffer, nullptr);
+
+      s = blob_gc_job.Prepare();
+      ASSERT_OK(s);
+
+      {
+        mutex_->Unlock();
+        s = blob_gc_job.Run();
+        mutex_->Lock();
+      }
+      
+      if (s.ok()) {
+        s = blob_gc_job.Finish();
+        ASSERT_OK(s);
+      }
     }
-    ASSERT_TRUE(blob_gc);
-
-    BlobGCJob blob_gc_job(blob_gc.get(), base_db_, mutex_, tdb_->db_options_,
-                          tdb_->env_, EnvOptions(), tdb_->blob_manager_.get(),
-                          version_set_, &log_buffer, nullptr);
-
-    s = blob_gc_job.Prepare();
-    ASSERT_OK(s);
-
-    {
-      mutex_->Unlock();
-      s = blob_gc_job.Run();
-      mutex_->Lock();
-    }
-    ASSERT_OK(s);
-
-    s = blob_gc_job.Finish();
-    ASSERT_OK(s);
 
     mutex_->Unlock();
     tdb_->PurgeObsoleteFiles();
@@ -147,7 +161,7 @@ class BlobGCJobTest : public testing::Test {
                           Env::Default(), EnvOptions(), nullptr, version_set_,
                           nullptr, nullptr);
     ASSERT_FALSE(blob_gc_job.DiscardEntry(key, blob_index));
-    DestoyDB();
+    DestroyDB();
   }
 
   void TestRunGC() {
@@ -155,15 +169,13 @@ class BlobGCJobTest : public testing::Test {
     for (int i = 0; i < MAX_KEY_NUM; i++) {
       db_->Put(WriteOptions(), GenKey(i), GenValue(i));
     }
-    FlushOptions flush_options;
-    flush_options.wait = true;
-    db_->Flush(flush_options);
+    Flush();
     std::string result;
     for (int i = 0; i < MAX_KEY_NUM; i++) {
       if (i % 2 != 0) continue;
       db_->Delete(WriteOptions(), GenKey(i));
     }
-    db_->Flush(flush_options);
+    Flush();
     auto b = version_set_->GetBlobStorage(base_db_->DefaultColumnFamily()->GetID()).lock();
     ASSERT_EQ(b->files_.size(), 1);
     auto old = b->files_.begin()->first;
@@ -208,13 +220,66 @@ class BlobGCJobTest : public testing::Test {
     }
     delete db_iter;
     ASSERT_FALSE(iter->Valid() || !iter->status().ok());
-    DestoyDB();
+    DestroyDB();
   }
 };
 
 TEST_F(BlobGCJobTest, DiscardEntry) { TestDiscardEntry(); }
 
 TEST_F(BlobGCJobTest, RunGC) { TestRunGC(); }
+
+TEST_F(BlobGCJobTest, PurgeBlobs) {
+  NewDB();
+
+  auto snap1 = db_->GetSnapshot();
+  
+  for (int i = 0; i < 10; i++) {
+      db_->Put(WriteOptions(), GenKey(i), GenValue(i));
+  }
+  Flush();
+  CheckBlobNumber(1);
+  auto snap2 = db_->GetSnapshot();
+  auto snap3 = db_->GetSnapshot();
+
+  for (int i = 0; i < 10; i++) {
+    db_->Delete(WriteOptions(), GenKey(i));
+  }
+  Flush();
+  CheckBlobNumber(1);
+  auto snap4 = db_->GetSnapshot();
+  
+  RunGC();
+  CheckBlobNumber(1);
+
+  for (int i = 10; i < 20; i++) {
+    db_->Put(WriteOptions(), GenKey(i), GenValue(i));
+  }
+  Flush();
+  auto snap5 = db_->GetSnapshot();
+  CheckBlobNumber(2);
+  
+  db_->ReleaseSnapshot(snap2);
+  RunGC();
+  CheckBlobNumber(2);
+
+  db_->ReleaseSnapshot(snap3);
+  RunGC();
+  CheckBlobNumber(2);
+
+  db_->ReleaseSnapshot(snap1);
+  RunGC();
+  CheckBlobNumber(2);
+
+  db_->ReleaseSnapshot(snap4);
+  RunGC();
+  CheckBlobNumber(1);
+  
+  db_->ReleaseSnapshot(snap5);
+  RunGC();
+  CheckBlobNumber(1);
+
+  DestroyDB();
+}
 
 }  // namespace titandb
 }  // namespace rocksdb
