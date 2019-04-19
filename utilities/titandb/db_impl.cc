@@ -124,7 +124,7 @@ static constexpr uint32_t kDeleteObsoleteFilesPeriodSecs = 10; // 10s
 void TitanDBImpl::StartBackgroundTasks() {
   if (!thread_purge_obsolete_) {
     thread_purge_obsolete_.reset(new rocksdb::RepeatableThread(
-        [this]() { TitanDBImpl::PurgeObsoleteFiles(); }, "purge", env_,
+        [this]() { TitanDBImpl::PurgeObsoleteFiles(); }, "titanbg", env_,
         kDeleteObsoleteFilesPeriodSecs * 1000 * 1000));
   }
 }
