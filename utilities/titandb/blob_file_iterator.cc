@@ -24,9 +24,9 @@ bool BlobFileIterator::Init() {
   if (!status_.ok()) return false;
   BlobFileFooter blob_file_footer;
   status_ = blob_file_footer.DecodeFrom(&slice);
-  total_blocks_size_ = file_size_ - BlobFileFooter::kEncodedLength -
-                       blob_file_footer.meta_index_handle.size();
-  assert(total_blocks_size_ > 0);
+  end_of_blob_record_ = file_size_ - BlobFileFooter::kEncodedLength -
+                        blob_file_footer.meta_index_handle.size();
+  assert(end_of_blob_record_ > BlobFileHeader::kEncodedLength);
   init_ = true;
   return true;
 }
@@ -34,7 +34,7 @@ bool BlobFileIterator::Init() {
 void BlobFileIterator::SeekToFirst() {
   if (!init_ && !Init()) return;
   status_ = Status::OK();
-  iterate_offset_ = 0;
+  iterate_offset_ = BlobFileHeader::kEncodedLength;
   PrefetchAndGet();
 }
 
@@ -54,7 +54,7 @@ void BlobFileIterator::IterateForPrev(uint64_t offset) {
 
   status_ = Status::OK();
 
-  if (offset >= total_blocks_size_) {
+  if (offset >= end_of_blob_record_) {
     iterate_offset_ = offset;
     status_ = Status::InvalidArgument("Out of bound");
     return;
@@ -62,8 +62,8 @@ void BlobFileIterator::IterateForPrev(uint64_t offset) {
 
   uint64_t total_length = 0;
   FixedSlice<kBlobHeaderSize> header_buffer;
-  for (iterate_offset_ = 0; iterate_offset_ < offset;
-       iterate_offset_ += total_length) {
+  iterate_offset_ = BlobFileHeader::kEncodedLength;
+  for (; iterate_offset_ < offset; iterate_offset_ += total_length) {
     status_ = file_->Read(iterate_offset_, kBlobHeaderSize, &header_buffer,
                           header_buffer.get());
     if (!status_.ok()) return;
@@ -102,7 +102,7 @@ void BlobFileIterator::GetBlobRecord() {
 }
 
 void BlobFileIterator::PrefetchAndGet() {
-  if (iterate_offset_ >= total_blocks_size_) {
+  if (iterate_offset_ >= end_of_blob_record_) {
     valid_ = false;
     return;
   }
