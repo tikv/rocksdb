@@ -34,6 +34,14 @@ std::weak_ptr<BlobFileMeta> BlobStorage::FindFile(uint64_t file_number) const {
   return std::weak_ptr<BlobFileMeta>();
 }
 
+void BlobStorage::ExportBlobFiles(
+    std::map<uint64_t, std::weak_ptr<BlobFileMeta>>& ret) const {
+  ReadLock rl(&mutex_);
+  for(auto& kv : files_) {
+    ret.emplace(kv.first, std::weak_ptr<BlobFileMeta>(kv.second));
+  }
+}
+
 void BlobStorage::AddBlobFile(std::shared_ptr<BlobFileMeta>& file) {
   WriteLock wl(&mutex_);
   files_.emplace(std::make_pair(file->file_number(), file));

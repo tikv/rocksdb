@@ -36,7 +36,13 @@ class BlobStorage {
   // corruption if the file doesn't exist in the specific version.
   std::weak_ptr<BlobFileMeta> FindFile(uint64_t file_number) const;
 
-  std::size_t NumBlobFiles() { return files_.size(); }
+  std::size_t NumBlobFiles() const { 
+    ReadLock rl(&mutex_);
+    return files_.size(); 
+  }
+  
+  void ExportBlobFiles(
+      std::map<uint64_t, std::weak_ptr<BlobFileMeta>>& ret) const;
 
   void MarkAllFilesForGC() {
     WriteLock wl(&mutex_);
