@@ -17,10 +17,20 @@ BlobFileIterator::BlobFileIterator(
 BlobFileIterator::~BlobFileIterator() {}
 
 bool BlobFileIterator::Init() {
-  char buf[BlobFileFooter::kEncodedLength];
   Slice slice;
+  char header_buf[BlobFileHeader::kEncodedLength];
+  status_ = file_->Read(0, BlobFileHeader::kEncodedLength, &slice, header_buf);
+  if (!status_.ok()) {
+    return false;
+  }
+  BlobFileHeader blob_file_header;
+  status_ = blob_file_header.DecodeFrom(&slice);
+  if (!status_.ok()) {
+    return false;
+  }
+  char footer_buf[BlobFileFooter::kEncodedLength];
   status_ = file_->Read(file_size_ - BlobFileFooter::kEncodedLength,
-                        BlobFileFooter::kEncodedLength, &slice, buf);
+                        BlobFileFooter::kEncodedLength, &slice, footer_buf);
   if (!status_.ok()) return false;
   BlobFileFooter blob_file_footer;
   status_ = blob_file_footer.DecodeFrom(&slice);
