@@ -79,7 +79,12 @@ class BlobGCJobTest : public testing::Test {
     ASSERT_OK(db_->Flush(fopts));
   }
 
-  void DestroyDB() { db_->Close(); }
+  void DestroyDB() {
+    Status s __attribute__((__unused__)) = db_->Close(); 
+    assert(s.ok());
+    delete db_;
+    db_ = nullptr;
+  }
 
   void RunGC() {
     MutexLock l(mutex_);
@@ -228,6 +233,7 @@ TEST_F(BlobGCJobTest, DiscardEntry) { TestDiscardEntry(); }
 
 TEST_F(BlobGCJobTest, RunGC) { TestRunGC(); }
 
+// Tests blob file will be kept after GC, if it is still visible by active snapshots.
 TEST_F(BlobGCJobTest, PurgeBlobs) {
   NewDB();
 
