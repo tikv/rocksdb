@@ -74,6 +74,7 @@ class TitanDBImpl : public TitanDB {
   friend class FileManager;
   friend class BlobGCJobTest;
   friend class BaseDbListener;
+  friend class TitanDBTest;
 
   Status GetImpl(const ReadOptions& options, ColumnFamilyHandle* handle,
                  const Slice& key, PinnableSlice* value);
