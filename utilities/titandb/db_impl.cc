@@ -361,7 +361,7 @@ Status TitanDBImpl::GetImpl(const ReadOptions& options,
             key.ToString(true).c_str(),
             static_cast<std::size_t>(options.snapshot->GetSequenceNumber()),
             s.ToString().c_str());
-    abort();
+    // abort();
   }
   if (s.ok()) {
     value->Reset();
