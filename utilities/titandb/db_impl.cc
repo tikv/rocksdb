@@ -357,11 +357,10 @@ Status TitanDBImpl::GetImpl(const ReadOptions& options,
 
   s = storage->Get(options, index, &record, &buffer);
   if (s.IsCorruption()) {
-    fprintf(stderr, "Key:%s Snapshot:%lu GetBlobFile err:%s\n",
-            key.ToString(true).c_str(),
-            static_cast<std::size_t>(options.snapshot->GetSequenceNumber()),
-            s.ToString().c_str());
-    // abort();
+    ROCKS_LOG_DEBUG(db_options_.info_log, "Key:%s Snapshot:%lu GetBlobFile err:%s\n",
+                    key.ToString(true).c_str(),
+                    static_cast<std::size_t>(options.snapshot->GetSequenceNumber()),
+                    s.ToString().c_str());
   }
   if (s.ok()) {
     value->Reset();
