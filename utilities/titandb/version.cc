@@ -1,8 +1,6 @@
 #include "utilities/titandb/version.h"
 #include "utilities/titandb/version_set.h"
 
-#include "util/sync_point.h"
-
 namespace rocksdb {
 namespace titandb {
 
@@ -27,8 +25,6 @@ Status BlobStorage::NewPrefetcher(uint64_t file_number,
 }
 
 std::weak_ptr<BlobFileMeta> BlobStorage::FindFile(uint64_t file_number) const {
-  TEST_SYNC_POINT("BlobStorage::FindFile");
-
   ReadLock rl(&mutex_);
   auto it = files_.find(file_number);
   if (it != files_.end()) {
