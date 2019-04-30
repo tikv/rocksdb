@@ -82,34 +82,6 @@ class TestWritableFile : public WritableFile {
   FaultInjectionTestEnv* env_;
 };
 
-class TestRandomAccessFile : public RandomAccessFile {
- public:
-  explicit TestRandomAccessFile(std::unique_ptr<RandomAccessFile>&& f,
-                                FaultInjectionTestEnv* env);
-  virtual ~TestRandomAccessFile();
-  virtual Status Read(uint64_t offset, size_t n, Slice* result,
-                      char* scratch) const override;
-  virtual Status Prefetch(uint64_t /*offset*/, size_t /*n*/) override;
-  virtual size_t GetUniqueId(char* id, size_t max_size) const override {
-    return target_->GetUniqueId(id, max_size);
-  }
-  virtual void Hint(AccessPattern pattern) override {
-    return target_->Hint(pattern);
-  }
-  virtual bool use_direct_io() const override {
-    return target_->use_direct_io();
-  }
-  virtual size_t GetRequiredBufferAlignment() const override {
-    return target_->GetRequiredBufferAlignment();
-  }
-  virtual Status InvalidateCache(size_t offset, size_t length) override {
-    return target_->InvalidateCache(offset, length);
-  }
- private:
-  std::unique_ptr<RandomAccessFile> target_;
-  FaultInjectionTestEnv* env_;
-};
-
 class TestDirectory : public Directory {
  public:
   explicit TestDirectory(FaultInjectionTestEnv* env, std::string dirname,

@@ -156,30 +156,6 @@ Status TestWritableFile::Sync() {
   return Status::OK();
 }
 
-TestRandomAccessFile::TestRandomAccessFile(std::unique_ptr<RandomAccessFile>&& f,
-                                           FaultInjectionTestEnv* env)
-    : target_(std::move(f)),
-      env_(env) {
-  assert(target_ != nullptr);
-}
-
-TestRandomAccessFile::~TestRandomAccessFile() { }
-
-Status TestRandomAccessFile::Read(uint64_t offset, size_t n, Slice* result,
-                           char* scratch) const {
-  if(!env_->IsFilesystemActive()) {
-    return env_->GetError();
-  }
-  return target_->Read(offset, n, result, scratch);
-}
-
-Status TestRandomAccessFile::Prefetch(uint64_t offset, size_t n) {
-  if(!env_->IsFilesystemActive()) {
-    return env_->GetError();
-  }
-  return target_->Prefetch(offset, n);
-}
-
 Status FaultInjectionTestEnv::NewDirectory(const std::string& name,
                                            std::unique_ptr<Directory>* result) {
   std::unique_ptr<Directory> r;
@@ -248,11 +224,7 @@ Status FaultInjectionTestEnv::NewRandomAccessFile(
   if (!IsFilesystemActive()) {
     return GetError();
   }
-  Status s = target()->NewRandomAccessFile(fname, result, soptions);
-  if (s.ok()) {
-    result->reset(new TestRandomAccessFile(std::move(*result), this));
-  }
-  return s;
+  return target()->NewRandomAccessFile(fname, result, soptions);
 }
 
 Status FaultInjectionTestEnv::DeleteFile(const std::string& f) {
