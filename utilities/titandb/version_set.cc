@@ -107,11 +107,10 @@ Status VersionSet::Recover() {
       if (f.second->is_obsolete()) {
         // delete already obsoleted files at reopen
         obsolete_files.push_back(f.second->file_number());
-        for (auto it = obsolete_files_.blob_files.begin(); it != obsolete_files_.blob_files.end();) {
+        for (auto it = obsolete_files_.blob_files.begin(); it != obsolete_files_.blob_files.end(); ++it) {
           if (std::get<0>(*it) == f.second->file_number())  {
             it = this->obsolete_files_.blob_files.erase(it);
-          } else {
-            ++it;
+            break;
           }
         }
       } else {
