@@ -566,16 +566,6 @@ Directory* DBImpl::GetDataDir(ColumnFamilyData* cfd, size_t path_id) const {
   return ret_dir;
 }
 
-Directory* DBImpl::Directories::GetDataDir(size_t path_id) const {
-  assert(path_id < data_dirs_.size());
-  Directory* ret_dir = data_dirs_[path_id].get();
-  if (ret_dir == nullptr) {
-    // Should use db_dir_
-    return db_dir_.get();
-  }
-  return ret_dir;
-}
-
 Status DBImpl::SetOptions(
     ColumnFamilyHandle* column_family,
     const std::unordered_map<std::string, std::string>& options_map) {
@@ -2895,9 +2885,9 @@ Status DBImpl::IngestExternalFile(
     }
   }
 
-  ExternalSstFileIngestionJob ingestion_job(env_, versions_.get(), cfd,
-                                            immutable_db_options_, env_options_,
-                                            &snapshots_, ingestion_options);
+  ExternalSstFileIngestionJob ingestion_job(
+      env_, versions_.get(), cfd, immutable_db_options_, env_options_,
+      &snapshots_, ingestion_options, &directories_);
 
   SuperVersionContext dummy_sv_ctx(/* create_superversion */ true);
   VersionEdit dummy_edit;
@@ -2976,9 +2966,9 @@ Status DBImpl::IngestExternalFile(
         mutex_.Unlock();
         FlushOptions flush_opts;
         flush_opts.allow_write_stall = true;
-        status = FlushMemTable(cfd, flush_opts,
-                               FlushReason::kExternalFileIngestion,
-                               true /* writes_stopped */);
+        status =
+            FlushMemTable(cfd, flush_opts, FlushReason::kExternalFileIngestion,
+                          true /* writes_stopped */);
         mutex_.Lock();
       }
     }

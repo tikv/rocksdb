@@ -1,4 +1,7 @@
 # Rocksdb Change Log
+### Bug Fixes
+* Fix ingested file and directory not being fsync.
+
 ### 5.15.10 (9/13/2018)
 ### Bug Fixes
 * Fix RocksDB Java build and tests.
