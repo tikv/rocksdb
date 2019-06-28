@@ -856,11 +856,16 @@ bool DoublyLinkedSkipList<Comparator>::Insert(const char* key, Splice* splice,
         if (splice->prev_[i]->CASNext(i, splice->next_[i], x)) {
           // success
           if (UNLIKELY(i == 0 && splice->next_[0] != nullptr)) {
-              if (splice->next_[0]->CASPrev(splice->prev_[0], x)) {
-                  break;
+            Node* prev = splice->prev_[0];
+            Node* next = splice->next_[0];
+            while (!next->CASPrev(prev, x)) {
+              prev = next->NoBarrier_Prev();
+              while (prev->Next(0) != next) {
+                prev = prev->Next(0);
               }
+            }
           } else {
-              break;
+            break;
           }
         }
         // CAS failed, we need to recompute prev and next. It is unlikely
