@@ -2648,6 +2648,11 @@ void rocksdb_options_set_hash_link_list_rep(
   opt->rep.memtable_factory.reset(rocksdb::NewHashLinkListRepFactory(bucket_count));
 }
 
+void rocksdb_options_set_doubly_linked_skip_list_rep(
+    rocksdb_options_t* opt, size_t lookahead) {
+    opt->rep.memtable_factory.reset(rocksdb::NewDoublyLinkedSkipListRepFactory(lookahead));
+}
+
 void rocksdb_options_set_plain_table_factory(
     rocksdb_options_t *opt, uint32_t user_key_len, int bloom_bits_per_key,
     double hash_table_ratio, size_t index_sparseness) {

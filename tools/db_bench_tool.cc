@@ -1160,6 +1160,7 @@ enum RepFactory {
   kPrefixHash,
   kVectorRep,
   kHashLinkedList,
+  kDoublyLinkedSkipList
 };
 
 static enum RepFactory StringToRepFactory(const char* ctype) {
@@ -1173,6 +1174,9 @@ static enum RepFactory StringToRepFactory(const char* ctype) {
     return kVectorRep;
   else if (!strcasecmp(ctype, "hash_linkedlist"))
     return kHashLinkedList;
+  else if (!strcasecmp(ctype, "doubly_linked_skip_list")) {
+      return kDoublyLinkedSkipList;
+  }
 
   fprintf(stdout, "Cannot parse memreptable %s\n", ctype);
   return kSkipList;
@@ -2255,6 +2259,9 @@ class Benchmark {
       case kHashLinkedList:
         fprintf(stdout, "Memtablerep: hash_linkedlist\n");
         break;
+      case kDoublyLinkedSkipList:
+        fprintf(stdout, "Memtablerep: doubly linked skiplist\n");
+        break;
     }
     fprintf(stdout, "Perf Level: %d\n", FLAGS_perf_level);
 
@@ -2754,6 +2761,8 @@ class Benchmark {
         reads_ = num_;
       } else if (name == "readreverse") {
         method = &Benchmark::ReadReverse;
+       } else if (name == "readreversememtable") {
+        method = &Benchmark::ReadReverseInMemTable;
       } else if (name == "readrandom") {
         if (FLAGS_multiread_stride) {
           fprintf(stderr, "entries_per_batch = %" PRIi64 "\n",
@@ -3450,6 +3459,9 @@ class Benchmark {
         options.memtable_factory.reset(
           new VectorRepFactory
         );
+        case kDoublyLinkedSkipList:
+            options.memtable_factory.reset(
+                    NewDoublyLinkedSkipListRepFactory(FLAGS_skip_list_lookahead));
         break;
 #else
       default:
@@ -4587,6 +4599,18 @@ class Benchmark {
     if (FLAGS_perf_level > rocksdb::PerfLevel::kDisable) {
       thread->stats.AddMessage(std::string("PERF_CONTEXT:\n") +
                                get_perf_context()->ToString());
+    }
+  }
+
+
+  void ReadReverseInMemTable(ThreadState* thread) {
+    DoWrite(thread, SEQUENTIAL);
+    if (db_.db != nullptr){
+      ReadReverse(thread, db_.db);
+    } else {
+      for (const auto& db_with_cfh : multi_dbs_) {
+        ReadReverse(thread, db_with_cfh.db);
+      }
     }
   }
 

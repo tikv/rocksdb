@@ -359,5 +359,7 @@ extern MemTableRepFactory* NewHashLinkListRepFactory(
     bool if_log_bucket_dist_when_flash = true,
     uint32_t threshold_use_skiplist = 256);
 
+extern MemTableRepFactory* NewDoublyLinkedSkipListRepFactory(size_t lookahead);
+
 #endif  // ROCKSDB_LITE
 }  // namespace rocksdb
