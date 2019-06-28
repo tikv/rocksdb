@@ -2899,6 +2899,8 @@ class Benchmark {
         } else {
           if (db_.db != nullptr) {
             db_.DeleteDBs();
+            fprintf(stdout, "%-12s destroy DB \n",
+                  name.c_str());
             DestroyDB(FLAGS_db, open_options_);
           }
           Options options = open_options_;
@@ -2987,9 +2989,9 @@ class Benchmark {
           printf("Warming up benchmark by running %d times\n", num_warmup);
         }
 
-        if (name == "readreversememtable") {
-          RunBenchmark(1, "prepare_for_readreversememtable", &Benchmark::WriteSeq);
-        }
+//        if (name == "readreversememtable") {
+//          RunBenchmark(1, "prepare_for_readreversememtable", &Benchmark::WriteSeq);
+//        }
 
         for (int i = 0; i < num_warmup; i++) {
           RunBenchmark(num_threads, name, method);
