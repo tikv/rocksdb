@@ -860,13 +860,12 @@ bool DoublyLinkedSkipList<Comparator>::Insert(const char* key, Splice* splice,
             Node* next = splice->next_[0];
             while (!next->CASPrev(prev, x)) {
               prev = next->NoBarrier_Prev();
-              while (prev->Next(0) != next) {
-                prev = prev->Next(0);
+              if (x->Next(0) != next) {
+                break;
               }
             }
-          } else {
-            break;
           }
+          break;
         }
         // CAS failed, we need to recompute prev and next. It is unlikely
         // to be helpful to try to use a different level as we redo the
