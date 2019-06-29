@@ -349,8 +349,16 @@ struct DoublyLinkedSkipList<Comparator>::Node {
       return next_[1].load(std::memory_order_relaxed);
   }
 
+  void SetPrev(Node* x) {
+    next_[1].store(x, std::memory_order_release);
+  }
+
+  Node* Prev() {
+    return next_[1].load(std::memory_order_acquire);
+  }
+
   void NoBarrier_SetPrev(Node* x) {
-      next_[1].store(x, std::memory_order_relaxed);
+    next_[1].store(x, std::memory_order_relaxed);
   }
 
  private:
@@ -392,8 +400,8 @@ inline void DoublyLinkedSkipList<Comparator>::Iterator::Next() {
 template <class Comparator>
 inline void DoublyLinkedSkipList<Comparator>::Iterator::Prev() {
   assert(Valid());
-  node_ = node_->NoBarrier_Prev();
-  if (node_ == list_->head_) {
+  node_ = node_->Prev();
+  if (UNLIKELY(node_ == list_->head_)) {
     node_ = nullptr;
   }
 }
@@ -852,7 +860,6 @@ bool DoublyLinkedSkipList<Comparator>::Insert(const char* key, Splice* splice,
         if (i == 0) {
             x->NoBarrier_SetPrev(splice->prev_[0]);
         }
-        x->NoBarrier_SetPrev(splice->prev_[0]);
         if (splice->prev_[i]->CASNext(i, splice->next_[i], x)) {
           // success
           if (UNLIKELY(i == 0 && splice->next_[0] != nullptr)) {
@@ -910,7 +917,7 @@ bool DoublyLinkedSkipList<Comparator>::Insert(const char* key, Splice* splice,
       if (i == 0) {
           x->NoBarrier_SetPrev(splice->prev_[i]);
           if (LIKELY(splice->next_[i] != nullptr)) {
-              splice->next_[i]->NoBarrier_SetPrev(x);
+              splice->next_[i]->SetPrev(x);
           }
       }
     }
