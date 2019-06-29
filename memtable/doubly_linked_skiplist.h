@@ -341,8 +341,8 @@ struct DoublyLinkedSkipList<Comparator>::Node {
   }
 
 
-  bool CASPrev(Node* expected, Node* x) {
-      return next_[1].compare_exchange_strong(expected, x);
+  bool CASPrev(Node** expected, Node* x) {
+      return next_[1].compare_exchange_weak(*expected, x);
   }
 
   Node* NoBarrier_Prev() {
@@ -858,8 +858,7 @@ bool DoublyLinkedSkipList<Comparator>::Insert(const char* key, Splice* splice,
           if (UNLIKELY(i == 0 && splice->next_[0] != nullptr)) {
             Node* prev = splice->prev_[0];
             Node* next = splice->next_[0];
-            while (!next->CASPrev(prev, x)) {
-              prev = next->NoBarrier_Prev();
+            while (!next->CASPrev(&prev, x)) {
               if (x->Next(0) != next) {
                 break;
               }
