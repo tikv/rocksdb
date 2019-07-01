@@ -297,7 +297,7 @@ struct InlineSkipList<Comparator>::Node {
     return rv;
   }
 
-  const char* Key() const { return reinterpret_cast<const char*>(&next_[1]); }
+  const char* Key() const { return reinterpret_cast<const char*>(this + 1); }
 
   // Accessors/mutators for links.  Wrapped in methods so we can add
   // the appropriate barriers as necessary, and perform the necessary
@@ -340,10 +340,31 @@ struct InlineSkipList<Comparator>::Node {
     prev->SetNext(level, this);
   }
 
+  bool CASPrev(Node** expected, Node* x) {
+      return prev_.compare_exchange_weak(*expected, x);
+  }
+
+  Node* NoBarrier_Prev() {
+      return prev_.load(std::memory_order_relaxed);
+  }
+
+  void SetPrev(Node* x) {
+    prev_.store(x, std::memory_order_release);
+  }
+
+  Node* Prev() {
+    return prev_.load(std::memory_order_acquire);
+  }
+
+  void NoBarrier_SetPrev(Node* x) {
+    prev_.store(x, std::memory_order_relaxed);
+  }
+
  private:
   // next_[0] is the lowest level link (level 0).  Higher levels are
   // stored _earlier_, so level 1 is at next_[-1].
   std::atomic<Node*> next_[1];
+  std::atomic<Node*> prev_;
 };
 
 template <class Comparator>
@@ -381,7 +402,7 @@ inline void InlineSkipList<Comparator>::Iterator::Prev() {
   // Instead of using explicit "prev" links, we just search for the
   // last node that falls before key.
   assert(Valid());
-  node_ = list_->FindLessThan(node_->Key());
+  node_ = node_->Prev();
   if (node_ == list_->head_) {
     node_ = nullptr;
   }
@@ -838,8 +859,23 @@ bool InlineSkipList<Comparator>::Insert(const char* key, Splice* splice,
         assert(splice->prev_[i] == head_ ||
                compare_(splice->prev_[i]->Key(), x->Key()) < 0);
         x->NoBarrier_SetNext(i, splice->next_[i]);
+        if (i == 0) {
+          x->NoBarrier_SetPrev(splice->prev_[0]);
+        }
+
         if (splice->prev_[i]->CASNext(i, splice->next_[i], x)) {
           // success
+          if (i == 0) {
+            if (splice->next_[0] != nullptr) {
+              Node* prev = splice->prev_[0];
+              Node* next = splice->next_[0];
+              while (!next->CASPrev(&prev, x)) {
+                if (x->Next(0) != next) {
+                  break;
+                }
+              }
+            }
+          }
           break;
         }
         // CAS failed, we need to recompute prev and next. It is unlikely
@@ -882,6 +918,12 @@ bool InlineSkipList<Comparator>::Insert(const char* key, Splice* splice,
              compare_(splice->prev_[i]->Key(), x->Key()) < 0);
       assert(splice->prev_[i]->Next(i) == splice->next_[i]);
       x->NoBarrier_SetNext(i, splice->next_[i]);
+      if (i == 0) {
+        x->NoBarrier_SetPrev(splice->prev_[0]);
+        if (splice->next_[0] != nullptr) {
+          splice->next_[0]->SetPrev(x);
+        }
+      }
       splice->prev_[i]->SetNext(i, x);
     }
   }
