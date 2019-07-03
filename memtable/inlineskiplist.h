@@ -758,13 +758,14 @@ bool InlineSkipList<Comparator>::InsertPrevListCAS(Node* x, Splice* splice, cons
         prev = next->Prev();
       } while (prev != head_ && !KeyIsAfterNode(key, prev));
       x->NoBarrier_SetPrev(prev);
-      if (next != tail_ &&
-          compare_(x->Key(), next->Key()) >= 0) {
+      if (compare_(x->Key(), next->Key()) >= 0) {
         // duplicate key
         return false;
       }
       // We do not need to check whether x is equal to the prev pointer,
       // because the prev pointer would move forward util it is less than key.
+    } else {
+      x->NoBarrier_SetPrev(prev);
     }
   }
   return true;
