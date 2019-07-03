@@ -346,7 +346,7 @@ struct InlineSkipList<Comparator>::Node {
   }
 
   bool CASPrev(Node** expected, Node* x) {
-      return prev_.compare_exchange_weak(*expected, x);
+      return prev_.compare_exchange_strong(*expected, x);
   }
 
   Node* NoBarrier_Prev() {
@@ -748,18 +748,23 @@ bool InlineSkipList<Comparator>::InsertPrevListCAS(Node* x, Splice* splice, cons
   if (next == nullptr) {
     next = tail_;
   }
+
   while (!next->CASPrev(&prev, x)) {
-    // use reverse linked-list to search for new insert position.
-    assert(prev != tail_);
-    while (prev != head_ && !KeyIsAfterNode(key, prev)) {
-      next = prev;
-      prev = next->Prev();
-    }
-    x->NoBarrier_SetPrev(prev);
-    if (next != tail_ &&
-        compare_(x->Key(), next->Key()) >= 0) {
-      // duplicate key
-      return false;
+    // If there is one node inserted between prev and x, we only need to try setting next.prev to x again.
+    // If the node is inserted between x and next, we must adjust insert position for x.
+    if (prev != head_ && !KeyIsAfterNode(key, prev)) {
+      do {
+        next = prev;
+        prev = next->Prev();
+      } while (prev != head_ && !KeyIsAfterNode(key, prev));
+      x->NoBarrier_SetPrev(prev);
+      if (next != tail_ &&
+          compare_(x->Key(), next->Key()) >= 0) {
+        // duplicate key
+        return false;
+      }
+      // We do not need to check whether x is equal to the prev pointer,
+      // because the prev pointer would move forward util it is less than key.
     }
   }
   return true;
@@ -943,14 +948,14 @@ bool InlineSkipList<Comparator>::Insert(const char* key, Splice* splice,
       }
     }
   } else {
-    if (!InsertPrevList(x, splice, key_decoded)) {
-      return false;
-    }
     for (int i = 0; i < height; ++i) {
       if (i >= recompute_height &&
           splice->prev_[i]->Next(i) != splice->next_[i]) {
         FindSpliceForLevel<false>(key_decoded, splice->prev_[i], nullptr, i,
                                   &splice->prev_[i], &splice->next_[i]);
+      }
+      if (UNLIKELY(i == 0 && !InsertPrevList(x, splice, key_decoded))) {
+        return false;
       }
       assert(splice->next_[i] == nullptr ||
              compare_(x->Key(), splice->next_[i]->Key()) < 0);
