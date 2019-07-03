@@ -2410,8 +2410,8 @@ class ModelDB : public DB {
       ColumnFamilyHandle* /*column_family*/,
       const std::vector<std::string>& /*input_file_names*/,
       const int /*output_level*/, const int /*output_path_id*/ = -1,
-      std::vector<std::string>* const /*output_file_names*/ = nullptr
-      ) override {
+      std::vector<std::string>* const /*output_file_names*/ = nullptr,
+      CompactionJobInfo* /*compaction_job_info*/ = nullptr) override {
     return Status::NotSupported("Not supported operation.");
   }
 
@@ -5230,6 +5230,67 @@ TEST_F(DBTest, AutomaticConflictsWithManualCompaction) {
   rocksdb::SyncPoint::GetInstance()->DisableProcessing();
   manual_compaction_thread.join();
   dbfull()->TEST_WaitForCompact();
+}
+
+TEST_F(DBTest, CompactFilesShouldTriggerAutoCompaction) {
+  Options options = CurrentOptions();
+  options.max_background_compactions = 1;
+  options.level0_file_num_compaction_trigger = 4;
+  options.level0_slowdown_writes_trigger = 36;
+  options.level0_stop_writes_trigger = 36;
+  DestroyAndReopen(options);
+
+  // generate files for manual compaction
+  Random rnd(301);
+  for (int i = 0; i < 2; ++i) {
+    // put two keys to ensure no trivial move
+    for (int j = 0; j < 2; ++j) {
+      ASSERT_OK(Put(Key(j), RandomString(&rnd, 1024)));
+    }
+    ASSERT_OK(Flush());
+  }
+
+  rocksdb::ColumnFamilyMetaData cf_meta_data;
+  db_->GetColumnFamilyMetaData(db_->DefaultColumnFamily(), &cf_meta_data);
+
+  std::vector<std::string> input_files;
+  input_files.push_back(cf_meta_data.levels[0].files[0].name);
+
+  SyncPoint::GetInstance()->LoadDependency({
+      {"CompactFilesImpl:0",
+       "DBTest::CompactFilesShouldTriggerAutoCompaction:Begin"},
+      {"DBTest::CompactFilesShouldTriggerAutoCompaction:End",
+       "CompactFilesImpl:1"},
+  });
+
+  SyncPoint::GetInstance()->EnableProcessing();
+
+  port::Thread manual_compaction_thread([&]() {
+      auto s = db_->CompactFiles(CompactionOptions(),
+          db_->DefaultColumnFamily(), input_files, 0);
+  });
+
+  TEST_SYNC_POINT(
+          "DBTest::CompactFilesShouldTriggerAutoCompaction:Begin");
+  // generate enough files to trigger compaction
+  for (int i = 0; i < 20; ++i) {
+    for (int j = 0; j < 2; ++j) {
+      ASSERT_OK(Put(Key(j), RandomString(&rnd, 1024)));
+    }
+    ASSERT_OK(Flush());
+  }
+  db_->GetColumnFamilyMetaData(db_->DefaultColumnFamily(), &cf_meta_data);
+  ASSERT_GT(cf_meta_data.levels[0].files.size(),
+      options.level0_file_num_compaction_trigger);
+  TEST_SYNC_POINT(
+          "DBTest::CompactFilesShouldTriggerAutoCompaction:End");
+
+  manual_compaction_thread.join();
+  dbfull()->TEST_WaitForCompact();
+
+  db_->GetColumnFamilyMetaData(db_->DefaultColumnFamily(), &cf_meta_data);
+  ASSERT_LE(cf_meta_data.levels[0].files.size(),
+      options.level0_file_num_compaction_trigger);
 }
 
 // Github issue #595
