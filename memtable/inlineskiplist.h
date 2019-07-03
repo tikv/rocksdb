@@ -123,6 +123,10 @@ class InlineSkipList {
   template <bool UseCAS>
   bool Insert(const char* key, Splice* splice, bool allow_partial_splice_fix);
 
+  bool InsertPrevListCAS(Node* x, Splice* splice, const DecodedKey& key);
+
+  bool InsertPrevList(Node* x, Splice* splice, const DecodedKey& key);
+
   // Returns true iff an entry that compares equal to key is in the list.
   bool Contains(const char* key) const;
 
@@ -188,6 +192,7 @@ class InlineSkipList {
   // Immutable after construction
   Comparator const compare_;
   Node* const head_;
+  Node* const tail_;           // Only use for prev pointer
 
   // Modified only by Insert().  Read racily by readers, but stale
   // values are ok.
@@ -402,7 +407,9 @@ inline void InlineSkipList<Comparator>::Iterator::Prev() {
   // Instead of using explicit "prev" links, we just search for the
   // last node that falls before key.
   assert(Valid());
-  node_ = node_->Prev();
+  do {
+    node_ = node_->Prev();
+  } while (node_ != list_->head_ && node_->Next(0) == nullptr);
   if (node_ == list_->head_) {
     node_ = nullptr;
   }
@@ -610,6 +617,7 @@ InlineSkipList<Comparator>::InlineSkipList(const Comparator cmp,
       allocator_(allocator),
       compare_(cmp),
       head_(AllocateNode(0, max_height)),
+      tail_(AllocateNode(0, 1)),
       max_height_(1),
       seq_splice_(AllocateSplice()) {
   assert(max_height > 0 && kMaxHeight_ == static_cast<uint32_t>(max_height));
@@ -620,6 +628,9 @@ InlineSkipList<Comparator>::InlineSkipList(const Comparator cmp,
   for (int i = 0; i < kMaxHeight_; ++i) {
     head_->SetNext(i, nullptr);
   }
+  head_->SetPrev(nullptr);
+  tail_->SetNext(0, nullptr);
+  tail_->SetPrev(head_);
 }
 
 template <class Comparator>
@@ -717,6 +728,64 @@ void InlineSkipList<Comparator>::FindSpliceForLevel(const DecodedKey& key,
     }
     before = next;
   }
+}
+
+template <class Comparator>
+bool InlineSkipList<Comparator>::InsertPrevListCAS(Node* x, Splice* splice, const DecodedKey& key){
+  Node* prev = splice->prev_[0];
+  Node* next = splice->next_[0];
+  if (next != nullptr &&
+    compare_(x->Key(), next->Key()) >= 0) {
+    // duplicate key
+    return false;
+  }
+  if (prev != head_ &&
+    compare_(prev->Key(), x->Key()) >= 0) {
+    // duplicate key
+    return false;
+  }
+  x->NoBarrier_SetPrev(prev);
+  if (next == nullptr) {
+    next = tail_;
+  }
+  while (!next->CASPrev(&prev, x)) {
+    // use reverse linked-list to search for new insert position.
+    assert(prev != tail_);
+    while (prev != head_ && !KeyIsAfterNode(key, prev)) {
+      next = prev;
+      prev = next->Prev();
+    }
+    x->NoBarrier_SetPrev(prev);
+    if (next != tail_ &&
+        compare_(x->Key(), next->Key()) >= 0) {
+      // duplicate key
+      return false;
+    }
+  }
+  return true;
+}
+
+
+template <class Comparator>
+bool InlineSkipList<Comparator>::InsertPrevList(Node* x, Splice* splice, const DecodedKey& key){
+  Node* prev = splice->prev_[0];
+  Node* next = splice->next_[0];
+  if (next != nullptr &&
+    compare_(x->Key(), next->Key()) >= 0) {
+    // duplicate key
+    return false;
+  }
+  if (prev != head_ &&
+    compare_(prev->Key(), x->Key()) >= 0) {
+    // duplicate key
+    return false;
+  }
+  x->NoBarrier_SetPrev(prev);
+  if (next == nullptr) {
+    next = tail_;
+  }
+  next->SetPrev(x);
+  return true;
 }
 
 template <class Comparator>
@@ -840,42 +909,21 @@ bool InlineSkipList<Comparator>::Insert(const char* key, Splice* splice,
   }
 
   bool splice_is_valid = true;
+  x->SetNext(0, nullptr);
   if (UseCAS) {
+    if (!InsertPrevListCAS(x, splice, key_decoded)) {
+      return false;
+    }
     for (int i = 0; i < height; ++i) {
       while (true) {
         // Checking for duplicate keys on the level 0 is sufficient
-        if (UNLIKELY(i == 0 && splice->next_[i] != nullptr &&
-                     compare_(x->Key(), splice->next_[i]->Key()) >= 0)) {
-          // duplicate key
-          return false;
-        }
-        if (UNLIKELY(i == 0 && splice->prev_[i] != head_ &&
-                     compare_(splice->prev_[i]->Key(), x->Key()) >= 0)) {
-          // duplicate key
-          return false;
-        }
         assert(splice->next_[i] == nullptr ||
                compare_(x->Key(), splice->next_[i]->Key()) < 0);
         assert(splice->prev_[i] == head_ ||
                compare_(splice->prev_[i]->Key(), x->Key()) < 0);
         x->NoBarrier_SetNext(i, splice->next_[i]);
-        if (i == 0) {
-          x->NoBarrier_SetPrev(splice->prev_[0]);
-        }
-
         if (splice->prev_[i]->CASNext(i, splice->next_[i], x)) {
           // success
-          if (i == 0) {
-            if (splice->next_[0] != nullptr) {
-              Node* prev = splice->prev_[0];
-              Node* next = splice->next_[0];
-              while (!next->CASPrev(&prev, x)) {
-                if (x->Next(0) != next) {
-                  break;
-                }
-              }
-            }
-          }
           break;
         }
         // CAS failed, we need to recompute prev and next. It is unlikely
@@ -895,22 +943,14 @@ bool InlineSkipList<Comparator>::Insert(const char* key, Splice* splice,
       }
     }
   } else {
+    if (!InsertPrevList(x, splice, key_decoded)) {
+      return false;
+    }
     for (int i = 0; i < height; ++i) {
       if (i >= recompute_height &&
           splice->prev_[i]->Next(i) != splice->next_[i]) {
         FindSpliceForLevel<false>(key_decoded, splice->prev_[i], nullptr, i,
                                   &splice->prev_[i], &splice->next_[i]);
-      }
-      // Checking for duplicate keys on the level 0 is sufficient
-      if (UNLIKELY(i == 0 && splice->next_[i] != nullptr &&
-                   compare_(x->Key(), splice->next_[i]->Key()) >= 0)) {
-        // duplicate key
-        return false;
-      }
-      if (UNLIKELY(i == 0 && splice->prev_[i] != head_ &&
-                   compare_(splice->prev_[i]->Key(), x->Key()) >= 0)) {
-        // duplicate key
-        return false;
       }
       assert(splice->next_[i] == nullptr ||
              compare_(x->Key(), splice->next_[i]->Key()) < 0);
@@ -918,12 +958,6 @@ bool InlineSkipList<Comparator>::Insert(const char* key, Splice* splice,
              compare_(splice->prev_[i]->Key(), x->Key()) < 0);
       assert(splice->prev_[i]->Next(i) == splice->next_[i]);
       x->NoBarrier_SetNext(i, splice->next_[i]);
-      if (i == 0) {
-        x->NoBarrier_SetPrev(splice->prev_[0]);
-        if (splice->next_[0] != nullptr) {
-          splice->next_[0]->SetPrev(x);
-        }
-      }
       splice->prev_[i]->SetNext(i, x);
     }
   }
