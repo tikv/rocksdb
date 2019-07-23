@@ -234,7 +234,6 @@ class InternalStats {
 
     CompactionStats& operator=(const CompactionStats& c) {
       micros = c.micros;
-      cpu_micros = c.cpu_micros;
       bytes_read_non_output_levels = c.bytes_read_non_output_levels;
       bytes_read_output_level = c.bytes_read_output_level;
       bytes_written = c.bytes_written;
