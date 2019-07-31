@@ -15,6 +15,7 @@
 #include "table/full_filter_block.h"
 #include "util/coding.h"
 #include "util/hash.h"
+#include <iostream>
 
 namespace rocksdb {
 
@@ -268,23 +269,32 @@ bool FullFilterBitsReader::HashMayMatch(const uint32_t& hash,
 // An implementation of filter policy
 class BloomFilterPolicy : public FilterPolicy {
  public:
-  explicit BloomFilterPolicy(int bits_per_key, bool use_block_based_builder)
-      : bits_per_key_(bits_per_key), hash_func_(BloomHash),
+  explicit BloomFilterPolicy(int bits_per_key_per_level[],int count, bool use_block_based_builder)
+      :  bits_per_key_per_level_size_(count), hash_func_(BloomHash), 
         use_block_based_builder_(use_block_based_builder) {
-    initialize();
+    initialize(bits_per_key_per_level, count);
+  }
+  explicit BloomFilterPolicy(int bits_per_key, bool use_block_based_builder)
+      :  bits_per_key_per_level_size_(12), hash_func_(BloomHash), 
+        use_block_based_builder_(use_block_based_builder) {
+    int *bits_per_key_per_level = new int [bits_per_key_per_level_size_];
+    std::fill_n(bits_per_key_per_level,bits_per_key_per_level_size_,bits_per_key);
+    initialize(bits_per_key_per_level, 12);
   }
 
   ~BloomFilterPolicy() {
+    delete bits_per_key_per_level_;
+    delete num_probes_;
   }
 
   virtual const char* Name() const override {
     return "rocksdb.BuiltinBloomFilter";
   }
-
+ 
   virtual void CreateFilter(const Slice* keys, int n,
-                            std::string* dst) const override {
+                            std::string* dst ,int level = 0) const override {
     // Compute bloom filter size (in both bits and bytes)
-    size_t bits = n * bits_per_key_;
+    size_t bits = n * bits_per_key_per_level_[level];
 
     // For small n, we can see a very high false positive rate.  Fix it
     // by enforcing a minimum bloom filter length.
@@ -295,14 +305,14 @@ class BloomFilterPolicy : public FilterPolicy {
 
     const size_t init_size = dst->size();
     dst->resize(init_size + bytes, 0);
-    dst->push_back(static_cast<char>(num_probes_));  // Remember # of probes
+    dst->push_back(static_cast<char>(num_probes_[level]));  // Remember # of probes
     char* array = &(*dst)[init_size];
     for (size_t i = 0; i < (size_t)n; i++) {
       // Use double-hashing to generate a sequence of hash values.
       // See analysis in [Kirsch,Mitzenmacher 2006].
       uint32_t h = hash_func_(keys[i]);
       const uint32_t delta = (h >> 17) | (h << 15);  // Rotate right 17 bits
-      for (size_t j = 0; j < num_probes_; j++) {
+      for (size_t j = 0; j < num_probes_[level]; j++) {
         const uint32_t bitpos = h % bits;
         array[bitpos/8] |= (1 << (bitpos % 8));
         h += delta;
@@ -337,12 +347,12 @@ class BloomFilterPolicy : public FilterPolicy {
     return true;
   }
 
-  virtual FilterBitsBuilder* GetFilterBitsBuilder() const override {
+  virtual FilterBitsBuilder* GetFilterBitsBuilder(int level_ = 0) const override {
     if (use_block_based_builder_) {
       return nullptr;
     }
 
-    return new FullFilterBitsBuilder(bits_per_key_, num_probes_);
+    return new FullFilterBitsBuilder(bits_per_key_per_level_[level_], num_probes_[level_]);
   }
 
   virtual FilterBitsReader* GetFilterBitsReader(const Slice& contents)
@@ -354,17 +364,23 @@ class BloomFilterPolicy : public FilterPolicy {
   bool UseBlockBasedBuilder() { return use_block_based_builder_; }
 
  private:
-  size_t bits_per_key_;
-  size_t num_probes_;
+  size_t * bits_per_key_per_level_;
+  size_t bits_per_key_per_level_size_;
+  size_t * num_probes_;
   uint32_t (*hash_func_)(const Slice& key);
 
   const bool use_block_based_builder_;
 
-  void initialize() {
+  void initialize(int bits_per_key_per_level[], int count) {
     // We intentionally round down to reduce probing cost a little bit
-    num_probes_ = static_cast<size_t>(bits_per_key_ * 0.69);  // 0.69 =~ ln(2)
-    if (num_probes_ < 1) num_probes_ = 1;
-    if (num_probes_ > 30) num_probes_ = 30;
+    bits_per_key_per_level_ = new size_t[count];
+    num_probes_ = new size_t[count];
+    for( int i = 0; i < count; i++){
+      bits_per_key_per_level_[i] = bits_per_key_per_level[i];
+      num_probes_[i] = static_cast<size_t>(bits_per_key_per_level[i] * 0.69);  // 0.69 =~ ln(2)
+      if (num_probes_[i] < 1) num_probes_[i] = 1;
+      if (num_probes_[i] > 30) num_probes_[i] = 30;
+    }
   }
 };
 
@@ -372,7 +388,14 @@ class BloomFilterPolicy : public FilterPolicy {
 
 const FilterPolicy* NewBloomFilterPolicy(int bits_per_key,
                                          bool use_block_based_builder) {
+
   return new BloomFilterPolicy(bits_per_key, use_block_based_builder);
+}
+
+const FilterPolicy* NewBloomFilterPolicy(int bits_per_key_per_level[],int count, 
+                                         bool use_block_based_builder){
+  return new BloomFilterPolicy(bits_per_key_per_level, count, use_block_based_builder);
+
 }
 
 }  // namespace rocksdb

@@ -65,11 +65,12 @@ FilterBlockBuilder* CreateFilterBlockBuilder(
     const ImmutableCFOptions& /*opt*/, const MutableCFOptions& mopt,
     const BlockBasedTableOptions& table_opt,
     const bool use_delta_encoding_for_index_values,
-    PartitionedIndexBuilder* const p_index_builder) {
+    PartitionedIndexBuilder* const p_index_builder,
+    const int level) {
   if (table_opt.filter_policy == nullptr) return nullptr;
 
   FilterBitsBuilder* filter_bits_builder =
-      table_opt.filter_policy->GetFilterBitsBuilder();
+      table_opt.filter_policy->GetFilterBitsBuilder(level);
   if (filter_bits_builder == nullptr) {
     return new BlockBasedFilterBlockBuilder(mopt.prefix_extractor.get(),
                                             table_opt);
@@ -281,6 +282,7 @@ struct BlockBasedTableBuilder::Rep {
   const std::string& column_family_name;
   uint64_t creation_time = 0;
   uint64_t oldest_key_time = 0;
+  int level = 0;
 
   std::vector<std::unique_ptr<IntTblPropCollector>> table_properties_collectors;
 
@@ -294,7 +296,7 @@ struct BlockBasedTableBuilder::Rep {
       const CompressionOptions& _compression_opts,
       const std::string* _compression_dict, const bool skip_filters,
       const std::string& _column_family_name, const uint64_t _creation_time,
-      const uint64_t _oldest_key_time)
+      const uint64_t _oldest_key_time, const int _level)
       : ioptions(_ioptions),
         moptions(_moptions),
         table_options(table_opt),
@@ -324,7 +326,8 @@ struct BlockBasedTableBuilder::Rep {
         column_family_id(_column_family_id),
         column_family_name(_column_family_name),
         creation_time(_creation_time),
-        oldest_key_time(_oldest_key_time) {
+        oldest_key_time(_oldest_key_time),
+        level(_level) {
     if (table_options.index_type ==
         BlockBasedTableOptions::kTwoLevelIndexSearch) {
       p_index_builder_ = PartitionedIndexBuilder::CreateIndexBuilder(
@@ -342,7 +345,7 @@ struct BlockBasedTableBuilder::Rep {
     } else {
       filter_builder.reset(CreateFilterBlockBuilder(
           _ioptions, _moptions, table_options,
-          use_delta_encoding_for_index_values, p_index_builder_));
+          use_delta_encoding_for_index_values, p_index_builder_, level));
     }
 
     for (auto& collector_factories : *int_tbl_prop_collector_factories) {
@@ -376,7 +379,7 @@ BlockBasedTableBuilder::BlockBasedTableBuilder(
     const CompressionOptions& compression_opts,
     const std::string* compression_dict, const bool skip_filters,
     const std::string& column_family_name, const uint64_t creation_time,
-    const uint64_t oldest_key_time) {
+    const uint64_t oldest_key_time, const int _level ) {
   BlockBasedTableOptions sanitized_table_options(table_options);
   if (sanitized_table_options.format_version == 0 &&
       sanitized_table_options.checksum != kCRC32c) {
@@ -393,7 +396,7 @@ BlockBasedTableBuilder::BlockBasedTableBuilder(
       new Rep(ioptions, moptions, sanitized_table_options, internal_comparator,
               int_tbl_prop_collector_factories, column_family_id, file,
               compression_type, compression_opts, compression_dict,
-              skip_filters, column_family_name, creation_time, oldest_key_time);
+              skip_filters, column_family_name, creation_time, oldest_key_time, _level);
 
   if (rep_->filter_builder != nullptr) {
     rep_->filter_builder->StartBlock(0);

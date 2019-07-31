@@ -305,7 +305,7 @@ struct rocksdb_filterpolicy_t : public FilterPolicy {
   virtual const char* Name() const override { return (*name_)(state_); }
 
   virtual void CreateFilter(const Slice* keys, int n,
-                            std::string* dst) const override {
+                            std::string* dst , int ) const override {
     std::vector<const char*> key_pointers(n);
     std::vector<size_t> key_sizes(n);
     for (int i = 0; i < n; i++) {
@@ -2960,7 +2960,7 @@ rocksdb_filterpolicy_t* rocksdb_filterpolicy_create_bloom_format(int bits_per_ke
     ~Wrapper() { delete rep_; }
     const char* Name() const override { return rep_->Name(); }
     void CreateFilter(const Slice* keys, int n,
-                      std::string* dst) const override {
+                      std::string* dst, int ) const override {
       return rep_->CreateFilter(keys, n, dst);
     }
     bool KeyMayMatch(const Slice& key, const Slice& filter) const override {

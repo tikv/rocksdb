@@ -102,7 +102,7 @@ class FilterPolicy {
   //
   // Warning: do not change the initial contents of *dst.  Instead,
   // append the newly constructed filter to *dst.
-  virtual void CreateFilter(const Slice* keys, int n, std::string* dst)
+  virtual void CreateFilter(const Slice* keys, int n, std::string* dst, int level = 0)
       const = 0;
 
   // "filter" contains the data appended by a preceding call to
@@ -114,7 +114,7 @@ class FilterPolicy {
 
   // Get the FilterBitsBuilder, which is ONLY used for full filter block
   // It contains interface to take individual key, then generate filter
-  virtual FilterBitsBuilder* GetFilterBitsBuilder() const {
+  virtual FilterBitsBuilder* GetFilterBitsBuilder(int) const {
     return nullptr;
   }
 
@@ -147,4 +147,7 @@ class FilterPolicy {
 // trailing spaces in keys.
 extern const FilterPolicy* NewBloomFilterPolicy(
     int bits_per_key, bool use_block_based_builder = false);
+
+extern const FilterPolicy* NewBloomFilterPolicy(
+  int bits_per_key_per_level[], int count, bool use_block_based_builder = false);
 }
