@@ -275,11 +275,28 @@ class BloomFilterPolicy : public FilterPolicy {
     initialize(bits_per_key_per_level, count);
   }
   explicit BloomFilterPolicy(int bits_per_key, bool use_block_based_builder)
-      :  bits_per_key_per_level_size_(12), hash_func_(BloomHash), 
+      :  bits_per_key_per_level_size_(7), hash_func_(BloomHash), 
         use_block_based_builder_(use_block_based_builder) {
     int *bits_per_key_per_level = new int [bits_per_key_per_level_size_];
-    std::fill_n(bits_per_key_per_level,bits_per_key_per_level_size_,bits_per_key);
-    initialize(bits_per_key_per_level, 12);
+    if( bits_per_key == 5){
+	bits_per_key_per_level[0] = 33;
+	bits_per_key_per_level[1] = 28;
+	bits_per_key_per_level[2] = 23;
+	bits_per_key_per_level[3] = 18;
+	bits_per_key_per_level[4] = 14;
+	bits_per_key_per_level[5] = 9;
+    	bits_per_key_per_level[6] = 4;
+    }else if (bits_per_key == 10){
+	bits_per_key_per_level[0] = 38;
+	bits_per_key_per_level[1] = 33;
+	bits_per_key_per_level[2] = 28;
+	bits_per_key_per_level[3] = 23;
+	bits_per_key_per_level[4] = 19;
+	bits_per_key_per_level[5] = 14;
+	bits_per_key_per_level[6] = 9;
+    }
+
+    initialize(bits_per_key_per_level, 7);
   }
 
   ~BloomFilterPolicy() {
