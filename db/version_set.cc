@@ -1220,6 +1220,8 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
       storage_info_.num_non_empty_levels_, &storage_info_.file_indexer_,
       user_comparator(), internal_comparator());
   FdWithKeyRange* f = fp.GetNextFile();
+  //added by ElasticBF
+  table_cache_->addCurrentTime();
 
   while (f != nullptr) {
     if (*max_covering_tombstone_seq > 0) {
@@ -1670,6 +1672,7 @@ void VersionStorageInfo::ComputeCompactionScore(
           score = std::max(
               score, static_cast<double>(total_size) /
                      mutable_cf_options.max_bytes_for_level_base);
+    
         }
       }
     } else {

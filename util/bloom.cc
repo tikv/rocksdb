@@ -23,14 +23,15 @@ class FullFilterBlockBuilder;
 
 FullFilterBitsBuilder::FullFilterBitsBuilder(const size_t bits_per_key,
                                              const size_t num_probes)
-    : bits_per_key_(bits_per_key), num_probes_(num_probes) {
+    : id_(0), bits_per_key_(bits_per_key), num_probes_(num_probes) {
   assert(bits_per_key_);
   }
 
   FullFilterBitsBuilder::~FullFilterBitsBuilder() {}
 
   void FullFilterBitsBuilder::AddKey(const Slice& key) {
-    uint32_t hash = BloomHash(key);
+    // added by ElasticBF
+    uint32_t hash = BloomHashId(key, id_);
     if (hash_entries_.size() == 0 || hash != hash_entries_.back()) {
       hash_entries_.push_back(hash);
     }
@@ -136,6 +137,38 @@ inline void FullFilterBitsBuilder::AddHash(uint32_t h, char* data,
     h += delta;
   }
 }
+// added by ElasticBF
+MultiFullFilterBitsBuilder::MultiFullFilterBitsBuilder(const std::vector<int> &bits_per_key, const size_t num_probe)
+    : FullFilterBitsBuilder(bits_per_key[0], num_probe) {
+
+    bits_per_keys_.assign(bits_per_key.begin(), bits_per_key.end());
+
+    for (uint32_t i = 0; i < bits_per_keys_.size(); i++) {
+      size_t num_probes = static_cast<size_t>(bits_per_keys_[i] * 0.69);  // 0.69 =~ ln(2)
+      if (num_probes < 1) num_probes = 1;
+      if (num_probes > 30) num_probes = 30;
+
+      FullFilterBitsBuilder *fullFilterBitsBuilder = new FullFilterBitsBuilder(bits_per_keys_[i], num_probes);
+      fullFilterBitsBuilder->id_ = i;
+      fullFilterBitsBuilders.push_back(fullFilterBitsBuilder);
+    }
+  }
+
+  MultiFullFilterBitsBuilder::~MultiFullFilterBitsBuilder() {
+    for (uint32_t i = 0; i < fullFilterBitsBuilders.size(); i++) {
+      delete fullFilterBitsBuilders[i];
+    }
+  }
+
+  void MultiFullFilterBitsBuilder::AddKey(const Slice& key) {
+    for (uint32_t i = 0; i < fullFilterBitsBuilders.size(); i++) {
+      fullFilterBitsBuilders[i]->AddKey(key);
+    }
+  }
+
+  Slice MultiFullFilterBitsBuilder::Finish(std::unique_ptr<const char[]>* buf, int id) {
+    return fullFilterBitsBuilders[id]->Finish(buf);
+  }
 
 namespace {
 class FullFilterBitsReader : public FilterBitsReader {
@@ -181,6 +214,18 @@ class FullFilterBitsReader : public FilterBitsReader {
     // Other Error params, including a broken filter, regarded as match
     if (num_probes_ == 0 || num_lines_ == 0) return true;
     uint32_t hash = BloomHash(entry);
+    return HashMayMatch(hash, Slice(data_, data_len_),
+                        num_probes_, num_lines_);
+  }
+  // added by ElasticBF
+  virtual bool MayMatch(const Slice& entry, const int hash_id) override {
+    if (data_len_ <= 5) {   // remain same with original filter
+      return false;
+    }
+    // Other Error params, including a broken filter, regarded as match
+    if (num_probes_ == 0 || num_lines_ == 0) return true;
+    uint32_t hash = BloomHashId(entry, hash_id);
+
     return HashMayMatch(hash, Slice(data_, data_len_),
                         num_probes_, num_lines_);
   }
@@ -268,8 +313,15 @@ bool FullFilterBitsReader::HashMayMatch(const uint32_t& hash,
 // An implementation of filter policy
 class BloomFilterPolicy : public FilterPolicy {
  public:
+ // added by ElasticBF
   explicit BloomFilterPolicy(int bits_per_key, bool use_block_based_builder)
-      : bits_per_key_(bits_per_key), hash_func_(BloomHash),
+: bits_per_key_(bits_per_key), bits_per_keys_(std::vector<int>()), hash_func_(BloomHash),
+        use_block_based_builder_(use_block_based_builder) {
+    initialize();
+  }
+  // added by ElasticBF
+  explicit BloomFilterPolicy(std::vector<int> &bits_per_keys, bool use_block_based_builder)
+      : bits_per_key_(bits_per_keys[0]), bits_per_keys_(bits_per_keys), hash_func_(BloomHash),
         use_block_based_builder_(use_block_based_builder) {
     initialize();
   }
@@ -342,7 +394,8 @@ class BloomFilterPolicy : public FilterPolicy {
       return nullptr;
     }
 
-    return new FullFilterBitsBuilder(bits_per_key_, num_probes_);
+      // replace FullFilterBitsBuilder with MultiFullFilterBitsBuilder
+    return new MultiFullFilterBitsBuilder(bits_per_keys_, num_probes_);
   }
 
   virtual FilterBitsReader* GetFilterBitsReader(const Slice& contents)
@@ -355,6 +408,8 @@ class BloomFilterPolicy : public FilterPolicy {
 
  private:
   size_t bits_per_key_;
+    // added by ElasticBF
+  std::vector<int> bits_per_keys_;
   size_t num_probes_;
   uint32_t (*hash_func_)(const Slice& key);
 
@@ -373,6 +428,11 @@ class BloomFilterPolicy : public FilterPolicy {
 const FilterPolicy* NewBloomFilterPolicy(int bits_per_key,
                                          bool use_block_based_builder) {
   return new BloomFilterPolicy(bits_per_key, use_block_based_builder);
+}
+//addby ElasticBF
+const FilterPolicy* NewBloomFilterPolicy(std::vector<int> &bits_per_keys,
+                                         bool use_block_based_builder) {
+  return new BloomFilterPolicy(bits_per_keys, use_block_based_builder);
 }
 
 }  // namespace rocksdb

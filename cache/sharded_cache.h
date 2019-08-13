@@ -65,6 +65,8 @@ class ShardedCache : public Cache {
                         void (*deleter)(const Slice& key, void* value),
                         Handle** handle, Priority priority) override;
   virtual Handle* Lookup(const Slice& key, Statistics* stats) override;
+  //added by ElasticBF
+  virtual Handle* LookupRegion(const Slice& key, Statistics* stats, bool /*addFreq*/) override {return Lookup(key, stats);}
   virtual bool Ref(Handle* handle) override;
   virtual bool Release(Handle* handle, bool force_erase = false) override;
   virtual void Erase(const Slice& key) override;

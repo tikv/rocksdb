@@ -48,9 +48,12 @@ class PartitionedFilterBlockBuilder : public FullFilterBlockBuilder {
     std::string key;
     Slice filter;
   };
-  std::list<FilterEntry> filters;  // list of partitioned indexes and their keys
+// added by ElasticBF
+  std::vector<std::list<FilterEntry>> filters;  //vector list of partitioned indexes and their keys
   std::unique_ptr<IndexBuilder> value;
-  std::vector<std::unique_ptr<const char[]>> filter_gc;
+// added by ElasticBF
+  std::vector<std::vector<std::unique_ptr<const char[]>>> filter_gc;
+  int filter_nums, filter_index, region_index;
   bool finishing_filters =
       false;  // true if Finish is called once but not complete yet.
   // The policy of when cut a filter block and Finish it
@@ -79,12 +82,13 @@ class PartitionedFilterBlockReader : public FilterBlockReader,
       const BlockBasedTable* table, const bool index_key_includes_seq,
       const bool index_value_is_full);
   virtual ~PartitionedFilterBlockReader();
-
+  // added by ElasticBF
+  void InitRegionFilterInfo();
   virtual bool IsBlockBased() override { return false; }
   virtual bool KeyMayMatch(
       const Slice& key, const SliceTransform* prefix_extractor,
       uint64_t block_offset = kNotValid, const bool no_io = false,
-      const Slice* const const_ikey_ptr = nullptr) override;
+      const Slice* const const_ikey_ptr = nullptr, const int hash_id = 0) override;
   virtual bool PrefixMayMatch(
       const Slice& prefix, const SliceTransform* prefix_extractor,
       uint64_t block_offset = kNotValid, const bool no_io = false,
@@ -92,7 +96,11 @@ class PartitionedFilterBlockReader : public FilterBlockReader,
   virtual size_t ApproximateMemoryUsage() const override;
 
  private:
-  BlockHandle GetFilterPartitionHandle(const Slice& entry);
+    // added by ElasticBF
+  BlockHandle GetFilterPartitionHandle(const Slice& entry, const uint64_t filter_index = 0);
+  Slice GetRegionCacheKey(char* cache_key, uint64_t region_num);
+  BlockBasedTable::CachableEntry<RegionFilterInfo> GetRegionInfoByKey(const Slice& entry);
+
   BlockBasedTable::CachableEntry<FilterBlockReader> GetFilterPartition(
       FilePrefetchBuffer* prefetch_buffer, BlockHandle& handle,
       const bool no_io, bool* cached,
@@ -109,6 +117,11 @@ class PartitionedFilterBlockReader : public FilterBlockReader,
   std::unordered_map<uint64_t,
                      BlockBasedTable::CachableEntry<FilterBlockReader>>
       filter_map_;
+  // added by ElasticBF
+  std::vector<RegionFilterInfo*> regionFilterInfos;
+  int region_nums;
+  char cache_key_prefix[BlockBasedTable::kMaxCacheKeyPrefixSize];
+  size_t cache_key_prefix_size;
 };
 
 }  // namespace rocksdb

@@ -326,7 +326,8 @@ class PartitionIndexReader : public IndexReader, public Cleanable {
     // After prefetch, read the partitions one by one
     biter.SeekToFirst();
     auto ro = ReadOptions();
-    Cache* block_cache = rep->table_options.block_cache.get();
+    //added by ElasticBF
+    Cache* block_cache = rep->table_options.metadata_cache.get();
     for (; biter.Valid(); biter.Next()) {
       handle = biter.value();
       BlockBasedTable::CachableEntry<Block> block;
@@ -1222,7 +1223,8 @@ Status BlockBasedTable::PrefetchIndexAndFilterBlocks(
         if (pin_index) {
           rep->index_entry = std::move(index_entry);
         } else {
-          index_entry.Release(table_options.block_cache.get());
+          //added by ElasticBF
+          index_entry.Release(table_options.metadata_cache.get());
         }
       }
     }
@@ -1240,7 +1242,8 @@ Status BlockBasedTable::PrefetchIndexAndFilterBlocks(
       if (pin_filter) {
         rep->filter_entry = filter_entry;
       } else {
-        filter_entry.Release(table_options.block_cache.get());
+        //added by ElasticBF
+          filter_entry.Release(table_options.metadata_cache.get());
       }
     }
   } else {
@@ -1256,7 +1259,8 @@ Status BlockBasedTable::PrefetchIndexAndFilterBlocks(
       // are hence follow the configuration for pin and prefetch regardless of
       // the value of cache_index_and_filter_blocks
       if (prefetch_index_and_filter_in_cache || level == 0) {
-        rep->index_reader->CacheDependencies(pin_all);
+        //added by ElasticBF
+        rep->index_reader->CacheDependencies(true);
       }
 
       // Set filter block
@@ -1670,7 +1674,8 @@ BlockBasedTable::CachableEntry<FilterBlockReader> BlockBasedTable::GetFilter(
     return {rep_->filter.get(), nullptr /* cache handle */};
   }
 
-  Cache* block_cache = rep_->table_options.block_cache.get();
+  // added by ElasticBF
+  Cache* block_cache = rep_->table_options.metadata_cache.get();
   if (rep_->filter_policy == nullptr /* do not use filter */ ||
       block_cache == nullptr /* no block cache at all */) {
     return {nullptr /* filter */, nullptr /* cache handle */};
@@ -1866,7 +1871,9 @@ TBlockIter* BlockBasedTable::NewDataBlockIterator(
   PERF_TIMER_GUARD(new_table_block_iter_nanos);
 
   const bool no_io = (ro.read_tier == kBlockCacheTier);
-  Cache* block_cache = rep->table_options.block_cache.get();
+  // added by ElasticBF
+  Cache* block_cache = is_index ? rep->table_options.metadata_cache.get() : rep->table_options.block_cache.get();
+ 
   CachableEntry<Block> block;
   Slice compression_dict;
   if (s.ok()) {
@@ -1977,7 +1984,9 @@ Status BlockBasedTable::MaybeReadBlockAndLoadToCache(
     CachableEntry<Block>* block_entry, bool is_index, GetContext* get_context) {
   assert(block_entry != nullptr);
   const bool no_io = (ro.read_tier == kBlockCacheTier);
-  Cache* block_cache = rep->table_options.block_cache.get();
+  // added by ElasticBF
+  Cache* block_cache = is_index ? rep->table_options.metadata_cache.get() : rep->table_options.block_cache.get();
+
 
   // No point to cache compressed blocks if it never goes away
   Cache* block_cache_compressed =
@@ -2078,7 +2087,8 @@ BlockBasedTable::PartitionedIndexIteratorState::NewSecondaryIterator(
     PERF_COUNTER_ADD(block_cache_hit_count, 1);
     RecordTick(rep->ioptions.statistics, BLOCK_CACHE_INDEX_HIT);
     RecordTick(rep->ioptions.statistics, BLOCK_CACHE_HIT);
-    Cache* block_cache = rep->table_options.block_cache.get();
+    // added by ElasticBF
+    Cache* block_cache = rep->table_options.metadata_cache.get();
     assert(block_cache);
     RecordTick(rep->ioptions.statistics, BLOCK_CACHE_BYTES_READ,
                block_cache->GetUsage(block->second.cache_handle));
@@ -2668,7 +2678,8 @@ Status BlockBasedTable::Get(const ReadOptions& read_options, const Slice& key,
   // don't call, in this case we have a local copy in rep_->filter_entry,
   // it's pinned to the cache and will be released in the destructor
   if (!rep_->filter_entry.IsSet()) {
-    filter_entry.Release(rep_->table_options.block_cache.get());
+    //added by ElasticBF
+    filter_entry.Release(rep_->table_options.metadata_cache.get());
   }
   return s;
 }
@@ -3184,8 +3195,9 @@ void BlockBasedTable::Close() {
   if (rep_->closed) {
     return;
   }
-  rep_->filter_entry.Release(rep_->table_options.block_cache.get());
-  rep_->index_entry.Release(rep_->table_options.block_cache.get());
+  // added by ElasticBF
+  rep_->filter_entry.Release(rep_->table_options.metadata_cache.get());
+  rep_->index_entry.Release(rep_->table_options.metadata_cache.get());
   rep_->range_del_entry.Release(rep_->table_options.block_cache.get());
   // cleanup index and filter blocks to avoid accessing dangling pointer
   if (!rep_->table_options.no_block_cache) {
@@ -3193,7 +3205,7 @@ void BlockBasedTable::Close() {
     // Get the filter block key
     auto key = GetCacheKey(rep_->cache_key_prefix, rep_->cache_key_prefix_size,
                            rep_->filter_handle, cache_key);
-    rep_->table_options.block_cache.get()->Erase(key);
+    rep_->table_options.metadata_cache.get()->Erase(key);
     // Get the index block key
     key = GetCacheKeyFromOffset(rep_->cache_key_prefix,
                                 rep_->cache_key_prefix_size,

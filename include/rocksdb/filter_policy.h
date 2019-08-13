@@ -32,6 +32,7 @@ class Slice;
 // A class that takes a bunch of keys, then generates filter
 class FilterBitsBuilder {
  public:
+  std::vector<int> bits_per_keys_;
   virtual ~FilterBitsBuilder() {}
 
   // Add Key to filter, you could use any way to store the key.
@@ -43,6 +44,9 @@ class FilterBitsBuilder {
   // The return value of this function would be the filter bits,
   // The ownership of actual data is set to buf
   virtual Slice Finish(std::unique_ptr<const char[]>* buf) = 0;
+
+    //added by ElasticBF
+  virtual Slice Finish(std::unique_ptr<const char[]>* , int ) = 0;
 
   // Calculate num of entries fit into a space.
 #if defined(_MSC_VER)
@@ -70,6 +74,10 @@ class FilterBitsReader {
 
   // Check if the entry match the bits in filter
   virtual bool MayMatch(const Slice& entry) = 0;
+
+  //added by ElasticBF
+  virtual bool  MayMatch(const Slice& /*entry*/, const int /*hash_id*/) {return true;}
+
 };
 
 // We add a new format of filter block called full filter block
@@ -147,4 +155,8 @@ class FilterPolicy {
 // trailing spaces in keys.
 extern const FilterPolicy* NewBloomFilterPolicy(
     int bits_per_key, bool use_block_based_builder = false);
+
+//added by ElasticBF
+extern const FilterPolicy* NewBloomFilterPolicy(std::vector<int> &bits_per_keys,
+    bool use_block_based_builder = true);
 }

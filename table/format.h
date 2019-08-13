@@ -32,6 +32,13 @@ namespace rocksdb {
 
 class RandomAccessFile;
 struct ReadOptions;
+// added by ElasticBF
+struct RegionFilterInfo {
+  uint16_t cur_filter_nums;
+  uint16_t adjusted_filter_nums;
+  uint32_t region_num;
+  RegionFilterInfo() : cur_filter_nums(0), adjusted_filter_nums(0),region_num(0) {}
+};
 
 extern bool ShouldReportDetailedTime(Env* env, Statistics* stats);
 

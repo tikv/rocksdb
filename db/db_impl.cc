@@ -228,11 +228,10 @@ DBImpl::DBImpl(const DBOptions& options, const std::string& dbname,
 
   // Reserve ten files or so for other uses and give the rest to TableCache.
   // Give a large number for setting of "infinite" open files.
-  const int table_cache_size = (mutable_db_options_.max_open_files == -1)
-                                   ? TableCache::kInfiniteCapacity
-                                   : mutable_db_options_.max_open_files - 10;
-  table_cache_ = NewLRUCache(table_cache_size,
-                             immutable_db_options_.table_cache_numshardbits);
+  //added by ElasticBF
+  //set rocksdb's max_open_files: 100000, numshardbits: 2
+  const int table_cache_size = 100000;
+  table_cache_ = NewLRUCache(table_cache_size, 1);
 
   versions_.reset(new VersionSet(dbname_, &immutable_db_options_, env_options_,
                                  table_cache_.get(), write_buffer_manager_,

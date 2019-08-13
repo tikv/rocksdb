@@ -97,7 +97,7 @@ class FilterBlockReader {
                            const SliceTransform* prefix_extractor,
                            uint64_t block_offset = kNotValid,
                            const bool no_io = false,
-                           const Slice* const const_ikey_ptr = nullptr) = 0;
+                           const Slice* const const_ikey_ptr = nullptr, const int hash_id = 0) = 0;
 
   /**
    * no_io and const_ikey_ptr here means the same as in KeyMayMatch

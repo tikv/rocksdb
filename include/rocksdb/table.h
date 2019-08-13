@@ -132,6 +132,12 @@ struct BlockBasedTableOptions {
   // If NULL, rocksdb will automatically create and use an 8MB internal cache.
   std::shared_ptr<Cache> block_cache = nullptr;
 
+  //added by ElasticBF
+  std::shared_ptr<Cache> metadata_cache = nullptr;
+
+  //added by ElasticBF
+  std::shared_ptr<Cache> filter_info_cache = nullptr;
+
   // If non-NULL use the specified cache for pages read from device
   // IF NULL, no page cache is used
   std::shared_ptr<PersistentCache> persistent_cache = nullptr;
@@ -257,6 +263,10 @@ struct BlockBasedTableOptions {
 
   // Align data blocks on lesser of page size and block size
   bool block_align = false;
+
+  //added by ElasticBF
+  std::vector<int> bits_per_key_per_filter;
+  int init_filter_nums = 2;
 };
 
 // Table Properties that are specific to block-based table properties.

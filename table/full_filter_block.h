@@ -101,7 +101,7 @@ class FullFilterBlockReader : public FilterBlockReader {
   virtual bool KeyMayMatch(
       const Slice& key, const SliceTransform* prefix_extractor,
       uint64_t block_offset = kNotValid, const bool no_io = false,
-      const Slice* const const_ikey_ptr = nullptr) override;
+      const Slice* const const_ikey_ptr = nullptr, const int hash_id = 0) override;
 
   virtual bool PrefixMayMatch(
       const Slice& prefix, const SliceTransform* prefix_extractor,
@@ -123,7 +123,8 @@ class FullFilterBlockReader : public FilterBlockReader {
 
   // No copying allowed
   FullFilterBlockReader(const FullFilterBlockReader&);
-  bool MayMatch(const Slice& entry);
+  // added by ElasticBF
+  bool MayMatch(const Slice& entry, const int hash_id = 0);
   void operator=(const FullFilterBlockReader&);
   bool IsFilterCompatible(const Slice* iterate_upper_bound,
                           const Slice& prefix, const Comparator* comparator);

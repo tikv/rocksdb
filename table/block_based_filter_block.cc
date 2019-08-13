@@ -188,7 +188,7 @@ BlockBasedFilterBlockReader::BlockBasedFilterBlockReader(
 bool BlockBasedFilterBlockReader::KeyMayMatch(
     const Slice& key, const SliceTransform* /* prefix_extractor */,
     uint64_t block_offset, const bool /*no_io*/,
-    const Slice* const /*const_ikey_ptr*/) {
+    const Slice* const /*const_ikey_ptr*/, const int /*hash_id*/) {
   assert(block_offset != kNotValid);
   if (!whole_key_filtering_) {
     return true;

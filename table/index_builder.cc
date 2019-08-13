@@ -144,6 +144,10 @@ void PartitionedIndexBuilder::AddIndexEntry(
             {sub_index_last_key_,
              std::unique_ptr<ShortenedIndexBuilder>(sub_index_builder_)});
         cut_filter_block = true;
+        // added by ElasticBF
+        if (partition_cut_requested_)
+          cut_filter_block = true;
+
         sub_index_builder_ = nullptr;
       }
     }

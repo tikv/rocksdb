@@ -124,7 +124,7 @@ FullFilterBlockReader::FullFilterBlockReader(
 bool FullFilterBlockReader::KeyMayMatch(
     const Slice& key, const SliceTransform* /*prefix_extractor*/,
     uint64_t block_offset, const bool /*no_io*/,
-    const Slice* const /*const_ikey_ptr*/) {
+    const Slice* const /*const_ikey_ptr*/, const int hash_id) {
 #ifdef NDEBUG
   (void)block_offset;
 #endif
@@ -132,7 +132,7 @@ bool FullFilterBlockReader::KeyMayMatch(
   if (!whole_key_filtering_) {
     return true;
   }
-  return MayMatch(key);
+  return MayMatch(key, hash_id);
 }
 
 bool FullFilterBlockReader::PrefixMayMatch(
@@ -146,9 +146,9 @@ bool FullFilterBlockReader::PrefixMayMatch(
   return MayMatch(prefix);
 }
 
-bool FullFilterBlockReader::MayMatch(const Slice& entry) {
+bool FullFilterBlockReader::MayMatch(const Slice& entry, const int hash_id) {
   if (contents_.size() != 0)  {
-    if (filter_bits_reader_->MayMatch(entry)) {
+    if (filter_bits_reader_->MayMatch(entry, hash_id)) {
       PERF_COUNTER_ADD(bloom_sst_hit_count, 1);
       return true;
     } else {

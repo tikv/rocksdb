@@ -95,6 +95,8 @@ extern int VarintLength(uint64_t v);
 extern void EncodeFixed16(char* dst, uint16_t value);
 extern void EncodeFixed32(char* dst, uint32_t value);
 extern void EncodeFixed64(char* dst, uint64_t value);
+// added by ElasticBF
+extern void EncodeFixed32R(char* dst, uint32_t value);
 
 // Lower-level versions of Put... that write directly into a character buffer
 // and return a pointer just past the last byte written.
@@ -130,7 +132,13 @@ inline uint32_t DecodeFixed32(const char* ptr) {
         | (static_cast<uint32_t>(static_cast<unsigned char>(ptr[3])) << 24));
   }
 }
-
+// added by ElasticBF
+inline uint32_t DecodeFixed32R(const char* ptr) {
+    return ((static_cast<uint32_t>(static_cast<unsigned char>(ptr[3])))
+        | (static_cast<uint32_t>(static_cast<unsigned char>(ptr[2])) << 8)
+        | (static_cast<uint32_t>(static_cast<unsigned char>(ptr[1])) << 16)
+        | (static_cast<uint32_t>(static_cast<unsigned char>(ptr[0])) << 24));
+}
 inline uint64_t DecodeFixed64(const char* ptr) {
   if (port::kLittleEndian) {
     // Load the raw bytes
@@ -180,6 +188,13 @@ inline void EncodeFixed32(char* buf, uint32_t value) {
     buf[2] = (value >> 16) & 0xff;
     buf[3] = (value >> 24) & 0xff;
   }
+}
+// added by ElasticBF
+inline void EncodeFixed32R(char* buf, uint32_t value) {
+  buf[3] = value & 0xff;
+  buf[2] = (value >> 8) & 0xff;
+  buf[1] = (value >> 16) & 0xff;
+  buf[0] = (value >> 24) & 0xff;
 }
 
 inline void EncodeFixed64(char* buf, uint64_t value) {

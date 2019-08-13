@@ -103,6 +103,10 @@ extern std::shared_ptr<Cache> NewClockCache(size_t capacity,
                                             int num_shard_bits = -1,
                                             bool strict_capacity_limit = false);
 
+//added by ElasticBF
+extern std::shared_ptr<Cache> NewMultiQueue(size_t capacity, std::vector<int> &filter_bits_array, uint64_t life_time, double change_ratio);
+
+
 class Cache {
  public:
   // Depending on implementation, cache entries with high priority could be less
@@ -123,6 +127,9 @@ class Cache {
 
   // The type of the Cache
   virtual const char* Name() const = 0;
+
+  //added by ElasticBF
+  virtual void addCurrentTime() {}
 
   // Insert a mapping from key->value into the cache and assign it
   // the specified charge against the total cache capacity.
@@ -152,6 +159,9 @@ class Cache {
   // If stats is not nullptr, relative tickers could be used inside the
   // function.
   virtual Handle* Lookup(const Slice& key, Statistics* stats = nullptr) = 0;
+  //added by ElasticBF
+  virtual Handle* LookupRegion(const Slice& /*key*/, Statistics* /*stats*/, bool /*addFreq*/) {return NULL;}
+
 
   // Increments the reference count for the handle if it refers to an entry in
   // the cache. Returns true if refcount was incremented; otherwise, returns
@@ -223,6 +233,11 @@ class Cache {
   virtual void DisownData(){
       // default implementation is noop
   };
+
+    //added by ElasticBF
+  virtual std::string LRU_Status() {
+    return std::string("empty");
+  }
 
   // Apply callback to all entries in the cache
   // If thread_safe is true, it will also lock the accesses. Otherwise, it will

@@ -42,6 +42,11 @@ PartitionedFilterBlockBuilder::PartitionedFilterBlockBuilder(
       num_added_(0) {
   filters_per_partition_ =
       filter_bits_builder_->CalculateNumEntry(partition_size);
+  // added by ElasticBF
+  filter_nums = filter_bits_builder_->bits_per_keys_.size();
+  filter_gc.resize(filter_nums);
+  filters.resize(filter_nums);
+  filter_index = region_index = 0;
 }
 
 PartitionedFilterBlockBuilder::~PartitionedFilterBlockBuilder() {}
@@ -56,10 +61,13 @@ void PartitionedFilterBlockBuilder::MaybeCutAFilterBlock() {
   if (!p_index_builder_->ShouldCutFilterBlock()) {
     return;
   }
-  filter_gc.push_back(std::unique_ptr<const char[]>(nullptr));
-  Slice filter = filter_bits_builder_->Finish(&filter_gc.back());
-  std::string& index_key = p_index_builder_->GetPartitionKey();
-  filters.push_back({index_key, filter});
+  // added by ElasticBF
+  for (int i = 0; i < filter_nums; i++) {
+    filter_gc[i].push_back(std::unique_ptr<const char[]>(nullptr));
+    Slice filter = filter_bits_builder_->Finish(&filter_gc[i].back(), i);
+    std::string& index_key = p_index_builder_->GetPartitionKey();
+    filters[i].push_back({index_key, filter});
+  }
   filters_in_partition_ = 0;
   Reset();
 }
@@ -75,7 +83,8 @@ Slice PartitionedFilterBlockBuilder::Finish(
     const BlockHandle& last_partition_block_handle, Status* status) {
   if (finishing_filters == true) {
     // Record the handle of the last written filter block in the index
-    FilterEntry& last_entry = filters.front();
+    // added by ElasticBF
+    FilterEntry& last_entry = filters[filter_index].front();
     std::string handle_encoding;
     last_partition_block_handle.EncodeTo(&handle_encoding);
     std::string handle_delta_encoding;
@@ -84,20 +93,36 @@ Slice PartitionedFilterBlockBuilder::Finish(
         last_partition_block_handle.size() - last_encoded_handle_.size());
     last_encoded_handle_ = last_partition_block_handle;
     const Slice handle_delta_encoding_slice(handle_delta_encoding);
-    index_on_filter_block_builder_.Add(last_entry.key, handle_encoding,
+    // added by ElasticBF
+    char *new_key = new char[last_entry.key.size() + 8];
+    EncodeFixed32R(new_key, filter_index);
+    memcpy(new_key + 4, last_entry.key.c_str(), last_entry.key.size());
+    EncodeFixed32R(new_key + last_entry.key.size() + 4, region_index++);
+    index_on_filter_block_builder_.Add(Slice(new_key, last_entry.key.size() + 8), handle_encoding,
                                        &handle_delta_encoding_slice);
     if (!p_index_builder_->seperator_is_key_plus_seq()) {
       index_on_filter_block_builder_without_seq_.Add(
-          ExtractUserKey(last_entry.key), handle_encoding,
+          ExtractUserKey(Slice(new_key, last_entry.key.size() + 8)), handle_encoding,
           &handle_delta_encoding_slice);
     }
-    filters.pop_front();
+    delete new_key;
+    // filters.pop_front();
+    // added by ElasticBF
+    filters[filter_index].pop_front();
   } else {
     MaybeCutAFilterBlock();
   }
   // If there is no filter partition left, then return the index on filter
   // partitions
-  if (UNLIKELY(filters.empty())) {
+  // added by ElasticBF
+    if (UNLIKELY(filters[filter_index].empty())) {
+      filter_index++;
+      region_index = 0;
+      if (filter_index < filter_nums) {
+        *status = Status::Incomplete();
+        finishing_filters = true;
+        return filters[filter_index].front().filter;
+    }
     *status = Status::OK();
     if (finishing_filters) {
       if (p_index_builder_->seperator_is_key_plus_seq()) {
@@ -114,7 +139,7 @@ Slice PartitionedFilterBlockBuilder::Finish(
     // indicate we expect more calls to Finish
     *status = Status::Incomplete();
     finishing_filters = true;
-    return filters.front().filter;
+    return filters[filter_index].front().filter;
   }
 }
 
@@ -133,13 +158,15 @@ PartitionedFilterBlockReader::PartitionedFilterBlockReader(
   idx_on_fltr_blk_.reset(new Block(std::move(contents),
                                    kDisableGlobalSequenceNumber,
                                    0 /* read_amp_bytes_per_bit */, stats));
+  InitRegionFilterInfo();  
 }
 
 PartitionedFilterBlockReader::~PartitionedFilterBlockReader() {
   // TODO(myabandeh): if instead of filter object we store only the blocks in
   // block cache, then we don't have to manually earse them from block cache
   // here.
-  auto block_cache = table_->rep_->table_options.block_cache.get();
+  // added by ElasticBF
+   auto block_cache = table_->rep_->table_options.metadata_cache.get();
   if (UNLIKELY(block_cache == nullptr)) {
     return;
   }
@@ -158,12 +185,70 @@ PartitionedFilterBlockReader::~PartitionedFilterBlockReader() {
                                             handle, cache_key);
     block_cache->Erase(key);
   }
+  #ifndef ORIGINAL_VERSION
+  auto filter_info_cache = table_->rep_->table_options.filter_info_cache.get();
+  for (int i = 0; i < region_nums; i++) {
+    auto rkey = GetRegionCacheKey(cache_key, i);
+    filter_info_cache->Erase(rkey);
+  }
+  #endif
+}
+void DeleteRegionInfoEntry(const Slice& /*key*/, void* value) {
+  auto entry = reinterpret_cast<RegionFilterInfo*>(value);
+  delete entry;
 }
 
+void PartitionedFilterBlockReader::InitRegionFilterInfo() {
+  // BlockIter<Slice> *biter;
+  // idx_on_fltr_blk_->NewIterator(&comparator_, biter, true);
+  IndexBlockIter biter;
+  BlockHandle handle;
+  Statistics* kNullStats = nullptr;
+  idx_on_fltr_blk_->NewIterator<IndexBlockIter>(
+      &comparator_, comparator_.user_comparator(), &biter, kNullStats, true,
+      index_key_includes_seq_, index_value_is_full_);
+  biter.SeekToFirst();
+  int total_filter_nums = 0;
+  for (; biter.Valid(); biter.Next()) {
+    total_filter_nums++;
+  }
+  biter.SeekToLast();
+  region_nums = DecodeFixed32R(biter.key().data() + (biter.key().size() - 4)) + 1;
+
+#ifndef ORIGINAL_VERSION
+  auto block_cache = table_->rep_->table_options.filter_info_cache.get();
+
+  char* end = EncodeVarint64(cache_key_prefix, block_cache->NewId());
+  cache_key_prefix_size = static_cast<size_t>(end - cache_key_prefix);
+
+
+
+
+  int init_charge = 0;
+  for (int i = 0; i < table_->rep_->table_options.init_filter_nums; i++)
+    init_charge += table_->rep_->table_options.bits_per_key_per_filter[i];
+  for (int i = 0; i < region_nums; i++) {
+    RegionFilterInfo *info = new RegionFilterInfo;
+    info->cur_filter_nums = table_->rep_->table_options.init_filter_nums;
+    info->adjusted_filter_nums = table_->rep_->table_options.init_filter_nums;
+    info->region_num = i;
+    regionFilterInfos.push_back(info);
+
+    char cache_key[BlockBasedTable::kMaxCacheKeyPrefixSize + kMaxVarint64Length];
+    auto rkey = GetRegionCacheKey(cache_key, i);
+    Status s = block_cache->Insert(rkey, info, init_charge, &DeleteRegionInfoEntry);
+    if (!s.ok()) {
+      fprintf(stderr, "insert region_num %d error!,%s\n", i, s.ToString().c_str());
+    }
+  }
+#endif
+
+}
+#ifdef ORIGINAL_VERSION
 bool PartitionedFilterBlockReader::KeyMayMatch(
     const Slice& key, const SliceTransform* prefix_extractor,
     uint64_t block_offset, const bool no_io,
-    const Slice* const const_ikey_ptr) {
+    const Slice* const const_ikey_ptr, const int /*hash_id*/) {
   assert(const_ikey_ptr != nullptr);
   assert(block_offset == kNotValid);
   if (!whole_key_filtering_) {
@@ -172,29 +257,120 @@ bool PartitionedFilterBlockReader::KeyMayMatch(
   if (UNLIKELY(idx_on_fltr_blk_->size() == 0)) {
     return true;
   }
-  auto filter_handle = GetFilterPartitionHandle(*const_ikey_ptr);
-  if (UNLIKELY(filter_handle.size() == 0)) {  // key is out of range
-    return false;
+    // added by ElasticBF
+  for (int i = 0; i < table_->rep_->table_options.init_filter_nums; i++) {
+
+    auto filter_handle = GetFilterPartitionHandle(*const_ikey_ptr, i);
+    if (UNLIKELY(filter_handle.size() == 0)) {  // key is out of range
+      return false;
+    }
+    bool cached = false;
+    auto filter_partition = GetFilterPartition(nullptr /* prefetch_buffer */,
+                                               filter_handle, no_io, &cached);
+    if (UNLIKELY(!filter_partition.value)) {
+      continue;
+    }
+    auto res = filter_partition.value->KeyMayMatch(key,prefix_extractor, block_offset, no_io, nullptr, i);
+    // if (cached) {
+    // }
+    if (LIKELY(filter_partition.IsSet())) {
+      filter_partition.Release(table_->rep_->table_options.metadata_cache.get());
+    } else {
+      delete filter_partition.value;
+    }
+    if (res) 
+      continue;
+    else
+      return false;
   }
-  bool cached = false;
-  auto filter_partition =
-      GetFilterPartition(nullptr /* prefetch_buffer */, filter_handle, no_io,
-                         &cached, prefix_extractor);
-  if (UNLIKELY(!filter_partition.value)) {
+
+    return true;
+}
+
+#endif
+
+#ifndef ORIGINAL_VERSION
+
+bool PartitionedFilterBlockReader::KeyMayMatch(
+    const Slice& key,const SliceTransform* prefix_extractor, uint64_t block_offset, const bool no_io,
+    const Slice* const const_ikey_ptr, const int /*hash_id*/) {
+  assert(const_ikey_ptr != nullptr);
+  assert(block_offset == kNotValid);
+  if (!whole_key_filtering_) {  
     return true;
   }
-  auto res = filter_partition.value->KeyMayMatch(key, prefix_extractor,
-                                                 block_offset, no_io);
-  if (cached) {
-    return res;
+
+  // added by ElasticBF
+    if (UNLIKELY(idx_on_fltr_blk_->size() == 0)) {
+    return true;
   }
-  if (LIKELY(filter_partition.IsSet())) {
-    filter_partition.Release(table_->rep_->table_options.block_cache.get());
-  } else {
-    delete filter_partition.value;
+  // added by ElasticBF
+  auto block_cache = table_->rep_->table_options.metadata_cache.get();
+
+
+  auto region_info_entry = GetRegionInfoByKey(*const_ikey_ptr);
+
+  if (UNLIKELY(region_info_entry.value == nullptr)) { // key is out of range
+    return false;
   }
-  return res;
+ 
+// added by ElasticBF
+   RegionFilterInfo *region_filter_info = reinterpret_cast<RegionFilterInfo*>
+      (region_info_entry.value);
+
+  bool result = true;
+
+  for (uint32_t i = 0; i < region_filter_info->adjusted_filter_nums; i++) {
+    auto filter_handle = GetFilterPartitionHandle(*const_ikey_ptr, i);
+    if (UNLIKELY(filter_handle.size() == 0)) {  // key is out of range
+      result = false;
+      break;
+    }
+    bool cached = false;
+
+    auto filter_partition = GetFilterPartition(nullptr /* prefetch_buffer */,
+                                               filter_handle, no_io, &cached,prefix_extractor);
+    if (UNLIKELY(!filter_partition.value)) {
+      continue;
+    }
+    auto res = filter_partition.value->KeyMayMatch(key,prefix_extractor, block_offset, no_io, nullptr, i);
+    // if (cached) {
+    // }
+    if (LIKELY(filter_partition.IsSet())) {
+      filter_partition.Release(block_cache);
+    } else {
+      delete filter_partition.value;
+    }
+    result = res;
+    if (!result)
+      break;
+  }
+
+  for (uint32_t i = region_filter_info->adjusted_filter_nums; i < region_filter_info->cur_filter_nums; i++) {
+    auto filter_handle = GetFilterPartitionHandle(*const_ikey_ptr, i);
+    if (UNLIKELY(filter_handle.size() == 0)) {  // key is out of range
+      continue;
+    }
+    // BlockHandle filter_handle = input;
+    // auto s = filter_handle.DecodeFrom(&input);
+    char cache_key[BlockBasedTable::kMaxCacheKeyPrefixSize + kMaxVarint64Length];
+    auto fkey = BlockBasedTable::GetCacheKey(table_->rep_->cache_key_prefix,
+                                            table_->rep_->cache_key_prefix_size,
+                                            filter_handle, cache_key);
+    block_cache->Erase(fkey);
+  }
+  region_filter_info->cur_filter_nums = region_filter_info->adjusted_filter_nums;
+
+  if (LIKELY(region_info_entry.IsSet())) {
+    region_info_entry.Release(table_->rep_->table_options.filter_info_cache.get());
+  }
+  else {
+    fprintf(stderr, "error while release region_info_entry\n");
+    assert(0);
+  }
+  return result;
 }
+#endif
 
 bool PartitionedFilterBlockReader::PrefixMayMatch(
     const Slice& prefix, const SliceTransform* prefix_extractor,
@@ -228,21 +404,100 @@ bool PartitionedFilterBlockReader::PrefixMayMatch(
     return res;
   }
   if (LIKELY(filter_partition.IsSet())) {
-    filter_partition.Release(table_->rep_->table_options.block_cache.get());
+     // added by ElasticBF
+     filter_partition.Release(table_->rep_->table_options.metadata_cache.get());
   } else {
     delete filter_partition.value;
   }
   return res;
 }
+Slice PartitionedFilterBlockReader::GetRegionCacheKey(char* cache_key, uint64_t region_num) {
+  memcpy(cache_key, cache_key_prefix, cache_key_prefix_size);
+  char* end =
+    EncodeVarint64(cache_key + cache_key_prefix_size, region_num);
+  return Slice(cache_key, static_cast<size_t>(end - cache_key));
+}
 
-BlockHandle PartitionedFilterBlockReader::GetFilterPartitionHandle(
-    const Slice& entry) {
+BlockBasedTable::CachableEntry<RegionFilterInfo>  
+PartitionedFilterBlockReader::GetRegionInfoByKey(const Slice& entry) {
+  // BlockIter<Slice> *iter;
+  // idx_on_fltr_blk_->NewIterator(&comparator_, iter, true);
   IndexBlockIter iter;
   Statistics* kNullStats = nullptr;
   idx_on_fltr_blk_->NewIterator<IndexBlockIter>(
       &comparator_, comparator_.user_comparator(), &iter, kNullStats, true,
       index_key_includes_seq_, index_value_is_full_);
-  iter.Seek(entry);
+  char *new_entry = new char[entry.size() + 4];
+
+  EncodeFixed32R(new_entry, 0);
+  memcpy(new_entry + 4, entry.data(), entry.size());
+
+  iter.Seek(Slice(new_entry, entry.size() + 4));
+  delete new_entry;
+  if (UNLIKELY(!iter.Valid())) {
+    return {nullptr, nullptr};
+  }
+  assert(iter.Valid());
+
+  uint32_t region_num = DecodeFixed32R(iter.key().data() + (iter.key().size() - 4));
+
+  // return {regionFilterInfos[region_num], nullptr};
+
+  char cache_key[BlockBasedTable::kMaxCacheKeyPrefixSize + kMaxVarint64Length];
+  auto rkey = GetRegionCacheKey(cache_key, region_num);
+
+  Cache* block_cache = table_->rep_->table_options.filter_info_cache.get();
+  auto cache_handle = block_cache->LookupRegion(rkey, table_->rep_->ioptions.statistics, true);
+  if (cache_handle != nullptr) {
+    RegionFilterInfo *region_filter_info = reinterpret_cast<RegionFilterInfo*>(
+        block_cache->Value(cache_handle));
+    assert(region_filter_info->region_num == region_num);
+    return {region_filter_info, cache_handle};
+  }
+  else {
+    fprintf(stderr, "get region info from cache error! region_nums: %u\n", region_num);
+
+    if (regionFilterInfos[region_num] == nullptr) {
+      fprintf(stderr, "regionFilterInfos null! region_nums: %u\n", region_num);
+      exit(1);
+    }
+    Status s = block_cache->Insert(rkey, regionFilterInfos[region_num], regionFilterInfos[region_num]->cur_filter_nums * 4, &DeleteRegionInfoEntry);
+    if (!s.ok()) {
+      fprintf(stderr, "Insert regionFilterInfos false! region_nums: %u\n", region_num);
+      exit(1);
+    }
+    cache_handle = block_cache->LookupRegion(rkey, table_->rep_->ioptions.statistics, true);
+
+    if (cache_handle == nullptr) {
+      fprintf(stderr, "LookupRegion still null! region_nums: %u\n", region_num);
+      exit(1);
+    }
+
+    RegionFilterInfo *region_filter_info = reinterpret_cast<RegionFilterInfo*>(
+            block_cache->Value(cache_handle));
+    return {region_filter_info, cache_handle};
+
+    // while (1) {
+    //   int ii = 0;
+    //   ii += 1;
+    // }
+    // assert(0);
+    // return {nullptr, nullptr};
+  }
+}
+BlockHandle PartitionedFilterBlockReader::GetFilterPartitionHandle(
+    const Slice& entry, const uint64_t filter_index) {
+  IndexBlockIter iter;
+  Statistics* kNullStats = nullptr;
+  idx_on_fltr_blk_->NewIterator<IndexBlockIter>(
+      &comparator_, comparator_.user_comparator(), &iter, kNullStats, true,
+      index_key_includes_seq_, index_value_is_full_);
+  char *new_entry = new char[entry.size() + 4];
+  EncodeFixed32R(new_entry, filter_index);
+  memcpy(new_entry + 4, entry.data(), entry.size());
+  iter.Seek(Slice(new_entry, entry.size() + 4));
+  delete new_entry;
+  
   if (UNLIKELY(!iter.Valid())) {
     return BlockHandle(0, 0);
   }
@@ -256,7 +511,8 @@ PartitionedFilterBlockReader::GetFilterPartition(
     FilePrefetchBuffer* prefetch_buffer, BlockHandle& fltr_blk_handle,
     const bool no_io, bool* cached, const SliceTransform* prefix_extractor) {
   const bool is_a_filter_partition = true;
-  auto block_cache = table_->rep_->table_options.block_cache.get();
+  // added by ElasticBF
+  auto block_cache = table_->rep_->table_options.metadata_cache.get();
   if (LIKELY(block_cache != nullptr)) {
     if (filter_map_.size() != 0) {
       auto iter = filter_map_.find(fltr_blk_handle.offset());
@@ -330,8 +586,10 @@ void PartitionedFilterBlockReader::CacheDependencies(
 
   // After prefetch, read the partitions one by one
   biter.SeekToFirst();
-  Cache* block_cache = rep->table_options.block_cache.get();
-  for (; biter.Valid(); biter.Next()) {
+  Cache* block_cache = rep->table_options.metadata_cache.get();
+  int count = 0;
+  int max_load_filters = table_->rep_->table_options.init_filter_nums * region_nums;
+  for (; biter.Valid() && count < max_load_filters; biter.Next(), count++) {
     handle = biter.value();
     const bool no_io = true;
     const bool is_a_filter_partition = true;

@@ -23,6 +23,7 @@
 #include "rocksdb/options.h"
 #include "rocksdb/table.h"
 #include "table/table_reader.h"
+#include "util/mutexlock.h"
 
 namespace rocksdb {
 
@@ -125,7 +126,8 @@ class TableCache {
   // Capacity of the backing Cache that indicates inifinite TableCache capacity.
   // For example when max_open_files is -1 we set the backing Cache to this.
   static const int kInfiniteCapacity = 0x400000;
-
+  //added by ElasticBF
+  void addCurrentTime();
   // The tables opened with this TableCache will be immortal, i.e., their
   // lifetime is as long as that of the DB.
   void SetTablesAreImmortal() {
@@ -151,6 +153,8 @@ class TableCache {
   const EnvOptions& env_options_;
   Cache* const cache_;
   std::string row_cache_id_;
+  //added by ElasticBF
+  mutable port::Mutex mutex_[64];
   bool immortal_tables_;
 };
 

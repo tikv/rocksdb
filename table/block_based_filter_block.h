@@ -87,7 +87,7 @@ class BlockBasedFilterBlockReader : public FilterBlockReader {
   virtual bool KeyMayMatch(
       const Slice& key, const SliceTransform* prefix_extractor,
       uint64_t block_offset = kNotValid, const bool no_io = false,
-      const Slice* const const_ikey_ptr = nullptr) override;
+      const Slice* const const_ikey_ptr = nullptr, const int hash_id = 0) override;
   virtual bool PrefixMayMatch(
       const Slice& prefix, const SliceTransform* prefix_extractor,
       uint64_t block_offset = kNotValid, const bool no_io = false,
