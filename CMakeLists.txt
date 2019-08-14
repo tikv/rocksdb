@@ -463,6 +463,7 @@ set(SOURCES
         cache/clock_cache.cc
         cache/lru_cache.cc
         cache/sharded_cache.cc
+        cache/multi_queue.cc
         db/builder.cc
         db/c.cc
         db/column_family.cc
