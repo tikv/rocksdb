@@ -104,7 +104,7 @@ extern std::shared_ptr<Cache> NewClockCache(size_t capacity,
                                             bool strict_capacity_limit = false);
 
 //added by ElasticBF
-extern std::shared_ptr<Cache> NewMultiQueue(size_t capacity, std::vector<int> &filter_bits_array, uint64_t life_time, double change_ratio);
+extern std::shared_ptr<Cache> NewMultiQueue(size_t capacity, std::vector<int> filter_bits_array, uint64_t life_time, double change_ratio);
 
 
 class Cache {

@@ -200,7 +200,7 @@ namespace rocksdb
             bool need_adjust;
             uint64_t dynamic_merge_counter[2];
         public:
-            MultiQueue(size_t capacity, std::vector<int> &filter_bits_array, uint64_t life_time = 20000, double cr = 0.0001);
+            MultiQueue(size_t capacity, std::vector<int> filter_bits_array, uint64_t life_time = 20000, double cr = 0.0001);
             ~MultiQueue();
 
             virtual const char *Name() const override
@@ -298,7 +298,7 @@ namespace rocksdb
             double FalsePositive(LRUQueueHandle *e);
         };
 
-        MultiQueue::MultiQueue(size_t capacity, std::vector<int> &filter_bits_array, uint64_t life_time, double change_ratio): capacity_(capacity), lrus_num_(filter_bits_array.size() + 1), life_time_(life_time)
+        MultiQueue::MultiQueue(size_t capacity, std::vector<int> filter_bits_array, uint64_t life_time, double change_ratio): capacity_(capacity), lrus_num_(filter_bits_array.size() + 1), life_time_(life_time)
             , change_ratio_(change_ratio), sum_lru_len(0), expection_(0), usage_(0), shutting_down_(false), insert_count(0), need_adjust(true)
         {
             //TODO: declare outside  class  in_use and lrus parent must be Initialized,avoid Lock crush
@@ -953,10 +953,11 @@ namespace rocksdb
     };
 
 
-    std::shared_ptr<Cache> NewMultiQueue(size_t capacity, std::vector<int> &filter_bits_array, uint64_t life_time, double change_ratio)
+    std::shared_ptr<Cache> NewMultiQueue(size_t capacity, std::vector<int> filter_bits_array, uint64_t life_time, double change_ratio)
     {
         return std::make_shared<multiqueue_ns::MultiQueue>(capacity, filter_bits_array, life_time, change_ratio);
     }
 
+    
 };
 

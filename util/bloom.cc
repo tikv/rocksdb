@@ -416,6 +416,12 @@ class BloomFilterPolicy : public FilterPolicy {
   const bool use_block_based_builder_;
 
   void initialize() {
+    if(bits_per_keys_.empty()){
+      bits_per_keys_.push_back(5);
+      bits_per_keys_.push_back(5);
+      bits_per_keys_.push_back(5);
+      bits_per_keys_.push_back(5);
+    }
     // We intentionally round down to reduce probing cost a little bit
     num_probes_ = static_cast<size_t>(bits_per_key_ * 0.69);  // 0.69 =~ ln(2)
     if (num_probes_ < 1) num_probes_ = 1;

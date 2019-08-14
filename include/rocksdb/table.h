@@ -100,7 +100,7 @@ struct BlockBasedTableOptions {
     kTwoLevelIndexSearch,
   };
 
-  IndexType index_type = kBinarySearch;
+  IndexType index_type = kTwoLevelIndexSearch;
 
   // The index type that will be used for the data block.
   enum DataBlockIndexType : char {
@@ -132,11 +132,11 @@ struct BlockBasedTableOptions {
   // If NULL, rocksdb will automatically create and use an 8MB internal cache.
   std::shared_ptr<Cache> block_cache = nullptr;
 
-  //added by ElasticBF
-  std::shared_ptr<Cache> metadata_cache = nullptr;
+  //added by ElasticBF size = 6.25MB
+  std::shared_ptr<Cache> metadata_cache = NewLRUCache(8 * 1024 * 6400L, 1, false, 0.0);
 
-  //added by ElasticBF
-  std::shared_ptr<Cache> filter_info_cache = nullptr;
+  //added by ElasticBF 
+  std::shared_ptr<Cache> filter_info_cache = NewMultiQueue(219600*50, std::vector<int> {5,5,5,5}, 10000000, 0.0001);
 
   // If non-NULL use the specified cache for pages read from device
   // IF NULL, no page cache is used
@@ -154,10 +154,10 @@ struct BlockBasedTableOptions {
   // compression is enabled.  This parameter can be changed dynamically.
   size_t block_size = 4 * 1024;
 
-  // This is used to close a block before it reaches the configured
-  // 'block_size'. If the percentage of free space in the current block is less
-  // than this specified number and adding a new record to the block will
-  // exceed the configured block size, then this block will be closed and the
+  // This is used to close a block before it reaches the con//  std::shared_ptr<rocksdb::Cache> filter_info_cache = rocksdb::NewMultiQueue(219600, bits_per_key_per_filter, life_time, change_ratio);figured
+  // 'block_size'. If the percentage of free space in the cu//  std::shared_ptr<rocksdb::Cache> filter_info_cache = rocksdb::NewMultiQueue(219600, bits_per_key_per_filter, life_time, change_ratio);rrent block is less
+  // than this specified number and adding a new record to t//  std::shared_ptr<rocksdb::Cache> filter_info_cache = rocksdb::NewMultiQueue(219600, bits_per_key_per_filter, life_time, change_ratio);he block will
+  // exceed the configured block size, then this block will //  std::shared_ptr<rocksdb::Cache> filter_info_cache = rocksdb::NewMultiQueue(219600, bits_per_key_per_filter, life_time, change_ratio);be closed and the
   // new record will be written to the next block.
   int block_size_deviation = 10;
 
@@ -186,7 +186,7 @@ struct BlockBasedTableOptions {
   // TODO(myabandeh): remove the note above once the limitation is lifted
   // Use partitioned full filters for each SST file. This option is
   // incompatible with block-based filters.
-  bool partition_filters = false;
+  bool partition_filters = true;
 
   // Use delta encoding to compress keys in blocks.
   // ReadOptions::pin_data requires this option to be disabled.
@@ -265,7 +265,7 @@ struct BlockBasedTableOptions {
   bool block_align = false;
 
   //added by ElasticBF
-  std::vector<int> bits_per_key_per_filter;
+  std::vector<int> bits_per_key_per_filter{5,5,5,5};
   int init_filter_nums = 2;
 };
 
