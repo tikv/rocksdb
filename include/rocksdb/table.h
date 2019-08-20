@@ -133,7 +133,7 @@ struct BlockBasedTableOptions {
   std::shared_ptr<Cache> block_cache = nullptr;
 
   //added by ElasticBF size = 6.25MB
-  std::shared_ptr<Cache> metadata_cache = NewLRUCache(8 * 1024 * 6400L, 1, false, 0.0);
+  std::shared_ptr<Cache> metadata_cache = NewLRUCache(8 * 1024 * 6250);
 
   //added by ElasticBF 
   std::shared_ptr<Cache> filter_info_cache = NewMultiQueue(219600*50, std::vector<int> {5,5,5,5}, 10000000, 0.0001);

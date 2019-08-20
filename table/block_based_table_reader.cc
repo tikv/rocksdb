@@ -1766,9 +1766,9 @@ InternalIteratorBase<BlockHandle>* BlockBasedTable::NewIndexIterator(
   }
 
   PERF_TIMER_GUARD(read_index_block_nanos);
-
+  // added by elasticbf
   const bool no_io = read_options.read_tier == kBlockCacheTier;
-  Cache* block_cache = rep_->table_options.block_cache.get();
+  Cache* block_cache = rep_->table_options.metadata_cache.get();
   char cache_key[kMaxCacheKeyPrefixSize + kMaxVarint64Length];
   auto key =
       GetCacheKeyFromOffset(rep_->cache_key_prefix, rep_->cache_key_prefix_size,
