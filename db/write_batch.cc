@@ -40,6 +40,7 @@
 #include <stdexcept>
 #include <type_traits>
 #include <vector>
+#include <unordered_map>
 
 #include "db/column_family.h"
 #include "db/db_impl.h"
@@ -1073,6 +1074,10 @@ class MemTableInserter : public WriteBatch::Handler {
   DupDetector       duplicate_detector_;
   bool              dup_dectector_on_;
 
+  bool hint_per_batch_;
+  // Hints for this batch
+  std::unordered_map<MemTable*, void*> hint_;
+
   MemPostInfoMap& GetPostMap() {
     assert(concurrent_memtable_writes_);
     if(!post_info_created_) {
@@ -1107,7 +1112,7 @@ class MemTableInserter : public WriteBatch::Handler {
                    uint64_t recovering_log_number, DB* db,
                    bool concurrent_memtable_writes,
                    bool* has_valid_writes = nullptr, bool seq_per_batch = false,
-                   bool batch_per_txn = true)
+                   bool batch_per_txn = true, bool hint_per_batch = false)
       : sequence_(_sequence),
         cf_mems_(cf_mems),
         flush_scheduler_(flush_scheduler),
@@ -1130,7 +1135,8 @@ class MemTableInserter : public WriteBatch::Handler {
         write_before_prepare_(!batch_per_txn),
         unprepared_batch_(false),
         duplicate_detector_(),
-        dup_dectector_on_(false) {
+        dup_dectector_on_(false),
+        hint_per_batch_(hint_per_batch) {
     assert(cf_mems_);
   }
 
@@ -1252,7 +1258,8 @@ class MemTableInserter : public WriteBatch::Handler {
     if (!moptions->inplace_update_support) {
       bool mem_res =
           mem->Add(sequence_, value_type, key, value,
-                   concurrent_memtable_writes_, get_post_process_info(mem));
+                   concurrent_memtable_writes_, get_post_process_info(mem),
+                   hint_per_batch_?&hint_[mem]:nullptr);
       if (UNLIKELY(!mem_res)) {
         assert(seq_per_batch_);
         ret_status = Status::TryAgain("key+seq exists");
@@ -1335,7 +1342,8 @@ class MemTableInserter : public WriteBatch::Handler {
     MemTable* mem = cf_mems_->GetMemTable();
     bool mem_res =
         mem->Add(sequence_, delete_type, key, value,
-                 concurrent_memtable_writes_, get_post_process_info(mem));
+                 concurrent_memtable_writes_, get_post_process_info(mem),
+                 hint_per_batch_?&hint_[mem]:nullptr);
     if (UNLIKELY(!mem_res)) {
       assert(seq_per_batch_);
       ret_status = Status::TryAgain("key+seq exists");
@@ -1792,7 +1800,7 @@ Status WriteBatchInternal::InsertInto(
     ColumnFamilyMemTables* memtables, FlushScheduler* flush_scheduler,
     bool ignore_missing_column_families, uint64_t log_number, DB* db,
     bool concurrent_memtable_writes, bool seq_per_batch, size_t batch_cnt,
-    bool batch_per_txn) {
+    bool batch_per_txn, bool hint_per_batch) {
 #ifdef NDEBUG
   (void)batch_cnt;
 #endif
@@ -1800,7 +1808,7 @@ Status WriteBatchInternal::InsertInto(
   MemTableInserter inserter(
       sequence, memtables, flush_scheduler, ignore_missing_column_families,
       log_number, db, concurrent_memtable_writes, nullptr /*has_valid_writes*/,
-      seq_per_batch, batch_per_txn);
+      seq_per_batch, batch_per_txn, hint_per_batch);
   SetSequence(writer->batch, sequence);
   inserter.set_log_number_ref(writer->log_ref);
   Status s = writer->batch->Iterate(&inserter);

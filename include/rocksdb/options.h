@@ -1218,12 +1218,18 @@ struct WriteOptions {
   // Default: false
   bool low_pri;
 
+  // If true, this writebatch will use its own insert hints in concurrent write
+  //
+  // Default: false
+  bool hint_per_batch;
+
   WriteOptions()
       : sync(false),
         disableWAL(false),
         ignore_missing_column_families(false),
         no_slowdown(false),
-        low_pri(false) {}
+        low_pri(false),
+        hint_per_batch(false) {}
 };
 
 // Options that control flush operations
