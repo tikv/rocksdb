@@ -100,7 +100,7 @@ struct BlockBasedTableOptions {
     kTwoLevelIndexSearch,
   };
 
-  IndexType index_type = kBinarySearch;
+  IndexType index_type = kTwoLevelIndexSearch;
 
   // The index type that will be used for the data block.
   enum DataBlockIndexType : char {
@@ -180,7 +180,7 @@ struct BlockBasedTableOptions {
   // TODO(myabandeh): remove the note above once the limitation is lifted
   // Use partitioned full filters for each SST file. This option is
   // incompatible with block-based filters.
-  bool partition_filters = false;
+  bool partition_filters = true;
 
   // Use delta encoding to compress keys in blocks.
   // ReadOptions::pin_data requires this option to be disabled.
