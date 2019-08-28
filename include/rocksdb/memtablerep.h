@@ -300,8 +300,19 @@ class SkipListFactory : public MemTableRepFactory {
 
   bool CanHandleDuplicatedKey() const override { return true; }
 
- private:
+protected:
   const size_t lookahead_;
+};
+
+// This uses a doubly skip list to store keys, which is similar to skip list, but optimize for prev seek.
+class DoublySkipListFactory : public SkipListFactory {
+ public:
+  explicit DoublySkipListFactory(size_t lookahead = 0) : SkipListFactory(lookahead) {}
+
+  MemTableRep* CreateMemTableRep(const MemTableRep::KeyComparator&,
+                                 Allocator*, const SliceTransform*,
+                                 Logger* logger) override;
+  const char* Name() const override { return "DoublySkipListFactory"; }
 };
 
 #ifndef ROCKSDB_LITE
@@ -327,25 +338,6 @@ class VectorRepFactory : public MemTableRepFactory {
   virtual const char* Name() const override {
     return "VectorRepFactory";
   }
-};
-
-// This uses a doubly skip list to store keys, which is similar to skip list, but optimize for prev seek.
-class DoublySkipListFactory : public MemTableRepFactory {
- public:
-  explicit DoublySkipListFactory(size_t lookahead = 0) : lookahead_(lookahead) {}
-
-  using MemTableRepFactory::CreateMemTableRep;
-  virtual MemTableRep* CreateMemTableRep(const MemTableRep::KeyComparator&,
-                                         Allocator*, const SliceTransform*,
-                                         Logger* logger) override;
-  virtual const char* Name() const override { return "DoublySkipListFactory"; }
-
-  bool IsInsertConcurrentlySupported() const override { return true; }
-
-  bool CanHandleDuplicatedKey() const override { return true; }
-
- private:
-  const size_t lookahead_;
 };
 
 // This class contains a fixed array of buckets, each
