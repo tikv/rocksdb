@@ -329,6 +329,25 @@ class VectorRepFactory : public MemTableRepFactory {
   }
 };
 
+// This uses a doubly skip list to store keys, which is similar to skip list, but optimize for prev seek.
+class DoublySkipListFactory : public MemTableRepFactory {
+ public:
+  explicit DoublySkipListFactory(size_t lookahead = 0) : lookahead_(lookahead) {}
+
+  using MemTableRepFactory::CreateMemTableRep;
+  virtual MemTableRep* CreateMemTableRep(const MemTableRep::KeyComparator&,
+                                         Allocator*, const SliceTransform*,
+                                         Logger* logger) override;
+  virtual const char* Name() const override { return "DoublySkipListFactory"; }
+
+  bool IsInsertConcurrentlySupported() const override { return true; }
+
+  bool CanHandleDuplicatedKey() const override { return true; }
+
+ private:
+  const size_t lookahead_;
+};
+
 // This class contains a fixed array of buckets, each
 // pointing to a skiplist (null if the bucket is empty).
 // bucket_count: number of fixed array buckets
