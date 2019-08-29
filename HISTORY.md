@@ -1,5 +1,6 @@
 # Rocksdb Change Log
 ## Cherry-picks
+* When user uses options.force_consistency_check in RocksDb, instead of crashing the process, we now pass the error back to the users without killing the process.
 * Fix ingested file and directory not being fsync.
 * Fix crash when memtable prefix bloom is enabled and read/write a key out of domain of prefix extractor.
 * Fix SstFileReader not able to open file ingested with write_glbal_seqno=true.
