@@ -1,4 +1,8 @@
 # Rocksdb Change Log
+## Cherry-picks
+* When user uses options.force_consistency_check in RocksDb, instead of crashing the process, we now pass the error back to the users without killing the process.
+
+## 5.18.3 (2/11/2019)
 ### Bug Fixes
 * Fix ingested file and directory not being fsync.
 
