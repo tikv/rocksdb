@@ -133,10 +133,10 @@ struct BlockBasedTableOptions {
   std::shared_ptr<Cache> block_cache = nullptr;
 
   //added by ElasticBF size = 6.25MB
-  std::shared_ptr<Cache> metadata_cache = NewLRUCache(8 * 1024 * 6250);
+  std::shared_ptr<Cache> metadata_cache = nullptr;
 
   //added by ElasticBF 
-  std::shared_ptr<Cache> filter_info_cache = NewMultiQueue(219600*50, std::vector<int> {5,5,5,5}, 10000000, 0.0001);
+  std::shared_ptr<Cache> filter_info_cache =  nullptr;
 
   // If non-NULL use the specified cache for pages read from device
   // IF NULL, no page cache is used
@@ -265,8 +265,17 @@ struct BlockBasedTableOptions {
   bool block_align = false;
 
   //added by ElasticBF
-  std::vector<int> bits_per_key_per_filter{5,5,5,5};
+  std::vector<int> bits_per_key_per_filter;
   int init_filter_nums = 2;
+  BlockBasedTableOptions(){
+    metadata_cache = NewLRUCache(8*1024*1024L);
+    filter_info_cache =  NewMultiQueue(219600*50, std::vector<int> {5,5,5,5}, 10000000, 0.0001);
+    bits_per_key_per_filter.push_back(5);
+    bits_per_key_per_filter.push_back(5);
+    bits_per_key_per_filter.push_back(5);
+    bits_per_key_per_filter.push_back(5);
+    bits_per_key_per_filter.push_back(5);
+  }
 };
 
 // Table Properties that are specific to block-based table properties.
