@@ -251,8 +251,7 @@ class Compaction {
   void ResetNextCompactionIndex();
 
   // Create a CompactionFilter from compaction_filter_factory
-  std::unique_ptr<CompactionFilter> CreateCompactionFilter(
-      const Slice* start, const Slice* end) const;
+  std::unique_ptr<CompactionFilter> CreateCompactionFilter() const;
 
   // Is the input level corresponding to output_level_ empty?
   bool IsOutputLevelEmpty() const;

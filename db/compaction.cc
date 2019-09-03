@@ -513,8 +513,7 @@ uint64_t Compaction::OutputFilePreallocationSize() const {
                   preallocation_size + (preallocation_size / 10));
 }
 
-std::unique_ptr<CompactionFilter> Compaction::CreateCompactionFilter(
-    const Slice* start, const Slice* end) const {
+std::unique_ptr<CompactionFilter> Compaction::CreateCompactionFilter() const {
   if (!cfd_->ioptions()->compaction_filter_factory) {
     return nullptr;
   }
@@ -523,12 +522,17 @@ std::unique_ptr<CompactionFilter> Compaction::CreateCompactionFilter(
   context.is_full_compaction = is_full_compaction_;
   context.is_manual_compaction = is_manual_compaction_;
   context.column_family_id = cfd_->GetID();
-  context.start_key =
-      (start == nullptr) ? GetSmallestUserKey() : ExtractUserKey(*start);
-  context.end_key =
-      (end == nullptr) ? GetLargestUserKey() : ExtractUserKey(*end);
-  context.is_end_key_inclusive = (end == nullptr);
+
   context.output_level = output_level_;
+  for (size_t i = 0; i < num_input_levels(); ++i) {
+    if (inputs_[i];.empty()) {
+      continue;
+    }
+    const std::vector<AtomicCompactionUnitBoundary> *bs = boundaries(i);
+    Slice tail_boundary = (*bs)[bs->size()-1].largest->user_key();
+    context.tail_boundaries.push_back(tail_boundary);
+  }
+
   return cfd_->ioptions()->compaction_filter_factory->CreateCompactionFilter(
       context);
 }
