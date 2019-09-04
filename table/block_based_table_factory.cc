@@ -174,6 +174,12 @@ BlockBasedTableFactory::BlockBasedTableFactory(
   } else if (table_options_.block_cache == nullptr) {
     table_options_.block_cache = NewLRUCache(8 << 20);
   }
+  if (table_options_.metadata_cache == nullptr){
+    table_options_.metadata_cache = NewLRUCache(8*2014L*1024L);
+  }
+  if (table_options_.filter_info_cache == nullptr){
+    table_options_.filter_info_cache = NewMultiQueue(219600*50, std::vector<int>{5,5,5,5,5}, 10000000, 0.0001);
+  }
   if (table_options_.block_size_deviation < 0 ||
       table_options_.block_size_deviation > 100) {
     table_options_.block_size_deviation = 0;

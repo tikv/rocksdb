@@ -268,14 +268,14 @@ struct BlockBasedTableOptions {
   std::vector<int> bits_per_key_per_filter;
   int init_filter_nums = 2;
   BlockBasedTableOptions(){
-    metadata_cache = NewLRUCache(8*1024*1024L);
-    filter_info_cache =  NewMultiQueue(219600*50, std::vector<int> {5,5,5,5}, 10000000, 0.0001);
-    bits_per_key_per_filter.push_back(5);
-    bits_per_key_per_filter.push_back(5);
-    bits_per_key_per_filter.push_back(5);
-    bits_per_key_per_filter.push_back(5);
-    bits_per_key_per_filter.push_back(5);
-  }
+     metadata_cache = NewLRUCache(8*1024*1024L);
+     filter_info_cache =  NewMultiQueue(219600*50, std::vector<int> {5,5,5,5}, 10000000, 0.0001);
+     bits_per_key_per_filter.push_back(5);
+     bits_per_key_per_filter.push_back(5);
+     bits_per_key_per_filter.push_back(5);
+     bits_per_key_per_filter.push_back(5);
+     bits_per_key_per_filter.push_back(5);
+   }
 };
 
 // Table Properties that are specific to block-based table properties.
