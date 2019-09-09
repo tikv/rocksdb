@@ -1359,30 +1359,6 @@ class DBImpl : public DB {
 
   bool stats_slice_initialized_ = false;
 
-  // Class to maintain directories for all database paths other than main one.
-  class Directories {
-   public:
-    Status SetDirectories(Env* env, const std::string& dbname,
-                          const std::string& wal_dir,
-                          const std::vector<DbPath>& data_paths);
-
-    Directory* GetDataDir(size_t path_id) const;
-
-    Directory* GetWalDir() {
-      if (wal_dir_) {
-        return wal_dir_.get();
-      }
-      return db_dir_.get();
-    }
-
-    Directory* GetDbDir() { return db_dir_.get(); }
-
-   private:
-    std::unique_ptr<Directory> db_dir_;
-    std::vector<std::unique_ptr<Directory>> data_dirs_;
-    std::unique_ptr<Directory> wal_dir_;
-  };
-
   Directories directories_;
 
   WriteBufferManager* write_buffer_manager_;
