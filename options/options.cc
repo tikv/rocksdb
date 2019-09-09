@@ -470,16 +470,6 @@ ColumnFamilyOptions* ColumnFamilyOptions::OptimizeForSmallDb() {
   max_bytes_for_level_base = 10 * 1048576;
   soft_pending_compaction_bytes_limit = 256 * 1048576;
   hard_pending_compaction_bytes_limit = 1073741824ul;
-
-  BlockBasedTableOptions table_options;
-  table_options.block_cache =
-      (cache != nullptr) ? *cache : std::shared_ptr<Cache>();
-  table_options.cache_index_and_filter_blocks = true;
-  // Two level iterator to avoid LRU cache imbalance
-  table_options.index_type =
-      BlockBasedTableOptions::IndexType::kTwoLevelIndexSearch;
-  table_factory.reset(new BlockBasedTableFactory(table_options));
-
   return this;
 }
 
