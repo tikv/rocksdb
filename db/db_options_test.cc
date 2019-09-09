@@ -514,31 +514,18 @@ TEST_F(DBOptionsTest, SetStatsDumpPeriodSec) {
   }
 }
 
-TEST_F(DBOptionsTest, RunStatsDumpPeriodSec) {
+TEST_F(DBOptionsTest, SetOptionsStatsPersistPeriodSec) {
   Options options;
   options.create_if_missing = true;
-  options.stats_dump_period_sec = 5;
-  std::unique_ptr<rocksdb::MockTimeEnv> mock_env;
-  mock_env.reset(new rocksdb::MockTimeEnv(env_));
-  mock_env->set_current_time(0); // in seconds
-  options.env = mock_env.get();
-  int counter = 0;
-  rocksdb::SyncPoint::GetInstance()->SetCallBack(
-      "DBImpl::DumpStats:1", [&](void* /*arg*/) {
-        counter++;
-      });
-  rocksdb::SyncPoint::GetInstance()->EnableProcessing();
+  options.stats_persist_period_sec = 5;
+  options.env = env_;
   Reopen(options);
-  ASSERT_EQ(5, dbfull()->GetDBOptions().stats_dump_period_sec);
-  dbfull()->TEST_WaitForTimedTaskRun([&] { mock_env->set_current_time(5); });
-  ASSERT_GE(counter, 1);
+  ASSERT_EQ(5, dbfull()->GetDBOptions().stats_persist_period_sec);
 
-  // Test cacel job through SetOptions
-  ASSERT_OK(dbfull()->SetDBOptions({{"stats_dump_period_sec", "0"}}));
-  int old_val = counter;
-  env_->SleepForMicroseconds(10000000);
-  ASSERT_EQ(counter, old_val);
-  Close();
+  ASSERT_OK(dbfull()->SetDBOptions({{"stats_persist_period_sec", "12345"}}));
+  ASSERT_EQ(12345, dbfull()->GetDBOptions().stats_persist_period_sec);
+  ASSERT_NOK(dbfull()->SetDBOptions({{"stats_persist_period_sec", "abcde"}}));
+  ASSERT_EQ(12345, dbfull()->GetDBOptions().stats_persist_period_sec);
 }
 
 static void assert_candidate_files_empty(DBImpl* dbfull, const bool empty) {

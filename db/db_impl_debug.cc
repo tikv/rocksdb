@@ -248,5 +248,19 @@ void DBImpl::TEST_WaitForTimedTaskRun(std::function<void()> callback) const {
     thread_dump_stats_->TEST_WaitForRun(callback);
   }
 }
+
+void DBImpl::TEST_WaitForPersistStatsRun(std::function<void()> callback) const {
+  if (thread_persist_stats_ != nullptr) {
+    thread_persist_stats_->TEST_WaitForRun(callback);
+  }
+}
+
+bool DBImpl::TEST_IsPersistentStatsEnabled() const {
+  return thread_persist_stats_ && thread_persist_stats_->IsRunning();
+}
+
+size_t DBImpl::TEST_EstimateInMemoryStatsHistorySize() const {
+  return EstimateInMemoryStatsHistorySize();
+}
 }  // namespace rocksdb
 #endif  // NDEBUG

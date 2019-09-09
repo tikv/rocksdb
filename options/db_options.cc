@@ -86,7 +86,9 @@ ImmutableDBOptions::ImmutableDBOptions(const DBOptions& options)
       preserve_deletes(options.preserve_deletes),
       two_write_queues(options.two_write_queues),
       manual_wal_flush(options.manual_wal_flush),
-      atomic_flush(options.atomic_flush) {
+      atomic_flush(options.atomic_flush),
+      avoid_unnecessary_blocking_io(options.avoid_unnecessary_blocking_io),
+      persist_stats_to_disk(options.persist_stats_to_disk) {
 }
 
 void ImmutableDBOptions::Dump(Logger* log) const {
@@ -217,6 +219,12 @@ void ImmutableDBOptions::Dump(Logger* log) const {
                    two_write_queues);
   ROCKS_LOG_HEADER(log, "            Options.manual_wal_flush: %d",
                    manual_wal_flush);
+  ROCKS_LOG_HEADER(log, "            Options.atomic_flush: %d", atomic_flush);
+  ROCKS_LOG_HEADER(log,
+                   "            Options.avoid_unnecessary_blocking_io: %d",
+                   avoid_unnecessary_blocking_io);
+  ROCKS_LOG_HEADER(log, "                Options.persist_stats_to_disk: %u",
+                   persist_stats_to_disk);
 }
 
 MutableDBOptions::MutableDBOptions()

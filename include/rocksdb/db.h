@@ -60,6 +60,7 @@ class CompactionJobInfo;
 using std::unique_ptr;
 
 extern const std::string kDefaultColumnFamilyName;
+extern const std::string kPersistentStatsColumnFamilyName;
 struct ColumnFamilyDescriptor {
   std::string name;
   ColumnFamilyOptions options;
@@ -1199,6 +1200,32 @@ class DB {
 
   // Needed for StackableDB
   virtual DB* GetRootDB() { return this; }
+
+  // Given a window [start_time, end_time), setup a StatsHistoryIterator
+  // to access stats history. Note the start_time and end_time are epoch
+  // time measured in seconds, and end_time is an exclusive bound.
+  virtual Status GetStatsHistory(
+      uint64_t /*start_time*/, uint64_t /*end_time*/,
+      std::unique_ptr<StatsHistoryIterator>* /*stats_iterator*/) {
+    return Status::NotSupported("GetStatsHistory() is not implemented.");
+  }
+
+#ifndef ROCKSDB_LITE
+  // Make the secondary instance catch up with the primary by tailing and
+  // replaying the MANIFEST and WAL of the primary.
+  // Column families created by the primary after the secondary instance starts
+  // will be ignored unless the secondary instance closes and restarts with the
+  // newly created column families.
+  // Column families that exist before secondary instance starts and dropped by
+  // the primary afterwards will be marked as dropped. However, as long as the
+  // secondary instance does not delete the corresponding column family
+  // handles, the data of the column family is still accessible to the
+  // secondary.
+  // TODO: we will support WAL tailing soon.
+  virtual Status TryCatchUpWithPrimary() {
+    return Status::NotSupported("Supported only by secondary instance");
+  }
+#endif  // !ROCKSDB_LITE
 
  private:
   // No copying allowed

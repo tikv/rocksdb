@@ -47,6 +47,7 @@
 #include "rocksdb/env.h"
 #include "rocksdb/memtablerep.h"
 #include "rocksdb/status.h"
+#include "rocksdb/stats_history.h"
 #include "rocksdb/trace_reader_writer.h"
 #include "rocksdb/transaction_log.h"
 #include "rocksdb/write_buffer_manager.h"
@@ -64,6 +65,7 @@ namespace rocksdb {
 class Arena;
 class ArenaWrappedDBIter;
 class MemTable;
+class PersistentStatsHistoryIterator;
 class TableCache;
 class Version;
 class VersionEdit;
@@ -280,6 +282,18 @@ class DBImpl : public DB {
 
   virtual bool SetPreserveDeletesSequenceNumber(SequenceNumber seqnum) override;
 
+  virtual Status GetDbIdentity(std::string& identity) const override;
+
+  ColumnFamilyHandle* DefaultColumnFamily() const override;
+
+  ColumnFamilyHandle* PersistentStatsColumnFamily() const;
+
+  virtual Status Close() override;
+
+  Status GetStatsHistory(
+      uint64_t start_time, uint64_t end_time,
+      std::unique_ptr<StatsHistoryIterator>* stats_iterator) override;
+
 #ifndef ROCKSDB_LITE
   using DB::ResetStats;
   virtual Status ResetStats() override;
@@ -393,8 +407,6 @@ class DBImpl : public DB {
   // checks if all live files exist on file system and that their file sizes
   // match to our in-memory records
   virtual Status CheckConsistency();
-
-  virtual Status GetDbIdentity(std::string& identity) const override;
 
   Status RunManualCompaction(ColumnFamilyData* cfd, int input_level,
                              int output_level, uint32_t output_path_id,
@@ -551,8 +563,6 @@ class DBImpl : public DB {
                           bool schedule_only = false);
 
   void SchedulePurge();
-
-  ColumnFamilyHandle* DefaultColumnFamily() const override;
 
   const SnapshotList& snapshots() const { return snapshots_; }
 
@@ -741,10 +751,22 @@ class DBImpl : public DB {
                      std::vector<ColumnFamilyHandle*>* handles, DB** dbptr,
                      const bool seq_per_batch, const bool batch_per_txn);
 
-  virtual Status Close() override;
 
   static Status CreateAndNewDirectory(Env* env, const std::string& dirname,
                                       std::unique_ptr<Directory>* directory);
+
+  // find stats map from stats_history_ with smallest timestamp in
+  // the range of [start_time, end_time)
+  bool FindStatsByTime(uint64_t start_time, uint64_t end_time,
+                       uint64_t* new_time,
+                       std::map<std::string, uint64_t>* stats_map);
+
+#ifndef NDEBUG
+  void TEST_WaitForDumpStatsRun(std::function<void()> callback) const;
+  void TEST_WaitForPersistStatsRun(std::function<void()> callback) const;
+  bool TEST_IsPersistentStatsEnabled() const;
+  size_t TEST_EstimateInMemoryStatsHistorySize() const;
+#endif  // NDEBUG
 
  protected:
   Env* const env_;
@@ -868,6 +890,9 @@ class DBImpl : public DB {
   friend class CompactedDBImpl;
   friend class DBTest_ConcurrentFlushWAL_Test;
   friend class DBTest_MixedSlowdownOptionsStop_Test;
+  friend class DBCompactionTest_CompactBottomLevelFilesWithDeletions_Test;
+  friend class DBCompactionTest_CompactionDuringShutdown_Test;
+  friend class StatsHistoryTest_PersistentStatsCreateColumnFamilies_Test;
 #ifndef NDEBUG
   friend class DBTest2_ReadCallbackTest_Test;
   friend class WriteCallbackTest_WriteWithCallbackTest_Test;
@@ -901,6 +926,21 @@ class DBImpl : public DB {
   Status Recover(const std::vector<ColumnFamilyDescriptor>& column_families,
                  bool read_only = false, bool error_if_log_file_exist = false,
                  bool error_if_data_exists_in_logs = false);
+
+  // Initialize the built-in column family for persistent stats. Depending on
+  // whether on-disk persistent stats have been enabled before, it may either
+  // create a new column family and column family handle or just a column family
+  // handle.
+  // Required: DB mutex held
+  Status InitPersistStatsColumnFamily();
+
+  // Persistent Stats column family has two format version key which are used
+  // for compatibility check. Write format version if it's created for the
+  // first time, read format version and check compatibility if recovering
+  // from disk. This function requires DB mutex held at entrance but may
+  // release and re-acquire DB mutex in the process.
+  // Required: DB mutex held
+  Status PersistentStatsProcessFormatVersion();
 
   Status ResumeImpl();
 
@@ -1145,6 +1185,11 @@ class DBImpl : public DB {
 
   void PrintStatistics();
 
+  size_t EstimateInMemoryStatsHistorySize() const;
+
+  // persist stats to column family "_persistent_stats"
+  void PersistStats();
+
   // dump rocksdb.stats to LOG
   void DumpStats();
 
@@ -1259,6 +1304,11 @@ class DBImpl : public DB {
     // true for some prefix of logs_
     bool getting_synced = false;
   };
+
+  ColumnFamilyHandleImpl* persist_stats_cf_handle_;
+
+  bool persistent_stats_cfd_exists_ = true;
+
   // Without two_write_queues, read and writes to alive_log_files_ are
   // protected by mutex_. However since back() is never popped, and push_back()
   // is done only from write_thread_, the same thread can access the item
