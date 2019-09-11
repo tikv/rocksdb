@@ -1,5 +1,4 @@
 # Rocksdb Change Log
-<<<<<<< HEAD
 ## Cherry-picks
 * Fix ingested file and directory not being fsync.
 * Fix crash when memtable prefix bloom is enabled and read/write a key out of domain of prefix extractor.
