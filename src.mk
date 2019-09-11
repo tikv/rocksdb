@@ -94,20 +94,20 @@ LIB_SOURCES =                                                   \
   options/options_sanity_check.cc                               \
   port/port_posix.cc                                            \
   port/stack_trace.cc                                           \
-  table/adaptive/adaptive_table_factory.cc                      \
-  table/block_based/block.cc                                    \
-  table/block_based/block_based_filter_block.cc                 \
-  table/block_based/block_based_table_builder.cc                \
-  table/block_based/block_based_table_factory.cc                \
-  table/block_based/block_based_table_reader.cc                 \
-  table/block_based/block_builder.cc                            \
-  table/block_based/block_prefix_index.cc                       \
-  table/block_based/data_block_hash_index.cc                    \
-  table/block_based/data_block_footer.cc                        \
-  table/block_based/flush_block_policy.cc                       \
-  table/block_based/full_filter_block.cc                        \
-  table/block_based/index_builder.cc                            \
-  table/block_based/partitioned_filter_block.cc                 \
+  table/adaptive_table_factory.cc                               \
+  table/block.cc                                                \
+  table/block_based_filter_block.cc                             \
+  table/block_based_table_builder.cc                            \
+  table/block_based_table_factory.cc                            \
+  table/block_based_table_reader.cc                             \
+  table/block_builder.cc                                        \
+  table/block_prefix_index.cc                                   \
+  table/data_block_hash_index.cc                                \
+  table/data_block_footer.cc                                    \
+  table/flush_block_policy.cc                                   \
+  table/full_filter_block.cc                                    \
+  table/index_builder.cc                                        \
+  table/partitioned_filter_block.cc                             \
   table/block_fetcher.cc                             		    \
   table/bloom_block.cc                               		    \
   table/cuckoo/cuckoo_table_builder.cc                          \
