@@ -109,8 +109,8 @@ LIB_SOURCES =                                                   \
   table/block_based/full_filter_block.cc                        \
   table/block_based/index_builder.cc                            \
   table/block_based/partitioned_filter_block.cc                 \
-  table/block_fetcher.cc                             		\
-  table/bloom_block.cc                               		\
+  table/block_fetcher.cc                             		    \
+  table/bloom_block.cc                               		    \
   table/cuckoo/cuckoo_table_builder.cc                          \
   table/cuckoo/cuckoo_table_factory.cc                          \
   table/cuckoo/cuckoo_table_reader.cc                           \
@@ -244,14 +244,6 @@ TOOL_LIB_SOURCES =                                              \
   tools/sst_dump_tool.cc                                        \
   utilities/blob_db/blob_dump_tool.cc                           \
 
-<<<<<<< HEAD
-ANALYZER_LIB_SOURCES = \
-  tools/trace_analyzer_tool.cc					\
-
-MOCK_LIB_SOURCES = \
-  table/mock_table.cc \
-  util/fault_injection_test_env.cc
-=======
 ANALYZER_LIB_SOURCES =                                          \
   tools/block_cache_trace_analyzer.cc                           \
   tools/trace_analyzer_tool.cc                                  \
@@ -259,7 +251,6 @@ ANALYZER_LIB_SOURCES =                                          \
 MOCK_LIB_SOURCES =                                              \
   table/mock_table.cc                                           \
   test_util/fault_injection_test_env.cc
->>>>>>> 671d15cbd... Persistent Stats: persist stats history to disk (#5046)
 
 BENCH_LIB_SOURCES =                                             \
   tools/db_bench_tool.cc                                        \
