@@ -244,18 +244,16 @@ TOOL_LIB_SOURCES =                                              \
   tools/sst_dump_tool.cc                                        \
   utilities/blob_db/blob_dump_tool.cc                           \
 
-ANALYZER_LIB_SOURCES =                                          \
-  tools/block_cache_trace_analyzer.cc                           \
-  tools/trace_analyzer_tool.cc                                  \
+ANALYZER_LIB_SOURCES = \
+  tools/trace_analyzer_tool.cc					\
 
-MOCK_LIB_SOURCES =                                              \
-  table/mock_table.cc                                           \
-  test_util/fault_injection_test_env.cc
+MOCK_LIB_SOURCES = \
+  table/mock_table.cc \
+  util/fault_injection_test_env.cc
 
 BENCH_LIB_SOURCES =                                             \
   tools/db_bench_tool.cc                                        \
 
-<<<<<<< HEAD
 EXP_LIB_SOURCES = \
   utilities/col_buf_decoder.cc                                  \
   utilities/col_buf_encoder.cc                                  \
@@ -265,12 +263,6 @@ TEST_LIB_SOURCES = \
   db/db_test_util.cc                                            \
   util/testharness.cc                                           \
   util/testutil.cc                                              \
-=======
-TEST_LIB_SOURCES =                                              \
-  db/db_test_util.cc                                            \
-  test_util/testharness.cc                                      \
-  test_util/testutil.cc                                         \
->>>>>>> 671d15cbd... Persistent Stats: persist stats history to disk (#5046)
   utilities/cassandra/test_utils.cc                             \
 
 MAIN_SOURCES =                                                          \
@@ -369,16 +361,8 @@ MAIN_SOURCES =                                                          \
   monitoring/statistics_test.cc                                         \
   monitoring/stats_history_test.cc                                      \
   options/options_test.cc                                               \
-<<<<<<< HEAD
   table/block_based_filter_block_test.cc                                \
   table/block_test.cc                                                   \
-=======
-  table/block_based/block_based_filter_block_test.cc                    \
-  table/block_based/block_test.cc                                       \
-  table/block_based/data_block_hash_index_test.cc                       \
-  table/block_based/full_filter_block_test.cc                           \
-  table/block_based/partitioned_filter_block_test.cc                    \
->>>>>>> 671d15cbd... Persistent Stats: persist stats history to disk (#5046)
   table/cleanable_test.cc                                               \
   table/cuckoo_table_builder_test.cc                                    \
   table/cuckoo_table_reader_test.cc                                     \
@@ -395,14 +379,9 @@ MAIN_SOURCES =                                                          \
   tools/ldb_cmd_test.cc                                                 \
   tools/reduce_levels_test.cc                                           \
   tools/sst_dump_test.cc                                                \
-<<<<<<< HEAD
   tools/trace_analyzer_test.cc						\
   util/arena_test.cc                                                    \
   util/auto_roll_logger_test.cc                                         \
-=======
-  tools/trace_analyzer_test.cc				             	\
-  trace_replay/block_cache_tracer_test.cc                               \
->>>>>>> 671d15cbd... Persistent Stats: persist stats history to disk (#5046)
   util/autovector_test.cc                                               \
   util/bloom_test.cc                                                    \
   util/coding_test.cc                                                   \

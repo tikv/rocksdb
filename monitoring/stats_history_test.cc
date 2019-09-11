@@ -11,7 +11,7 @@
 #include <unordered_map>
 
 #include "db/column_family.h"
-#include "db/db_impl/db_impl.h"
+#include "db/db_impl.h"
 #include "db/db_test_util.h"
 #include "monitoring/persistent_stats_history.h"
 #include "options/options_helper.h"
@@ -20,8 +20,8 @@
 #include "rocksdb/convenience.h"
 #include "rocksdb/rate_limiter.h"
 #include "rocksdb/stats_history.h"
-#include "test_util/sync_point.h"
-#include "test_util/testutil.h"
+#include "util/sync_point.h"
+#include "util/testutil.h"
 #include "util/random.h"
 
 namespace rocksdb {
