@@ -105,9 +105,6 @@ LIB_SOURCES =                                                   \
   table/data_block_hash_index.cc                                \
   table/data_block_footer.cc                                    \
   table/flush_block_policy.cc                                   \
-  table/full_filter_block.cc                                    \
-  table/index_builder.cc                                        \
-  table/partitioned_filter_block.cc                             \
   table/block_fetcher.cc                             		    \
   table/bloom_block.cc                               		    \
   table/cuckoo_table_builder.cc                                 \
