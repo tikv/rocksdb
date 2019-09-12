@@ -110,9 +110,9 @@ LIB_SOURCES =                                                   \
   table/partitioned_filter_block.cc                             \
   table/block_fetcher.cc                             		    \
   table/bloom_block.cc                               		    \
-  table/cuckoo/cuckoo_table_builder.cc                          \
-  table/cuckoo/cuckoo_table_factory.cc                          \
-  table/cuckoo/cuckoo_table_reader.cc                           \
+  table/cuckoo_table_builder.cc                                 \
+  table/cuckoo_table_factory.cc                                 \
+  table/cuckoo_table_reader.cc                                  \
   table/format.cc                                               \
   table/full_filter_block.cc                                    \
   table/get_context.cc                                          \
