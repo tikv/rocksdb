@@ -653,14 +653,6 @@ void DBImpl::StartTimedTasks() {
             static_cast<uint64_t>(stats_persist_period_sec) * kMicrosInSecond));
       }
     }
-    stats_persist_period_sec = mutable_db_options_.stats_persist_period_sec;
-    if (stats_persist_period_sec > 0) {
-      if (!thread_persist_stats_) {
-        thread_persist_stats_.reset(new rocksdb::RepeatableThread(
-            [this]() { DBImpl::PersistStats(); }, "pst_st", env_,
-            stats_persist_period_sec * 1000000));
-      }
-    }
   }
 }
 
