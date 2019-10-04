@@ -724,11 +724,6 @@ TEST_P(EnvPosixTestWithParam, DecreaseNumBgThreads) {
   WaitThreadPoolsEmpty();
 }
 
-#if (defined OS_LINUX || defined OS_WIN)
-// Travis doesn't support fallocate or getting unique ID from files for whatever
-// reason.
-#ifndef TRAVIS
-
 namespace {
 bool IsSingleVarint(const std::string& s) {
   Slice slice(s);
@@ -748,8 +743,27 @@ bool IsUniqueIDValid(const std::string& s) {
 const size_t MAX_ID_SIZE = 100;
 char temp_id[MAX_ID_SIZE];
 
-
 }  // namespace
+
+// Returns true if any of the strings in ss are the prefix of another string.
+bool HasPrefix(const std::unordered_set<std::string>& ss) {
+  for (const std::string& s: ss) {
+    if (s.empty()) {
+      return true;
+    }
+    for (size_t i = 1; i < s.size(); ++i) {
+      if (ss.count(s.substr(0, i)) != 0) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+#if (defined OS_LINUX || defined OS_WIN)
+// Travis doesn't support fallocate or getting unique ID from files for whatever
+// reason.
+#ifndef TRAVIS
 
 // Determine whether we can use the FS_IOC_GETVERSION ioctl
 // on a file in directory DIR.  Create a temporary file therein,
@@ -889,50 +903,6 @@ TEST_F(EnvPosixTest, PositionedAppend) {
 }
 #endif  // !ROCKSDB_LITE
 
-// Only works in linux platforms
-TEST_P(EnvPosixTestWithParam, RandomAccessUniqueID) {
-  // Create file.
-  if (env_ == Env::Default()) {
-    EnvOptions soptions;
-    soptions.use_direct_reads = soptions.use_direct_writes = direct_io_;
-    IoctlFriendlyTmpdir ift;
-    std::string fname = ift.name() + "/testfile";
-    std::unique_ptr<WritableFile> wfile;
-    ASSERT_OK(env_->NewWritableFile(fname, &wfile, soptions));
-
-    std::unique_ptr<RandomAccessFile> file;
-
-    // Get Unique ID
-    ASSERT_OK(env_->NewRandomAccessFile(fname, &file, soptions));
-    size_t id_size = file->GetUniqueId(temp_id, MAX_ID_SIZE);
-    ASSERT_TRUE(id_size > 0);
-    std::string unique_id1(temp_id, id_size);
-    ASSERT_TRUE(IsUniqueIDValid(unique_id1));
-
-    // Get Unique ID again
-    ASSERT_OK(env_->NewRandomAccessFile(fname, &file, soptions));
-    id_size = file->GetUniqueId(temp_id, MAX_ID_SIZE);
-    ASSERT_TRUE(id_size > 0);
-    std::string unique_id2(temp_id, id_size);
-    ASSERT_TRUE(IsUniqueIDValid(unique_id2));
-
-    // Get Unique ID again after waiting some time.
-    env_->SleepForMicroseconds(1000000);
-    ASSERT_OK(env_->NewRandomAccessFile(fname, &file, soptions));
-    id_size = file->GetUniqueId(temp_id, MAX_ID_SIZE);
-    ASSERT_TRUE(id_size > 0);
-    std::string unique_id3(temp_id, id_size);
-    ASSERT_TRUE(IsUniqueIDValid(unique_id3));
-
-    // Check IDs are the same.
-    ASSERT_EQ(unique_id1, unique_id2);
-    ASSERT_EQ(unique_id2, unique_id3);
-
-    // Delete the file
-    env_->DeleteFile(fname);
-  }
-}
-
 // only works in linux platforms
 #ifdef ROCKSDB_FALLOCATE_PRESENT
 TEST_P(EnvPosixTestWithParam, AllocateTest) {
@@ -1007,157 +977,6 @@ TEST_P(EnvPosixTestWithParam, AllocateTest) {
 }
 #endif  // ROCKSDB_FALLOCATE_PRESENT
 
-// Returns true if any of the strings in ss are the prefix of another string.
-bool HasPrefix(const std::unordered_set<std::string>& ss) {
-  for (const std::string& s: ss) {
-    if (s.empty()) {
-      return true;
-    }
-    for (size_t i = 1; i < s.size(); ++i) {
-      if (ss.count(s.substr(0, i)) != 0) {
-        return true;
-      }
-    }
-  }
-  return false;
-}
-
-// Only works in linux and WIN platforms
-TEST_P(EnvPosixTestWithParam, RandomAccessUniqueIDConcurrent) {
-  if (env_ == Env::Default()) {
-    // Check whether a bunch of concurrently existing files have unique IDs.
-    EnvOptions soptions;
-    soptions.use_direct_reads = soptions.use_direct_writes = direct_io_;
-
-    // Create the files
-    IoctlFriendlyTmpdir ift;
-    std::vector<std::string> fnames;
-    for (int i = 0; i < 1000; ++i) {
-      fnames.push_back(ift.name() + "/" + "testfile" + ToString(i));
-
-      // Create file.
-      std::unique_ptr<WritableFile> wfile;
-      ASSERT_OK(env_->NewWritableFile(fnames[i], &wfile, soptions));
-    }
-
-    // Collect and check whether the IDs are unique.
-    std::unordered_set<std::string> ids;
-    for (const std::string fname : fnames) {
-      std::unique_ptr<RandomAccessFile> file;
-      std::string unique_id;
-      ASSERT_OK(env_->NewRandomAccessFile(fname, &file, soptions));
-      size_t id_size = file->GetUniqueId(temp_id, MAX_ID_SIZE);
-      ASSERT_TRUE(id_size > 0);
-      unique_id = std::string(temp_id, id_size);
-      ASSERT_TRUE(IsUniqueIDValid(unique_id));
-
-      ASSERT_TRUE(ids.count(unique_id) == 0);
-      ids.insert(unique_id);
-    }
-
-    // Delete the files
-    for (const std::string fname : fnames) {
-      ASSERT_OK(env_->DeleteFile(fname));
-    }
-
-    ASSERT_TRUE(!HasPrefix(ids));
-  }
-}
-
-// Only works in linux and WIN platforms
-TEST_P(EnvPosixTestWithParam, RandomAccessUniqueIDDeletes) {
-  if (env_ == Env::Default()) {
-    EnvOptions soptions;
-    soptions.use_direct_reads = soptions.use_direct_writes = direct_io_;
-
-    IoctlFriendlyTmpdir ift;
-    std::string fname = ift.name() + "/" + "testfile";
-
-    // Check that after file is deleted we don't get same ID again in a new
-    // file.
-    std::unordered_set<std::string> ids;
-    for (int i = 0; i < 1000; ++i) {
-      // Create file.
-      {
-        std::unique_ptr<WritableFile> wfile;
-        ASSERT_OK(env_->NewWritableFile(fname, &wfile, soptions));
-      }
-
-      // Get Unique ID
-      std::string unique_id;
-      {
-        std::unique_ptr<RandomAccessFile> file;
-        ASSERT_OK(env_->NewRandomAccessFile(fname, &file, soptions));
-        size_t id_size = file->GetUniqueId(temp_id, MAX_ID_SIZE);
-        ASSERT_TRUE(id_size > 0);
-        unique_id = std::string(temp_id, id_size);
-      }
-
-      ASSERT_TRUE(IsUniqueIDValid(unique_id));
-      ASSERT_TRUE(ids.count(unique_id) == 0);
-      ids.insert(unique_id);
-
-      // Delete the file
-      ASSERT_OK(env_->DeleteFile(fname));
-    }
-
-    ASSERT_TRUE(!HasPrefix(ids));
-  }
-}
-
-TEST_P(EnvPosixTestWithParam, MultiRead) {
-  EnvOptions soptions;
-  soptions.use_direct_reads = soptions.use_direct_writes = direct_io_;
-  std::string fname = test::PerThreadDBPath(env_, "testfile");
-
-  const size_t kSectorSize = 4096;
-  const size_t kNumSectors = 8;
-
-  // Create file.
-  {
-    std::unique_ptr<WritableFile> wfile;
-#if !defined(OS_MACOSX) && !defined(OS_WIN) && !defined(OS_SOLARIS) && !defined(OS_AIX)
-    if (soptions.use_direct_writes) {
-      soptions.use_direct_writes = false;
-    }
-#endif
-    ASSERT_OK(env_->NewWritableFile(fname, &wfile, soptions));
-    for (size_t i = 0; i < kNumSectors; ++i) {
-      auto data = NewAligned(kSectorSize * 8, static_cast<char>(i + 1));
-      Slice slice(data.get(), kSectorSize);
-      ASSERT_OK(wfile->Append(slice));
-    }
-    ASSERT_OK(wfile->Close());
-  }
-
-  // Random Read
-  {
-    std::unique_ptr<RandomAccessFile> file;
-    std::vector<ReadRequest> reqs(3);
-    std::vector<std::unique_ptr<char, Deleter>> data;
-    uint64_t offset = 0;
-    for (size_t i = 0; i < reqs.size(); ++i) {
-      reqs[i].offset = offset;
-      offset += 2 * kSectorSize;
-      reqs[i].len = kSectorSize;
-      data.emplace_back(NewAligned(kSectorSize, 0));
-      reqs[i].scratch = data.back().get();
-    }
-#if !defined(OS_MACOSX) && !defined(OS_WIN) && !defined(OS_SOLARIS) && !defined(OS_AIX)
-    if (soptions.use_direct_reads) {
-      soptions.use_direct_reads = false;
-    }
-#endif
-    ASSERT_OK(env_->NewRandomAccessFile(fname, &file, soptions));
-    ASSERT_OK(file->MultiRead(reqs.data(), reqs.size()));
-    for (size_t i = 0; i < reqs.size(); ++i) {
-      auto buf = NewAligned(kSectorSize * 8, static_cast<char>(i*2 + 1));
-      ASSERT_OK(reqs[i].status);
-      ASSERT_EQ(memcmp(reqs[i].scratch, buf.get(), kSectorSize), 0);
-    }
-  }
-}
-
 // Only works in linux platforms
 #ifdef OS_WIN
 TEST_P(EnvPosixTestWithParam, DISABLED_InvalidateCache) {
@@ -1231,6 +1050,187 @@ TEST_P(EnvPosixTestWithParam, InvalidateCache) {
 #endif  // not TRAVIS
 #endif  // OS_LINUX || OS_WIN
 
+// The following 3 tests don't actually test ID generation since we call
+// SetUniqueId, but it tries to mimic the ID setting code in TableCache as much
+// as possible while still testing the getter/setter code.
+TEST_P(EnvPosixTestWithParam, RandomAccessUniqueID) {
+  // Create file.
+  if (env_ == Env::Default()) {
+    EnvOptions soptions;
+    soptions.use_direct_reads = soptions.use_direct_writes = direct_io_;
+    std::string fname = test::TmpDir(env_) + "/" + + "/testfile";
+    std::unique_ptr<WritableFile> wfile;
+    ASSERT_OK(env_->NewWritableFile(fname, &wfile, soptions));
+
+    std::unique_ptr<RandomAccessFile> file;
+    std::string unique_id;
+    PutVarint64(&unique_id, 1000);
+    PutVarint64(&unique_id, 1001);
+
+    // Get Unique ID
+    ASSERT_OK(env_->NewRandomAccessFile(fname, &file, soptions));
+    size_t id_size = file->GetUniqueId(temp_id, MAX_ID_SIZE);
+    ASSERT_TRUE(id_size == 0);
+
+    // Set a unique ID, then try getting it again.
+    file->SetUniqueId(unique_id);
+    id_size = file->GetUniqueId(temp_id, MAX_ID_SIZE);
+    ASSERT_TRUE(id_size > 0);
+    std::string unique_id1(temp_id, id_size);
+    ASSERT_TRUE(IsUniqueIDValid(unique_id1));
+
+    // Get Unique ID again
+    id_size = file->GetUniqueId(temp_id, MAX_ID_SIZE);
+    ASSERT_TRUE(id_size > 0);
+    std::string unique_id2(temp_id, id_size);
+    ASSERT_TRUE(IsUniqueIDValid(unique_id2));
+
+    // Check IDs are the same.
+    ASSERT_EQ(unique_id1, unique_id2);
+
+    // Delete the file
+    env_->DeleteFile(fname);
+  }
+}
+
+TEST_P(EnvPosixTestWithParam, RandomAccessUniqueIDConcurrent) {
+  if (env_ == Env::Default()) {
+    // Check whether a bunch of concurrently existing files have unique IDs.
+    EnvOptions soptions;
+    soptions.use_direct_reads = soptions.use_direct_writes = direct_io_;
+
+    // Create the files
+    std::vector<std::string> fnames;
+    for (int i = 0; i < 1000; ++i) {
+      fnames.push_back(test::TmpDir(env_) + "/" + "testfile" + ToString(i));
+
+      // Create file.
+      std::unique_ptr<WritableFile> wfile;
+      ASSERT_OK(env_->NewWritableFile(fnames[i], &wfile, soptions));
+    }
+
+    // Collect and check whether the IDs are unique.
+    std::unordered_set<std::string> ids;
+    int counter = 0;
+    for (const std::string fname : fnames) {
+      std::unique_ptr<RandomAccessFile> file;
+      std::string unique_id;
+      ASSERT_OK(env_->NewRandomAccessFile(fname, &file, soptions));
+      PutVarint64(&unique_id, 1000);
+      PutVarint64(&unique_id, counter++);
+      file->SetUniqueId(unique_id);
+      size_t id_size = file->GetUniqueId(temp_id, MAX_ID_SIZE);
+      ASSERT_TRUE(id_size > 0);
+      unique_id = std::string(temp_id, id_size);
+      ASSERT_TRUE(IsUniqueIDValid(unique_id));
+
+      ASSERT_TRUE(ids.count(unique_id) == 0);
+      ids.insert(unique_id);
+    }
+
+    // Delete the files
+    for (const std::string fname : fnames) {
+      ASSERT_OK(env_->DeleteFile(fname));
+    }
+
+    ASSERT_TRUE(!HasPrefix(ids));
+  }
+}
+
+TEST_P(EnvPosixTestWithParam, RandomAccessUniqueIDDeletes) {
+  if (env_ == Env::Default()) {
+    EnvOptions soptions;
+    soptions.use_direct_reads = soptions.use_direct_writes = direct_io_;
+
+    std::string fname = test::TmpDir(env_) + "/" + + "testfile";
+
+    // Check that after file is deleted we don't get same ID again in a new
+    // file.
+    std::unordered_set<std::string> ids;
+    for (int i = 0; i < 1000; ++i) {
+      // Create file.
+      {
+        std::unique_ptr<WritableFile> wfile;
+        ASSERT_OK(env_->NewWritableFile(fname, &wfile, soptions));
+      }
+
+      // Get Unique ID
+      std::string unique_id;
+      {
+        std::unique_ptr<RandomAccessFile> file;
+        ASSERT_OK(env_->NewRandomAccessFile(fname, &file, soptions));
+        PutVarint64(&unique_id, 1000);
+        PutVarint64(&unique_id, i);
+        file->SetUniqueId(unique_id);
+        size_t id_size = file->GetUniqueId(temp_id, MAX_ID_SIZE);
+        ASSERT_TRUE(id_size > 0);
+        unique_id = std::string(temp_id, id_size);
+      }
+
+      ASSERT_TRUE(IsUniqueIDValid(unique_id));
+      ASSERT_TRUE(ids.count(unique_id) == 0);
+      ids.insert(unique_id);
+
+      // Delete the file
+      ASSERT_OK(env_->DeleteFile(fname));
+    }
+
+    ASSERT_TRUE(!HasPrefix(ids));
+  }
+}
+
+TEST_P(EnvPosixTestWithParam, MultiRead) {
+  EnvOptions soptions;
+  soptions.use_direct_reads = soptions.use_direct_writes = direct_io_;
+  std::string fname = test::PerThreadDBPath(env_, "testfile");
+
+  const size_t kSectorSize = 4096;
+  const size_t kNumSectors = 8;
+
+  // Create file.
+  {
+    std::unique_ptr<WritableFile> wfile;
+#if !defined(OS_MACOSX) && !defined(OS_WIN) && !defined(OS_SOLARIS) && !defined(OS_AIX)
+    if (soptions.use_direct_writes) {
+      soptions.use_direct_writes = false;
+    }
+#endif
+    ASSERT_OK(env_->NewWritableFile(fname, &wfile, soptions));
+    for (size_t i = 0; i < kNumSectors; ++i) {
+      auto data = NewAligned(kSectorSize * 8, static_cast<char>(i + 1));
+      Slice slice(data.get(), kSectorSize);
+      ASSERT_OK(wfile->Append(slice));
+    }
+    ASSERT_OK(wfile->Close());
+  }
+
+  // Random Read
+  {
+    std::unique_ptr<RandomAccessFile> file;
+    std::vector<ReadRequest> reqs(3);
+    std::vector<std::unique_ptr<char, Deleter>> data;
+    uint64_t offset = 0;
+    for (size_t i = 0; i < reqs.size(); ++i) {
+      reqs[i].offset = offset;
+      offset += 2 * kSectorSize;
+      reqs[i].len = kSectorSize;
+      data.emplace_back(NewAligned(kSectorSize, 0));
+      reqs[i].scratch = data.back().get();
+    }
+#if !defined(OS_MACOSX) && !defined(OS_WIN) && !defined(OS_SOLARIS) && !defined(OS_AIX)
+    if (soptions.use_direct_reads) {
+      soptions.use_direct_reads = false;
+    }
+#endif
+    ASSERT_OK(env_->NewRandomAccessFile(fname, &file, soptions));
+    ASSERT_OK(file->MultiRead(reqs.data(), reqs.size()));
+    for (size_t i = 0; i < reqs.size(); ++i) {
+      auto buf = NewAligned(kSectorSize * 8, static_cast<char>(i*2 + 1));
+      ASSERT_OK(reqs[i].status);
+      ASSERT_EQ(memcmp(reqs[i].scratch, buf.get(), kSectorSize), 0);
+    }
+  }
+}
 class TestLogger : public Logger {
  public:
   using Logger::Logv;
