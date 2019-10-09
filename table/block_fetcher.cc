@@ -11,6 +11,7 @@
 
 #include <cinttypes>
 #include <string>
+#include <iostream>
 
 #include "logging/logging.h"
 #include "memory/memory_allocator.h"
@@ -272,6 +273,13 @@ Status BlockFetcher::ReadBlockContents() {
     status_ = UncompressBlockContents(info, slice_.data(), block_size_,
                                       contents_, footer_.version(), ioptions_,
                                       memory_allocator_);
+    if (!status_.ok()) {
+      std::cerr << "uncompress fail from " + file_->file_name() +
+                   " offset " + ToString(handle_.offset()) +
+                   " slice " + slice_.ToString(true) +
+                   " block size " + ToString(block_size_) +
+                   " version " + ToString(footer_.version()) << std::endl;
+    }
     compression_type_ = kNoCompression;
   } else {
     GetBlockContents();
