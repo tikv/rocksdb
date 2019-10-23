@@ -3063,7 +3063,7 @@ TEST_P(DBCompactionTestWithParam, ForceBottommostLevelCompaction) {
   rocksdb::SyncPoint::GetInstance()->DisableProcessing();
 }
 
-TEST_P(DBCompactionTestWithParam, IntraL0Compaction) {
+TEST_P(DBCompactionTestWithParam, DISABLED_IntraL0Compaction) {
   Options options = CurrentOptions();
   options.compression = kNoCompression;
   options.level0_file_num_compaction_trigger = 5;
@@ -3115,7 +3115,7 @@ TEST_P(DBCompactionTestWithParam, IntraL0Compaction) {
   }
 }
 
-TEST_P(DBCompactionTestWithParam, IntraL0CompactionDoesNotObsoleteDeletions) {
+TEST_P(DBCompactionTestWithParam, DISABLED_IntraL0CompactionDoesNotObsoleteDeletions) {
   // regression test for issue #2722: L0->L0 compaction can resurrect deleted
   // keys from older L0 files if L1+ files' key-ranges do not include the key.
   Options options = CurrentOptions();
