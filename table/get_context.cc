@@ -231,7 +231,7 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
           state_ = kFound;
           if (LIKELY(pinnable_val_ != nullptr)) {
             Status merge_status = MergeHelper::TimedFullMerge(
-                merge_operator_, user_key_, &value,
+                merge_operator_, user_key_, type, &value,
                 merge_context_->GetOperands(), pinnable_val_->GetSelf(),
                 logger_, statistics_, env_);
             pinnable_val_->PinSelf();
@@ -257,7 +257,7 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
           state_ = kFound;
           if (LIKELY(pinnable_val_ != nullptr)) {
             Status merge_status = MergeHelper::TimedFullMerge(
-                merge_operator_, user_key_, nullptr,
+                merge_operator_, user_key_, kTypeDeletion, nullptr,
                 merge_context_->GetOperands(), pinnable_val_->GetSelf(),
                 logger_, statistics_, env_);
             pinnable_val_->PinSelf();
@@ -283,8 +283,10 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
             merge_operator_->ShouldMerge(merge_context_->GetOperandsDirectionBackward())) {
           state_ = kFound;
           if (LIKELY(pinnable_val_ != nullptr)) {
+            // @TODO(tabokie): here `ShouldMerge` indicate a feasble partial
+            // merge.
             Status merge_status = MergeHelper::TimedFullMerge(
-                merge_operator_, user_key_, nullptr,
+                merge_operator_, user_key_, kTypeMerge, nullptr,
                 merge_context_->GetOperands(), pinnable_val_->GetSelf(),
                 logger_, statistics_, env_);
             pinnable_val_->PinSelf();

@@ -910,8 +910,9 @@ Status WriteBatchWithIndex::GetFromBatchAndDB(
 
       if (merge_operator) {
         s = MergeHelper::TimedFullMerge(
-            merge_operator, key, merge_data, merge_context.GetOperands(),
-            pinnable_val->GetSelf(), logger, statistics, env);
+            merge_operator, key, merge_data ? kTypeValue : kTypeDeletion,
+            merge_data, merge_context.GetOperands(), pinnable_val->GetSelf(),
+            logger, statistics, env);
         pinnable_val->PinSelf();
       } else {
         s = Status::InvalidArgument("Options::merge_operator must be set");
@@ -1012,9 +1013,9 @@ void WriteBatchWithIndex::MultiGetFromBatchAndDB(
 
         if (merge_operator) {
           *key.s = MergeHelper::TimedFullMerge(
-              merge_operator, *key.key, merge_data,
-              merge_result.second.GetOperands(), key.value->GetSelf(), logger,
-              statistics, env);
+              merge_operator, *key.key, merge_data ? kTypeValue : kTypeDeletion,
+              merge_data, merge_result.second.GetOperands(),
+              key.value->GetSelf(), logger, statistics, env);
           key.value->PinSelf();
         } else {
           *key.s =

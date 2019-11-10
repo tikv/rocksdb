@@ -260,10 +260,15 @@ WriteBatchWithIndexInternal::Result WriteBatchWithIndexInternal::GetFromBatch(
         Env* env = immuable_db_options.env;
         Logger* logger = immuable_db_options.info_log.get();
 
+        ValueType value_type =
+            result == WriteBatchWithIndexInternal::Result::kFound
+                ? kTypeValue
+                : kTypeDeletion;
         if (merge_operator) {
-          *s = MergeHelper::TimedFullMerge(merge_operator, key, &entry_value,
-                                           merge_context->GetOperands(), value,
-                                           logger, statistics, env);
+          // @TODO(tabokie): why not pass nullptr when delete.
+          *s = MergeHelper::TimedFullMerge(
+              merge_operator, key, value_type, &entry_value,
+              merge_context->GetOperands(), value, logger, statistics, env);
         } else {
           *s = Status::InvalidArgument("Options::merge_operator must be set");
         }

@@ -661,15 +661,13 @@ static bool SaveValue(void* arg, const char* entry) {
           *(s->status) = Status::NotSupported(
               "Encounter unsupported blob value. Please open DB with "
               "rocksdb::blob_db::BlobDB instead.");
-        } else if (*(s->merge_in_progress)) {
-          *(s->status) =
-              Status::NotSupported("Blob DB does not support merge operator.");
         }
         if (!s->status->ok()) {
           *(s->found_final_value) = true;
           return false;
         }
         FALLTHROUGH_INTENDED;
+      // continue as normal value
       case kTypeValue: {
         if (s->inplace_update_support) {
           s->mem->GetLock(s->key->user_key())->ReadLock();
@@ -679,7 +677,7 @@ static bool SaveValue(void* arg, const char* entry) {
         if (*(s->merge_in_progress)) {
           if (s->value != nullptr) {
             *(s->status) = MergeHelper::TimedFullMerge(
-                merge_operator, s->key->user_key(), &v,
+                merge_operator, s->key->user_key(), type, &v,
                 merge_context->GetOperands(), s->value, s->logger,
                 s->statistics, s->env_, nullptr /* result_operand */, true);
           }
@@ -701,7 +699,7 @@ static bool SaveValue(void* arg, const char* entry) {
         if (*(s->merge_in_progress)) {
           if (s->value != nullptr) {
             *(s->status) = MergeHelper::TimedFullMerge(
-                merge_operator, s->key->user_key(), nullptr,
+                merge_operator, s->key->user_key(), kTypeDeletion, nullptr,
                 merge_context->GetOperands(), s->value, s->logger,
                 s->statistics, s->env_, nullptr /* result_operand */, true);
           }
@@ -727,8 +725,9 @@ static bool SaveValue(void* arg, const char* entry) {
         merge_context->PushOperand(
             v, s->inplace_update_support == false /* operand_pinned */);
         if (merge_operator->ShouldMerge(merge_context->GetOperandsDirectionBackward())) {
+          // only if `ShouldMerge` advice a proactive merge
           *(s->status) = MergeHelper::TimedFullMerge(
-              merge_operator, s->key->user_key(), nullptr,
+              merge_operator, s->key->user_key(), kTypeMerge, nullptr,
               merge_context->GetOperands(), s->value, s->logger, s->statistics,
               s->env_, nullptr /* result_operand */, true);
           *(s->found_final_value) = true;

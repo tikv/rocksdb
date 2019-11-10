@@ -1769,9 +1769,9 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
     // do a final merge of nullptr and operands;
     std::string* str_value = value != nullptr ? value->GetSelf() : nullptr;
     *status = MergeHelper::TimedFullMerge(
-        merge_operator_, user_key, nullptr, merge_context->GetOperands(),
-        str_value, info_log_, db_statistics_, env_,
-        nullptr /* result_operand */, true);
+        merge_operator_, user_key, kTypeMerge, nullptr,
+        merge_context->GetOperands(), str_value, info_log_, db_statistics_,
+        env_, nullptr /* result_operand */, true);
     if (LIKELY(value != nullptr)) {
       value->PinSelf();
     }
@@ -1937,9 +1937,9 @@ void Version::MultiGet(const ReadOptions& read_options, MultiGetRange* range,
       std::string* str_value =
           iter->value != nullptr ? iter->value->GetSelf() : nullptr;
       *status = MergeHelper::TimedFullMerge(
-          merge_operator_, user_key, nullptr, iter->merge_context.GetOperands(),
-          str_value, info_log_, db_statistics_, env_,
-          nullptr /* result_operand */, true);
+          merge_operator_, user_key, kTypeMerge, nullptr,
+          iter->merge_context.GetOperands(), str_value, info_log_,
+          db_statistics_, env_, nullptr /* result_operand */, true);
       if (LIKELY(iter->value != nullptr)) {
         iter->value->PinSelf();
       }
