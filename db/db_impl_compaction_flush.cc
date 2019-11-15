@@ -1449,8 +1449,12 @@ Status DBImpl::FlushMemTable(ColumnFamilyData* cfd,
     InstrumentedMutexLock guard_lock(&mutex_);
 
     WriteThread::Writer w;
+    WriteThread::Writer nonmem_w;
     if (!writes_stopped) {
       write_thread_.EnterUnbatched(&w, &mutex_);
+      if (two_write_queues_) {
+        nonmem_write_thread_.EnterUnbatched(&nonmem_w, &mutex_);
+      }
     }
 
     if (!cfd->mem()->IsEmpty() || !cached_recoverable_state_empty_.load()) {
@@ -1476,6 +1480,9 @@ Status DBImpl::FlushMemTable(ColumnFamilyData* cfd,
 
     if (!writes_stopped) {
       write_thread_.ExitUnbatched(&w);
+      if (two_write_queues_) {
+        nonmem_write_thread_.ExitUnbatched(&nonmem_w);
+      }
     }
   }
 
@@ -1522,8 +1529,12 @@ Status DBImpl::AtomicFlushMemTables(
     InstrumentedMutexLock guard_lock(&mutex_);
 
     WriteThread::Writer w;
+    WriteThread::Writer nonmem_w;
     if (!writes_stopped) {
       write_thread_.EnterUnbatched(&w, &mutex_);
+      if (two_write_queues_) {
+        nonmem_write_thread_.EnterUnbatched(&nonmem_w, &mutex_);
+      }
     }
 
     for (auto cfd : column_family_datas) {
@@ -1558,6 +1569,9 @@ Status DBImpl::AtomicFlushMemTables(
 
     if (!writes_stopped) {
       write_thread_.ExitUnbatched(&w);
+      if (two_write_queues_) {
+        nonmem_write_thread_.ExitUnbatched(&nonmem_w);
+      }
     }
   }
   TEST_SYNC_POINT("DBImpl::AtomicFlushMemTables:AfterScheduleFlush");
