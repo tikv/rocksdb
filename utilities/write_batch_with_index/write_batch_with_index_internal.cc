@@ -260,14 +260,18 @@ WriteBatchWithIndexInternal::Result WriteBatchWithIndexInternal::GetFromBatch(
         Env* env = immuable_db_options.env;
         Logger* logger = immuable_db_options.info_log.get();
 
-        ValueType value_type =
-            result == WriteBatchWithIndexInternal::Result::kFound
-                ? kTypeValue
-                : kTypeDeletion;
+        ValueType value_type;
+        Slice* merge_data;
+        if (result = WriteBatchWithIndexInternal::Result::kFound) {
+          value_type = kTypeValue;
+          merge_data = &entry_value;
+        } else {  // Key not presend. (result == kDeleted)
+          value_type = kTypeDeletion;
+          merge_data = nullptr;
+        }
         if (merge_operator) {
-          // @TODO(tabokie): why not pass nullptr when delete.
           *s = MergeHelper::TimedFullMerge(
-              merge_operator, key, value_type, &entry_value,
+              merge_operator, key, value_type, merge_data,
               merge_context->GetOperands(), value, logger, statistics, env);
         } else {
           *s = Status::InvalidArgument("Options::merge_operator must be set");

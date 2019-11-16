@@ -283,8 +283,7 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
             merge_operator_->ShouldMerge(merge_context_->GetOperandsDirectionBackward())) {
           state_ = kFound;
           if (LIKELY(pinnable_val_ != nullptr)) {
-            // @TODO(tabokie): here `ShouldMerge` indicate a feasble partial
-            // merge.
+            // only if `ShouldMerge` advice a proactive partial merge
             Status merge_status = MergeHelper::TimedFullMerge(
                 merge_operator_, user_key_, kTypeMerge, nullptr,
                 merge_context_->GetOperands(), pinnable_val_->GetSelf(),
