@@ -1768,10 +1768,18 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
     // merge_operands are in saver and we hit the beginning of the key history
     // do a final merge of nullptr and operands;
     std::string* str_value = value != nullptr ? value->GetSelf() : nullptr;
+    ValueType base_type = kTypeMerge;
     *status = MergeHelper::TimedFullMerge(
-        merge_operator_, user_key, kTypeMerge, nullptr,
+        merge_operator_, user_key, base_type, nullptr,
         merge_context->GetOperands(), str_value, info_log_, db_statistics_,
         env_, nullptr /* result_operand */, true);
+    if (base_type == kTypeBlobIndex) {
+      ROCKS_LOG_ERROR(info_log_, "Encounter unexpected blob index.");
+      *status = Status::NotSupported(
+          "Encounter unexpected blob index. Please open DB with "
+          "rocksdb::blob_db::BlobDB instead.");
+      return;
+    }
     if (LIKELY(value != nullptr)) {
       value->PinSelf();
     }
@@ -1936,10 +1944,18 @@ void Version::MultiGet(const ReadOptions& read_options, MultiGetRange* range,
       // do a final merge of nullptr and operands;
       std::string* str_value =
           iter->value != nullptr ? iter->value->GetSelf() : nullptr;
+      ValueType base_type = kTypeMerge;
       *status = MergeHelper::TimedFullMerge(
-          merge_operator_, user_key, kTypeMerge, nullptr,
+          merge_operator_, user_key, base_type, nullptr,
           iter->merge_context.GetOperands(), str_value, info_log_,
           db_statistics_, env_, nullptr /* result_operand */, true);
+      if (base_type == kTypeBlobIndex) {
+        ROCKS_LOG_ERROR(info_log_, "Encounter unexpected blob index.");
+        *status = Status::NotSupported(
+            "Encounter unexpected blob index. Please open DB with "
+            "rocksdb::blob_db::BlobDB instead.");
+        return;
+      }
       if (LIKELY(iter->value != nullptr)) {
         iter->value->PinSelf();
       }

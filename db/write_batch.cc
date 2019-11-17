@@ -1689,7 +1689,7 @@ class MemTableInserter : public WriteBatch::Handler {
             &new_value, moptions->info_log, moptions->statistics,
             Env::Default());
 
-        if (!merge_status.ok() && !merge_status.IsNotFound()) {
+        if (!merge_status.ok()) {
           // Failed to merge!
           // Store the delta in memtable
           perform_merge = false;
@@ -1697,11 +1697,7 @@ class MemTableInserter : public WriteBatch::Handler {
           // 3) Add value to memtable
           assert(!concurrent_memtable_writes_);
           bool mem_res;
-          if (merge_status.ok()) {
-            mem_res = mem->Add(sequence_, kTypeValue, key, new_value);
-          } else {
-            mem_res = mem->Add(sequence_, kTypeDeletion, key, "");
-          }
+          mem_res = mem->Add(sequence_, value_type, key, new_value);
           if (UNLIKELY(!mem_res)) {
             assert(seq_per_batch_);
             ret_status = Status::TryAgain("key+seq exists");

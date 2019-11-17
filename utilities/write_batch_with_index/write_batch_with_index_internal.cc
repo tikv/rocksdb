@@ -273,6 +273,11 @@ WriteBatchWithIndexInternal::Result WriteBatchWithIndexInternal::GetFromBatch(
           *s = MergeHelper::TimedFullMerge(
               merge_operator, key, value_type, merge_data,
               merge_context->GetOperands(), value, logger, statistics, env);
+          if (value_type == kTypeBlobIndex) {
+            *s = Status::NotSupported(
+                "Encounter unsupported blob value. Please open DB with "
+                "rocksdb::blob_db::BlobDB instead.");
+          }
         } else {
           *s = Status::InvalidArgument("Options::merge_operator must be set");
         }

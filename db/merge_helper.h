@@ -46,7 +46,7 @@ class MergeHelper {
   // - Corruption: Merge operator reported unsuccessful merge.
   // - NotFound: Merge operator deleted specifying key.
   static Status TimedFullMerge(const MergeOperator* merge_operator,
-                               const Slice& key, ValueType value_type,
+                               const Slice& key, ValueType& value_type,
                                const Slice* value,
                                const std::vector<Slice>& operands,
                                std::string* result, Logger* logger,

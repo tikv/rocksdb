@@ -916,6 +916,11 @@ Status WriteBatchWithIndex::GetFromBatchAndDB(
                                         merge_data, merge_context.GetOperands(),
                                         pinnable_val->GetSelf(), logger,
                                         statistics, env);
+        if (value_type == kTypeBlobIndex) {
+          s = Status::NotSupported(
+              "Encounter unsupported blob value. Please open DB with "
+              "rocksdb::blob_db::BlobDB instead.");
+        }
         pinnable_val->PinSelf();
       } else {
         s = Status::InvalidArgument("Options::merge_operator must be set");
@@ -1022,6 +1027,11 @@ void WriteBatchWithIndex::MultiGetFromBatchAndDB(
               merge_operator, *key.key, value_type, merge_data,
               merge_result.second.GetOperands(), key.value->GetSelf(), logger,
               statistics, env);
+          if (value_type == kTypeBlobIndex) {
+            *key.s = Status::NotSupported(
+                "Encounter unsupported blob value. Please open DB with "
+                "rocksdb::blob_db::BlobDB instead.");
+          }
           key.value->PinSelf();
         } else {
           *key.s =

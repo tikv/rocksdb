@@ -235,9 +235,7 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
                 merge_context_->GetOperands(), pinnable_val_->GetSelf(),
                 logger_, statistics_, env_);
             pinnable_val_->PinSelf();
-            if (merge_status.IsNotFound()) {
-              state_ = kDeleted;
-            } else if (!merge_status.ok()) {
+            if (!merge_status.ok()) {
               state_ = kCorrupt;
             }
           }
@@ -259,14 +257,16 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
           state_ = kFound;
           if (LIKELY(pinnable_val_ != nullptr)) {
             Status merge_status = MergeHelper::TimedFullMerge(
-                merge_operator_, user_key_, kTypeDeletion, nullptr,
+                merge_operator_, user_key_, type, nullptr,
                 merge_context_->GetOperands(), pinnable_val_->GetSelf(),
                 logger_, statistics_, env_);
             pinnable_val_->PinSelf();
-            if (merge_status.IsNotFound()) {
-              state_ = kDeleted;
-            } else if (!merge_status.ok()) {
+            if (!merge_status.ok()) {
               state_ = kCorrupt;
+            }
+            if (is_blob_index_ != nullptr) {
+              // @TODO(tabokie): error if not supported.
+              *is_blob_index_ = (type == kTypeBlobIndex);
             }
           }
         }
@@ -290,14 +290,15 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
           if (LIKELY(pinnable_val_ != nullptr)) {
             // only if `ShouldMerge` advice a proactive partial merge
             Status merge_status = MergeHelper::TimedFullMerge(
-                merge_operator_, user_key_, kTypeMerge, nullptr,
+                merge_operator_, user_key_, type, nullptr,
                 merge_context_->GetOperands(), pinnable_val_->GetSelf(),
                 logger_, statistics_, env_);
             pinnable_val_->PinSelf();
-            if (merge_status.IsNotFound()) {
-              state_ = kNotFound;
-            } else if (!merge_status.ok()) {
+            if (!merge_status.ok()) {
               state_ = kCorrupt;
+            }
+            if (is_blob_index_ != nullptr) {
+              *is_blob_index_ = (type == kTypeBlobIndex);
             }
           }
           return false;
