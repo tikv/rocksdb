@@ -1652,7 +1652,7 @@ class MemTableInserter : public WriteBatch::Handler {
 
     if (perform_merge) {
       // 1) Get the existing value
-      std::string get_value;
+      PinnableSlice get_value_slice;
 
       // Pass in the sequence number so that we also include previous merge
       // operations in the same batch.
@@ -1666,16 +1666,14 @@ class MemTableInserter : public WriteBatch::Handler {
         cf_handle = db_->DefaultColumnFamily();
       }
       bool is_blob_index = false;
-      PinnableSlice slice_value;
       auto db_impl = reinterpret_cast<DBImpl*>(db_->GetRootDB());
       Status get_status = db_impl->GetImpl(
-          read_options, cf_handle, key, &slice_value, nullptr /*value_found*/,
-          nullptr /*read_callback*/, &is_blob_index);
-      if (!get_status.ok() && !get_status.IsNotFound()) {
+          read_options, cf_handle, key, &get_value_slice,
+          nullptr /*value_found*/, nullptr /*read_callback*/, &is_blob_index);
+      if (!get_status.ok()) {
         // Failed to get!
         perform_merge = false;
       } else {
-        Slice get_value_slice = Slice(get_value);
         ValueType value_type = is_blob_index ? kTypeBlobIndex : kTypeValue;
 
         // 2) Apply this merge

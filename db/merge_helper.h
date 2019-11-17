@@ -44,7 +44,6 @@ class MergeHelper {
   // Returns one of the following statuses:
   // - OK: Entries were successfully merged.
   // - Corruption: Merge operator reported unsuccessful merge.
-  // - NotFound: Merge operator deleted specifying key.
   static Status TimedFullMerge(const MergeOperator* merge_operator,
                                const Slice& key, ValueType& value_type,
                                const Slice* value,
