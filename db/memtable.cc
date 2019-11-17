@@ -724,7 +724,8 @@ static bool SaveValue(void* arg, const char* entry) {
         *(s->merge_in_progress) = true;
         merge_context->PushOperand(
             v, s->inplace_update_support == false /* operand_pinned */);
-        if (merge_operator->ShouldMerge(merge_context->GetOperandsDirectionBackward())) {
+        if (merge_operator->ShouldMerge(
+                merge_context->GetOperandsDirectionBackward())) {
           // only if `ShouldMerge` suggests a proactive partial merge
           *(s->status) = MergeHelper::TimedFullMerge(
               merge_operator, s->key->user_key(), kTypeMerge, nullptr,

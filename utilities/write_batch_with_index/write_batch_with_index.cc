@@ -902,17 +902,20 @@ Status WriteBatchWithIndex::GetFromBatchAndDB(
       Logger* logger = immuable_db_options.info_log.get();
 
       Slice* merge_data;
+      ValueType value_type;
       if (s.ok()) {
         merge_data = pinnable_val;
+        value_type = kTypeValue;
       } else {  // Key not present in db (s.IsNotFound())
         merge_data = nullptr;
+        value_type = kTypeDeletion;
       }
 
       if (merge_operator) {
-        s = MergeHelper::TimedFullMerge(
-            merge_operator, key, merge_data ? kTypeValue : kTypeDeletion,
-            merge_data, merge_context.GetOperands(), pinnable_val->GetSelf(),
-            logger, statistics, env);
+        s = MergeHelper::TimedFullMerge(merge_operator, key, value_type,
+                                        merge_data, merge_context.GetOperands(),
+                                        pinnable_val->GetSelf(), logger,
+                                        statistics, env);
         pinnable_val->PinSelf();
       } else {
         s = Status::InvalidArgument("Options::merge_operator must be set");
@@ -1016,9 +1019,9 @@ void WriteBatchWithIndex::MultiGetFromBatchAndDB(
 
         if (merge_operator) {
           *key.s = MergeHelper::TimedFullMerge(
-              merge_operator, *key.key, value_type,
-              merge_data, merge_result.second.GetOperands(),
-              key.value->GetSelf(), logger, statistics, env);
+              merge_operator, *key.key, value_type, merge_data,
+              merge_result.second.GetOperands(), key.value->GetSelf(), logger,
+              statistics, env);
           key.value->PinSelf();
         } else {
           *key.s =

@@ -284,7 +284,8 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
           merge_context_->PushOperand(value, false);
         }
         if (merge_operator_ != nullptr &&
-            merge_operator_->ShouldMerge(merge_context_->GetOperandsDirectionBackward())) {
+            merge_operator_->ShouldMerge(
+                merge_context_->GetOperandsDirectionBackward())) {
           state_ = kFound;
           if (LIKELY(pinnable_val_ != nullptr)) {
             // only if `ShouldMerge` advice a proactive partial merge
