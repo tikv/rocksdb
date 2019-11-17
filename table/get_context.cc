@@ -235,7 +235,9 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
                 merge_context_->GetOperands(), pinnable_val_->GetSelf(),
                 logger_, statistics_, env_);
             pinnable_val_->PinSelf();
-            if (!merge_status.ok()) {
+            if (merge_status.IsNotFound()) {
+              state_ = kDeleted;
+            } else if (!merge_status.ok()) {
               state_ = kCorrupt;
             }
           }
@@ -261,7 +263,9 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
                 merge_context_->GetOperands(), pinnable_val_->GetSelf(),
                 logger_, statistics_, env_);
             pinnable_val_->PinSelf();
-            if (!merge_status.ok()) {
+            if (merge_status.IsNotFound()) {
+              state_ = kDeleted;
+            } else if (!merge_status.ok()) {
               state_ = kCorrupt;
             }
           }
@@ -289,7 +293,9 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
                 merge_context_->GetOperands(), pinnable_val_->GetSelf(),
                 logger_, statistics_, env_);
             pinnable_val_->PinSelf();
-            if (!merge_status.ok()) {
+            if (merge_status.IsNotFound()) {
+              state_ = kNotFound;
+            } else if (!merge_status.ok()) {
               state_ = kCorrupt;
             }
           }

@@ -718,7 +718,7 @@ bool DBIter::MergeValuesNewToOld() {
                                       &val, merge_context_.GetOperands(),
                                       &saved_value_, logger_, statistics_, env_,
                                       &pinned_value_, true);
-      if (!s.ok()) {
+      if (!s.ok() && !s.IsNotFound()) {
         valid_ = false;
         status_ = s;
         return false;
@@ -754,7 +754,7 @@ bool DBIter::MergeValuesNewToOld() {
       merge_operator_, saved_key_.GetUserKey(), last_type, nullptr,
       merge_context_.GetOperands(), &saved_value_, logger_, statistics_, env_,
       &pinned_value_, true);
-  if (!s.ok()) {
+  if (!s.ok() && !s.IsNotFound()) {
     valid_ = false;
     status_ = s;
     return false;
@@ -1018,6 +1018,10 @@ bool DBIter::FindValueForCurrentKey() {
             merge_operator_, saved_key_.GetUserKey(), kTypeDeletion, nullptr,
             merge_context_.GetOperands(), &saved_value_, logger_, statistics_,
             env_, &pinned_value_, true);
+        if (s.IsNotFound()) {
+          valid_ = false;
+          return true;
+        }
       } else {
         assert(last_not_merge_type == kTypeValue ||
                last_not_merge_type == kTypeBlobIndex);
@@ -1033,6 +1037,10 @@ bool DBIter::FindValueForCurrentKey() {
             merge_operator_, saved_key_.GetUserKey(), last_not_merge_type,
             &pinned_value_, merge_context_.GetOperands(), &saved_value_,
             logger_, statistics_, env_, &pinned_value_, true);
+        if (s.IsNotFound()) {
+          valid_ = false;
+          return true;
+        }
       }
       break;
     case kTypeValue:
@@ -1166,7 +1174,10 @@ bool DBIter::FindValueForCurrentKeyUsingSeek() {
           merge_operator_, saved_key_.GetUserKey(), ikey.type, &val,
           merge_context_.GetOperands(), &saved_value_, logger_, statistics_,
           env_, &pinned_value_, true);
-      if (!s.ok()) {
+      if (s.IsNotFound()) {
+        valid_ = false;
+        return true;
+      } else if (!s.ok()) {
         valid_ = false;
         status_ = s;
         return false;
@@ -1186,10 +1197,14 @@ bool DBIter::FindValueForCurrentKeyUsingSeek() {
       merge_operator_, saved_key_.GetUserKey(), kTypeMerge, nullptr,
       merge_context_.GetOperands(), &saved_value_, logger_, statistics_, env_,
       &pinned_value_, true);
-  if (!s.ok()) {
+  if (s.IsNotFound()) {
+    valid_ = false;
+  } else if (!s.ok()) {
     valid_ = false;
     status_ = s;
     return false;
+  } else {
+    valid_ = true;
   }
 
   // Make sure we leave iter_ in a good state. If it's valid and we don't care
@@ -1207,7 +1222,7 @@ bool DBIter::FindValueForCurrentKeyUsingSeek() {
     RecordTick(statistics_, NUMBER_OF_RESEEKS_IN_ITERATION);
   }
 
-  valid_ = true;
+  // valid_ = true;
   return true;
 }
 

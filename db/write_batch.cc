@@ -1676,15 +1676,7 @@ class MemTableInserter : public WriteBatch::Handler {
         perform_merge = false;
       } else {
         Slice get_value_slice = Slice(get_value);
-        ValueType value_type;
-        Slice* merge_data;
-        if (get_status.ok()) {
-          value_type = is_blob_index ? kTypeBlobIndex : kTypeValue;
-          merge_data = &get_value_slice;
-        } else {  // Key not present in db. (s.IsNotFound())
-          value_type = kTypeDeletion;
-          merge_data = nullptr;
-        }
+        ValueType value_type = is_blob_index ? kTypeBlobIndex : kTypeValue;
 
         // 2) Apply this merge
         auto merge_operator = moptions->merge_operator;
@@ -1693,17 +1685,22 @@ class MemTableInserter : public WriteBatch::Handler {
         std::string new_value;
 
         Status merge_status = MergeHelper::TimedFullMerge(
-            merge_operator, key, value_type, merge_data, {value}, &new_value,
+            merge_operator, key, value_type, &get_value_slice, {value}, &new_value,
             moptions->info_log, moptions->statistics, Env::Default());
 
-        if (!merge_status.ok()) {
+        if (!merge_status.ok() && !merge_status.IsNotFound()) {
           // Failed to merge!
           // Store the delta in memtable
           perform_merge = false;
         } else {
           // 3) Add value to memtable
           assert(!concurrent_memtable_writes_);
-          bool mem_res = mem->Add(sequence_, kTypeValue, key, new_value);
+          bool mem_res;
+          if (merge_status.ok()) {
+            mem_res = mem->Add(sequence_, kTypeValue, key, new_value);
+          } else {
+            mem_res = mem->Add(sequence_, kTypeDeletion, key, "");
+          }
           if (UNLIKELY(!mem_res)) {
             assert(seq_per_batch_);
             ret_status = Status::TryAgain("key+seq exists");

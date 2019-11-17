@@ -262,7 +262,7 @@ WriteBatchWithIndexInternal::Result WriteBatchWithIndexInternal::GetFromBatch(
 
         ValueType value_type;
         Slice* merge_data;
-        if (result = WriteBatchWithIndexInternal::Result::kFound) {
+        if (result == WriteBatchWithIndexInternal::Result::kFound) {
           value_type = kTypeValue;
           merge_data = &entry_value;
         } else {  // Key not presend. (result == kDeleted)
@@ -278,6 +278,8 @@ WriteBatchWithIndexInternal::Result WriteBatchWithIndexInternal::GetFromBatch(
         }
         if ((*s).ok()) {
           result = WriteBatchWithIndexInternal::Result::kFound;
+        } else if ((*s).IsNotFound()) {
+          result = WriteBatchWithIndexInternal::Result::kDeleted;
         } else {
           result = WriteBatchWithIndexInternal::Result::kError;
         }

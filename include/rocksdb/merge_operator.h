@@ -112,6 +112,8 @@ class MergeOperator {
     // client can set this field to the operand (or existing_value) instead of
     // using new_value.
     Slice& existing_operand;
+    //
+    bool deleted = false;
   };
 
   // This function applies a stack of merge operands in chrionological order

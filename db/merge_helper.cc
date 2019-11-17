@@ -67,6 +67,7 @@ Status MergeHelper::TimedFullMerge(
   }
 
   bool success;
+  bool deleted;
   Slice tmp_result_operand(nullptr, 0);
   const MergeOperator::MergeOperationInput merge_in(key, value_type, value,
                                                     operands, logger);
@@ -78,16 +79,19 @@ Status MergeHelper::TimedFullMerge(
 
     // Do the merge
     success = merge_operator->FullMergeV2(merge_in, &merge_out);
+    deleted = merge_out.deleted;
 
-    if (tmp_result_operand.data()) {
-      // FullMergeV2 result is an existing operand
-      if (result_operand != nullptr) {
-        *result_operand = tmp_result_operand;
-      } else {
-        result->assign(tmp_result_operand.data(), tmp_result_operand.size());
+    if (success && !deleted) {
+      if (tmp_result_operand.data()) {
+        // FullMergeV2 result is an existing operand
+        if (result_operand != nullptr) {
+          *result_operand = tmp_result_operand;
+        } else {
+          result->assign(tmp_result_operand.data(), tmp_result_operand.size());
+        }
+      } else if (result_operand) {
+        *result_operand = Slice(nullptr, 0);
       }
-    } else if (result_operand) {
-      *result_operand = Slice(nullptr, 0);
     }
 
     RecordTick(statistics, MERGE_OPERATION_TOTAL_TIME,
@@ -97,6 +101,8 @@ Status MergeHelper::TimedFullMerge(
   if (!success) {
     RecordTick(statistics, NUMBER_MERGE_FAILURES);
     return Status::Corruption("Error: Could not perform merge.");
+  } else if (deleted) {
+    return Status::NotFound("Deleted by merging.");
   }
 
   return Status::OK();
@@ -200,7 +206,7 @@ Status MergeHelper::MergeUntil(InternalIterator* iter,
       // run compaction filter on it.
       const Slice val = iter->value();
       const Slice* val_ptr;
-      if (kTypeValue == ikey.type &&
+      if ((kTypeValue == ikey.type || kTypeBlobIndex == ikey.type) &&
           (range_del_agg == nullptr ||
            !range_del_agg->ShouldDelete(
                ikey, RangeDelPositioningMode::kForwardTraversal))) {
@@ -218,7 +224,7 @@ Status MergeHelper::MergeUntil(InternalIterator* iter,
       if (s.ok()) {
         // The original key encountered
         original_key = std::move(keys_.back());
-        orig_ikey.type = kTypeValue;
+        orig_ikey.type = ikey.type;
         UpdateInternalKey(&original_key, orig_ikey.sequence, orig_ikey.type);
         keys_.clear();
         merge_context_.Clear();
