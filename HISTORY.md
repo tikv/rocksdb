@@ -1,5 +1,6 @@
 # Rocksdb Change Log
 ## Cherry-picks
+* Fix a bug in DBIter that is_blob state isn't updated when iterating backward using seek.
 * Fix data corruption casued by output of intra-L0 compaction on ingested file not being placed in correct order in L0.
 * When user uses options.force_consistency_check in RocksDb, instead of crashing the process, we now pass the error back to the users without killing the process.
 * Fix ingested file and directory not being fsync.
