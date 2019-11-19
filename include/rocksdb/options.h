@@ -949,11 +949,6 @@ struct DBOptions {
   // Default: false
   bool enable_multi_thread_write = false;
 
-  // The size of write pool for multi-thread-write.
-  //
-  // Default: 4
-  int write_thread_pool_size = 4;
-
   // If true, allow multi-writers to update mem tables in parallel.
   // Only some memtable_factory-s support concurrent writes; currently it
   // is implemented only for SkipListFactory.  Concurrent memtable writes

@@ -729,8 +729,6 @@ DEFINE_bool(use_blob_db, false,
 DEFINE_bool(use_multi_thread_write, false,
             "Open a RocksDB with multi thread write pool");
 
-DEFINE_int32(memtable_write_pool_size, 4, "size of multi thread write pool");
-
 DEFINE_bool(blob_db_enable_gc, false, "Enable BlobDB garbage collection.");
 
 DEFINE_bool(blob_db_is_fifo, false, "Enable FIFO eviction strategy in BlobDB.");
@@ -2164,7 +2162,6 @@ class Benchmark {
   bool use_blob_db_;
   std::vector<std::string> keys_;
   bool use_multi_write_;
-  int32_t memtable_write_pool_size_;
 
   class ErrorHandlerListener : public EventListener {
    public:
@@ -2500,8 +2497,7 @@ class Benchmark {
 #else
         use_blob_db_(false),
 #endif  // !ROCKSDB_LITE
-        use_multi_write_(FLAGS_use_multi_thread_write),
-        memtable_write_pool_size_(FLAGS_memtable_write_pool_size) {
+        use_multi_write_(FLAGS_use_multi_thread_write) {
     // use simcache instead of cache
     if (FLAGS_simcache_size >= 0) {
       if (FLAGS_cache_numshardbits >= 1) {
@@ -2944,15 +2940,6 @@ class Benchmark {
       } else if (!name.empty()) {  // No error message for empty name
         fprintf(stderr, "unknown benchmark '%s'\n", name.c_str());
         exit(1);
-      }
-      if (FLAGS_use_multi_thread_write) {
-        if (num_threads <= (int)FLAGS_memtable_write_pool_size) {
-          fprintf(stderr,
-                  "num of write thread[%d] is small than write pool size: %d\n",
-                  num_threads, FLAGS_memtable_write_pool_size);
-          exit(1);
-        }
-        num_threads -= FLAGS_memtable_write_pool_size;
       }
 
       if (fresh_db) {
@@ -3912,7 +3899,6 @@ class Benchmark {
     Status s;
     if (use_multi_write_) {
       options.enable_multi_thread_write = true;
-      options.write_thread_pool_size = memtable_write_pool_size_;
     }
     // Open with column families if necessary.
     if (FLAGS_num_column_families > 1) {
