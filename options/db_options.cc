@@ -62,8 +62,10 @@ ImmutableDBOptions::ImmutableDBOptions(const DBOptions& options)
       use_adaptive_mutex(options.use_adaptive_mutex),
       listeners(options.listeners),
       enable_thread_tracking(options.enable_thread_tracking),
-      enable_pipelined_write(options.enable_pipelined_write),
+      enable_pipelined_write(options.enable_pipelined_write ||
+                             options.enable_multi_thread_write),
       unordered_write(options.unordered_write),
+      enable_multi_thread_write(options.enable_multi_thread_write),
       allow_concurrent_memtable_write(options.allow_concurrent_memtable_write),
       enable_write_thread_adaptive_yield(
           options.enable_write_thread_adaptive_yield),
@@ -186,6 +188,8 @@ void ImmutableDBOptions::Dump(Logger* log) const {
                    enable_pipelined_write);
   ROCKS_LOG_HEADER(log, "                 Options.unordered_write: %d",
                    unordered_write);
+  ROCKS_LOG_HEADER(log, "              Options.enable_multi_thread_write: %d",
+                   enable_multi_thread_write);
   ROCKS_LOG_HEADER(log, "        Options.allow_concurrent_memtable_write: %d",
                    allow_concurrent_memtable_write);
   ROCKS_LOG_HEADER(log, "     Options.enable_write_thread_adaptive_yield: %d",
@@ -247,7 +251,8 @@ MutableDBOptions::MutableDBOptions()
       bytes_per_sync(0),
       wal_bytes_per_sync(0),
       strict_bytes_per_sync(false),
-      compaction_readahead_size(0) {}
+      compaction_readahead_size(0),
+      write_thread_pool_size(4) {}
 
 MutableDBOptions::MutableDBOptions(const DBOptions& options)
     : max_background_jobs(options.max_background_jobs),
@@ -266,7 +271,8 @@ MutableDBOptions::MutableDBOptions(const DBOptions& options)
       bytes_per_sync(options.bytes_per_sync),
       wal_bytes_per_sync(options.wal_bytes_per_sync),
       strict_bytes_per_sync(options.strict_bytes_per_sync),
-      compaction_readahead_size(options.compaction_readahead_size) {}
+      compaction_readahead_size(options.compaction_readahead_size),
+      write_thread_pool_size(options.write_thread_pool_size) {}
 
 void MutableDBOptions::Dump(Logger* log) const {
   ROCKS_LOG_HEADER(log, "            Options.max_background_jobs: %d",
