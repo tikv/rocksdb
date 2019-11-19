@@ -1,5 +1,6 @@
 # Rocksdb Change Log
 ### Bug Fixes
+* Fix data corruption casued by output of intra-L0 compaction on ingested file not being placed in correct order in L0.
 * Fix crash caused when `CompactFiles` run with `CompactionOptions::compression == CompressionType::kDisableCompressionOption`. Now that setting causes the compression type to be chosen according to the column family-wide compression options.
 * Fix ingested file and directory not being fsync.
 
