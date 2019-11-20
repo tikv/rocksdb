@@ -5,6 +5,7 @@
 
 ### Bug Fixes
 * Fix OnFlushCompleted fired before flush result persisted in MANIFEST when there's concurrent flush job. The bug exists since OnFlushCompleted was introduced in rocksdb 3.8.
+* Fix data corruption casued by output of intra-L0 compaction on ingested file not being placed in correct order in L0.
 
 ## 6.4.4 (9/17/2019)
 * Fix a bug introduced 6.3 which could cause wrong results in a corner case when prefix bloom filter is used and the iterator is reseeked.
