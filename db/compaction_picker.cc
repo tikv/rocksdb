@@ -1164,7 +1164,7 @@ class LevelCompactionBuilder {
                             const MutableCFOptions& mutable_cf_options,
                             int level);
 
-  static const int kMinFilesForIntraL0Compaction = 4;
+  // static const int kMinFilesForIntraL0Compaction = 4;
 };
 
 void LevelCompactionBuilder::PickExpiredTtlFiles() {
