@@ -1524,9 +1524,19 @@ bool LevelCompactionBuilder::PickFileToCompact() {
 }
 
 bool LevelCompactionBuilder::PickIntraL0Compaction() {
-  // Temporarily disable intra-L0 compaction to avoid data corruption issue:
-  // https://github.com/facebook/rocksdb/issues/5913
-  return false;
+  start_level_inputs_.clear();
+  const std::vector<FileMetaData*>& level_files =
+      vstorage_->LevelFiles(0 /* level */);
+  if (level_files.size() <
+          static_cast<size_t>(
+              mutable_cf_options_.level0_file_num_compaction_trigger + 2) ||
+      level_files[0]->being_compacted) {
+    // If L0 isn't accumulating much files beyond the regular trigger, don't
+    // resort to L0->L0 compaction yet.
+    return false;
+  }
+  return FindIntraL0Compaction(level_files, kMinFilesForIntraL0Compaction,
+                               port::kMaxUint64, &start_level_inputs_);
 }
 }  // namespace
 
