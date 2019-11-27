@@ -75,7 +75,7 @@ class StatisticsImpl : public Statistics {
   //
   // Alignment attributes expand to nothing depending on the platform
   struct ALIGN_AS(CACHE_LINE_SIZE) StatisticsData {
-    std::atomic_uint_fast64_t tickers_[TICKER_MAX] = {{0}};
+    std::atomic_uint_fast64_t tickers_[TICKER_MAX];
     HistogramImpl histograms_[HISTOGRAM_MAX];
 #ifndef HAVE_ALIGNED_NEW
     char padding[(CACHE_LINE_SIZE -

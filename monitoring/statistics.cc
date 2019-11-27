@@ -6,7 +6,6 @@
 
 #include "monitoring/statistics.h"
 
-
 namespace rocksdb {
 
 // The order of items listed in  Tickers should be the same as
