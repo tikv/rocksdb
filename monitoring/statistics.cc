@@ -227,21 +227,24 @@ const std::vector<std::pair<Histograms, std::string>> HistogramsNameMap = {
     {SST_BATCH_SIZE, "rocksdb.sst.batch.size"},
 };
 
-template<uint32_t TICKER_MAX, uint32_t HISTOGRAM_MAX>
-StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>::StatisticsImpl(std::shared_ptr<Statistics> stats)
+template <uint32_t TICKER_MAX, uint32_t HISTOGRAM_MAX>
+StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>::StatisticsImpl(
+    std::shared_ptr<Statistics> stats)
     : stats_(std::move(stats)) {}
 
-template<uint32_t TICKER_MAX, uint32_t HISTOGRAM_MAX>
+template <uint32_t TICKER_MAX, uint32_t HISTOGRAM_MAX>
 StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>::~StatisticsImpl() {}
 
-template<uint32_t TICKER_MAX, uint32_t HISTOGRAM_MAX>
-uint64_t StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>::getTickerCount(uint32_t tickerType) const {
+template <uint32_t TICKER_MAX, uint32_t HISTOGRAM_MAX>
+uint64_t StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>::getTickerCount(
+    uint32_t tickerType) const {
   MutexLock lock(&aggregate_lock_);
   return getTickerCountLocked(tickerType);
 }
 
-template<uint32_t TICKER_MAX, uint32_t HISTOGRAM_MAX>
-uint64_t StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>::getTickerCountLocked(uint32_t tickerType) const {
+template <uint32_t TICKER_MAX, uint32_t HISTOGRAM_MAX>
+uint64_t StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>::getTickerCountLocked(
+    uint32_t tickerType) const {
   assert(tickerType < TICKER_MAX);
   uint64_t res = 0;
   for (size_t core_idx = 0; core_idx < per_core_stats_.Size(); ++core_idx) {
@@ -250,15 +253,16 @@ uint64_t StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>::getTickerCountLocked(uint32_
   return res;
 }
 
-template<uint32_t TICKER_MAX, uint32_t HISTOGRAM_MAX>
-void StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>::histogramData(uint32_t histogramType,
-                                   HistogramData* const data) const {
+template <uint32_t TICKER_MAX, uint32_t HISTOGRAM_MAX>
+void StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>::histogramData(
+    uint32_t histogramType, HistogramData* const data) const {
   MutexLock lock(&aggregate_lock_);
   getHistogramImplLocked(histogramType)->Data(data);
 }
 
-template<uint32_t TICKER_MAX, uint32_t HISTOGRAM_MAX>
-std::unique_ptr<HistogramImpl> StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>::getHistogramImplLocked(
+template <uint32_t TICKER_MAX, uint32_t HISTOGRAM_MAX>
+std::unique_ptr<HistogramImpl>
+StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>::getHistogramImplLocked(
     uint32_t histogramType) const {
   assert(histogramType < HISTOGRAM_MAX);
   std::unique_ptr<HistogramImpl> res_hist(new HistogramImpl());
@@ -269,14 +273,16 @@ std::unique_ptr<HistogramImpl> StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>::getHis
   return res_hist;
 }
 
-template<uint32_t TICKER_MAX, uint32_t HISTOGRAM_MAX>
-std::string StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>::getHistogramString(uint32_t histogramType) const {
+template <uint32_t TICKER_MAX, uint32_t HISTOGRAM_MAX>
+std::string StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>::getHistogramString(
+    uint32_t histogramType) const {
   MutexLock lock(&aggregate_lock_);
   return getHistogramImplLocked(histogramType)->ToString();
 }
 
-template<uint32_t TICKER_MAX, uint32_t HISTOGRAM_MAX>
-void StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>::setTickerCount(uint32_t tickerType, uint64_t count) {
+template <uint32_t TICKER_MAX, uint32_t HISTOGRAM_MAX>
+void StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>::setTickerCount(
+    uint32_t tickerType, uint64_t count) {
   {
     MutexLock lock(&aggregate_lock_);
     setTickerCountLocked(tickerType, count);
@@ -286,8 +292,9 @@ void StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>::setTickerCount(uint32_t tickerTy
   }
 }
 
-template<uint32_t TICKER_MAX, uint32_t HISTOGRAM_MAX>
-void StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>::setTickerCountLocked(uint32_t tickerType, uint64_t count) {
+template <uint32_t TICKER_MAX, uint32_t HISTOGRAM_MAX>
+void StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>::setTickerCountLocked(
+    uint32_t tickerType, uint64_t count) {
   assert(tickerType < TICKER_MAX);
   for (size_t core_idx = 0; core_idx < per_core_stats_.Size(); ++core_idx) {
     if (core_idx == 0) {
@@ -298,8 +305,9 @@ void StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>::setTickerCountLocked(uint32_t ti
   }
 }
 
-template<uint32_t TICKER_MAX, uint32_t HISTOGRAM_MAX>
-uint64_t StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>::getAndResetTickerCount(uint32_t tickerType) {
+template <uint32_t TICKER_MAX, uint32_t HISTOGRAM_MAX>
+uint64_t StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>::getAndResetTickerCount(
+    uint32_t tickerType) {
   uint64_t sum = 0;
   {
     MutexLock lock(&aggregate_lock_);
@@ -316,8 +324,9 @@ uint64_t StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>::getAndResetTickerCount(uint3
   return sum;
 }
 
-template<uint32_t TICKER_MAX, uint32_t HISTOGRAM_MAX>
-void StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>::recordTick(uint32_t tickerType, uint64_t count) {
+template <uint32_t TICKER_MAX, uint32_t HISTOGRAM_MAX>
+void StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>::recordTick(uint32_t tickerType,
+                                                           uint64_t count) {
   assert(tickerType < TICKER_MAX);
   per_core_stats_.Access()->tickers_[tickerType].fetch_add(
       count, std::memory_order_relaxed);
@@ -326,8 +335,9 @@ void StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>::recordTick(uint32_t tickerType, 
   }
 }
 
-template<uint32_t TICKER_MAX, uint32_t HISTOGRAM_MAX>
-void StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>::recordInHistogram(uint32_t histogramType, uint64_t value) {
+template <uint32_t TICKER_MAX, uint32_t HISTOGRAM_MAX>
+void StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>::recordInHistogram(
+    uint32_t histogramType, uint64_t value) {
   assert(histogramType < HISTOGRAM_MAX);
   if (get_stats_level() <= StatsLevel::kExceptHistogramOrTimers) {
     return;
@@ -338,7 +348,7 @@ void StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>::recordInHistogram(uint32_t histo
   }
 }
 
-template<uint32_t TICKER_MAX, uint32_t HISTOGRAM_MAX>
+template <uint32_t TICKER_MAX, uint32_t HISTOGRAM_MAX>
 Status StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>::Reset() {
   MutexLock lock(&aggregate_lock_);
   for (uint32_t i = 0; i < TICKER_MAX; ++i) {
@@ -359,7 +369,7 @@ const int kTmpStrBufferSize = 200;
 
 } // namespace
 
-template<uint32_t TICKER_MAX, uint32_t HISTOGRAM_MAX>
+template <uint32_t TICKER_MAX, uint32_t HISTOGRAM_MAX>
 std::string StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>::ToString() const {
   MutexLock lock(&aggregate_lock_);
   std::string res;
@@ -394,7 +404,7 @@ std::string StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>::ToString() const {
   return res;
 }
 
-template<uint32_t TICKER_MAX, uint32_t HISTOGRAM_MAX>
+template <uint32_t TICKER_MAX, uint32_t HISTOGRAM_MAX>
 bool StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>::getTickerMap(
     std::map<std::string, uint64_t>* stats_map) const {
   assert(stats_map);
@@ -408,8 +418,9 @@ bool StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>::getTickerMap(
   return true;
 }
 
-template<uint32_t TICKER_MAX, uint32_t HISTOGRAM_MAX>
-bool StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>::HistEnabledForType(uint32_t type) const {
+template <uint32_t TICKER_MAX, uint32_t HISTOGRAM_MAX>
+bool StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>::HistEnabledForType(
+    uint32_t type) const {
   return type < HISTOGRAM_MAX;
 }
 

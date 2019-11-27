@@ -30,7 +30,7 @@
 
 namespace rocksdb {
 
-template<uint32_t TICKER_MAX, uint32_t HISTOGRAM_MAX>
+template <uint32_t TICKER_MAX, uint32_t HISTOGRAM_MAX>
 class StatisticsImpl : public Statistics {
  public:
   StatisticsImpl(std::shared_ptr<Statistics> stats);
@@ -75,11 +75,10 @@ class StatisticsImpl : public Statistics {
     std::atomic_uint_fast64_t tickers_[TICKER_MAX] = {{0}};
     HistogramImpl histograms_[HISTOGRAM_MAX];
 #ifndef HAVE_ALIGNED_NEW
-    char
-        padding[(CACHE_LINE_SIZE -
-                 (TICKER_MAX * sizeof(std::atomic_uint_fast64_t) +
-                  HISTOGRAM_MAX * sizeof(HistogramImpl)) %
-                     CACHE_LINE_SIZE)] ROCKSDB_FIELD_UNUSED;
+    char padding[(CACHE_LINE_SIZE -
+                  (TICKER_MAX * sizeof(std::atomic_uint_fast64_t) +
+                   HISTOGRAM_MAX * sizeof(HistogramImpl)) %
+                      CACHE_LINE_SIZE)] ROCKSDB_FIELD_UNUSED;
 #endif
     void *operator new(size_t s) { return port::cacheline_aligned_alloc(s); }
     void *operator new[](size_t s) { return port::cacheline_aligned_alloc(s); }
@@ -127,7 +126,7 @@ inline void SetTickerCount(Statistics* statistics, uint32_t ticker_type,
 }
 
 std::shared_ptr<Statistics> CreateDBStatistics() {
-  return std::make_shared<StatisticsImpl<TICKER_ENUM_MAX,HISTOGRAM_ENUM_MAX>>(nullptr);
+  return std::make_shared<StatisticsImpl<TICKER_ENUM_MAX, HISTOGRAM_ENUM_MAX>>(
+      nullptr);
 }
-
 }
