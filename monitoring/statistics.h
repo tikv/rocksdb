@@ -129,8 +129,7 @@ inline void SetTickerCount(Statistics* statistics, uint32_t ticker_type,
 }
 
 // Implementation details follow
-template <uint32_t TICKER_MAX,
-          uint32_t HISTOGRAM_MAX>
+template <uint32_t TICKER_MAX, uint32_t HISTOGRAM_MAX>
 std::shared_ptr<Statistics> CreateDBStatistics() {
   return std::make_shared<StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>>(nullptr);
 }
