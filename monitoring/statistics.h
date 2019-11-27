@@ -33,7 +33,8 @@
 
 namespace rocksdb {
 
-template <uint32_t TICKER_MAX, uint32_t HISTOGRAM_MAX>
+template <uint32_t TICKER_MAX = TICKER_ENUM_MAX,
+          uint32_t HISTOGRAM_MAX = HISTOGRAM_ENUM_MAX>
 class StatisticsImpl : public Statistics {
  public:
   StatisticsImpl(std::shared_ptr<Statistics> stats);
