@@ -8,7 +8,7 @@
 
 namespace rocksdb {
 
-// The order of items listed in  Tickers should be the same as
+// The order of items listed in Tickers should be the same as
 // the order listed in TickersNameMap
 const std::vector<std::pair<Tickers, std::string>> TickersNameMap = {
     {BLOCK_CACHE_MISS, "rocksdb.block.cache.miss"},
@@ -222,6 +222,5 @@ const std::vector<std::pair<Histograms, std::string>> HistogramsNameMap = {
     {FLUSH_TIME, "rocksdb.db.flush.micros"},
     {SST_BATCH_SIZE, "rocksdb.sst.batch.size"},
 };
-
 
 } // namespace rocksdb
