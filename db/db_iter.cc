@@ -668,6 +668,7 @@ inline bool DBIter::FindNextUserEntryInternal(bool skipping, bool prefix_check) 
 //       iter_ points to the next entry (or invalid)
 bool DBIter::MergeValuesNewToOld() {
   // @TODO(tabokie): this function asserts we have value to yield.
+  // @CHANGE: this function WILL modify is_blob_ now
   if (!merge_operator_) {
     ROCKS_LOG_ERROR(logger_, "Options::merge_operator is null.");
     status_ = Status::InvalidArgument("merge_operator_ must be set.");
@@ -730,6 +731,17 @@ bool DBIter::MergeValuesNewToOld() {
         valid_ = false;
         return false;
       }
+      if (ikey.type == kTypeBlobIndex) {
+        if (!allow_blob_) {
+          ROCKS_LOG_ERROR(logger_, "Encounter unexpected blob index from merge.");
+          status_ = Status::NotSupported(
+              "Encounter unexpected blob index from merge. Please open DB "
+              "with rocksdb::blob_db::BlobDB instead.");
+          valid_ = false;
+          return false;
+        }
+        is_blob_ = true;
+      }
       return true;
     } else if (kTypeMerge == ikey.type) {
       // hit a merge, add the value as an operand and run associative merge.
@@ -755,13 +767,21 @@ bool DBIter::MergeValuesNewToOld() {
       merge_operator_, saved_key_.GetUserKey(), base_type, nullptr,
       merge_context_.GetOperands(), &saved_value_, logger_, statistics_, env_,
       &pinned_value_, true);
-  if (base_type == kTypeBlobIndex) {
-    is_blob_ = true;
-  }
   if (!s.ok()) {
     valid_ = false;
     status_ = s;
     return false;
+  }
+  if (base_type == kTypeBlobIndex) {
+    if (!allow_blob_) {
+      ROCKS_LOG_ERROR(logger_, "Encounter unexpected blob index from merge.");
+      status_ = Status::NotSupported(
+          "Encounter unexpected blob index from merge. Please open DB "
+          "with rocksdb::blob_db::BlobDB instead.");
+      valid_ = false;
+      return false;
+    }
+    is_blob_ = true;
   }
 
   assert(status_.ok());
@@ -1023,6 +1043,14 @@ bool DBIter::FindValueForCurrentKey() {
             nullptr, merge_context_.GetOperands(), &saved_value_, logger_,
             statistics_, env_, &pinned_value_, true);
         if (last_not_merge_type == kTypeBlobIndex) {
+          if (!allow_blob_) {
+            ROCKS_LOG_ERROR(logger_, "Encounter unexpected blob index from merge.");
+            status_ = Status::NotSupported(
+                "Encounter unexpected blob index from merge. Please open DB "
+                "with rocksdb::blob_db::BlobDB instead.");
+            valid_ = false;
+            return false;
+          }
           is_blob_ = true;
         }
       } else {
@@ -1041,6 +1069,14 @@ bool DBIter::FindValueForCurrentKey() {
             &pinned_value_, merge_context_.GetOperands(), &saved_value_,
             logger_, statistics_, env_, &pinned_value_, true);
         if (last_not_merge_type == kTypeBlobIndex) {
+          if (!allow_blob_) {
+            ROCKS_LOG_ERROR(logger_, "Encounter unexpected blob index from merge.");
+            status_ = Status::NotSupported(
+                "Encounter unexpected blob index from merge. Please open DB "
+                "with rocksdb::blob_db::BlobDB instead.");
+            valid_ = false;
+            return false;
+          }
           is_blob_ = true;
         }
       }
@@ -1186,6 +1222,14 @@ bool DBIter::FindValueForCurrentKeyUsingSeek() {
         return false;
       }
       if (ikey.type == kTypeBlobIndex) {
+        if (!allow_blob_) {
+          ROCKS_LOG_ERROR(logger_, "Encounter unexpected blob index from merge.");
+          status_ = Status::NotSupported(
+              "Encounter unexpected blob index from merge. Please open DB "
+              "with rocksdb::blob_db::BlobDB instead.");
+          valid_ = false;
+          return false;
+        }
         is_blob_ = true;
       }
       valid_ = true;
@@ -1209,6 +1253,14 @@ bool DBIter::FindValueForCurrentKeyUsingSeek() {
     return false;
   }
   if (base_type == kTypeBlobIndex) {
+    if (!allow_blob_) {
+      ROCKS_LOG_ERROR(logger_, "Encounter unexpected blob index from merge.");
+      status_ = Status::NotSupported(
+          "Encounter unexpected blob index from merge. Please open DB "
+          "with rocksdb::blob_db::BlobDB instead.");
+      valid_ = false;
+      return false;
+    }
     is_blob_ = true;
   }
 
