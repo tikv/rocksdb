@@ -1986,9 +1986,10 @@ void WriteBatchInternal::AsyncInsertInto(
   for (auto w : writer->batches) {
     pool->PushBack([=]() {
       ColumnFamilyMemTablesImpl memtables(version_set);
-      MemTableInserter inserter(sequence, &memtables, flush_scheduler,
-                                ignore_missing_column_families, 0, db, true,
-                                nullptr /*has_valid_writes*/);
+      MemTableInserter inserter(
+          sequence, &memtables, flush_scheduler, ignore_missing_column_families,
+          0 /*recovering_log_number*/, db, true /*concurrent_memtable_writes*/,
+          nullptr /*has_valid_writes*/);
       inserter.set_log_number_ref(writer->log_ref);
       SetSequence(w, sequence);
       Status s = w->Iterate(&inserter);
