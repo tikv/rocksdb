@@ -27,14 +27,14 @@ class SafeQueue {
     }
     ret = std::move(que_.front());
     que_.pop_front();
-    que_len_.fetch_sub(1);
+    que_len_.fetch_sub(1, std::memory_order_relaxed);
     return true;
   }
 
   void PushBack(T &&v) {
     std::lock_guard<std::mutex> lock(mu_);
     que_.push_back(v);
-    que_len_.fetch_add(1);
+    que_len_.fetch_add(1, std::memory_order_relaxed);
   }
 
  private:

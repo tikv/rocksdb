@@ -78,14 +78,7 @@ Status DBImpl::MultiThreadWrite(const WriteOptions& options,
     }
     return MultiThreadWriteImpl(options, batches, nullptr, nullptr);
   } else {
-    Status status;
-    for (auto b : updates) {
-      status = WriteImpl(options, b, nullptr, nullptr);
-      if (!status.ok()) {
-        return status;
-      }
-    }
-    return status;
+    return Status::NotSupported();
   }
 }
 
@@ -93,12 +86,12 @@ Status DBImpl::MultiThreadWriteImpl(const WriteOptions& write_options,
                                     const autovector<WriteBatch*>& updates,
                                     WriteCallback* callback, uint64_t* log_used,
                                     uint64_t log_ref, uint64_t* seq_used) {
+  PERF_TIMER_GUARD(write_pre_and_post_process_time);
   StopWatch write_sw(env_, immutable_db_options_.statistics.get(), DB_WRITE);
   WriteThread::Writer writer(write_options, updates, callback, log_ref);
   write_thread_.JoinBatchGroup(&writer);
 
   WriteContext write_context;
-  PERF_TIMER_GUARD(write_pre_and_post_process_time);
   bool ignore_missing_faimly = write_options.ignore_missing_column_families;
   if (writer.state == WriteThread::STATE_GROUP_LEADER) {
     if (writer.callback && !writer.callback->AllowWriteBatching()) {
@@ -143,6 +136,13 @@ Status DBImpl::MultiThreadWriteImpl(const WriteOptions& write_options,
         has_unpersisted_data_.store(true, std::memory_order_relaxed);
       }
       write_thread_.UpdateLastSequence(current_sequence + total_count - 1);
+      stats->AddDBStats(InternalStats::kIntStatsNumKeysWritten, total_count);
+      RecordTick(stats_, NUMBER_KEYS_WRITTEN, total_count);
+      stats->AddDBStats(InternalStats::kIntStatsBytesWritten, total_byte_size);
+      RecordTick(stats_, BYTES_WRITTEN, total_byte_size);
+      RecordInHistogram(stats_, BYTES_PER_WRITE, total_byte_size);
+
+      PERF_TIMER_STOP(write_pre_and_post_process_time);
       if (!write_options.disableWAL) {
         PERF_TIMER_GUARD(write_wal_time);
         stats->AddDBStats(InternalStats::kIntStatsWriteDoneBySelf, 1);
@@ -195,13 +195,14 @@ Status DBImpl::MultiThreadWriteImpl(const WriteOptions& write_options,
         std::this_thread::yield();
       }
     }
+    MemTableInsertStatusCheck(memtable_write_group.status);
     versions_->SetLastSequence(memtable_write_group.last_sequence);
     write_thread_.ExitAsMemTableWriter(&writer, memtable_write_group);
   }
   if (seq_used != nullptr) {
     *seq_used = writer.sequence;
   }
-
+  assert(writer.state == WriteThread::STATE_COMPLETED);
   return writer.status;
 }
 

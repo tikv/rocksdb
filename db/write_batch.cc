@@ -1982,7 +1982,7 @@ void WriteBatchInternal::AsyncInsertInto(
     DB* db, SafeQueue<std::function<void()>>* pool) {
   auto write_group = writer->write_group;
   write_group->running.fetch_add(writer->batches.size(),
-                                 std::memory_order_relaxed);
+                                 std::memory_order_seq_cst);
   for (auto w : writer->batches) {
     pool->PushBack([=]() {
       ColumnFamilyMemTablesImpl memtables(version_set);
