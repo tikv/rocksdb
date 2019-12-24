@@ -14,6 +14,7 @@
 #include <string>
 #include "rocksdb/statistics.h"
 #include "monitoring/statistics.h"
+#include "monitoring/statistics_impl.h"
 
 namespace rocksdb {
 
