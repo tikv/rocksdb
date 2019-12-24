@@ -551,10 +551,8 @@ Options DBTestBase::GetOptions(
       break;
     }
     case kMultiThreadWrite: {
-      if (options.allow_concurrent_memtable_write) {
-        options.enable_multi_thread_write = true;
-        options.enable_pipelined_write = true;
-      }
+      options.enable_multi_thread_write = true;
+      options.enable_pipelined_write = true;
       break;
     }
     case kConcurrentWALWrites: {

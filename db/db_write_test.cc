@@ -189,6 +189,9 @@ TEST_P(DBWriteTest, MultiThreadWrite) {
   Options options = GetOptions();
   std::unique_ptr<FaultInjectionTestEnv> mock_env(
       new FaultInjectionTestEnv(Env::Default()));
+  if (!options.enable_multi_thread_write) {
+    return;
+  }
   constexpr int kNumThreads = 8;
   options.env = mock_env.get();
   options.write_buffer_size = 1024 * 128;
