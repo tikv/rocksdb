@@ -1090,6 +1090,7 @@ bool DBIter::FindValueForCurrentKeyUsingSeek() {
   // Find the next value that's visible.
   is_blob_ = false;
   ParsedInternalKey ikey;
+  is_blob_ = false;
   while (true) {
     if (!iter_.Valid()) {
       valid_ = false;

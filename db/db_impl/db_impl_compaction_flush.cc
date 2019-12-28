@@ -1535,9 +1535,14 @@ Status DBImpl::FlushMemTable(ColumnFamilyData* cfd,
     InstrumentedMutexLock guard_lock(&mutex_);
 
     WriteThread::Writer w;
+    WriteThread::Writer nonmem_w;
     if (!writes_stopped) {
       write_thread_.EnterUnbatched(&w, &mutex_);
+      if (two_write_queues_) {
+        nonmem_write_thread_.EnterUnbatched(&nonmem_w, &mutex_);
+      }
     }
+    WaitForPendingWrites();
 
     if (!cfd->mem()->IsEmpty() || !cached_recoverable_state_empty_.load()) {
       s = SwitchMemtable(cfd, &context);
@@ -1598,6 +1603,9 @@ Status DBImpl::FlushMemTable(ColumnFamilyData* cfd,
 
     if (!writes_stopped) {
       write_thread_.ExitUnbatched(&w);
+      if (two_write_queues_) {
+        nonmem_write_thread_.ExitUnbatched(&nonmem_w);
+      }
     }
   }
   TEST_SYNC_POINT("DBImpl::FlushMemTable:AfterScheduleFlush");
@@ -1619,11 +1627,11 @@ Status DBImpl::FlushMemTable(ColumnFamilyData* cfd,
       }
     }
   }
-  TEST_SYNC_POINT("FlushMemTableFinished");
+  TEST_SYNC_POINT("DBImpl::FlushMemTable:FlushMemTableFinished");
   return s;
 }
 
-// Flush all elments in 'column_family_datas'
+// Flush all elements in 'column_family_datas'
 // and atomically record the result to the MANIFEST.
 Status DBImpl::AtomicFlushMemTables(
     const autovector<ColumnFamilyData*>& column_family_datas,
@@ -1652,9 +1660,14 @@ Status DBImpl::AtomicFlushMemTables(
     InstrumentedMutexLock guard_lock(&mutex_);
 
     WriteThread::Writer w;
+    WriteThread::Writer nonmem_w;
     if (!writes_stopped) {
       write_thread_.EnterUnbatched(&w, &mutex_);
+      if (two_write_queues_) {
+        nonmem_write_thread_.EnterUnbatched(&nonmem_w, &mutex_);
+      }
     }
+    WaitForPendingWrites();
 
     for (auto cfd : column_family_datas) {
       if (cfd->IsDropped()) {
@@ -1697,6 +1710,9 @@ Status DBImpl::AtomicFlushMemTables(
 
     if (!writes_stopped) {
       write_thread_.ExitUnbatched(&w);
+      if (two_write_queues_) {
+        nonmem_write_thread_.ExitUnbatched(&nonmem_w);
+      }
     }
   }
   TEST_SYNC_POINT("DBImpl::AtomicFlushMemTables:AfterScheduleFlush");
