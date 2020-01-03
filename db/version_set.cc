@@ -1746,10 +1746,14 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
         *status = Status::Corruption("corrupted key for ", user_key);
         return;
       case GetContext::kBlobIndex:
-        ROCKS_LOG_ERROR(info_log_, "Encounter unexpected blob index.");
-        *status = Status::NotSupported(
-            "Encounter unexpected blob index. Please open DB with "
-            "rocksdb::blob_db::BlobDB instead.");
+        if (is_blob) {
+          *is_blob = true;
+        } else {
+          ROCKS_LOG_ERROR(info_log_, "Encounter unexpected blob index.");
+          *status = Status::NotSupported(
+              "Encounter unexpected blob index. Please open DB with "
+              "rocksdb::blob_db::BlobDB instead.");
+        }
         return;
     }
     f = fp.GetNextFile();
@@ -1773,11 +1777,15 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
         merge_context->GetOperands(), str_value, info_log_, db_statistics_,
         env_, nullptr /* result_operand */, true);
     if (base_type == kTypeBlobIndex) {
-      ROCKS_LOG_ERROR(info_log_, "Encounter unexpected blob index.");
-      *status = Status::NotSupported(
-          "Encounter unexpected blob index. Please open DB with "
-          "rocksdb::blob_db::BlobDB instead.");
-      return;
+      if (is_blob) {
+        *is_blob = true;
+      } else {
+        ROCKS_LOG_ERROR(info_log_, "Encounter unexpected blob index.");
+        *status = Status::NotSupported(
+            "Encounter unexpected blob index. Please open DB with "
+            "rocksdb::blob_db::BlobDB instead.");
+        return;
+      }
     }
     if (LIKELY(value != nullptr)) {
       value->PinSelf();
