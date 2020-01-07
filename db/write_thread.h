@@ -20,9 +20,11 @@
 #include "monitoring/instrumented_mutex.h"
 #include "rocksdb/options.h"
 #include "rocksdb/status.h"
+#include "rocksdb/threadpool.h"
 #include "rocksdb/types.h"
 #include "rocksdb/write_batch.h"
 #include "util/autovector.h"
+#include "util/safe_queue.h"
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -114,6 +116,7 @@ class WriteThread {
   // Information kept for every waiting writer.
   struct Writer {
     WriteBatch* batch;
+    autovector<WriteBatch*> batches;
     bool sync;
     bool no_slowdown;
     bool disable_wal;
@@ -166,6 +169,30 @@ class WriteThread {
           disable_memtable(_disable_memtable),
           batch_cnt(_batch_cnt),
           protection_bytes_per_key(_batch->GetProtectionBytesPerKey()),
+          pre_release_callback(_pre_release_callback),
+          log_used(0),
+          log_ref(_log_ref),
+          callback(_callback),
+          made_waitable(false),
+          state(STATE_INIT),
+          write_group(nullptr),
+          sequence(kMaxSequenceNumber),
+          link_older(nullptr),
+          link_newer(nullptr) {
+      batches.push_back(_batch);
+    }
+
+    Writer(const WriteOptions& write_options,
+           const autovector<WriteBatch*>& _batch, WriteCallback* _callback,
+           uint64_t _log_ref,
+           PreReleaseCallback* _pre_release_callback = nullptr)
+        : batch(nullptr),
+          batches(_batch),
+          sync(write_options.sync),
+          no_slowdown(write_options.no_slowdown),
+          disable_wal(write_options.disableWAL),
+          disable_memtable(false),
+          batch_cnt(0),
           pre_release_callback(_pre_release_callback),
           log_used(0),
           log_ref(_log_ref),
@@ -354,6 +381,8 @@ class WriteThread {
   // Remove the dummy writer and wake up waiting writers
   void EndWriteStall();
 
+  SafeQueue<std::function<void()>> write_queue_;
+
  private:
   // See AwaitState.
   const uint64_t max_yield_usec_;
@@ -364,6 +393,7 @@ class WriteThread {
 
   // Enable pipelined write to WAL and memtable.
   const bool enable_pipelined_write_;
+  const bool enable_multi_thread_write_;
 
   // The maximum limit of number of bytes that are written in a single batch
   // of WAL or memtable write. It is followed when the leader write size
