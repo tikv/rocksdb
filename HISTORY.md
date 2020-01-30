@@ -1,5 +1,6 @@
 # Rocksdb Change Log
 ## Cherry-picks
+* Fixed issue #6316 that can cause a corruption of the MANIFEST file in the middle when writing to it fails due to no disk space.
 * Fix a bug on fractional cascading index when multiple files at the same level contain the same smallest user key, and those user keys are for merge operands. In this case, Get() the exact key may miss some merge operands.
 * Fixed an issue where the thread pools were not resized upon setting `max_background_jobs` dynamically through the `SetDBOptions` interface.
 * Fix a bug in DBIter that is_blob state isn't updated when iterating backward using seek.

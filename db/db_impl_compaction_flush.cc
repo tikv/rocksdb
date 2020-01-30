@@ -1496,7 +1496,7 @@ Status DBImpl::FlushMemTable(ColumnFamilyData* cfd,
     s = WaitForFlushMemTables(cfds, flush_memtable_ids,
                               (flush_reason == FlushReason::kErrorRecovery));
   }
-  TEST_SYNC_POINT("FlushMemTableFinished");
+  TEST_SYNC_POINT("DBImpl::FlushMemTable:FlushMemTableFinished");
   return s;
 }
 
