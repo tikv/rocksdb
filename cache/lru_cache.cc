@@ -190,7 +190,8 @@ void LRUCacheShard::LRU_Remove(LRUHandle* e) {
 void LRUCacheShard::LRU_Insert(LRUHandle* e) {
   assert(e->next == nullptr);
   assert(e->prev == nullptr);
-  if (high_pri_pool_ratio_ > 0 && (e->IsHighPri() || e->HasHit())) {
+  if ((high_pri_pool_ratio_ > 0 && (e->IsHighPri() || e->HasHit()))
+                                    || high_pri_pool_ratio_ == 1.0) {
     // Inset "e" to head of LRU list.
     e->next = &lru_;
     e->prev = lru_.prev;
@@ -520,6 +521,18 @@ double LRUCache::GetHighPriPoolRatio() {
     result = shards_[0].GetHighPriPoolRatio();
   }
   return result;
+}
+
+std::shared_ptr<Cache> NewHighPriCache(LRUCacheOptions& cache_opts) {
+    // set high_pri_pool_ratio always 1
+    cache_opts.high_pri_pool_ratio = 1.0;
+    return NewLRUCache(cache_opts);
+}
+
+std::shared_ptr<Cache> NewLowPriCache(LRUCacheOptions& cache_opts) {
+    // set high_pri_pool_ratio always 0
+    cache_opts.high_pri_pool_ratio = 0.0;
+    return NewLRUCache(cache_opts);
 }
 
 std::shared_ptr<Cache> NewLRUCache(const LRUCacheOptions& cache_opts) {

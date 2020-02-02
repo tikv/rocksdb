@@ -105,6 +105,14 @@ extern std::shared_ptr<Cache> NewLRUCache(
 
 extern std::shared_ptr<Cache> NewLRUCache(const LRUCacheOptions& cache_opts);
 
+// Create a new cache which is always high priority cache, is always insert 
+// into the cache with high-priority, regardless of user provided option.
+extern std::shared_ptr<Cache> NewHighPriCache(LRUCacheOptions& cache_opts);
+
+// Create a new cache which is always low priority cache, is always insert 
+// into the cache with low-priority, regardless of user provided option.
+extern std::shared_ptr<Cache> NewLowPriCache(LRUCacheOptions& cache_opts);
+
 // Similar to NewLRUCache, but create a cache based on CLOCK algorithm with
 // better concurrent performance in some cases. See util/clock_cache.cc for
 // more detail.
