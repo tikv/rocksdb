@@ -3772,14 +3772,12 @@ Status DBImpl::IngestExternalFiles(
             "cannot ingest an external file into a dropped CF");
         break;
       }
-      if (!args[i].options.skip_memtable_check) {
-        bool tmp = false;
-        status = ingestion_jobs[i].NeedsFlush(&tmp, cfd->GetSuperVersion());
-        need_flush[i] = tmp;
-        at_least_one_cf_need_flush = (at_least_one_cf_need_flush || tmp);
-        if (!status.ok()) {
-          break;
-        }
+      bool tmp = false;
+      status = ingestion_jobs[i].NeedsFlush(&tmp, cfd->GetSuperVersion());
+      need_flush[i] = tmp;
+      at_least_one_cf_need_flush = (at_least_one_cf_need_flush || tmp);
+      if (!status.ok()) {
+        break;
       }
     }
     TEST_SYNC_POINT_CALLBACK("DBImpl::IngestExternalFile:NeedFlush",

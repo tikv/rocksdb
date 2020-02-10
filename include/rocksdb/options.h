@@ -1461,7 +1461,6 @@ struct IngestExternalFileOptions {
   // All files will be ingested at the bottommost level with seqno=0.
   bool ingest_behind = false;
 
-  bool skip_memtable_check = false;
   // Set to true if you would like to write global_seqno to a given offset in
   // the external SST file for backward compatibility. Older versions of
   // RocksDB writes a global_seqno to a given offset within ingested SST files,
