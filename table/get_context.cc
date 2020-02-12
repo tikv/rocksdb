@@ -226,6 +226,9 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
               pinnable_val_->PinSelf(value);
             }
           }
+          if (is_blob_index_) {
+            *is_blob_index_ = (type == kTypeBlobIndex);
+          }
         } else if (kMerge == state_) {
           assert(merge_operator_ != nullptr);
           state_ = kFound;
@@ -237,11 +240,12 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
             pinnable_val_->PinSelf();
             if (!merge_status.ok()) {
               state_ = kCorrupt;
+            } else if (is_blob_index_ != nullptr) {
+              *is_blob_index_ = (type == kTypeBlobIndex);
+            } else if (type == kTypeBlobIndex) {
+              state_ = kBlobIndex;
             }
           }
-        }
-        if (is_blob_index_ != nullptr) {
-          *is_blob_index_ = (type == kTypeBlobIndex);
         }
         return false;
 
@@ -265,8 +269,9 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
               state_ = kCorrupt;
             }
             if (is_blob_index_ != nullptr) {
-              // @TODO(tabokie): error if not supported.
               *is_blob_index_ = (type == kTypeBlobIndex);
+            } else if (type == kTypeBlobIndex) {
+              state_ = kBlobIndex;
             }
           }
         }
@@ -288,7 +293,7 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
                 merge_context_->GetOperandsDirectionBackward())) {
           state_ = kFound;
           if (LIKELY(pinnable_val_ != nullptr)) {
-            // only if `ShouldMerge` advice a proactive partial merge
+            // only if `ShouldMerge` suggests a proactive partial merge
             Status merge_status = MergeHelper::TimedFullMerge(
                 merge_operator_, user_key_, type, nullptr,
                 merge_context_->GetOperands(), &type, pinnable_val_->GetSelf(),
@@ -296,9 +301,10 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
             pinnable_val_->PinSelf();
             if (!merge_status.ok()) {
               state_ = kCorrupt;
-            }
-            if (is_blob_index_ != nullptr) {
+            } else if (is_blob_index_ != nullptr) {
               *is_blob_index_ = (type == kTypeBlobIndex);
+            } else if (type == kTypeBlobIndex) {
+              state_ = kBlobIndex;
             }
           }
           return false;
