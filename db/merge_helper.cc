@@ -27,6 +27,8 @@ inline ValueType ToValueType(MergeOperator::MergeValueType value_type) {
       return kTypeValue;
     case MergeOperator::kTypeBlobIndex:
       return kTypeBlobIndex;
+    default:
+      return kTypeValue;
   }
 }
 

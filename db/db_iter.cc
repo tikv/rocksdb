@@ -763,7 +763,7 @@ bool DBIter::MergeValuesNewToOld() {
   // client can differentiate this scenario and do things accordingly.
   s = MergeHelper::TimedFullMerge(
       merge_operator_, saved_key_.GetUserKey(), base_type, nullptr,
-      merge_context_.GetOperands(), &ikey.type, &saved_value_, logger_,
+      merge_context_.GetOperands(), &base_type, &saved_value_, logger_,
       statistics_, env_, &pinned_value_, true);
   if (!s.ok()) {
     valid_ = false;
