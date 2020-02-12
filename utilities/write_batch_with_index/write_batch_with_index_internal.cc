@@ -272,7 +272,8 @@ WriteBatchWithIndexInternal::Result WriteBatchWithIndexInternal::GetFromBatch(
         if (merge_operator) {
           *s = MergeHelper::TimedFullMerge(
               merge_operator, key, value_type, merge_data,
-              merge_context->GetOperands(), value, logger, statistics, env);
+              merge_context->GetOperands(), &value_type, value, logger,
+              statistics, env);
           if (value_type == kTypeBlobIndex) {
             *s = Status::NotSupported(
                 "Encounter unsupported blob value. Please open DB with "

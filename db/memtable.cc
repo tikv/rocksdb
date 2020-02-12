@@ -678,7 +678,7 @@ static bool SaveValue(void* arg, const char* entry) {
           if (s->value != nullptr) {
             *(s->status) = MergeHelper::TimedFullMerge(
                 merge_operator, s->key->user_key(), type, &v,
-                merge_context->GetOperands(), s->value, s->logger,
+                merge_context->GetOperands(), &type, s->value, s->logger,
                 s->statistics, s->env_, nullptr /* result_operand */, true);
           }
         } else if (s->value != nullptr) {
@@ -700,7 +700,7 @@ static bool SaveValue(void* arg, const char* entry) {
           if (s->value != nullptr) {
             *(s->status) = MergeHelper::TimedFullMerge(
                 merge_operator, s->key->user_key(), type, nullptr,
-                merge_context->GetOperands(), s->value, s->logger,
+                merge_context->GetOperands(), &type, s->value, s->logger,
                 s->statistics, s->env_, nullptr /* result_operand */, true);
           }
         } else {
@@ -732,8 +732,8 @@ static bool SaveValue(void* arg, const char* entry) {
           // only if `ShouldMerge` suggests a proactive partial merge
           *(s->status) = MergeHelper::TimedFullMerge(
               merge_operator, s->key->user_key(), type, nullptr,
-              merge_context->GetOperands(), s->value, s->logger, s->statistics,
-              s->env_, nullptr /* result_operand */, true);
+              merge_context->GetOperands(), &type, s->value, s->logger,
+              s->statistics, s->env_, nullptr /* result_operand */, true);
           *(s->found_final_value) = true;
           if (s->is_blob_index != nullptr) {
             *(s->is_blob_index) = (type == kTypeBlobIndex);

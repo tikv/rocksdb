@@ -667,8 +667,6 @@ inline bool DBIter::FindNextUserEntryInternal(bool skipping, bool prefix_check) 
 // POST: saved_value_ has the merged value for the user key
 //       iter_ points to the next entry (or invalid)
 bool DBIter::MergeValuesNewToOld() {
-  // @TODO(tabokie): this function asserts we have value to yield.
-  // @CHANGE: this function WILL modify is_blob_ now
   if (!merge_operator_) {
     ROCKS_LOG_ERROR(logger_, "Options::merge_operator is null.");
     status_ = Status::InvalidArgument("merge_operator_ must be set.");
@@ -718,8 +716,8 @@ bool DBIter::MergeValuesNewToOld() {
       const Slice val = iter_.value();
       s = MergeHelper::TimedFullMerge(merge_operator_, ikey.user_key, ikey.type,
                                       &val, merge_context_.GetOperands(),
-                                      &saved_value_, logger_, statistics_, env_,
-                                      &pinned_value_, true);
+                                      &ikey.type, &saved_value_, logger_,
+                                      statistics_, env_, &pinned_value_, true);
       if (!s.ok()) {
         valid_ = false;
         status_ = s;
@@ -765,8 +763,8 @@ bool DBIter::MergeValuesNewToOld() {
   // client can differentiate this scenario and do things accordingly.
   s = MergeHelper::TimedFullMerge(
       merge_operator_, saved_key_.GetUserKey(), base_type, nullptr,
-      merge_context_.GetOperands(), &saved_value_, logger_, statistics_, env_,
-      &pinned_value_, true);
+      merge_context_.GetOperands(), &ikey.type, &saved_value_, logger_,
+      statistics_, env_, &pinned_value_, true);
   if (!s.ok()) {
     valid_ = false;
     status_ = s;
@@ -1040,8 +1038,8 @@ bool DBIter::FindValueForCurrentKey() {
           last_not_merge_type == kTypeRangeDeletion) {
         s = MergeHelper::TimedFullMerge(
             merge_operator_, saved_key_.GetUserKey(), last_not_merge_type,
-            nullptr, merge_context_.GetOperands(), &saved_value_, logger_,
-            statistics_, env_, &pinned_value_, true);
+            nullptr, merge_context_.GetOperands(), &last_not_merge_type,
+            &saved_value_, logger_, statistics_, env_, &pinned_value_, true);
         if (last_not_merge_type == kTypeBlobIndex) {
           if (!allow_blob_) {
             ROCKS_LOG_ERROR(logger_, "Encounter unexpected blob index from merge.");
@@ -1066,8 +1064,8 @@ bool DBIter::FindValueForCurrentKey() {
         }
         s = MergeHelper::TimedFullMerge(
             merge_operator_, saved_key_.GetUserKey(), last_not_merge_type,
-            &pinned_value_, merge_context_.GetOperands(), &saved_value_,
-            logger_, statistics_, env_, &pinned_value_, true);
+            &pinned_value_, merge_context_.GetOperands(), &last_not_merge_type,
+            &saved_value_, logger_, statistics_, env_, &pinned_value_, true);
         if (last_not_merge_type == kTypeBlobIndex) {
           if (!allow_blob_) {
             ROCKS_LOG_ERROR(logger_, "Encounter unexpected blob index from merge.");
@@ -1215,8 +1213,8 @@ bool DBIter::FindValueForCurrentKeyUsingSeek() {
       const Slice val = iter_.value();
       Status s = MergeHelper::TimedFullMerge(
           merge_operator_, saved_key_.GetUserKey(), ikey.type, &val,
-          merge_context_.GetOperands(), &saved_value_, logger_, statistics_,
-          env_, &pinned_value_, true);
+          merge_context_.GetOperands(), &ikey.type, &saved_value_, logger_,
+          statistics_, env_, &pinned_value_, true);
       if (!s.ok()) {
         valid_ = false;
         status_ = s;
@@ -1246,8 +1244,8 @@ bool DBIter::FindValueForCurrentKeyUsingSeek() {
 
   Status s = MergeHelper::TimedFullMerge(
       merge_operator_, saved_key_.GetUserKey(), base_type, nullptr,
-      merge_context_.GetOperands(), &saved_value_, logger_, statistics_, env_,
-      &pinned_value_, true);
+      merge_context_.GetOperands(), &base_type, &saved_value_, logger_,
+      statistics_, env_, &pinned_value_, true);
   if (!s.ok()) {
     valid_ = false;
     status_ = s;

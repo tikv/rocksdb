@@ -1684,7 +1684,7 @@ class MemTableInserter : public WriteBatch::Handler {
 
         Status merge_status = MergeHelper::TimedFullMerge(
             merge_operator, key, value_type, &get_value_slice, {value},
-            &new_value, moptions->info_log, moptions->statistics,
+            &value_type, &new_value, moptions->info_log, moptions->statistics,
             Env::Default());
 
         if (!merge_status.ok()) {

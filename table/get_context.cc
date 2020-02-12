@@ -232,7 +232,7 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
           if (LIKELY(pinnable_val_ != nullptr)) {
             Status merge_status = MergeHelper::TimedFullMerge(
                 merge_operator_, user_key_, type, &value,
-                merge_context_->GetOperands(), pinnable_val_->GetSelf(),
+                merge_context_->GetOperands(), &type, pinnable_val_->GetSelf(),
                 logger_, statistics_, env_);
             pinnable_val_->PinSelf();
             if (!merge_status.ok()) {
@@ -258,7 +258,7 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
           if (LIKELY(pinnable_val_ != nullptr)) {
             Status merge_status = MergeHelper::TimedFullMerge(
                 merge_operator_, user_key_, type, nullptr,
-                merge_context_->GetOperands(), pinnable_val_->GetSelf(),
+                merge_context_->GetOperands(), &type, pinnable_val_->GetSelf(),
                 logger_, statistics_, env_);
             pinnable_val_->PinSelf();
             if (!merge_status.ok()) {
@@ -291,7 +291,7 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
             // only if `ShouldMerge` advice a proactive partial merge
             Status merge_status = MergeHelper::TimedFullMerge(
                 merge_operator_, user_key_, type, nullptr,
-                merge_context_->GetOperands(), pinnable_val_->GetSelf(),
+                merge_context_->GetOperands(), &type, pinnable_val_->GetSelf(),
                 logger_, statistics_, env_);
             pinnable_val_->PinSelf();
             if (!merge_status.ok()) {

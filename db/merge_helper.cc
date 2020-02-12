@@ -19,6 +19,32 @@
 
 namespace rocksdb {
 
+inline ValueType ToValueType(MergeOperator::MergeValueType value_type) {
+  switch (value_type) {
+    case MergeOperator::kTypeDeletion:
+      return kTypeDeletion;
+    case MergeOperator::kTypeValue:
+      return kTypeValue;
+    case MergeOperator::kTypeBlobIndex:
+      return kTypeBlobIndex;
+  }
+}
+
+inline MergeOperator::MergeValueType ToMergeValueType(ValueType value_type) {
+  switch (value_type) {
+    case kTypeDeletion:
+    case kTypeSingleDeletion:
+    case kTypeRangeDeletion:
+      return MergeOperator::kTypeDeletion;
+    case kTypeValue:
+      return MergeOperator::kTypeValue;
+    case kTypeBlobIndex:
+      return MergeOperator::kTypeBlobIndex;
+    default:
+      return MergeOperator::kTypeValue;
+  }
+}
+
 MergeHelper::MergeHelper(Env* env, const Comparator* user_comparator,
                          const MergeOperator* user_merge_operator,
                          const CompactionFilter* compaction_filter,
@@ -48,14 +74,12 @@ MergeHelper::MergeHelper(Env* env, const Comparator* user_comparator,
   }
 }
 
-Status MergeHelper::TimedFullMerge(const MergeOperator* merge_operator,
-                                   const Slice& key, ValueType& value_type,
-                                   const Slice* value,
-                                   const std::vector<Slice>& operands,
-                                   std::string* result, Logger* logger,
-                                   Statistics* statistics, Env* env,
-                                   Slice* result_operand,
-                                   bool update_num_ops_stats) {
+Status MergeHelper::TimedFullMerge(
+    const MergeOperator* merge_operator, const Slice& key, ValueType value_type,
+    const Slice* value, const std::vector<Slice>& operands,
+    ValueType* result_value_type, std::string* result, Logger* logger,
+    Statistics* statistics, Env* env, Slice* result_operand,
+    bool update_num_ops_stats) {
   assert(merge_operator != nullptr);
 
   if (operands.size() == 0) {
@@ -72,8 +96,8 @@ Status MergeHelper::TimedFullMerge(const MergeOperator* merge_operator,
   bool success;
   bool deleted;
   Slice tmp_result_operand(nullptr, 0);
-  const MergeOperator::MergeOperationInput merge_in(key, value_type, value,
-                                                    operands, logger);
+  const MergeOperator::MergeOperationInput merge_in(
+      key, ToMergeValueType(value_type), value, operands, logger);
   MergeOperator::MergeOperationOutput merge_out(*result, tmp_result_operand);
   {
     // Setup to time the merge
@@ -82,13 +106,17 @@ Status MergeHelper::TimedFullMerge(const MergeOperator* merge_operator,
 
     // Do the merge
     success = merge_operator->FullMergeV2(merge_in, &merge_out);
-    if (!IsValueType(merge_out.new_type)) {
+    ValueType new_type = ToValueType(merge_out.new_type);
+    if (!IsValueType(new_type)) {
       return Status::Corruption("Error: Merge operator corrupted value type.");
-    } else if (merge_out.new_type == kTypeDeletion ||
-               merge_out.new_type == kTypeSingleDeletion) {
+    } else if (new_type == kTypeDeletion) {
       return Status::Corruption("Error: Not yet support delete by merge.");
     }
-    value_type = merge_out.new_type;
+    if (result_value_type) {
+      *result_value_type = new_type;
+    } else if (new_type != value_type) {
+      return Status::Corruption("Error: Unable to mutate value type.");
+    }
 
     if (success) {
       if (tmp_result_operand.data()) {
@@ -223,8 +251,8 @@ Status MergeHelper::MergeUntil(InternalIterator* iter,
       }
       std::string merge_result;
       s = TimedFullMerge(user_merge_operator_, ikey.user_key, ikey.type,
-                         val_ptr, merge_context_.GetOperands(), &merge_result,
-                         logger_, stats_, env_);
+                         val_ptr, merge_context_.GetOperands(), &ikey.type,
+                         &merge_result, logger_, stats_, env_);
 
       // We store the result in keys_.back() and operands_.back()
       // if nothing went wrong (i.e.: no operand corruption on disk)
@@ -331,8 +359,8 @@ Status MergeHelper::MergeUntil(InternalIterator* iter,
     assert(merge_context_.GetNumOperands() == keys_.size());
     std::string merge_result;
     s = TimedFullMerge(user_merge_operator_, orig_ikey.user_key, orig_ikey.type,
-                       nullptr, merge_context_.GetOperands(), &merge_result,
-                       logger_, stats_, env_);
+                       nullptr, merge_context_.GetOperands(), &orig_ikey.type,
+                       &merge_result, logger_, stats_, env_);
     if (s.ok()) {
       // The original key encountered
       // We are certain that keys_ is not empty here (see assertions couple of

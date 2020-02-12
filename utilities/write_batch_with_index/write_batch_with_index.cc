@@ -914,8 +914,8 @@ Status WriteBatchWithIndex::GetFromBatchAndDB(
       if (merge_operator) {
         s = MergeHelper::TimedFullMerge(merge_operator, key, value_type,
                                         merge_data, merge_context.GetOperands(),
-                                        pinnable_val->GetSelf(), logger,
-                                        statistics, env);
+                                        &value_type, pinnable_val->GetSelf(),
+                                        logger, statistics, env);
         if (value_type == kTypeBlobIndex) {
           s = Status::NotSupported(
               "Encounter unsupported blob value. Please open DB with "
@@ -1025,8 +1025,8 @@ void WriteBatchWithIndex::MultiGetFromBatchAndDB(
         if (merge_operator) {
           *key.s = MergeHelper::TimedFullMerge(
               merge_operator, *key.key, value_type, merge_data,
-              merge_result.second.GetOperands(), key.value->GetSelf(), logger,
-              statistics, env);
+              merge_result.second.GetOperands(), &value_type,
+              key.value->GetSelf(), logger, statistics, env);
           if (value_type == kTypeBlobIndex) {
             *key.s = Status::NotSupported(
                 "Encounter unsupported blob value. Please open DB with "

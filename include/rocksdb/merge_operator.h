@@ -10,7 +10,6 @@
 #include <string>
 #include <vector>
 
-#include "db/dbformat.h"
 #include "rocksdb/slice.h"
 
 namespace rocksdb {
@@ -75,8 +74,14 @@ class MergeOperator {
     return false;
   }
 
+  enum MergeValueType : unsigned char {
+    kTypeDeletion = 0x0,
+    kTypeValue = 0x1,
+    kTypeBlobIndex = 0x2,
+  };
+
   struct MergeOperationInput {
-    explicit MergeOperationInput(const Slice& _key, const ValueType _value_type,
+    explicit MergeOperationInput(const Slice& _key, MergeValueType _value_type,
                                  const Slice* _existing_value,
                                  const std::vector<Slice>& _operand_list,
                                  Logger* _logger)
@@ -90,7 +95,7 @@ class MergeOperator {
     const Slice& key;
     // The value type associated with the existing_value, ignore this field
     // if existing_value is nullptr.
-    const ValueType value_type;
+    const MergeValueType value_type;
     // The existing value of the current key, nullptr means that the
     // value doesn't exist.
     const Slice* existing_value;
@@ -113,7 +118,7 @@ class MergeOperator {
     // using new_value.
     Slice& existing_operand;
     // new value type for input key.
-    ValueType new_type = kTypeValue;
+    MergeValueType new_type = kTypeValue;
   };
 
   // This function applies a stack of merge operands in chrionological order
