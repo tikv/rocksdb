@@ -75,9 +75,9 @@ class MergeOperator {
   }
 
   enum MergeValueType : unsigned char {
-    kTypeDeletion = 0x0,
-    kTypeValue = 0x1,
-    kTypeBlobIndex = 0x2,
+    kDeletion = 0x0,
+    kValue = 0x1,
+    kBlobIndex = 0x2,
   };
 
   struct MergeOperationInput {
@@ -118,7 +118,7 @@ class MergeOperator {
     // using new_value.
     Slice& existing_operand;
     // new value type of merge result.
-    MergeValueType new_type{kTypeValue};
+    MergeValueType new_type{kValue};
   };
 
   // This function applies a stack of merge operands in chrionological order

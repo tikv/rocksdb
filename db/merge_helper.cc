@@ -21,11 +21,11 @@ namespace rocksdb {
 
 inline ValueType ToValueType(MergeOperator::MergeValueType value_type) {
   switch (value_type) {
-    case MergeOperator::kTypeDeletion:
+    case MergeOperator::kDeletion:
       return kTypeDeletion;
-    case MergeOperator::kTypeValue:
+    case MergeOperator::kValue:
       return kTypeValue;
-    case MergeOperator::kTypeBlobIndex:
+    case MergeOperator::kBlobIndex:
       return kTypeBlobIndex;
     default:
       return kTypeValue;
@@ -37,13 +37,13 @@ inline MergeOperator::MergeValueType ToMergeValueType(ValueType value_type) {
     case kTypeDeletion:
     case kTypeSingleDeletion:
     case kTypeRangeDeletion:
-      return MergeOperator::kTypeDeletion;
+      return MergeOperator::kDeletion;
     case kTypeValue:
-      return MergeOperator::kTypeValue;
+      return MergeOperator::kValue;
     case kTypeBlobIndex:
-      return MergeOperator::kTypeBlobIndex;
+      return MergeOperator::kBlobIndex;
     default:
-      return MergeOperator::kTypeValue;
+      return MergeOperator::kValue;
   }
 }
 
@@ -109,7 +109,7 @@ Status MergeHelper::TimedFullMerge(
 
     // Do the merge
     success = merge_operator->FullMergeV2(merge_in, &merge_out);
-    if (merge_out.new_type == MergeOperator::kTypeDeletion) {
+    if (merge_out.new_type == MergeOperator::kDeletion) {
       return Status::Corruption("Error: Not yet support delete by merge.");
     }
     if (merge_out.new_type == merge_type) {
