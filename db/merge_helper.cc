@@ -96,8 +96,9 @@ Status MergeHelper::TimedFullMerge(
   bool success;
   bool deleted;
   Slice tmp_result_operand(nullptr, 0);
-  const MergeOperator::MergeOperationInput merge_in(
-      key, ToMergeValueType(value_type), value, operands, logger);
+  MergeOperator::MergeValueType merge_type = ToMergeValueType(value_type);
+  const MergeOperator::MergeOperationInput merge_in(key, merge_type, value,
+                                                    operands, logger);
   MergeOperator::MergeOperationOutput merge_out(*result, tmp_result_operand);
   {
     // Setup to time the merge
@@ -106,16 +107,20 @@ Status MergeHelper::TimedFullMerge(
 
     // Do the merge
     success = merge_operator->FullMergeV2(merge_in, &merge_out);
-    ValueType new_type = ToValueType(merge_out.new_type);
-    if (!IsValueType(new_type)) {
-      return Status::Corruption("Error: Merge operator corrupted value type.");
-    } else if (new_type == kTypeDeletion) {
+    if (merge_out.new_type == MergeOperator::kTypeDeletion) {
       return Status::Corruption("Error: Not yet support delete by merge.");
     }
-    if (result_value_type) {
-      *result_value_type = new_type;
-    } else if (new_type != value_type) {
-      return Status::Corruption("Error: Unable to mutate value type.");
+    if (merge_out.new_type == merge_type) {
+      // merge operator didn't mutate value type
+      if (result_value_type) {
+        *result_value_type = value_type;
+      }
+    } else {
+      if (result_value_type) {
+        *result_value_type = ToValueType(merge_out.new_type);
+      } else {
+        return Status::Corruption("Error: Unable to mutate value type.");
+      }
     }
 
     if (success) {
@@ -358,7 +363,7 @@ Status MergeHelper::MergeUntil(InternalIterator* iter,
     assert(merge_context_.GetNumOperands() >= 1);
     assert(merge_context_.GetNumOperands() == keys_.size());
     std::string merge_result;
-    s = TimedFullMerge(user_merge_operator_, orig_ikey.user_key, orig_ikey.type,
+    s = TimedFullMerge(user_merge_operator_, orig_ikey.user_key, kTypeValue,
                        nullptr, merge_context_.GetOperands(), &orig_ikey.type,
                        &merge_result, logger_, stats_, env_);
     if (s.ok()) {

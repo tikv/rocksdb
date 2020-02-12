@@ -1122,7 +1122,6 @@ bool DBIter::FindValueForCurrentKeyUsingSeek() {
 
   // In case read_callback presents, the value we seek to may not be visible.
   // Find the next value that's visible.
-  is_blob_ = false;
   ParsedInternalKey ikey;
   is_blob_ = false;
   while (true) {
