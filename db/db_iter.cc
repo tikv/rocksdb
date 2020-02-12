@@ -684,7 +684,7 @@ bool DBIter::MergeValuesNewToOld() {
 
   ParsedInternalKey ikey;
   Status s;
-  ValueType base_type = kTypeMerge;
+  ValueType base_type = kTypeValue;
   for (iter_.Next(); iter_.Valid(); iter_.Next()) {
     TEST_SYNC_POINT("DBIter::MergeValuesNewToOld:SteppedToNextOperand");
     if (!ParseKey(&ikey)) {
@@ -1177,7 +1177,7 @@ bool DBIter::FindValueForCurrentKeyUsingSeek() {
   merge_context_.Clear();
   merge_context_.PushOperand(
       iter_.value(), iter_.iter()->IsValuePinned() /* operand_pinned */);
-  ValueType base_type = kTypeMerge;
+  ValueType base_type = kTypeValue;
   while (true) {
     iter_.Next();
 
