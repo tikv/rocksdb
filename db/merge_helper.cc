@@ -109,23 +109,23 @@ Status MergeHelper::TimedFullMerge(
 
     // Do the merge
     success = merge_operator->FullMergeV2(merge_in, &merge_out);
-    if (merge_out.new_type == MergeOperator::kDeletion) {
-      return Status::Corruption("Error: Not yet support delete by merge.");
-    }
-    if (merge_out.new_type == merge_type) {
-      // merge operator didn't mutate value type
-      if (result_value_type) {
-        *result_value_type = value_type;
-      }
-    } else {
-      if (result_value_type) {
-        *result_value_type = ToValueType(merge_out.new_type);
-      } else {
-        return Status::Corruption("Error: Unable to mutate value type.");
-      }
-    }
 
     if (success) {
+      if (merge_out.new_type == MergeOperator::kDeletion) {
+        return Status::Corruption("Error: Not yet support delete by merge.");
+      }
+      if (merge_out.new_type == merge_type) {
+        // merge operator didn't mutate value type
+        if (result_value_type) {
+          *result_value_type = value_type;
+        }
+      } else {
+        if (result_value_type) {
+          *result_value_type = ToValueType(merge_out.new_type);
+        } else {
+          return Status::Corruption("Error: Unable to mutate value type.");
+        }
+      }
       if (tmp_result_operand.data()) {
         // FullMergeV2 result is an existing operand
         if (result_operand != nullptr) {
