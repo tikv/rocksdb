@@ -550,6 +550,11 @@ Options DBTestBase::GetOptions(
       options.enable_pipelined_write = true;
       break;
     }
+    case kMultiThreadWrite: {
+      options.enable_multi_thread_write = true;
+      options.enable_pipelined_write = true;
+      break;
+    }
     case kConcurrentWALWrites: {
       // This options optimize 2PC commit path
       options.two_write_queues = true;
@@ -846,6 +851,13 @@ uint64_t DBTestBase::GetTimeOldestSnapshots() {
   uint64_t int_num;
   EXPECT_TRUE(
       dbfull()->GetIntProperty("rocksdb.oldest-snapshot-time", &int_num));
+  return int_num;
+}
+
+uint64_t DBTestBase::GetSequenceOldestSnapshots() {
+  uint64_t int_num;
+  EXPECT_TRUE(
+      dbfull()->GetIntProperty("rocksdb.oldest-snapshot-sequence", &int_num));
   return int_num;
 }
 

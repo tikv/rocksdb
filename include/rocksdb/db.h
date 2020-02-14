@@ -376,6 +376,18 @@ class DB {
   // Note: consider setting options.sync = true.
   virtual Status Write(const WriteOptions& options, WriteBatch* updates) = 0;
 
+  virtual Status MultiThreadWrite(const WriteOptions& options,
+                                  const std::vector<WriteBatch*>& updates) {
+    Status s;
+    for (auto w : updates) {
+      s = Write(options, w);
+      if (!s.ok()) {
+        break;
+      }
+    }
+    return s;
+  }
+
   // If the database contains an entry for "key" store the
   // corresponding value in *value and return OK.
   //
@@ -649,6 +661,10 @@ class DB {
     //  "rocksdb.oldest-snapshot-time" - returns number representing unix
     //      timestamp of oldest unreleased snapshot.
     static const std::string kOldestSnapshotTime;
+
+    //  "rocksdb.oldest-snapshot-sequence" - returns number representing
+    //      sequence number of oldest unreleased snapshot.
+    static const std::string kOldestSnapshotSequence;
 
     //  "rocksdb.num-live-versions" - returns number of live versions. `Version`
     //      is an internal data structure. See version_set.h for details. More
