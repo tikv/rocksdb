@@ -96,7 +96,6 @@ Status MergeHelper::TimedFullMerge(
   }
 
   bool success;
-  bool deleted;
   Slice tmp_result_operand(nullptr, 0);
   MergeOperator::MergeValueType merge_type = ToMergeValueType(value_type);
   const MergeOperator::MergeOperationInput merge_in(key, merge_type, value,
