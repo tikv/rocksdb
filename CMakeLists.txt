@@ -545,6 +545,7 @@ set(SOURCES
         db/write_batch_base.cc
         db/write_controller.cc
         db/write_thread.cc
+        encryption/encryption.cc
         env/env.cc
         env/env_chroot.cc
         env/env_encryption.cc
