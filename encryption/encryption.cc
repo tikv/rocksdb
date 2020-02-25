@@ -5,6 +5,23 @@
 namespace rocksdb {
 namespace encryption {
 
+Status AESBlockCipher::InitKey(const std::string& key) {
+  int ret =
+      AES_set_encrypt_key(reinterpret_cast<const unsigned char*>(key.data()),
+                          static_cast<int>(key.size()), &encrypt_key_);
+  if (ret != 0) {
+    return Status::InvalidArgument("AES set encrypt key error: " +
+                                   ToString(ret));
+  }
+  ret = AES_set_decrypt_key(reinterpret_cast<const unsigned char*>(key.data()),
+                            static_cast<int>(key.size()), &decrypt_key_);
+  if (ret != 0) {
+    return Status::InvalidArgument("AES set decrypt key error: " +
+                                   ToString(ret));
+  }
+  return Status::OK();
+}
+
 Status NewAESCTRCipherStream(EncryptionMethod method, const std::string& key,
                              const std::string& iv,
                              std::unique_ptr<AESCTRCipherStream>* result) {
@@ -34,7 +51,12 @@ Status NewAESCTRCipherStream(EncryptionMethod method, const std::string& key,
         "iv size not equal to block cipher block size: " + ToString(iv.size()) +
         "(actual) vs. " + ToString(AES_BLOCK_SIZE) + "(expected).");
   }
-  result->reset(new AESCTRCipherStream(key, iv));
+  std::unique_ptr<AESCTRCipherStream> cipher_stream(new AESCTRCipherStream(iv));
+  Status s = cipher_stream->InitKey(key);
+  if (!s.ok()) {
+    return s;
+  }
+  *result = std::move(cipher_stream);
   return Status::OK();
 }
 

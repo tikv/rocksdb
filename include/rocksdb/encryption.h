@@ -37,12 +37,9 @@ class KeyManager {
 
 class AESBlockCipher final : public BlockCipher {
  public:
-  AESBlockCipher(Slice key) {
-    AES_set_encrypt_key(reinterpret_cast<const unsigned char*>(key.data()),
-                        static_cast<int>(key.size()), &encrypt_key_);
-    AES_set_decrypt_key(reinterpret_cast<const unsigned char*>(key.data()),
-                        static_cast<int>(key.size()), &decrypt_key_);
-  }
+  virtual ~AESBlockCipher() = default;
+
+  Status InitKey(const std::string& key);
 
   size_t BlockSize() override {
     return AES_BLOCK_SIZE;  // 16
@@ -69,15 +66,16 @@ class AESCTRCipherStream : public BlockAccessCipherStream {
  public:
   static constexpr size_t kNonceSize = AES_BLOCK_SIZE - sizeof(uint64_t);  // 8
 
-  AESCTRCipherStream(const std::string& key, const std::string& iv)
-      : block_cipher_(key),
-        nonce_(iv, 0, kNonceSize),
+  AESCTRCipherStream(const std::string& iv)
+      : nonce_(iv, 0, kNonceSize),
         initial_counter_(
             *reinterpret_cast<const uint64_t*>(iv.data() + kNonceSize)) {}
 
   size_t BlockSize() override {
     return AES_BLOCK_SIZE;  // 16
   }
+
+  Status InitKey(const std::string& key) { return block_cipher_.InitKey(key); }
 
  protected:
   void AllocateScratch(std::string& scratch) override {
@@ -110,7 +108,8 @@ class AESCTRCipherStream : public BlockAccessCipherStream {
 };
 
 extern Status NewAESCTRCipherStream(
-    std::unique_ptr<AESBlockCipher>&& block_cipher, const std::string& iv);
+    EncryptionMethod method, const std::string& key, const std::string& iv,
+    std::unique_ptr<AESCTRCipherStream>* result);
 
 class AESEncryptionProvider : public EncryptionProvider {
  public:
