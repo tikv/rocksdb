@@ -52,7 +52,36 @@
 #include "util/string_util.h"
 #include "utilities/merge_operators.h"
 
+#include "rocksdb/encryption.h"
+
 namespace rocksdb {
+
+class TestKeyManager : public encryption::KeyManager {
+ public:
+  virtual ~TestKeyManager() = default;
+
+  static const std::string default_key;
+  static const std::string default_iv;
+
+  Status GetInfoForFile(const std::string&,
+                        encryption::FileInfo* file_info) override {
+    file_info->method = encryption::EncryptionMethod::kAES192_CTR;
+    ;
+    file_info->key = default_key;
+    file_info->iv = default_iv;
+    return Status::OK();
+  }
+
+  Status NewFile(const std::string&, encryption::FileInfo* file_info) override {
+    file_info->method = encryption::EncryptionMethod::kAES192_CTR;
+    ;
+    file_info->key = default_key;
+    file_info->iv = default_iv;
+    return Status::OK();
+  }
+
+  Status DeleteFile(const std::string&) override { return Status::OK(); }
+};
 
 namespace anon {
 class AtomicCounter {
@@ -692,6 +721,7 @@ class DBTestBase : public testing::Test {
     kUniversalSubcompactions,
     kxxHash64Checksum,
     kUnorderedWrite,
+    kKeyManagedEncryptedEnv,
     // This must be the last line
     kEnd,
   };

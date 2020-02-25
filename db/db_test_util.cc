@@ -14,6 +14,12 @@
 
 namespace rocksdb {
 
+const std::string TestKeyManager::default_key =
+    "\x12\x34\x56\x78\x12\x34\x56\x78\x12\x34\x56\x78\x12\x34\x56\x78\x12\x34"
+    "\x56\x78\x12\x34\x56\x78";
+const std::string TestKeyManager::default_iv =
+    "\xaa\xbb\xcc\xdd\xaa\xbb\xcc\xdd\xaa\xbb\xcc\xdd\xaa\xbb\xcc\xdd";
+
 // Special Env used to delay background operations
 
 SpecialEnv::SpecialEnv(Env* base)
@@ -565,6 +571,11 @@ Options DBTestBase::GetOptions(
       options.allow_concurrent_memtable_write = false;
       options.unordered_write = false;
       break;
+    }
+    case kKeyManagedEncryptedEnv: {
+      std::shared_ptr<encryption::KeyManager> key_manager(new TestKeyManager);
+      options.env =
+          encryption::NewKeyManagedEncryptedEnv(Env::Default(), key_manager);
     }
 
     default:
