@@ -8,13 +8,13 @@ namespace encryption {
 Status AESBlockCipher::InitKey(const std::string& key) {
   int ret =
       AES_set_encrypt_key(reinterpret_cast<const unsigned char*>(key.data()),
-                          static_cast<int>(key.size()), &encrypt_key_);
+                          static_cast<int>(key.size()) * 8, &encrypt_key_);
   if (ret != 0) {
     return Status::InvalidArgument("AES set encrypt key error: " +
                                    ToString(ret));
   }
   ret = AES_set_decrypt_key(reinterpret_cast<const unsigned char*>(key.data()),
-                            static_cast<int>(key.size()), &decrypt_key_);
+                            static_cast<int>(key.size()) * 8, &decrypt_key_);
   if (ret != 0) {
     return Status::InvalidArgument("AES set decrypt key error: " +
                                    ToString(ret));
