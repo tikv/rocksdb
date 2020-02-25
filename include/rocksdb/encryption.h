@@ -84,6 +84,7 @@ class AESCTRCipherStream : public BlockAccessCipherStream {
 
   Status EncryptBlock(uint64_t block_index, char* data,
                       char* scratch) override {
+    printf("encrypt block %lu\n", block_index);
     memcpy(scratch, nonce_.data(), kNonceSize);
     EncodeFixed64(scratch + kNonceSize, block_index + initial_counter_);
     Status s = block_cipher_.Encrypt(scratch);
@@ -98,6 +99,7 @@ class AESCTRCipherStream : public BlockAccessCipherStream {
 
   Status DecryptBlock(uint64_t block_index, char* data,
                       char* scratch) override {
+    printf("decrypt block %lu\n", block_index);
     return EncryptBlock(block_index, data, scratch);
   }
 

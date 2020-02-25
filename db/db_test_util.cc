@@ -74,8 +74,8 @@ DBTestBase::DBTestBase(const std::string path)
   }
 #ifndef ROCKSDB_LITE
   if (getenv("ENCRYPTED_ENV")) {
-    encrypted_env_ = NewEncryptedEnv(mem_env_ ? mem_env_ : base_env,
-                                     new CTREncryptionProvider(rot13Cipher_));
+    std::shared_ptr<encryption::KeyManager> key_manager(new TestKeyManager);
+    encrypted_env_ = NewKeyManagedEncryptedEnv(Env::Default(), key_manager);
   }
 #endif  // !ROCKSDB_LITE
   env_ = new SpecialEnv(encrypted_env_ ? encrypted_env_
@@ -571,11 +571,6 @@ Options DBTestBase::GetOptions(
       options.allow_concurrent_memtable_write = false;
       options.unordered_write = false;
       break;
-    }
-    case kKeyManagedEncryptedEnv: {
-      std::shared_ptr<encryption::KeyManager> key_manager(new TestKeyManager);
-      options.env =
-          encryption::NewKeyManagedEncryptedEnv(Env::Default(), key_manager);
     }
 
     default:
