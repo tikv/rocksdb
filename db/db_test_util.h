@@ -63,17 +63,16 @@ class TestKeyManager : public encryption::KeyManager {
   static const std::string default_key;
   static const std::string default_iv;
 
-  Status GetInfoForFile(const std::string& fname,
+  Status GetInfoForFile(const std::string& /*fname*/,
                         encryption::FileInfo* file_info) override {
-    printf("read encrypted file %s\n", fname.c_str());
     file_info->method = encryption::EncryptionMethod::kAES192_CTR;
     file_info->key = default_key;
     file_info->iv = default_iv;
     return Status::OK();
   }
 
-  Status NewFile(const std::string& fname, encryption::FileInfo* file_info) override {
-    printf("write encrypted file %s\n", fname.c_str());
+  Status NewFile(const std::string& /*fname*/,
+                 encryption::FileInfo* file_info) override {
     file_info->method = encryption::EncryptionMethod::kAES192_CTR;
     file_info->key = default_key;
     file_info->iv = default_iv;

@@ -126,7 +126,6 @@ Status KeyManagedEncryptedEnv::NewRandomAccessFile(
 Status KeyManagedEncryptedEnv::NewWritableFile(
     const std::string& fname, std::unique_ptr<WritableFile>* result,
     const EnvOptions& options) {
-  printf("encrypted env new writable\n");
   FileInfo file_info;
   Status s = key_manager_->NewFile(fname, &file_info);
   if (!s.ok()) {
