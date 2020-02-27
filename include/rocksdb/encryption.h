@@ -29,8 +29,8 @@ class KeyManager {
  public:
   virtual ~KeyManager() = default;
 
-  virtual Status GetInfoForFile(const std::string& fname,
-                                FileEncryptionInfo* file_info) = 0;
+  virtual Status GetFile(const std::string& fname,
+                         FileEncryptionInfo* file_info) = 0;
   virtual Status NewFile(const std::string& fname,
                          FileEncryptionInfo* file_info) = 0;
   virtual Status DeleteFile(const std::string& fname) = 0;
