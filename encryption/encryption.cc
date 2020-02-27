@@ -64,7 +64,7 @@ Status AESEncryptionProvider::CreateCipherStream(
     const std::string& fname, const EnvOptions& /*options*/, Slice& /*prefix*/,
     std::unique_ptr<BlockAccessCipherStream>* result) {
   assert(result != nullptr);
-  FileInfo file_info;
+  FileEncryptionInfo file_info;
   Status s = key_manager_->GetInfoForFile(fname, &file_info);
   if (!s.ok()) {
     return s;
@@ -82,7 +82,7 @@ Status AESEncryptionProvider::CreateCipherStream(
 Status KeyManagedEncryptedEnv::NewSequentialFile(
     const std::string& fname, std::unique_ptr<SequentialFile>* result,
     const EnvOptions& options) {
-  FileInfo file_info;
+  FileEncryptionInfo file_info;
   Status s = key_manager_->GetInfoForFile(fname, &file_info);
   if (!s.ok()) {
     return s;
@@ -104,7 +104,7 @@ Status KeyManagedEncryptedEnv::NewSequentialFile(
 Status KeyManagedEncryptedEnv::NewRandomAccessFile(
     const std::string& fname, std::unique_ptr<RandomAccessFile>* result,
     const EnvOptions& options) {
-  FileInfo file_info;
+  FileEncryptionInfo file_info;
   Status s = key_manager_->GetInfoForFile(fname, &file_info);
   if (!s.ok()) {
     return s;
@@ -126,7 +126,7 @@ Status KeyManagedEncryptedEnv::NewRandomAccessFile(
 Status KeyManagedEncryptedEnv::NewWritableFile(
     const std::string& fname, std::unique_ptr<WritableFile>* result,
     const EnvOptions& options) {
-  FileInfo file_info;
+  FileEncryptionInfo file_info;
   Status s = key_manager_->NewFile(fname, &file_info);
   if (!s.ok()) {
     return s;
@@ -148,7 +148,7 @@ Status KeyManagedEncryptedEnv::NewWritableFile(
 Status KeyManagedEncryptedEnv::ReopenWritableFile(
     const std::string& fname, std::unique_ptr<WritableFile>* result,
     const EnvOptions& options) {
-  FileInfo file_info;
+  FileEncryptionInfo file_info;
   Status s = key_manager_->GetInfoForFile(fname, &file_info);
   if (!s.ok()) {
     return s;
@@ -170,7 +170,7 @@ Status KeyManagedEncryptedEnv::ReopenWritableFile(
 Status KeyManagedEncryptedEnv::ReuseWritableFile(
     const std::string& fname, const std::string& old_fname,
     std::unique_ptr<WritableFile>* result, const EnvOptions& options) {
-  FileInfo file_info;
+  FileEncryptionInfo file_info;
   Status s = key_manager_->NewFile(fname, &file_info);
   if (!s.ok()) {
     return s;
@@ -193,7 +193,7 @@ Status KeyManagedEncryptedEnv::ReuseWritableFile(
 Status KeyManagedEncryptedEnv::NewRandomRWFile(
     const std::string& fname, std::unique_ptr<RandomRWFile>* result,
     const EnvOptions& options) {
-  FileInfo file_info;
+  FileEncryptionInfo file_info;
   Status s = key_manager_->NewFile(fname, &file_info);
   if (!s.ok()) {
     return s;

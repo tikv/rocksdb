@@ -19,7 +19,7 @@ enum class EncryptionMethod : int {
   kAES256_CTR = 4,
 };
 
-struct FileInfo {
+struct FileEncryptionInfo {
   EncryptionMethod method = EncryptionMethod::kUnknown;
   std::string key;
   std::string iv;
@@ -30,8 +30,9 @@ class KeyManager {
   virtual ~KeyManager() = default;
 
   virtual Status GetInfoForFile(const std::string& fname,
-                                FileInfo* file_info) = 0;
-  virtual Status NewFile(const std::string& fname, FileInfo* file_info) = 0;
+                                FileEncryptionInfo* file_info) = 0;
+  virtual Status NewFile(const std::string& fname,
+                         FileEncryptionInfo* file_info) = 0;
   virtual Status DeleteFile(const std::string& fname) = 0;
 };
 
