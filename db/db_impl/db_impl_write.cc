@@ -66,29 +66,35 @@ Status DBImpl::WriteWithCallback(const WriteOptions& write_options,
 }
 #endif  // ROCKSDB_LITE
 
-Status DBImpl::MultiThreadWrite(const WriteOptions& options,
-                                const std::vector<WriteBatch*>& updates) {
+Status DBImpl::MultiBatchWrite(const WriteOptions& options, WriteBatch* updates,
+                               size_t len) {
   if (immutable_db_options_.enable_multi_thread_write) {
-    if (UNLIKELY(updates.empty())) {
-      return Status::OK();
-    }
     autovector<WriteBatch*> batches;
-    for (auto w : updates) {
-      batches.push_back(w);
+    for (size_t i = 0; i < len; i++) {
+      batches.push_back(&updates[i]);
     }
-    return MultiThreadWriteImpl(options, batches, nullptr, nullptr);
+    return MultiBatchWriteImpl(options, batches, nullptr, nullptr);
   } else {
     return Status::NotSupported();
   }
 }
 
-Status DBImpl::MultiThreadWriteImpl(const WriteOptions& write_options,
-                                    const autovector<WriteBatch*>& updates,
-                                    WriteCallback* callback, uint64_t* log_used,
-                                    uint64_t log_ref, uint64_t* seq_used) {
+void DBImpl::StealWorkOrYield() {
+  std::function<void()> work;
+  if (write_thread_.write_queue_.PopFront(work)) {
+    work();
+  } else {
+    std::this_thread::yield();
+  }
+}
+
+Status DBImpl::MultiBatchWriteImpl(const WriteOptions& write_options,
+                                   const autovector<WriteBatch*>& my_batch,
+                                   WriteCallback* callback, uint64_t* log_used,
+                                   uint64_t log_ref, uint64_t* seq_used) {
   PERF_TIMER_GUARD(write_pre_and_post_process_time);
   StopWatch write_sw(env_, immutable_db_options_.statistics.get(), DB_WRITE);
-  WriteThread::Writer writer(write_options, updates, callback, log_ref);
+  WriteThread::Writer writer(write_options, my_batch, callback, log_ref);
   write_thread_.JoinBatchGroup(&writer);
 
   WriteContext write_context;
@@ -295,8 +301,8 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
   if (immutable_db_options_.enable_multi_thread_write) {
     autovector<WriteBatch*> updates;
     updates.push_back(my_batch);
-    return MultiThreadWriteImpl(write_options, updates, callback, log_used,
-                                log_ref, seq_used);
+    return MultiBatchWriteImpl(write_options, updates, callback, log_used,
+                               log_ref, seq_used);
   }
 
   if (immutable_db_options_.enable_pipelined_write) {

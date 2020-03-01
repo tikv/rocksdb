@@ -376,11 +376,13 @@ class DB {
   // Note: consider setting options.sync = true.
   virtual Status Write(const WriteOptions& options, WriteBatch* updates) = 0;
 
-  virtual Status MultiThreadWrite(const WriteOptions& options,
-                                  const std::vector<WriteBatch*>& updates) {
+  virtual void StealWorkOrYield() {}
+
+  virtual Status MultiBatchWrite(const WriteOptions& options,
+                                 WriteBatch* updates, size_t len) {
     Status s;
-    for (auto w : updates) {
-      s = Write(options, w);
+    for (size_t i = 0; i < len; i++) {
+      s = Write(options, &updates[i]);
       if (!s.ok()) {
         break;
       }
