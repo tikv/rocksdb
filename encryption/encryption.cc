@@ -212,6 +212,33 @@ Status KeyManagedEncryptedEnv::NewRandomRWFile(
   }
 }
 
+Status KeyManagedEncryptedEnv::DeleteFile(const std::string& fname) {
+  // Try deleting the file from file system before updating key_manager.
+  Status s = target()->DeleteFile(fname);
+  if (!s.ok()) {
+    return s;
+  }
+  return key_manager_->DeleteFile(fname);
+}
+
+Status KeyManagedEncryptedEnv::LinkFile(const std::string& src_fname,
+                                        const std::string& dst_fname) {
+  Status s = key_manager_->LinkFile(src_fname, dst_fname);
+  if (!s.ok()) {
+    return s;
+  }
+  return target()->LinkFile(src_fname, dst_fname);
+}
+
+Status KeyManagedEncryptedEnv::RenameFile(const std::string& src_fname,
+                                          const std::string& dst_fname) {
+  Status s = key_manager_->RenameFile(src_fname, dst_fname);
+  if (!s.ok()) {
+    return s;
+  }
+  return target()->RenameFile(src_fname, dst_fname);
+}
+
 Env* NewKeyManagedEncryptedEnv(Env* base_env,
                                std::shared_ptr<KeyManager>& key_manager) {
   std::unique_ptr<AESEncryptionProvider> provider(
