@@ -63,8 +63,8 @@ class TestKeyManager : public encryption::KeyManager {
   static const std::string default_key;
   static const std::string default_iv;
 
-  Status GetInfoForFile(const std::string& /*fname*/,
-                        encryption::FileInfo* file_info) override {
+  Status GetFile(const std::string& /*fname*/,
+                 encryption::FileEncryptionInfo* file_info) override {
     file_info->method = encryption::EncryptionMethod::kAES192_CTR;
     file_info->key = default_key;
     file_info->iv = default_iv;
@@ -72,7 +72,7 @@ class TestKeyManager : public encryption::KeyManager {
   }
 
   Status NewFile(const std::string& /*fname*/,
-                 encryption::FileInfo* file_info) override {
+                 encryption::FileEncryptionInfo* file_info) override {
     file_info->method = encryption::EncryptionMethod::kAES192_CTR;
     file_info->key = default_key;
     file_info->iv = default_iv;
@@ -80,6 +80,12 @@ class TestKeyManager : public encryption::KeyManager {
   }
 
   Status DeleteFile(const std::string&) override { return Status::OK(); }
+  Status LinkFile(const std::string&, const std::string&) override {
+    return Status::OK();
+  }
+  Status RenameFile(const std::string&, const std::string&) override {
+    return Status::OK();
+  }
 };
 
 namespace anon {
