@@ -8,10 +8,12 @@
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
 #include "memtable/inlineskiplist.h"
-#include "memtable/doubly_skiplist.h"
+
 #include <set>
 #include <unordered_set>
+
 #include "memory/concurrent_arena.h"
+#include "memtable/doubly_skiplist.h"
 #include "rocksdb/env.h"
 #include "test_util/testharness.h"
 #include "util/hash.h"
@@ -335,7 +337,7 @@ TEST_F(InlineSkipTest, InsertWithHint_CompatibleWithInsertWithoutHint) {
 // calls to Next() and Seek().  For every key we encounter, we
 // check that it is either expected given the initial snapshot or has
 // been concurrently added since the iterator started.
-template<template<typename U> class SkipList>
+template <template <typename U> class SkipList>
 class ConcurrentTest {
  public:
   static const uint32_t K = 8;
@@ -483,13 +485,12 @@ class ConcurrentTest {
   }
 };
 
-template<template <typename U> class SkipList>
+template <template <typename U> class SkipList>
 const uint32_t ConcurrentTest<SkipList>::K;
 
 // Simple test that does single-threaded testing of the ConcurrentTest
 // scaffolding.
 TEST_F(InlineSkipTest, ConcurrentReadWithoutThreads) {
-
   {
     ConcurrentTest<rocksdb::InlineSkipList> test;
     Random rnd(test::RandomSeed());
@@ -527,25 +528,23 @@ TEST_F(InlineSkipTest, ConcurrentInsertWithoutThreads) {
 }
 
 class TestState {
-  public:
-    TestState(int s)
-            : seed_(s),
-              quit_flag_(false) {}
+ public:
+  TestState(int s) : seed_(s), quit_flag_(false) {}
 
-    enum ReaderState { STARTING, RUNNING, DONE };
-    virtual ~TestState() {}
-    virtual void Wait(ReaderState s) = 0;
-    virtual void Change(ReaderState s) = 0;
-    virtual void AdjustPendingWriters(int delta) = 0;
-    virtual void WaitForPendingWriters()  = 0;
-      // REQUIRES: No concurrent calls for the same k
-    virtual void ConcurrentWriteStep(uint32_t k) = 0;
-    virtual void ReadStep(Random* rnd) = 0;
+  enum ReaderState { STARTING, RUNNING, DONE };
+  virtual ~TestState() {}
+  virtual void Wait(ReaderState s) = 0;
+  virtual void Change(ReaderState s) = 0;
+  virtual void AdjustPendingWriters(int delta) = 0;
+  virtual void WaitForPendingWriters() = 0;
+  // REQUIRES: No concurrent calls for the same k
+  virtual void ConcurrentWriteStep(uint32_t k) = 0;
+  virtual void ReadStep(Random* rnd) = 0;
 
-  public:
-    int seed_;
-    std::atomic<bool> quit_flag_;
-    std::atomic<uint32_t> next_writer_;
+ public:
+  int seed_;
+  std::atomic<bool> quit_flag_;
+  std::atomic<uint32_t> next_writer_;
 };
 
 template <template <typename U> class SkipList>
@@ -554,10 +553,7 @@ class TestStateImpl : public TestState {
   ConcurrentTest<SkipList> t_;
 
   explicit TestStateImpl(int s)
-        : TestState(s),
-        state_(STARTING),
-        pending_writers_(0),
-        state_cv_(&mu_) {}
+      : TestState(s), state_(STARTING), pending_writers_(0), state_cv_(&mu_) {}
 
   void Wait(ReaderState s) override {
     mu_.Lock();
@@ -591,13 +587,8 @@ class TestStateImpl : public TestState {
     mu_.Unlock();
   }
 
-  void ConcurrentWriteStep(uint32_t k) override {
-    t_.ConcurrentWriteStep(k);
-  }
-  void ReadStep(Random* rnd) override {
-    t_.ReadStep(rnd);
-  }
-
+  void ConcurrentWriteStep(uint32_t k) override { t_.ConcurrentWriteStep(k); }
+  void ReadStep(Random* rnd) override { t_.ReadStep(rnd); }
 
  private:
   port::Mutex mu_;
@@ -620,7 +611,8 @@ static void ConcurrentReader(void* arg) {
 
 static void ConcurrentWriter(void* arg) {
   TestState* state = reinterpret_cast<TestState*>(arg);
-  uint32_t k = state->next_writer_++ % ConcurrentTest<rocksdb::InlineSkipList>::K;
+  uint32_t k =
+      state->next_writer_++ % ConcurrentTest<rocksdb::InlineSkipList>::K;
   state->ConcurrentWriteStep(k);
   state->AdjustPendingWriters(-1);
 }

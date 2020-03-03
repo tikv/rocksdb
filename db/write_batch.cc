@@ -1989,8 +1989,8 @@ Status WriteBatchInternal::InsertInto(
 void WriteBatchInternal::AsyncInsertInto(
     WriteThread::Writer* writer, SequenceNumber sequence,
     ColumnFamilySet* version_set, FlushScheduler* flush_scheduler,
-    bool ignore_missing_column_families,
-    DB* db, SafeQueue<std::function<void()>>* pool) {
+    bool ignore_missing_column_families, DB* db,
+    SafeQueue<std::function<void()>>* pool) {
   auto write_group = writer->write_group;
   write_group->running.fetch_add(writer->batches.size(),
                                  std::memory_order_seq_cst);

@@ -12,7 +12,7 @@
 namespace rocksdb {
 namespace {
 
-template<template<typename U> class SkipList>
+template <template <typename U> class SkipList>
 class SkipListRep : public MemTableRep {
   SkipList<const MemTableRep::KeyComparator&> skip_list_;
   const MemTableRep::KeyComparator& cmp_;
@@ -98,8 +98,7 @@ public:
    public:
     // Initialize an iterator over the specified list.
     // The returned iterator is not valid.
-    explicit Iterator(
-        const SkipList<const MemTableRep::KeyComparator&>* list)
+    explicit Iterator(const SkipList<const MemTableRep::KeyComparator&>* list)
         : iter_(list) {}
 
     ~Iterator() override {}
@@ -155,8 +154,8 @@ public:
   // the target key hasn't been found.
   class LookaheadIterator : public MemTableRep::Iterator {
    public:
-    explicit LookaheadIterator(const SkipListRep<SkipList>& rep) :
-        rep_(rep), iter_(&rep_.skip_list_), prev_(iter_) {}
+    explicit LookaheadIterator(const SkipListRep<SkipList>& rep)
+        : rep_(rep), iter_(&rep_.skip_list_), prev_(iter_) {}
 
     ~LookaheadIterator() override {}
 
@@ -268,13 +267,15 @@ public:
 MemTableRep* SkipListFactory::CreateMemTableRep(
     const MemTableRep::KeyComparator& compare, Allocator* allocator,
     const SliceTransform* transform, Logger* /*logger*/) {
-  return new SkipListRep<InlineSkipList>(compare, allocator, transform, lookahead_);
+  return new SkipListRep<InlineSkipList>(compare, allocator, transform,
+                                         lookahead_);
 }
 
 MemTableRep* DoublySkipListFactory::CreateMemTableRep(
     const MemTableRep::KeyComparator& compare, Allocator* allocator,
     const SliceTransform* transform, Logger* /*logger*/) {
-  return new SkipListRep<DoublySkipList>(compare, allocator, transform, lookahead_);
+  return new SkipListRep<DoublySkipList>(compare, allocator, transform,
+                                         lookahead_);
 }
 
 } // namespace rocksdb

@@ -190,8 +190,7 @@ Status DBImpl::MultiBatchWriteImpl(const WriteOptions& write_options,
       }
       WriteBatchInternal::AsyncInsertInto(
           it.writer, it.writer->sequence, version_set, &flush_scheduler_,
-          ignore_missing_faimly, this,
-          &write_thread_.write_queue_);
+          ignore_missing_faimly, this, &write_thread_.write_queue_);
     }
     while (memtable_write_group.running.load(std::memory_order_acquire) > 0) {
       std::function<void()> work;
