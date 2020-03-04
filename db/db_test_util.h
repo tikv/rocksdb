@@ -56,6 +56,7 @@
 
 namespace rocksdb {
 
+#ifdef OPENSSL
 class TestKeyManager : public encryption::KeyManager {
  public:
   virtual ~TestKeyManager() = default;
@@ -87,6 +88,7 @@ class TestKeyManager : public encryption::KeyManager {
     return Status::OK();
   }
 };
+#endif
 
 namespace anon {
 class AtomicCounter {

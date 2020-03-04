@@ -1,4 +1,5 @@
 #pragma once
+#ifdef OPENSSL
 
 #include <memory>
 #include <string>
@@ -186,3 +187,5 @@ extern Env* NewKeyManagedEncryptedEnv(Env* base_env,
 
 }  // namespace encryption
 }  // namespace rocksdb
+
+#endif

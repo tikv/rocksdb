@@ -25,6 +25,7 @@ addons:
       - libsnappy-dev
       - mingw-w64
       - zlib1g-dev
+      - libssl-dev
 env:
   - TEST_GROUP=platform_dependent # 16-18 minutes
   - TEST_GROUP=1 # 33-35 minutes
@@ -55,7 +56,7 @@ matrix:
 # https://docs.travis-ci.com/user/caching/#ccache-cache
 install:
   - if [ "${TRAVIS_OS_NAME}" == osx ]; then
-      brew install ccache zstd lz4 snappy xz;
+      brew install ccache zstd lz4 snappy xz openssl;
       PATH=$PATH:/usr/local/opt/ccache/libexec;
     fi
 

@@ -1,9 +1,11 @@
+#ifdef OPENSSL
 #include "rocksdb/encryption.h"
 
 #include "util/string_util.h"
 
 namespace rocksdb {
 namespace encryption {
+
 
 Status AESBlockCipher::InitKey(const std::string& key) {
   int ret =
@@ -250,3 +252,5 @@ Env* NewKeyManagedEncryptedEnv(Env* base_env,
 
 }  // namespace encryption
 }  // namespace rocksdb
+
+#endif
