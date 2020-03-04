@@ -1,3 +1,4 @@
+#ifndef ROCKSDB_LITE
 #ifdef OPENSSL
 #include "rocksdb/encryption.h"
 
@@ -284,4 +285,5 @@ Env* NewKeyManagedEncryptedEnv(Env* base_env,
 }  // namespace encryption
 }  // namespace rocksdb
 
-#endif
+#endif  // OPENSSL
+#endif  // !ROCKSDB_LITE
