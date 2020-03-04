@@ -6,7 +6,6 @@
 namespace rocksdb {
 namespace encryption {
 
-
 Status AESBlockCipher::InitKey(const std::string& key) {
   int ret =
       AES_set_encrypt_key(reinterpret_cast<const unsigned char*>(key.data()),
@@ -91,16 +90,18 @@ Status KeyManagedEncryptedEnv::NewSequentialFile(
   }
   switch (file_info.method) {
     case EncryptionMethod::kPlaintext:
-      return target()->NewSequentialFile(fname, result, options);
+      s = target()->NewSequentialFile(fname, result, options);
+      break;
     case EncryptionMethod::kAES128_CTR:
     case EncryptionMethod::kAES192_CTR:
     case EncryptionMethod::kAES256_CTR:
-      return encrypted_env_->NewSequentialFile(fname, result, options);
+      s = encrypted_env_->NewSequentialFile(fname, result, options);
+      break;
     default:
-      return Status::InvalidArgument(
-          "Unsupported encryption method: " +
-          ToString(static_cast<int>(file_info.method)));
+      s = Status::InvalidArgument("Unsupported encryption method: " +
+                                  ToString(static_cast<int>(file_info.method)));
   }
+  return s;
 }
 
 Status KeyManagedEncryptedEnv::NewRandomAccessFile(
@@ -113,16 +114,18 @@ Status KeyManagedEncryptedEnv::NewRandomAccessFile(
   }
   switch (file_info.method) {
     case EncryptionMethod::kPlaintext:
-      return target()->NewRandomAccessFile(fname, result, options);
+      s = target()->NewRandomAccessFile(fname, result, options);
+      break;
     case EncryptionMethod::kAES128_CTR:
     case EncryptionMethod::kAES192_CTR:
     case EncryptionMethod::kAES256_CTR:
-      return encrypted_env_->NewRandomAccessFile(fname, result, options);
+      s = encrypted_env_->NewRandomAccessFile(fname, result, options);
+      break;
     default:
-      return Status::InvalidArgument(
-          "Unsupported encryption method: " +
-          ToString(static_cast<int>(file_info.method)));
+      s = Status::InvalidArgument("Unsupported encryption method: " +
+                                  ToString(static_cast<int>(file_info.method)));
   }
+  return s;
 }
 
 Status KeyManagedEncryptedEnv::NewWritableFile(
@@ -135,16 +138,22 @@ Status KeyManagedEncryptedEnv::NewWritableFile(
   }
   switch (file_info.method) {
     case EncryptionMethod::kPlaintext:
-      return target()->NewWritableFile(fname, result, options);
+      s = target()->NewWritableFile(fname, result, options);
+      break;
     case EncryptionMethod::kAES128_CTR:
     case EncryptionMethod::kAES192_CTR:
     case EncryptionMethod::kAES256_CTR:
-      return encrypted_env_->NewWritableFile(fname, result, options);
+      s = encrypted_env_->NewWritableFile(fname, result, options);
+      break;
     default:
-      return Status::InvalidArgument(
-          "Unsupported encryption method: " +
-          ToString(static_cast<int>(file_info.method)));
+      s = Status::InvalidArgument("Unsupported encryption method: " +
+                                  ToString(static_cast<int>(file_info.method)));
   }
+  if (!s.ok()) {
+    // Ignore error
+    key_manager_->DeleteFile(fname);
+  }
+  return s;
 }
 
 Status KeyManagedEncryptedEnv::ReopenWritableFile(
@@ -157,39 +166,45 @@ Status KeyManagedEncryptedEnv::ReopenWritableFile(
   }
   switch (file_info.method) {
     case EncryptionMethod::kPlaintext:
-      return target()->ReopenWritableFile(fname, result, options);
+      s = target()->ReopenWritableFile(fname, result, options);
+      break;
     case EncryptionMethod::kAES128_CTR:
     case EncryptionMethod::kAES192_CTR:
     case EncryptionMethod::kAES256_CTR:
-      return encrypted_env_->ReopenWritableFile(fname, result, options);
+      s = encrypted_env_->ReopenWritableFile(fname, result, options);
+      break;
     default:
-      return Status::InvalidArgument(
-          "Unsupported encryption method: " +
-          ToString(static_cast<int>(file_info.method)));
+      s = Status::InvalidArgument("Unsupported encryption method: " +
+                                  ToString(static_cast<int>(file_info.method)));
   }
+  return s;
 }
 
 Status KeyManagedEncryptedEnv::ReuseWritableFile(
     const std::string& fname, const std::string& old_fname,
     std::unique_ptr<WritableFile>* result, const EnvOptions& options) {
   FileEncryptionInfo file_info;
-  Status s = key_manager_->NewFile(fname, &file_info);
+  Status s = key_manager_->GetFile(fname, &file_info);
   if (!s.ok()) {
     return s;
   }
   switch (file_info.method) {
     case EncryptionMethod::kPlaintext:
-      return target()->ReuseWritableFile(fname, old_fname, result, options);
+      s = target()->ReuseWritableFile(fname, old_fname, result, options);
+      break;
     case EncryptionMethod::kAES128_CTR:
     case EncryptionMethod::kAES192_CTR:
     case EncryptionMethod::kAES256_CTR:
-      return encrypted_env_->ReuseWritableFile(fname, old_fname, result,
-                                               options);
+      s = encrypted_env_->ReuseWritableFile(fname, old_fname, result, options);
+      break;
     default:
-      return Status::InvalidArgument(
-          "Unsupported encryption method: " +
-          ToString(static_cast<int>(file_info.method)));
+      s = Status::InvalidArgument("Unsupported encryption method: " +
+                                  ToString(static_cast<int>(file_info.method)));
   }
+  if (s.ok()) {
+    s = key_manager_->RenameFile(old_fname, fname);
+  }
+  return s;
 }
 
 Status KeyManagedEncryptedEnv::NewRandomRWFile(
@@ -202,16 +217,22 @@ Status KeyManagedEncryptedEnv::NewRandomRWFile(
   }
   switch (file_info.method) {
     case EncryptionMethod::kPlaintext:
-      return target()->NewRandomRWFile(fname, result, options);
+      s = target()->NewRandomRWFile(fname, result, options);
+      break;
     case EncryptionMethod::kAES128_CTR:
     case EncryptionMethod::kAES192_CTR:
     case EncryptionMethod::kAES256_CTR:
-      return encrypted_env_->NewRandomRWFile(fname, result, options);
+      s = encrypted_env_->NewRandomRWFile(fname, result, options);
+      break;
     default:
-      return Status::InvalidArgument(
-          "Unsupported encryption method: " +
-          ToString(static_cast<int>(file_info.method)));
+      s = Status::InvalidArgument("Unsupported encryption method: " +
+                                  ToString(static_cast<int>(file_info.method)));
   }
+  if (!s.ok()) {
+    // Ignore error
+    key_manager_->DeleteFile(fname);
+  }
+  return s;
 }
 
 Status KeyManagedEncryptedEnv::DeleteFile(const std::string& fname) {
@@ -229,7 +250,12 @@ Status KeyManagedEncryptedEnv::LinkFile(const std::string& src_fname,
   if (!s.ok()) {
     return s;
   }
-  return target()->LinkFile(src_fname, dst_fname);
+  s = target()->LinkFile(src_fname, dst_fname);
+  if (!s.ok()) {
+    // Ignore error
+    key_manager_->DeleteFile(dst_fname);
+  }
+  return s;
 }
 
 Status KeyManagedEncryptedEnv::RenameFile(const std::string& src_fname,
@@ -238,7 +264,12 @@ Status KeyManagedEncryptedEnv::RenameFile(const std::string& src_fname,
   if (!s.ok()) {
     return s;
   }
-  return target()->RenameFile(src_fname, dst_fname);
+  s = target()->RenameFile(src_fname, dst_fname);
+  if (!s.ok()) {
+    // Ignore error
+    key_manager_->RenameFile(dst_fname, src_fname);
+  }
+  return s;
 }
 
 Env* NewKeyManagedEncryptedEnv(Env* base_env,
