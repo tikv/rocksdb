@@ -1,4 +1,5 @@
 #pragma once
+#ifndef ROCKSDB_LITE
 #ifdef OPENSSL
 
 #include <memory>
@@ -188,4 +189,5 @@ extern Env* NewKeyManagedEncryptedEnv(Env* base_env,
 }  // namespace encryption
 }  // namespace rocksdb
 
-#endif
+#endif  // OPENSSL
+#endif  // !ROCKSDB_LITE
