@@ -1,6 +1,6 @@
 #ifndef ROCKSDB_LITE
 #ifdef OPENSSL
-#include "rocksdb/encryption.h"
+#include "encryption/encryption.h"
 
 #include "util/string_util.h"
 
@@ -80,6 +80,17 @@ Status AESEncryptionProvider::CreateCipherStream(
   *result = std::move(cipher_stream);
   return Status::OK();
 }
+
+KeyManagedEncryptedEnv::KeyManagedEncryptedEnv(
+    Env* base_env, std::shared_ptr<KeyManager>& key_manager,
+    std::unique_ptr<AESEncryptionProvider>&& provider,
+    std::unique_ptr<Env>&& encrypted_env)
+    : EnvWrapper(base_env),
+      key_manager_(key_manager),
+      provider_(std::move(provider)),
+      encrypted_env_(std::move(encrypted_env)) {}
+
+KeyManagedEncryptedEnv::~KeyManagedEncryptedEnv() = default;
 
 Status KeyManagedEncryptedEnv::NewSequentialFile(
     const std::string& fname, std::unique_ptr<SequentialFile>* result,
