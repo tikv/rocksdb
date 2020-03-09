@@ -1218,6 +1218,7 @@ Status DBImpl::ConcurrentWriteToWAL(const WriteThread::WriteGroup& write_group,
   WriteBatch tmp_batch;
   size_t write_with_wal = 0;
   WriteBatch* to_be_cached_state = nullptr;
+  StopWatch write_sw(env_, stats_, DB_WRITE_WAL_TIME);
   WriteBatch* merged_batch =
       MergeBatch(write_group, &tmp_batch, &write_with_wal, &to_be_cached_state);
 
