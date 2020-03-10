@@ -377,7 +377,7 @@ class WriteThread {
   // Remove the dummy writer and wake up waiting writers
   void EndWriteStall();
 
-  SafeQueue<std::function<void()>> write_queue_;
+  SafeFuncQueue write_queue_;
 
  private:
   // See AwaitState.

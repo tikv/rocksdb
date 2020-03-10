@@ -212,7 +212,7 @@ TEST_P(DBWriteTest, MultiThreadWrite) {
               }
               batches.push_back(batch);
             }
-            dbfull()->MultiThreadWrite(opt, batches);
+            dbfull()->MultiBatchWrite(opt, batches);
             for (auto b : batches) {
               delete b;
             }

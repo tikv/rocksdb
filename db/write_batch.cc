@@ -1990,12 +1990,12 @@ void WriteBatchInternal::AsyncInsertInto(
     WriteThread::Writer* writer, SequenceNumber sequence,
     ColumnFamilySet* version_set, FlushScheduler* flush_scheduler,
     bool ignore_missing_column_families, DB* db,
-    SafeQueue<std::function<void()>>* pool) {
+    SafeFuncQueue* pool) {
   auto write_group = writer->write_group;
   write_group->running.fetch_add(writer->batches.size(),
                                  std::memory_order_seq_cst);
   for (auto w : writer->batches) {
-    pool->PushBack([=]() {
+    auto f = [=]() {
       ColumnFamilyMemTablesImpl memtables(version_set);
       MemTableInserter inserter(
           sequence, &memtables, flush_scheduler, ignore_missing_column_families,
@@ -2010,7 +2010,8 @@ void WriteBatchInternal::AsyncInsertInto(
       }
       inserter.PostProcess();
       write_group->running.fetch_sub(1, std::memory_order_release);
-    });
+    };
+    pool->Push(f);
     sequence += WriteBatchInternal::Count(w);
   }
 }

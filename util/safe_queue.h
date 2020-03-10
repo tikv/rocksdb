@@ -8,38 +8,55 @@
 #include <memory>
 #include <mutex>
 #include <queue>
+#include <vector>
 
 namespace rocksdb {
-template <typename T>
-class SafeQueue {
+class SafeFuncQueue {
  public:
-  SafeQueue() {}
+  SafeFuncQueue() : que_(10000), que_len_(0), start_(0), end_(0){}
 
-  ~SafeQueue() {}
+  ~SafeFuncQueue() {}
 
-  bool PopFront(T &ret) {
+  bool RunFunc() {
     if (0 == que_len_.load(std::memory_order_relaxed)) {
       return false;
     }
-    std::lock_guard<std::mutex> lock(mu_);
-    if (que_.empty()) {
+    mu_.lock();
+    uint32_t index = 0;
+    if (start_ == end_) {
+      mu_.unlock();
       return false;
     }
-    ret = std::move(que_.front());
-    que_.pop_front();
     que_len_.fetch_sub(1, std::memory_order_relaxed);
+    index = start_ ++;
+    if (start_ >= que_.size()) {
+      start_ -= que_.size();
+    }
+    mu_.unlock();
+    que_[index]();
     return true;
   }
 
-  void PushBack(T &&v) {
-    std::lock_guard<std::mutex> lock(mu_);
-    que_.push_back(v);
-    que_len_.fetch_add(1, std::memory_order_relaxed);
+  void Push(std::function<void()> &&v) {
+    mu_.lock();
+    if (que_len_.load(std::memory_order_relaxed) == que_.size()) {
+      mu_.unlock();
+      v();
+    } else {
+      que_[end_ ++] = std::move(v);
+      if (end_ >= que_.size()) {
+        end_ -= que_.size();
+      }
+      que_len_.fetch_add(1, std::memory_order_relaxed);
+      mu_.unlock();
+    }
   }
 
  private:
-  std::deque<T> que_;
+  std::vector<std::function<void()>> que_;
   std::mutex mu_;
   std::atomic<uint64_t> que_len_;
+  uint32_t start_;
+  uint32_t end_;
 };
 }  // namespace rocksdb

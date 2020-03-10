@@ -201,7 +201,7 @@ class WriteBatchInternal {
                               ColumnFamilySet* version_set,
                               FlushScheduler* flush_scheduler,
                               bool ignore_missing_column_families, DB* db,
-                              SafeQueue<std::function<void()>>* pool);
+                              SafeFuncQueue* pool);
 
   static Status Append(WriteBatch* dst, const WriteBatch* src,
                        const bool WAL_only = false);

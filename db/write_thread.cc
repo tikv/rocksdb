@@ -142,39 +142,24 @@ uint8_t WriteThread::AwaitState(Writer* w, uint8_t goal_mask,
   const int sampling_base = 256;
 
   if (enable_multi_thread_write_) {
-#ifdef NDEBUG
-    std::function<void()> work;
-    while ((state & goal_mask) == 0) {
-      if (write_queue_.PopFront(work)) {
-        work();
-      } else {
-        std::this_thread::yield();
-      }
-      state = w->state.load(std::memory_order_acquire);
-    }
-    // In release build, we do not need to block thread, because it could help
-    // writer-leader to insert into memtable.
-#else
     auto spin_begin = std::chrono::steady_clock::now();
-    const int max_yield_usec = 2000;
-    std::function<void()> work;
+    const int max_yield_usec = ;
     while ((state & goal_mask) == 0) {
-      if (write_queue_.PopFront(work)) {
-        work();
+      if (write_queue_.RunFunc()) {
+        spin_begin = std::chrono::steady_clock::now();
       } else {
         std::this_thread::yield();
+        auto now = std::chrono::steady_clock::now();
+        if ((now - spin_begin) > std::chrono::microseconds(max_yield_usec_)) {
+          break;
+        }
       }
       state = w->state.load(std::memory_order_acquire);
-      auto now = std::chrono::steady_clock::now();
-      if ((now - spin_begin) > std::chrono::microseconds(max_yield_usec)) {
-        break;
-      }
     }
     if ((state & goal_mask) == 0) {
       TEST_SYNC_POINT_CALLBACK("WriteThread::AwaitState:BlockingWaiting", w);
       state = BlockingAwaitState(w, goal_mask);
     }
-#endif
     return state;
   }
 

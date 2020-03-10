@@ -66,12 +66,11 @@ Status DBImpl::WriteWithCallback(const WriteOptions& write_options,
 }
 #endif  // ROCKSDB_LITE
 
-Status DBImpl::MultiBatchWrite(const WriteOptions& options, WriteBatch* updates,
-                               size_t len) {
+Status DBImpl::MultiBatchWrite(const WriteOptions& options, const std::vector<WriteBatch*>& updates) {
   if (immutable_db_options_.enable_multi_thread_write) {
     autovector<WriteBatch*> batches;
-    for (size_t i = 0; i < len; i++) {
-      batches.push_back(&updates[i]);
+    for (auto b: updates) {
+      batches.push_back(b);
     }
     return MultiBatchWriteImpl(options, batches, nullptr, nullptr);
   } else {
@@ -80,10 +79,7 @@ Status DBImpl::MultiBatchWrite(const WriteOptions& options, WriteBatch* updates,
 }
 
 void DBImpl::StealWorkOrYield() {
-  std::function<void()> work;
-  if (write_thread_.write_queue_.PopFront(work)) {
-    work();
-  } else {
+  if (!write_thread_.write_queue_.RunFunc()) {
     std::this_thread::yield();
   }
 }
@@ -183,6 +179,7 @@ Status DBImpl::MultiBatchWriteImpl(const WriteOptions& write_options,
     assert(immutable_db_options_.allow_concurrent_memtable_write);
     auto version_set = versions_->GetColumnFamilySet();
     memtable_write_group.running.store(0);
+
     for (auto it = memtable_write_group.begin();
          it != memtable_write_group.end(); ++it) {
       if (!it.writer->ShouldWriteToMemtable()) {
@@ -193,10 +190,7 @@ Status DBImpl::MultiBatchWriteImpl(const WriteOptions& write_options,
           ignore_missing_faimly, this, &write_thread_.write_queue_);
     }
     while (memtable_write_group.running.load(std::memory_order_acquire) > 0) {
-      std::function<void()> work;
-      if (write_thread_.write_queue_.PopFront(work)) {
-        work();
-      } else {
+      if (!write_thread_.write_queue_.RunFunc()) {
         std::this_thread::yield();
       }
     }

@@ -379,15 +379,8 @@ class DB {
   virtual void StealWorkOrYield() {}
 
   virtual Status MultiBatchWrite(const WriteOptions& options,
-                                 WriteBatch* updates, size_t len) {
-    Status s;
-    for (size_t i = 0; i < len; i++) {
-      s = Write(options, &updates[i]);
-      if (!s.ok()) {
-        break;
-      }
-    }
-    return s;
+                                 const std::vector<WriteBatch*>& updates) {
+    return Status::NotSupported();
   }
 
   // If the database contains an entry for "key" store the
