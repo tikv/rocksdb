@@ -177,27 +177,48 @@ Status DBImpl::MultiBatchWriteImpl(const WriteOptions& write_options,
     WriteThread::WriteGroup memtable_write_group;
     write_thread_.EnterAsMemTableWriter(&writer, &memtable_write_group);
     assert(immutable_db_options_.allow_concurrent_memtable_write);
-    auto version_set = versions_->GetColumnFamilySet();
-    memtable_write_group.running.store(0);
-
-    for (auto it = memtable_write_group.begin();
-         it != memtable_write_group.end(); ++it) {
-      if (!it.writer->ShouldWriteToMemtable()) {
-        continue;
+    if (memtable_write_group.size > 1) {
+      write_thread_.LaunchParallelMemTableWriters(&memtable_write_group);
+    } else {
+      auto version_set = versions_->GetColumnFamilySet();
+      memtable_write_group.running.store(0);
+      for (auto it = memtable_write_group.begin();
+           it != memtable_write_group.end(); ++it) {
+        if (!it.writer->ShouldWriteToMemtable()) {
+          continue;
+        }
+        WriteBatchInternal::AsyncInsertInto(
+                it.writer, it.writer->sequence, version_set, &flush_scheduler_,
+                ignore_missing_faimly, this, &write_thread_.write_queue_);
       }
-      WriteBatchInternal::AsyncInsertInto(
-          it.writer, it.writer->sequence, version_set, &flush_scheduler_,
-          ignore_missing_faimly, this, &write_thread_.write_queue_);
-    }
-    while (memtable_write_group.running.load(std::memory_order_acquire) > 0) {
-      if (!write_thread_.write_queue_.RunFunc()) {
-        std::this_thread::yield();
+      while (memtable_write_group.running.load(std::memory_order_acquire) > 0) {
+        if (!write_thread_.write_queue_.RunFunc()) {
+          std::this_thread::yield();
+        }
       }
+      MemTableInsertStatusCheck(memtable_write_group.status);
+      versions_->SetLastSequence(memtable_write_group.last_sequence);
+      write_thread_.ExitAsMemTableWriter(&writer, memtable_write_group);
     }
-    MemTableInsertStatusCheck(memtable_write_group.status);
-    versions_->SetLastSequence(memtable_write_group.last_sequence);
-    write_thread_.ExitAsMemTableWriter(&writer, memtable_write_group);
   }
+  if (writer.state == WriteThread::STATE_PARALLEL_MEMTABLE_WRITER) {
+    assert(writer.ShouldWriteToMemtable());
+    auto version_set = versions_->GetColumnFamilySet();
+    WriteBatchInternal::AsyncInsertInto(
+                &writer, writer.sequence, version_set, &flush_scheduler_,
+                ignore_missing_faimly, this, &write_thread_.write_queue_);
+    while (writer.write_group->running.load(std::memory_order_acquire) > writer.write_group->size) {
+        if (!write_thread_.write_queue_.RunFunc()) {
+          std::this_thread::yield();
+        }
+    }
+    if (write_thread_.CompleteParallelMemTableWriter(&writer)) {
+      MemTableInsertStatusCheck(writer.status);
+      versions_->SetLastSequence(writer.write_group->last_sequence);
+      write_thread_.ExitAsMemTableWriter(&writer, *writer.write_group);
+    }
+  }
+
   if (seq_used != nullptr) {
     *seq_used = writer.sequence;
   }

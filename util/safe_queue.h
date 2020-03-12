@@ -8,55 +8,48 @@
 #include <memory>
 #include <mutex>
 #include <queue>
-#include <vector>
+#include <deque>
 
 namespace rocksdb {
 class SafeFuncQueue {
+private:
+    struct Item {
+        std::function<void()> func;
+    };
  public:
-  SafeFuncQueue() : que_(10000), que_len_(0), start_(0), end_(0){}
+  SafeFuncQueue() : que_len_(0){}
 
   ~SafeFuncQueue() {}
 
   bool RunFunc() {
-    if (0 == que_len_.load(std::memory_order_relaxed)) {
+    if (0 == que_len_.load(std::memory_order_acquire)) {
       return false;
     }
     mu_.lock();
-    uint32_t index = 0;
-    if (start_ == end_) {
+    if (que_.empty()) {
       mu_.unlock();
       return false;
     }
+    auto func = std::move(que_.front().func);
+    que_.pop_front();
     que_len_.fetch_sub(1, std::memory_order_relaxed);
-    index = start_ ++;
-    if (start_ >= que_.size()) {
-      start_ -= que_.size();
-    }
     mu_.unlock();
-    que_[index]();
+    func();
     return true;
   }
 
   void Push(std::function<void()> &&v) {
     mu_.lock();
-    if (que_len_.load(std::memory_order_relaxed) == que_.size()) {
-      mu_.unlock();
-      v();
-    } else {
-      que_[end_ ++] = std::move(v);
-      if (end_ >= que_.size()) {
-        end_ -= que_.size();
-      }
-      que_len_.fetch_add(1, std::memory_order_relaxed);
-      mu_.unlock();
-    }
+    que_.emplace_back();
+    que_.back().func = std::move(v);
+    que_len_.fetch_add(1, std::memory_order_relaxed);
+    mu_.unlock();
   }
 
  private:
-  std::vector<std::function<void()>> que_;
+  std::deque<Item> que_;
   std::mutex mu_;
-  std::atomic<uint64_t> que_len_;
-  uint32_t start_;
-  uint32_t end_;
+  std::atomic<uint32_t> que_len_;
 };
+
 }  // namespace rocksdb

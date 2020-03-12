@@ -2011,7 +2011,11 @@ void WriteBatchInternal::AsyncInsertInto(
       inserter.PostProcess();
       write_group->running.fetch_sub(1, std::memory_order_release);
     };
-    pool->Push(f);
+    if (writer->batches.size() > 1) {
+      pool->Push(std::move(f));
+    } else {
+      f();
+    }
     sequence += WriteBatchInternal::Count(w);
   }
 }

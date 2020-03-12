@@ -143,7 +143,6 @@ uint8_t WriteThread::AwaitState(Writer* w, uint8_t goal_mask,
 
   if (enable_multi_thread_write_) {
     auto spin_begin = std::chrono::steady_clock::now();
-    const int max_yield_usec = ;
     while ((state & goal_mask) == 0) {
       if (write_queue_.RunFunc()) {
         spin_begin = std::chrono::steady_clock::now();
