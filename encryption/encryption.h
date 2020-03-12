@@ -1,9 +1,9 @@
+#pragma once
 #ifndef ROCKSDB_LITE
 #ifdef OPENSSL
-#include "rocksdb/encryption.h"
-
 #include <openssl/aes.h>
 
+#include "rocksdb/encryption.h"
 #include "rocksdb/env_encryption.h"
 #include "util/coding.h"
 

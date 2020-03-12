@@ -28,20 +28,10 @@ Status NewAESCTRCipherStream(EncryptionMethod method, const std::string& key,
                              const std::string& iv,
                              std::unique_ptr<AESCTRCipherStream>* result) {
   assert(result != nullptr);
-  size_t key_size = 0;
-  switch (method) {
-    case EncryptionMethod::kAES128_CTR:
-      key_size = 16;
-      break;
-    case EncryptionMethod::kAES192_CTR:
-      key_size = 24;
-      break;
-    case EncryptionMethod::kAES256_CTR:
-      key_size = 32;
-      break;
-    default:
-      return Status::InvalidArgument("Unsupported encryption method: " +
-                                     ToString(static_cast<int>(method)));
+  size_t key_size = KeySize(method);
+  if (key_size == 0) {
+    return Status::InvalidArgument("Unsupported encryption method: " +
+                                   ToString(static_cast<int>(method)));
   }
   if (key.size() != key_size) {
     return Status::InvalidArgument("Encryption key size mismatch. " +

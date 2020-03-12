@@ -20,6 +20,19 @@ enum class EncryptionMethod : int {
   kAES256_CTR = 4,
 };
 
+inline size_t KeySize(EncryptionMethod method) {
+  switch (method) {
+    case EncryptionMethod::kAES128_CTR:
+      return 16;
+    case EncryptionMethod::kAES192_CTR:
+      return 24;
+    case EncryptionMethod::kAES256_CTR:
+      return 32;
+    default:
+      return 0;
+  };
+}
+
 struct FileEncryptionInfo {
   EncryptionMethod method = EncryptionMethod::kUnknown;
   std::string key;
