@@ -149,6 +149,9 @@ uint8_t WriteThread::AwaitState(Writer* w, uint8_t goal_mask,
       } else {
         std::this_thread::yield();
         auto now = std::chrono::steady_clock::now();
+        // If there is no task in the queue for a long time, we should block
+        // this thread to avoid costing too much CPU. Because there may be a
+        // large WriteBatch writing into memtable.
         if ((now - spin_begin) > std::chrono::microseconds(max_yield_usec_)) {
           break;
         }

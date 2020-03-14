@@ -78,12 +78,6 @@ Status DBImpl::MultiBatchWrite(const WriteOptions& options, const std::vector<Wr
   }
 }
 
-void DBImpl::StealWorkOrYield() {
-  if (!write_thread_.write_queue_.RunFunc()) {
-    std::this_thread::yield();
-  }
-}
-
 Status DBImpl::MultiBatchWriteImpl(const WriteOptions& write_options,
                                    const autovector<WriteBatch*>& my_batch,
                                    WriteCallback* callback, uint64_t* log_used,
@@ -188,8 +182,8 @@ Status DBImpl::MultiBatchWriteImpl(const WriteOptions& write_options,
           continue;
         }
         WriteBatchInternal::AsyncInsertInto(
-                it.writer, it.writer->sequence, version_set, &flush_scheduler_,
-                ignore_missing_faimly, this, &write_thread_.write_queue_);
+            it.writer, it.writer->sequence, version_set, &flush_scheduler_,
+            ignore_missing_faimly, this, &write_thread_.write_queue_);
       }
       while (memtable_write_group.running.load(std::memory_order_acquire) > 0) {
         if (!write_thread_.write_queue_.RunFunc()) {
@@ -205,12 +199,13 @@ Status DBImpl::MultiBatchWriteImpl(const WriteOptions& write_options,
     assert(writer.ShouldWriteToMemtable());
     auto version_set = versions_->GetColumnFamilySet();
     WriteBatchInternal::AsyncInsertInto(
-                &writer, writer.sequence, version_set, &flush_scheduler_,
-                ignore_missing_faimly, this, &write_thread_.write_queue_);
-    while (writer.write_group->running.load(std::memory_order_acquire) > writer.write_group->size) {
-        if (!write_thread_.write_queue_.RunFunc()) {
-          std::this_thread::yield();
-        }
+        &writer, writer.sequence, version_set, &flush_scheduler_,
+        ignore_missing_faimly, this, &write_thread_.write_queue_);
+    while (writer.write_group->running.load(std::memory_order_acquire) >
+           writer.write_group->size) {
+      if (!write_thread_.write_queue_.RunFunc()) {
+        std::this_thread::yield();
+      }
     }
     if (write_thread_.CompleteParallelMemTableWriter(&writer)) {
       MemTableInsertStatusCheck(writer.status);

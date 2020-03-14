@@ -5,19 +5,20 @@
 
 #pragma once
 
+#include <deque>
 #include <memory>
 #include <mutex>
 #include <queue>
-#include <deque>
 
 namespace rocksdb {
 class SafeFuncQueue {
-private:
-    struct Item {
-        std::function<void()> func;
-    };
+ private:
+  struct Item {
+    std::function<void()> func;
+  };
+
  public:
-  SafeFuncQueue() : que_len_(0){}
+  SafeFuncQueue() : que_len_(0) {}
 
   ~SafeFuncQueue() {}
 

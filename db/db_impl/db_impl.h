@@ -154,9 +154,6 @@ class DBImpl : public DB {
   virtual Status Write(const WriteOptions& options,
                        WriteBatch* updates) override;
 
-  using DB::StealWorkOrYield;
-  virtual void StealWorkOrYield() override;
-
   using DB::MultiBatchWrite;
   virtual Status MultiBatchWrite(const WriteOptions& options,
                                  const std::vector<WriteBatch*>& updates) override;

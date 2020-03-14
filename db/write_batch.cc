@@ -2013,10 +2013,12 @@ void WriteBatchInternal::AsyncInsertInto(
     };
     if (writer->batches.size() > 1) {
       pool->Push(std::move(f));
+      sequence += WriteBatchInternal::Count(w);
     } else {
+      // If there is only one WriteBatch written by this thread, It shall do it
+      // by self, because this batch may be large.
       f();
     }
-    sequence += WriteBatchInternal::Count(w);
   }
 }
 
