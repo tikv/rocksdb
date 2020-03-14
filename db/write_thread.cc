@@ -524,7 +524,8 @@ void WriteThread::EnterAsMemTableWriter(Writer* leader,
   write_group->size = 1;
   Writer* last_writer = leader;
 
-  if (!allow_concurrent_memtable_write_ || !leader->batches[0]->HasMerge()) {
+  if (!allow_concurrent_memtable_write_ || enable_multi_thread_write_ ||
+      !leader->batches[0]->HasMerge()) {
     Writer* newest_writer = newest_memtable_writer_.load();
     CreateMissingNewerLinks(newest_writer);
 
@@ -536,7 +537,7 @@ void WriteThread::EnterAsMemTableWriter(Writer* leader,
         break;
       }
 
-      if (w->batches[0]->HasMerge()) {
+      if (!enable_multi_thread_write_ && w->batches[0]->HasMerge()) {
         break;
       }
 

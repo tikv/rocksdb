@@ -156,7 +156,7 @@ class DBImpl : public DB {
 
   using DB::MultiBatchWrite;
   virtual Status MultiBatchWrite(const WriteOptions& options,
-                                 const std::vector<WriteBatch*>& updates) override;
+                                 std::vector<WriteBatch*>&& updates) override;
 
   using DB::Get;
   virtual Status Get(const ReadOptions& options,
@@ -1023,7 +1023,7 @@ class DBImpl : public DB {
                    PreReleaseCallback* pre_release_callback = nullptr);
 
   Status MultiBatchWriteImpl(const WriteOptions& write_options,
-                             const autovector<WriteBatch*>& my_batch,
+                             std::vector<WriteBatch*>&& my_batch,
                              WriteCallback* callback,
                              uint64_t* log_used = nullptr, uint64_t log_ref = 0,
                              uint64_t* seq_used = nullptr);

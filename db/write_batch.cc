@@ -721,7 +721,7 @@ int WriteBatchInternal::Count(const WriteBatch* b) {
   return DecodeFixed32(b->rep_.data() + 8);
 }
 
-int WriteBatchInternal::Count(const autovector<WriteBatch*> b) {
+int WriteBatchInternal::Count(const std::vector<WriteBatch*> b) {
   int count = 0;
   for (auto w : b) {
     count += DecodeFixed32(w->rep_.data() + 8);

@@ -212,7 +212,7 @@ TEST_P(DBWriteTest, MultiThreadWrite) {
               }
               batches.push_back(batch);
             }
-            dbfull()->MultiBatchWrite(opt, batches);
+            dbfull()->MultiBatchWrite(opt, std::move(batches));
             for (auto b : batches) {
               delete b;
             }
