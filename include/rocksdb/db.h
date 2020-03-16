@@ -376,8 +376,8 @@ class DB {
   // Note: consider setting options.sync = true.
   virtual Status Write(const WriteOptions& options, WriteBatch* updates) = 0;
 
-  virtual Status MultiBatchWrite(const WriteOptions& _options,
-                                 std::vector<WriteBatch*>&& _updates) {
+  virtual Status MultiBatchWrite(const WriteOptions& /*options*/,
+                                 std::vector<WriteBatch*>&& /*updates*/) {
     return Status::NotSupported();
   }
 
