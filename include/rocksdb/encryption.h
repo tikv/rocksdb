@@ -105,8 +105,6 @@ class KeyManagedEncryptedEnv : public EnvWrapper {
   const std::unique_ptr<Env> encrypted_env_;
 };
 
-// TODO(yiwu): Return a status. If OpenSSL is not available at compile time,
-// or AES-NI is not available at run-time, return an error.
 extern Env* NewKeyManagedEncryptedEnv(Env* base_env,
                                       std::shared_ptr<KeyManager>& key_manager);
 
