@@ -56,6 +56,7 @@
 
 namespace rocksdb {
 
+//TODO(yiwu): Use InMemoryKeyManager instead for tests.
 #ifdef OPENSSL
 class TestKeyManager : public encryption::KeyManager {
  public:

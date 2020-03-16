@@ -1,3 +1,8 @@
+// Copyright (c) 2011-present, Facebook, Inc.  All rights reserved.
+//  This source code is licensed under both the GPLv2 (found in the
+//  COPYING file in the root directory) and Apache 2.0 License
+//  (found in the LICENSE.Apache file in the root directory).
+
 #pragma once
 #ifndef ROCKSDB_LITE
 #ifdef OPENSSL
@@ -39,6 +44,9 @@ struct FileEncryptionInfo {
   std::string iv;
 };
 
+// Interface to manage encryption keys for files. KeyManagedEncryptedEnv
+// will query KeyManager for the key being used for each file, and update
+// KeyManager when it creates a new file or moving files around.
 class KeyManager {
  public:
   virtual ~KeyManager() = default;
@@ -54,6 +62,8 @@ class KeyManager {
                             const std::string& dst_fname) = 0;
 };
 
+// An Env with underlying files being encrypted. It holds a reference to an
+// external KeyManager for encryption key management.
 class KeyManagedEncryptedEnv : public EnvWrapper {
  public:
   KeyManagedEncryptedEnv(Env* base_env,
@@ -95,6 +105,8 @@ class KeyManagedEncryptedEnv : public EnvWrapper {
   const std::unique_ptr<Env> encrypted_env_;
 };
 
+// TODO(yiwu): Return a status. If OpenSSL is not available at compile time,
+// or AES-NI is not available at run-time, return an error.
 extern Env* NewKeyManagedEncryptedEnv(Env* base_env,
                                       std::shared_ptr<KeyManager>& key_manager);
 
