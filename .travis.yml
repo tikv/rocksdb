@@ -51,8 +51,10 @@ matrix:
     env: TEST_GROUP=4
   - os : linux
     compiler: clang
-  - os : osx
+  - os: osx
     compiler: gcc
+  - os: osx
+    env: JOB_NAME=encrypted_env
 
 # https://docs.travis-ci.com/user/caching/#ccache-cache
 install:
