@@ -152,7 +152,7 @@ uint8_t WriteThread::AwaitState(Writer* w, uint8_t goal_mask,
         // If there is no task in the queue for a long time, we should block
         // this thread to avoid costing too much CPU. Because there may be a
         // large WriteBatch writing into memtable.
-        if ((now - spin_begin) > std::chrono::microseconds(max_yield_usec_)) {
+        if ((now - spin_begin) > std::chrono::microseconds(max_yield_usec_ * 50)) {
           break;
         }
       }
