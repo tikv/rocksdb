@@ -18,14 +18,11 @@ class SafeFuncQueue {
   };
 
  public:
-  SafeFuncQueue() : que_len_(0) {}
+  SafeFuncQueue() {}
 
   ~SafeFuncQueue() {}
 
   bool RunFunc() {
-    if (0 == que_len_.load(std::memory_order_acquire)) {
-      return false;
-    }
     mu_.lock();
     if (que_.empty()) {
       mu_.unlock();
@@ -33,24 +30,20 @@ class SafeFuncQueue {
     }
     auto func = std::move(que_.front().func);
     que_.pop_front();
-    que_len_.fetch_sub(1, std::memory_order_relaxed);
     mu_.unlock();
     func();
     return true;
   }
 
   void Push(std::function<void()> &&v) {
-    mu_.lock();
+    std::lock_guard<std::mutex> _guard(mu_);
     que_.emplace_back();
     que_.back().func = std::move(v);
-    que_len_.fetch_add(1, std::memory_order_relaxed);
-    mu_.unlock();
   }
 
  private:
   std::deque<Item> que_;
   std::mutex mu_;
-  std::atomic<uint32_t> que_len_;
 };
 
 }  // namespace rocksdb
