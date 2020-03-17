@@ -193,6 +193,9 @@ TEST_P(DBWriteTest, MultiThreadWrite) {
     return;
   }
   constexpr int kNumThreads = 8;
+  constexpr int kNumWrite = 16;
+  constexpr int kNumBatch = 8;
+  constexpr int kBatchSize = 16;
   options.env = mock_env.get();
   options.write_buffer_size = 1024 * 128;
   Reopen(options);
@@ -201,11 +204,11 @@ TEST_P(DBWriteTest, MultiThreadWrite) {
     threads.push_back(port::Thread(
         [&](int index) {
           WriteOptions opt;
-          for (int j = 0; j < 64; j++) {
+          for (int j = 0; j <kNumWrite; j++) {
             std::vector<WriteBatch*> batches;
-            for (int i = 0; i < 4; i++) {
+            for (int i = 0; i < kNumBatch; i++) {
               WriteBatch* batch = new WriteBatch;
-              for (int k = 0; k < 64; k++) {
+              for (int k = 0; k < kBatchSize; k++) {
                 batch->Put("key_" + ToString(index) + "_" + ToString(j) + "_" +
                                ToString(i) + "_" + ToString(k),
                            "value" + ToString(k));
@@ -226,9 +229,9 @@ TEST_P(DBWriteTest, MultiThreadWrite) {
   ReadOptions opt;
   for (int t = 0; t < kNumThreads; t++) {
     std::string value;
-    for (int i = 0; i < 64; i++) {
-      for (int j = 0; j < 4; j++) {
-        for (int k = 0; k < 64; k++) {
+    for (int i = 0; i < kNumWrite; i++) {
+      for (int j = 0; j < kNumBatch; j++) {
+        for (int k = 0; k < kBatchSize; k++) {
           ASSERT_OK(dbfull()->Get(opt,
                                   "key_" + ToString(t) + "_" + ToString(i) +
                                       "_" + ToString(j) + "_" + ToString(k),
