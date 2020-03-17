@@ -192,7 +192,7 @@ TEST_P(DBWriteTest, MultiThreadWrite) {
   if (!options.enable_multi_thread_write) {
     return;
   }
-  constexpr int kNumThreads = 2;
+  constexpr int kNumThreads = 1;
   constexpr int kNumWrite = 4;
   constexpr int kNumBatch = 8;
   constexpr int kBatchSize = 8;
@@ -204,10 +204,12 @@ TEST_P(DBWriteTest, MultiThreadWrite) {
     threads.push_back(port::Thread(
         [&](int index) {
           WriteOptions opt;
+          std::vector<WriteBatch> data(kNumBatch);
           for (int j = 0; j < kNumWrite; j++) {
             std::vector<WriteBatch*> batches;
             for (int i = 0; i < kNumBatch; i++) {
-              WriteBatch* batch = new WriteBatch;
+              WriteBatch* batch = &data[i];
+              batch->Clear();
               for (int k = 0; k < kBatchSize; k++) {
                 batch->Put("key_" + ToString(index) + "_" + ToString(j) + "_" +
                                ToString(i) + "_" + ToString(k),
@@ -216,9 +218,6 @@ TEST_P(DBWriteTest, MultiThreadWrite) {
               batches.push_back(batch);
             }
             dbfull()->MultiBatchWrite(opt, std::move(batches));
-            for (auto b : batches) {
-              delete b;
-            }
           }
         },
         t));
