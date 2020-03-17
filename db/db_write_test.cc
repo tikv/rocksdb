@@ -192,7 +192,7 @@ TEST_P(DBWriteTest, MultiThreadWrite) {
   if (!options.enable_multi_thread_write) {
     return;
   }
-  constexpr int kNumThreads = 1;
+  constexpr int kNumThreads = 4;
   constexpr int kNumWrite = 4;
   constexpr int kNumBatch = 8;
   constexpr int kBatchSize = 8;
