@@ -194,7 +194,7 @@ TEST_P(DBWriteTest, MultiThreadWrite) {
   }
   constexpr int kNumThreads = 4;
   constexpr int kNumWrite = 4;
-  constexpr int kNumBatch = 1;
+  constexpr int kNumBatch = 8;
   constexpr int kBatchSize = 8;
   options.env = mock_env.get();
   options.write_buffer_size = 1024 * 128;
