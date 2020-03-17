@@ -204,7 +204,7 @@ TEST_P(DBWriteTest, MultiThreadWrite) {
     threads.push_back(port::Thread(
         [&](int index) {
           WriteOptions opt;
-          for (int j = 0; j <kNumWrite; j++) {
+          for (int j = 0; j < kNumWrite; j++) {
             std::vector<WriteBatch*> batches;
             for (int i = 0; i < kNumBatch; i++) {
               WriteBatch* batch = new WriteBatch;
