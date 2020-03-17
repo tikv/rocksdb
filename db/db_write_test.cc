@@ -192,8 +192,8 @@ TEST_P(DBWriteTest, MultiThreadWrite) {
   if (!options.enable_multi_thread_write) {
     return;
   }
-  constexpr int kNumThreads = 8;
-  constexpr int kNumWrite = 16;
+  constexpr int kNumThreads = 4;
+  constexpr int kNumWrite = 8;
   constexpr int kNumBatch = 8;
   constexpr int kBatchSize = 16;
   options.env = mock_env.get();
