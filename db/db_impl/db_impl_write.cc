@@ -163,6 +163,7 @@ Status DBImpl::MultiBatchWriteImpl(const WriteOptions& write_options,
     }
     write_thread_.ExitAsBatchGroupLeader(wal_write_group, writer.status);
   }
+  bool is_leader_thread = false;
   if (writer.state == WriteThread::STATE_MEMTABLE_WRITER_LEADER) {
     PERF_TIMER_GUARD(write_memtable_time);
     assert(writer.ShouldWriteToMemtable());
@@ -170,6 +171,7 @@ Status DBImpl::MultiBatchWriteImpl(const WriteOptions& write_options,
     write_thread_.EnterAsMemTableWriter(&writer, &memtable_write_group);
     assert(immutable_db_options_.allow_concurrent_memtable_write);
     if (memtable_write_group.size > 1) {
+      is_leader_thread = true;
       write_thread_.LaunchParallelMemTableWriters(&memtable_write_group);
     } else {
       auto version_set = versions_->GetColumnFamilySet();
@@ -199,16 +201,21 @@ Status DBImpl::MultiBatchWriteImpl(const WriteOptions& write_options,
     WriteBatchInternal::AsyncInsertInto(
         &writer, writer.sequence, version_set, &flush_scheduler_,
         ignore_missing_faimly, this, &write_thread_.write_queue_);
-    while (writer.write_group->running.load(std::memory_order_acquire) >
-           writer.write_group->size) {
-      if (!write_thread_.write_queue_.RunFunc()) {
-        std::this_thread::yield();
+    while (writer.write_group->running.load(std::memory_order_acquire) > 1) {
+      // Write thread could exit and block itself if it is not a leader thread.
+      if (!write_thread_.write_queue_.RunFunc() && !is_leader_thread) {
+        break;
       }
     }
-    if (write_thread_.CompleteParallelMemTableWriter(&writer)) {
+    // We only allow leader_thread to finish this WriteGroup because there may be another task which is done by thread
+    // which is not in this WriteGroup, and it would not notify threads in WriteGroup. So we must make someone in this
+    // WriteGroup to complete it and leader thread is easy to be decided.
+    if (is_leader_thread) {
       MemTableInsertStatusCheck(writer.status);
       versions_->SetLastSequence(writer.write_group->last_sequence);
       write_thread_.ExitAsMemTableWriter(&writer, *writer.write_group);
+    } else {
+      write_thread_.CompleteParallelMemTableWriter(&writer);
     }
   }
 
