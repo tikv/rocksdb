@@ -1986,11 +1986,12 @@ Status WriteBatchInternal::InsertInto(
   return s;
 }
 
-void WriteBatchInternal::AsyncInsertInto(
-    WriteThread::Writer* writer, SequenceNumber sequence,
-    ColumnFamilySet* version_set, FlushScheduler* flush_scheduler,
-    bool ignore_missing_column_families, DB* db,
-    SafeFuncQueue* pool) {
+void WriteBatchInternal::AsyncInsertInto(WriteThread::Writer* writer,
+                                         SequenceNumber sequence,
+                                         ColumnFamilySet* version_set,
+                                         FlushScheduler* flush_scheduler,
+                                         bool ignore_missing_column_families,
+                                         DB* db, SafeFuncQueue* pool) {
   auto write_group = writer->write_group;
   auto batch_size = writer->batches.size();
   write_group->running.fetch_add(batch_size);
@@ -2013,7 +2014,8 @@ void WriteBatchInternal::AsyncInsertInto(
     };
     if (i + 1 == batch_size) {
       // If there is only one WriteBatch written by this thread, It shall do it
-      // by self, because this batch may be large.
+      // by self, because this batch may be large. And every thread does the latest
+      // one by self will reduce the cost of calling `SafeFuncQueue::Push`.
       f();
     } else {
       pool->Push(std::move(f));

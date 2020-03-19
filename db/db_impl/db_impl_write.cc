@@ -201,15 +201,19 @@ Status DBImpl::MultiBatchWriteImpl(const WriteOptions& write_options,
     WriteBatchInternal::AsyncInsertInto(
         &writer, writer.sequence, version_set, &flush_scheduler_,
         ignore_missing_faimly, this, &write_thread_.write_queue_);
+    // Because `LaunchParallelMemTableWriters` has add `write_group->size` to `running`,
+    // the value of `running` is always larger than one if the leader thread does not
+    // call `CompleteParallelMemTableWriter`.
     while (writer.write_group->running.load(std::memory_order_acquire) > 1) {
       // Write thread could exit and block itself if it is not a leader thread.
       if (!write_thread_.write_queue_.RunFunc() && !is_leader_thread) {
         break;
       }
     }
-    // We only allow leader_thread to finish this WriteGroup because there may be another task which is done by thread
-    // which is not in this WriteGroup, and it would not notify threads in WriteGroup. So we must make someone in this
-    // WriteGroup to complete it and leader thread is easy to be decided.
+    // We only allow leader_thread to finish this WriteGroup because there may
+    // be another task which is done by the thread that is not in this WriteGroup,
+    // and it would not notify the threads in this WriteGroup. So we must make someone in
+    // this WriteGroup to complete it and leader thread is easy to be decided.
     if (is_leader_thread) {
       MemTableInsertStatusCheck(writer.status);
       versions_->SetLastSequence(writer.write_group->last_sequence);
