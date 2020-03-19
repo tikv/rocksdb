@@ -766,7 +766,7 @@ uint32_t WriteBatchInternal::Count(const WriteBatch* b) {
   return DecodeFixed32(b->rep_.data() + 8);
 }
 
-int WriteBatchInternal::Count(const autovector<WriteBatch*> b) {
+int WriteBatchInternal::Count(const std::vector<WriteBatch*> b) {
   int count = 0;
   for (auto w : b) {
     count += DecodeFixed32(w->rep_.data() + 8);
@@ -2360,30 +2360,38 @@ void WriteBatchInternal::AsyncInsertInto(
     WriteThread::Writer* writer, SequenceNumber sequence,
     ColumnFamilySet* version_set, FlushScheduler* flush_scheduler,
     TrimHistoryScheduler* trim_history_scheduler,
-    bool ignore_missing_column_families, DB* db,
-    SafeQueue<std::function<void()>>* pool) {
+    bool ignore_missing_column_families, DB* db, SafeFuncQueue* pool) {
   auto write_group = writer->write_group;
-  write_group->running.fetch_add(writer->batches.size(),
-                                 std::memory_order_seq_cst);
-  for (auto w : writer->batches) {
-    pool->PushBack([=]() {
+  auto batch_size = writer->batches.size();
+  write_group->running.fetch_add(batch_size);
+  for (size_t i = 0; i < batch_size; i++) {
+    auto f = [=]() {
       ColumnFamilyMemTablesImpl memtables(version_set);
       MemTableInserter inserter(
           sequence, &memtables, flush_scheduler, trim_history_scheduler,
           ignore_missing_column_families, 0 /*recovering_log_number*/, db,
-          true /*concurrent_memtable_writes*/, w->prot_info_.get(),
-          nullptr /*has_valid_writes*/);
+          true /*concurrent_memtable_writes*/,
+          writer->batches[i]->prot_info_.get(), nullptr /*has_valid_writes*/);
       inserter.set_log_number_ref(writer->log_ref);
-      SetSequence(w, sequence);
-      Status s = w->Iterate(&inserter);
+      SetSequence(writer->batches[i], sequence);
+      Status s = writer->batches[i]->Iterate(&inserter);
       if (!s.ok()) {
         std::lock_guard<std::mutex> guard(write_group->leader->StateMutex());
         write_group->status = s;
       }
       inserter.PostProcess();
-      write_group->running.fetch_sub(1, std::memory_order_release);
-    });
-    sequence += WriteBatchInternal::Count(w);
+      write_group->running.fetch_sub(1);
+    };
+    if (i + 1 == batch_size) {
+      // If there is only one WriteBatch written by this thread, It shall do it
+      // by self, because this batch may be large. And every thread does the
+      // latest one by self will reduce the cost of calling
+      // `SafeFuncQueue::Push`.
+      f();
+    } else {
+      pool->Push(std::move(f));
+      sequence += WriteBatchInternal::Count(writer->batches[i]);
+    }
   }
 }
 
