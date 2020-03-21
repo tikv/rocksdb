@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <limits>
 
+#include <openssl/opensslv.h>
+
 #include "port/port.h"
 
 namespace rocksdb {
@@ -56,14 +58,28 @@ void PutBigEndian64(uint64_t value, unsigned char* buf) {
 // * https://medium.com/@amit.kulkarni/encrypting-decrypting-a-file-using-openssl-evp-b26e0e4d28d4
 Status AESCTRCipherStream::Cipher(uint64_t file_offset, char* data,
                                   size_t data_size, bool is_encrypt) {
+#if OPENSSL_VERSION_NUMBER < 0x01000200f
+  (void)file_offset;
+  (void)data;
+  (void)data_size;
+  (void)is_encrypt;
+  return Status::NotSupported("OpenSSL version < 1.0.2");
+#else
+  int ret = 1;
+#if OPENSSL_VERSION_NUMBER < 0x01010000f
+  EVP_CIPHER_CTX real_ctx;
+  EVP_CIPHER_CTX* ctx = &real_ctx;
+  EVP_CIPHER_CTX_init(ctx);
+#else
   EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
   if (ctx == nullptr) {
     return Status::IOError("Failed to create cipher context.");
   }
-  int ret = EVP_CIPHER_CTX_reset(ctx);
+  ret = EVP_CIPHER_CTX_reset(ctx);
   if (ret != 1) {
     return Status::IOError("Failed to reset cipher context.");
   }
+#endif
 
   uint64_t block_index = file_offset / AES_BLOCK_SIZE;
   uint64_t block_offset = file_offset % AES_BLOCK_SIZE;
@@ -167,8 +183,11 @@ Status AESCTRCipherStream::Cipher(uint64_t file_offset, char* data,
     memcpy(data + data_offset, partial_block, remaining_data_size);
   }
 
+#if OPENSSL_VERSION_NUMBER >= 0x01010000f
   EVP_CIPHER_CTX_free(ctx);
+#endif
   return Status::OK();
+#endif
 }
 
 Status NewAESCTRCipherStream(EncryptionMethod method, const std::string& key,
