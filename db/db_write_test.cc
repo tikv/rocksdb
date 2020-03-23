@@ -26,6 +26,15 @@ class DBWriteTest : public DBTestBase, public testing::WithParamInterface<int> {
   Options GetOptions() { return DBTestBase::GetOptions(GetParam()); }
 
   void Open() { DBTestBase::Reopen(GetOptions()); }
+
+  void WaitTimeout(std::function<bool()> func, uint32_t timeout) {
+    auto start_time = std::chrono::steady_clock::now();
+    while (!func()) {
+      auto now = std::chrono::steady_clock::now();
+      ASSERT_LT(now - start_time, std::chrono::microseconds(timeout));
+    }
+  }
+
 };
 
 // It is invalid to do sync write while disabling WAL.
@@ -187,8 +196,6 @@ TEST_P(DBWriteTest, LockWalInEffect) {
 
 TEST_P(DBWriteTest, MultiThreadWrite) {
   Options options = GetOptions();
-  std::unique_ptr<FaultInjectionTestEnv> mock_env(
-      new FaultInjectionTestEnv(env_));
   if (!options.enable_multi_thread_write) {
     return;
   }
@@ -196,7 +203,6 @@ TEST_P(DBWriteTest, MultiThreadWrite) {
   constexpr int kNumWrite = 4;
   constexpr int kNumBatch = 8;
   constexpr int kBatchSize = 16;
-  options.env = mock_env.get();
   options.write_buffer_size = 1024 * 128;
   Reopen(options);
   std::vector<port::Thread> threads;
@@ -243,6 +249,105 @@ TEST_P(DBWriteTest, MultiThreadWrite) {
   }
 
   Close();
+}
+
+TEST_P(DBWriteTest, MultiThreadWriteLeaderCheck) {
+  Options options = GetOptions();
+  if (!options.enable_multi_thread_write) {
+    return;
+  }
+  options.write_buffer_size = 1024 * 128;
+  Reopen(options);
+  std::vector<port::Thread> threads;
+  constexpr uint32_t kNumBatch = 4;
+  constexpr uint32_t kBatchSize = 16;
+  auto db = dbfull();
+  auto write_func = [&](std::string value) {
+    WriteOptions opt;
+    std::vector<WriteBatch> data(kNumBatch);
+    std::vector<WriteBatch*> batches;
+    for (uint32_t j = 0; j < kNumBatch; j++) {
+      WriteBatch* batch = &data[j];
+      batch->Clear();
+      for (uint32_t k = 0; k < kBatchSize; k++) {
+        batch->Put("key_" + ToString(j) + "_" + ToString(k), value);
+      }
+      batches.push_back(batch);
+    }
+    db->MultiBatchWrite(opt, std::move(batches));
+  };
+  auto read_func = [&](std::string expected_value) {
+    ReadOptions opt;
+    for (uint32_t j = 0; j < kNumBatch; j++) {
+      for (uint32_t k = 0; k < kBatchSize; k++) {
+        std::string value;
+        auto s = db->Get(opt, "key_" + ToString(j) + "_" + ToString(k), &value);
+        if (!s.ok()) {
+          ASSERT_EQ(Status::NotFound(), s);
+        }
+        ASSERT_EQ(expected_value, value);
+      }
+    }
+  };
+
+  std::atomic<bool> follower_start(false);
+  std::atomic<bool> leader_continue(false);
+  std::atomic<uint32_t> leader_task_running(0);
+  std::atomic<uint32_t> follower_task_running(0);
+  SyncPoint::GetInstance()->SetCallBack(
+      "DBImpl::MultiBatchWriteImpl:Wait1", [&](void* arg) {
+        auto* w = reinterpret_cast<WriteThread::Writer*>(arg);
+        if (w->state == WriteThread::STATE_GROUP_LEADER) {
+          leader_task_running = w->write_group->running;
+        }
+        while (!leader_continue.load()) {
+          leader_task_running = w->write_group->running;
+        }
+      });
+
+  SyncPoint::GetInstance()->EnableProcessing();
+
+  threads.emplace_back(write_func, "value0");
+  WaitTimeout([&]()-> bool { return leader_task_running.load() > 0; }, 1000 * 1000);
+
+  // Thread-leader will be blocking at `DBImpl::MultiBatchWriteImpl:Wait1`.
+  // Because it finished the last sub-task by self, there are (kNumBatch - 1)
+  // task left.
+  assert((kNumBatch - 1) == leader_task_running.load());
+
+  SyncPoint::GetInstance()->SetCallBack(
+      "WriteThread::AwaitState:BlockingWaitingMultiThread", [&](void* arg) {
+        auto* w = reinterpret_cast<WriteThread::Writer*>(arg);
+        if (w->state != WriteThread::STATE_GROUP_LEADER) {
+          return;
+        }
+        follower_task_running = 1;
+        while (!follower_start.load()) {
+        }
+      });
+  threads.emplace_back(write_func, "value1");
+
+  // Wait thread-follower meet SyncPoint, which means that it has finished all tasks in queue.
+
+  WaitTimeout([&]()-> bool { return follower_task_running.load() > 0; }, 1000 * 1000);
+
+  // Thread-follower will keep doing sub-task from queue until there is no task
+  // left. So it will finish all sub-task of produced by thread-leader.
+  ASSERT_EQ(0, leader_task_running.load());
+
+  // Thread-leader has not refresh last-sequence, so we can not read keys
+  // inserted by thread-leader, although they has existed in memtable.
+  read_func("");
+
+  // Let thread-leader refresh last-sequence and wait it till done.
+  leader_continue = true;
+  threads[0].join();
+  read_func("value0");
+
+  // Let thread-leader start inserting into memtable and wait it till done.
+  follower_start = true;
+  threads[1].join();
+  read_func("value1");
 }
 
 INSTANTIATE_TEST_CASE_P(DBWriteTestInstance, DBWriteTest,

@@ -185,6 +185,7 @@ Status DBImpl::MultiBatchWriteImpl(const WriteOptions& write_options,
             it.writer, it.writer->sequence, version_set, &flush_scheduler_,
             ignore_missing_faimly, this, &write_thread_.write_queue_);
       }
+      TEST_SYNC_POINT_CALLBACK("DBImpl::MultiBatchWriteImpl:Wait1", &writer);
       while (memtable_write_group.running.load(std::memory_order_acquire) > 0) {
         if (!write_thread_.write_queue_.RunFunc()) {
           std::this_thread::yield();
@@ -204,6 +205,7 @@ Status DBImpl::MultiBatchWriteImpl(const WriteOptions& write_options,
     // Because `LaunchParallelMemTableWriters` has add `write_group->size` to `running`,
     // the value of `running` is always larger than one if the leader thread does not
     // call `CompleteParallelMemTableWriter`.
+    TEST_SYNC_POINT("DBImpl::MultiBatchWriteImpl:Wait2");
     while (writer.write_group->running.load(std::memory_order_acquire) > 1) {
       // Write thread could exit and block itself if it is not a leader thread.
       if (!write_thread_.write_queue_.RunFunc() && !is_leader_thread) {
