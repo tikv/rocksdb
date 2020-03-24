@@ -927,6 +927,7 @@ if(WITH_TESTS)
         db/db_universal_compaction_test.cc
         db/db_wal_test.cc
         db/db_write_test.cc
+        db/db_multi_batch_write_test.cc
         db/dbformat_test.cc
         db/deletefile_test.cc
         db/error_handler_test.cc

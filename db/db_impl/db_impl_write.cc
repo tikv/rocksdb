@@ -102,6 +102,7 @@ Status DBImpl::MultiBatchWriteImpl(const WriteOptions& write_options,
     log::Writer* log_writer = logs_.back().writer;
     mutex_.Unlock();
 
+    TEST_SYNC_POINT("DBImpl::MultiBatchWriteImpl:BeforeLeaderEnters");
     // This can set non-OK status if callback fail.
     last_batch_group_size_ =
         write_thread_.EnterAsBatchGroupLeader(&writer, &wal_write_group);
@@ -199,13 +200,16 @@ Status DBImpl::MultiBatchWriteImpl(const WriteOptions& write_options,
   if (writer.state == WriteThread::STATE_PARALLEL_MEMTABLE_WRITER) {
     assert(writer.ShouldWriteToMemtable());
     auto version_set = versions_->GetColumnFamilySet();
+    TEST_SYNC_POINT_CALLBACK("DBImpl::MultiBatchWriteImpl:BeforeInsert",
+                             &is_leader_thread);
     WriteBatchInternal::AsyncInsertInto(
         &writer, writer.sequence, version_set, &flush_scheduler_,
         ignore_missing_faimly, this, &write_thread_.write_queue_);
     // Because `LaunchParallelMemTableWriters` has add `write_group->size` to `running`,
     // the value of `running` is always larger than one if the leader thread does not
     // call `CompleteParallelMemTableWriter`.
-    TEST_SYNC_POINT("DBImpl::MultiBatchWriteImpl:Wait2");
+    TEST_SYNC_POINT_CALLBACK("DBImpl::MultiBatchWriteImpl:Wait2",
+                             &is_leader_thread);
     while (writer.write_group->running.load(std::memory_order_acquire) > 1) {
       // Write thread could exit and block itself if it is not a leader thread.
       if (!write_thread_.write_queue_.RunFunc() && !is_leader_thread) {
@@ -216,9 +220,13 @@ Status DBImpl::MultiBatchWriteImpl(const WriteOptions& write_options,
     // be another task which is done by the thread that is not in this WriteGroup,
     // and it would not notify the threads in this WriteGroup. So we must make someone in
     // this WriteGroup to complete it and leader thread is easy to be decided.
+    TEST_SYNC_POINT_CALLBACK(
+        "DBImpl::MultiBatchWriteImpl:BeforeSetLastSequence", &is_leader_thread);
     if (is_leader_thread) {
       MemTableInsertStatusCheck(writer.status);
       versions_->SetLastSequence(writer.write_group->last_sequence);
+      TEST_SYNC_POINT_CALLBACK("DBImpl::MultiBatchWriteImpl:BeforeLeaderExit",
+                               &writer);
       write_thread_.ExitAsMemTableWriter(&writer, *writer.write_group);
     } else {
       write_thread_.CompleteParallelMemTableWriter(&writer);
