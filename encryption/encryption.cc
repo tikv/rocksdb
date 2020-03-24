@@ -68,20 +68,11 @@ Status AESCTRCipherStream::Cipher(uint64_t file_offset, char* data,
   return Status::NotSupported("OpenSSL version < 1.0.2");
 #else
   int ret = 1;
-#if OPENSSL_VERSION_NUMBER < 0x01010000f
-  EVP_CIPHER_CTX real_ctx;
-  EVP_CIPHER_CTX* ctx = &real_ctx;
-  EVP_CIPHER_CTX_init(ctx);
-#else
-  EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
+  EVP_CIPHER_CTX* ctx = nullptr;
+  InitCipherContext(ctx);
   if (ctx == nullptr) {
     return Status::IOError("Failed to create cipher context.");
   }
-  ret = EVP_CIPHER_CTX_reset(ctx);
-  if (ret != 1) {
-    return Status::IOError("Failed to reset cipher context.");
-  }
-#endif
 
   uint64_t block_index = file_offset / AES_BLOCK_SIZE;
   uint64_t block_offset = file_offset % AES_BLOCK_SIZE;
@@ -184,10 +175,7 @@ Status AESCTRCipherStream::Cipher(uint64_t file_offset, char* data,
     }
     memcpy(data + data_offset, partial_block, remaining_data_size);
   }
-
-#if OPENSSL_VERSION_NUMBER >= 0x01010000f
-  EVP_CIPHER_CTX_free(ctx);
-#endif
+  FreeCipherContext(ctx);
   return Status::OK();
 #endif
 }
