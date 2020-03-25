@@ -19,7 +19,7 @@ namespace encryption {
 
 #define InitCipherContext(ctx) \
   EVP_CIPHER_CTX ctx##_var;    \
-  CTX = &ctx##_var;            \
+  ctx = &ctx##_var;            \
   EVP_CIPHER_CTX_init(ctx);
 
 // do nothing
