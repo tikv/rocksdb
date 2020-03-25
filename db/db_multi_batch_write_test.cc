@@ -32,7 +32,7 @@ class DBMultiBatchWriteTest : public DBTestBase {
     }
   }
 
-  // Write one version of "value" to DB. -1
+  // Write one version of "value" to DB.
   static void WriteOneBatch(DB* db, uint32_t index, const uint32_t version) {
     WriteOptions opt;
     std::vector<WriteBatch> data(kNumBatch);
@@ -51,6 +51,7 @@ class DBMultiBatchWriteTest : public DBTestBase {
     db->MultiBatchWrite(opt, std::move(batches));
   }
 
+  // Check whether the version of value in DB is in line with expectations. -1 represent that the keys do not existed.
   void CheckValue(const Snapshot* snap, uint32_t index, const int version) {
     ReadOptions opt;
     if (snap) {
