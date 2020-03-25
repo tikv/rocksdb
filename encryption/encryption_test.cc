@@ -6,6 +6,9 @@
 #include "test_util/testharness.h"
 #include "test_util/testutil.h"
 
+#ifndef ROCKSDB_LITE
+#ifdef OPENSSL
+
 namespace rocksdb {
 namespace encryption {
 
@@ -152,6 +155,9 @@ INSTANTIATE_TEST_CASE_P(
 
 }  // namespace encryption
 }  // namespace rocksdb
+
+#endif  // OPENSSL
+#endif  // !ROCKSDB_LITE
 
 int main(int argc, char** argv) {
   rocksdb::port::InstallStackTraceHandler();
