@@ -141,9 +141,9 @@ TEST_P(EncryptionTest, EncryptionTest) {
   EXPECT_TRUE(TestEncryption(16 * 5 + 1, 16 * 8 + 15));
 
   // Lower bits of IV overflow.
-  EXPECT_TRUE(TestEncryption(0, 16 * 2, IV_OVERFLOW_LOW));
+  EXPECT_TRUE(TestEncryption(16, 16 * 2, IV_OVERFLOW_LOW));
   // Full IV overflow.
-  EXPECT_TRUE(TestEncryption(0, 16 * 2, IV_OVERFLOW_FULL));
+  EXPECT_TRUE(TestEncryption(16, 16 * 2, IV_OVERFLOW_FULL));
 }
 
 INSTANTIATE_TEST_CASE_P(
