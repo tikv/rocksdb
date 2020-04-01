@@ -430,6 +430,7 @@ TESTS = \
 	crc32c_test \
 	coding_test \
 	inlineskiplist_test \
+	encryption_test \
 	env_basic_test \
 	env_test \
 	env_logger_test \
@@ -1615,6 +1616,9 @@ block_cache_tracer_test: trace_replay/block_cache_tracer_test.o trace_replay/blo
 	$(AM_LINK)
 
 block_cache_trace_analyzer_test: tools/block_cache_analyzer/block_cache_trace_analyzer_test.o tools/block_cache_analyzer/block_cache_trace_analyzer.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(AM_LINK)
+
+encryption_test: encryption/encryption_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
 #-------------------------------------------------
