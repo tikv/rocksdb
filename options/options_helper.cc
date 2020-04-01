@@ -924,8 +924,9 @@ Status StringToMap(const std::string& opts_str,
   return Status::OK();
 }
 
-Status ParseCompressionOptions(const std::string& value, const std::string& name,
-                              CompressionOptions& compression_opts) {
+Status ParseCompressionOptions(const std::string& value,
+                               const std::string& name,
+                               CompressionOptions& compression_opts) {
   size_t start = 0;
   size_t end = value.find(':');
   if (end == std::string::npos) {
@@ -967,6 +968,17 @@ Status ParseCompressionOptions(const std::string& value, const std::string& name
           "unable to parse the specified CF option " + name);
     }
     compression_opts.zstd_max_train_bytes =
+        ParseInt(value.substr(start, value.size() - start));
+    end = value.find(':', start);
+  }
+  // parallel_threads is optional for backwards compatibility
+  if (end != std::string::npos) {
+    start = end + 1;
+    if (start >= value.size()) {
+      return Status::InvalidArgument(
+          "unable to parse the specified CF option " + name);
+    }
+    compression_opts.parallel_threads =
         ParseInt(value.substr(start, value.size() - start));
     end = value.find(':', start);
   }

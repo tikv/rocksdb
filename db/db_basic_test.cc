@@ -1344,7 +1344,8 @@ TEST_F(DBBasicTest, GetAllKeyVersions) {
 
 class DBBasicTestWithParallelIO
     : public DBTestBase,
-      public testing::WithParamInterface<std::tuple<bool,bool,bool,bool>> {
+      public testing::WithParamInterface<
+          std::tuple<bool, bool, bool, bool, uint32_t>> {
  public:
   DBBasicTestWithParallelIO()
       : DBTestBase("/db_basic_test_with_parallel_io") {
@@ -1352,6 +1353,7 @@ class DBBasicTestWithParallelIO
     bool uncompressed_cache = std::get<1>(GetParam());
     compression_enabled_ = std::get<2>(GetParam());
     fill_cache_ = std::get<3>(GetParam());
+    uint32_t compression_parallel_threads = std::get<4>(GetParam());
 
     if (compressed_cache) {
       std::shared_ptr<Cache> cache = NewLRUCache(1048576);
@@ -1375,6 +1377,8 @@ class DBBasicTestWithParallelIO
     options.table_factory.reset(new BlockBasedTableFactory(table_options));
     if (!compression_enabled_) {
       options.compression = kNoCompression;
+    } else {
+      options.compression_opts.parallel_threads = compression_parallel_threads;
     }
     Reopen(options);
 
@@ -1616,20 +1620,6 @@ TEST_P(DBBasicTestWithParallelIO, MultiGet) {
   ASSERT_EQ(env_->random_read_counter_.Read(), expected_reads);
 }
 
-INSTANTIATE_TEST_CASE_P(
-    ParallelIO, DBBasicTestWithParallelIO,
-    // Params are as follows -
-    // Param 0 - Compressed cache enabled
-    // Param 1 - Uncompressed cache enabled
-    // Param 2 - Data compression enabled
-    // Param 3 - ReadOptions::fill_cache
-    ::testing::Values(std::make_tuple(false, true, true, true),
-                      std::make_tuple(true, true, true, true),
-                      std::make_tuple(false, true, false, true),
-                      std::make_tuple(false, true, true, false),
-                      std::make_tuple(true, true, true, false),
-                      std::make_tuple(false, true, false, false)));
-
 class DBBasicTestWithTimestampWithParam
     : public DBTestBase,
       public testing::WithParamInterface<bool> {
@@ -1779,6 +1769,16 @@ TEST_P(DBBasicTestWithTimestampWithParam, PutAndGet) {
 
 INSTANTIATE_TEST_CASE_P(Timestamp, DBBasicTestWithTimestampWithParam,
                         ::testing::Bool());
+INSTANTIATE_TEST_CASE_P(ParallelIO, DBBasicTestWithParallelIO,
+                        // Params are as follows -
+                        // Param 0 - Compressed cache enabled
+                        // Param 1 - Uncompressed cache enabled
+                        // Param 2 - Data compression enabled
+                        // Param 3 - ReadOptions::fill_cache
+                        // Param 4 - CompressionOptions::parallel_threads
+                        ::testing::Combine(::testing::Bool(), ::testing::Bool(),
+                                           ::testing::Bool(), ::testing::Bool(),
+                                           ::testing::Values(1, 4)));
 
 }  // namespace rocksdb
 

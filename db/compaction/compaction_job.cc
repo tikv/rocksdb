@@ -936,7 +936,8 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
     assert(sub_compact->builder != nullptr);
     assert(sub_compact->current_output() != nullptr);
     sub_compact->builder->Add(key, value);
-    sub_compact->current_output_file_size = sub_compact->builder->FileSize();
+    sub_compact->current_output_file_size =
+        sub_compact->builder->EstimatedFileSize();
     sub_compact->current_output()->meta.UpdateBoundaries(
         key, c_iter->ikey().sequence);
     sub_compact->num_output_records++;
