@@ -574,13 +574,7 @@ std::string VersionEdit::DebugString(bool hex_key) const {
     r.append("\n  AddFile: ");
     AppendNumberTo(&r, new_files_[i].first);
     r.append(" ");
-    AppendNumberTo(&r, f.fd.GetNumber());
-    r.append(" ");
-    AppendNumberTo(&r, f.fd.GetFileSize());
-    r.append(" ");
-    r.append(f.smallest.DebugString(hex_key));
-    r.append(" .. ");
-    r.append(f.largest.DebugString(hex_key));
+    r.append(f.DebugString(hex_key));
   }
   r.append("\n  ColumnFamily: ");
   AppendNumberTo(&r, column_family_);

@@ -17,6 +17,7 @@
 #include "memory/arena.h"
 #include "rocksdb/cache.h"
 #include "util/autovector.h"
+#include "util/string_util.h"
 
 namespace rocksdb {
 
@@ -153,6 +154,24 @@ struct FileMetaData {
     }
     fd.smallest_seqno = std::min(fd.smallest_seqno, seqno);
     fd.largest_seqno = std::max(fd.largest_seqno, seqno);
+  }
+
+  std::string DebugString(bool hex) const {
+    std::string r;
+    AppendNumberTo(&r, this->fd.GetNumber());
+    r.push_back(':');
+    AppendNumberTo(&r, this->fd.GetFileSize());
+    r.append("[");
+    AppendNumberTo(&r, this->fd.smallest_seqno);
+    r.append(" .. ");
+    AppendNumberTo(&r, this->fd.largest_seqno);
+    r.append("]");
+    r.append("[");
+    r.append(this->smallest.DebugString(hex));
+    r.append(" .. ");
+    r.append(this->largest.DebugString(hex));
+    r.append("]");
+    return r;
   }
 };
 

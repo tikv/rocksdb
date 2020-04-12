@@ -866,7 +866,7 @@ class VersionSet {
 
   // printf contents (for debugging)
   Status DumpManifest(Options& options, std::string& manifestFileName,
-                      bool verbose, bool hex = false, bool json = false);
+                      bool verbose, bool hex = false, bool json = false, uint64_t sst_file_number = 0);
 
 #endif  // ROCKSDB_LITE
 
