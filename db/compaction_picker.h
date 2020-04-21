@@ -39,10 +39,10 @@ class CompactionPicker {
   // Returns nullptr if there is no compaction to be done.
   // Otherwise returns a pointer to a heap-allocated object that
   // describes the compaction.  Caller should delete the result.
-  virtual Compaction* PickCompaction(const std::string& cf_name,
-                                     const MutableCFOptions& mutable_cf_options,
-                                     VersionStorageInfo* vstorage,
-                                     LogBuffer* log_buffer) = 0;
+  virtual Compaction* PickCompaction(
+      const std::string& cf_name, const MutableCFOptions& mutable_cf_options,
+      VersionStorageInfo* vstorage, LogBuffer* log_buffer,
+      SequenceNumber earliest_memtable_seqno = kMaxSequenceNumber) = 0;
 
   // Return a compaction object for compacting the range [begin,end] in
   // the specified level.  Returns nullptr if there is nothing in that
@@ -224,52 +224,16 @@ class LevelCompactionPicker : public CompactionPicker {
   LevelCompactionPicker(const ImmutableCFOptions& ioptions,
                         const InternalKeyComparator* icmp)
       : CompactionPicker(ioptions, icmp) {}
-  virtual Compaction* PickCompaction(const std::string& cf_name,
-                                     const MutableCFOptions& mutable_cf_options,
-                                     VersionStorageInfo* vstorage,
-                                     LogBuffer* log_buffer) override;
+  virtual Compaction* PickCompaction(
+      const std::string& cf_name, const MutableCFOptions& mutable_cf_options,
+      VersionStorageInfo* vstorage, LogBuffer* log_buffer,
+      SequenceNumber earliest_memtable_seqno = kMaxSequenceNumber) override;
 
   virtual bool NeedsCompaction(
       const VersionStorageInfo* vstorage) const override;
 };
 
 #ifndef ROCKSDB_LITE
-class FIFOCompactionPicker : public CompactionPicker {
- public:
-  FIFOCompactionPicker(const ImmutableCFOptions& ioptions,
-                       const InternalKeyComparator* icmp)
-      : CompactionPicker(ioptions, icmp) {}
-
-  virtual Compaction* PickCompaction(const std::string& cf_name,
-                                     const MutableCFOptions& mutable_cf_options,
-                                     VersionStorageInfo* version,
-                                     LogBuffer* log_buffer) override;
-
-  virtual Compaction* CompactRange(
-      const std::string& cf_name, const MutableCFOptions& mutable_cf_options,
-      VersionStorageInfo* vstorage, int input_level, int output_level,
-      uint32_t output_path_id, uint32_t max_subcompactions,
-      const InternalKey* begin, const InternalKey* end,
-      InternalKey** compaction_end, bool* manual_conflict) override;
-
-  // The maximum allowed output level.  Always returns 0.
-  virtual int MaxOutputLevel() const override { return 0; }
-
-  virtual bool NeedsCompaction(
-      const VersionStorageInfo* vstorage) const override;
-
- private:
-  Compaction* PickTTLCompaction(const std::string& cf_name,
-                                const MutableCFOptions& mutable_cf_options,
-                                VersionStorageInfo* version,
-                                LogBuffer* log_buffer);
-
-  Compaction* PickSizeCompaction(const std::string& cf_name,
-                                 const MutableCFOptions& mutable_cf_options,
-                                 VersionStorageInfo* version,
-                                 LogBuffer* log_buffer);
-};
-
 class NullCompactionPicker : public CompactionPicker {
  public:
   NullCompactionPicker(const ImmutableCFOptions& ioptions,
@@ -278,10 +242,11 @@ class NullCompactionPicker : public CompactionPicker {
   virtual ~NullCompactionPicker() {}
 
   // Always return "nullptr"
-  Compaction* PickCompaction(const std::string& /*cf_name*/,
-                             const MutableCFOptions& /*mutable_cf_options*/,
-                             VersionStorageInfo* /*vstorage*/,
-                             LogBuffer* /*log_buffer*/) override {
+  Compaction* PickCompaction(
+      const std::string& /*cf_name*/,
+      const MutableCFOptions& /*mutable_cf_options*/,
+      VersionStorageInfo* /*vstorage*/, LogBuffer* /* log_buffer */,
+      SequenceNumber /* earliest_memtable_seqno */) override {
     return nullptr;
   }
 
@@ -306,6 +271,28 @@ class NullCompactionPicker : public CompactionPicker {
   }
 };
 #endif  // !ROCKSDB_LITE
+
+// Attempts to find an intra L0 compaction conforming to the given parameters.
+//
+// @param level_files                     Metadata for L0 files.
+// @param min_files_to_compact            Minimum number of files required to
+//                                        do the compaction.
+// @param max_compact_bytes_per_del_file  Maximum average size in bytes per
+//                                        file that is going to get deleted by
+//                                        the compaction.
+// @param max_compaction_bytes            Maximum total size in bytes (in terms
+//                                        of compensated file size) for files
+//                                        to be compacted.
+// @param [out] comp_inputs               If a compaction was found, will be
+//                                        initialized with corresponding input
+//                                        files. Cannot be nullptr.
+//
+// @return                                true iff compaction was found.
+bool FindIntraL0Compaction(
+    const std::vector<FileMetaData*>& level_files, size_t min_files_to_compact,
+    uint64_t max_compact_bytes_per_del_file, uint64_t max_compaction_bytes,
+    CompactionInputFiles* comp_inputs,
+    SequenceNumber earliest_mem_seqno = kMaxSequenceNumber);
 
 CompressionType GetCompressionType(const ImmutableCFOptions& ioptions,
                                    const VersionStorageInfo* vstorage,
