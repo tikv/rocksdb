@@ -215,7 +215,9 @@ Status DBImpl::MultiBatchWriteImpl(const WriteOptions& write_options,
     // and it would not notify the threads in this WriteGroup. So we must make someone in
     // this WriteGroup to complete it and leader thread is easy to be decided.
     if (is_leader_thread) {
-      assert(write_thread_.CompleteParallelMemTableWriter(&writer));
+      if (!write_thread_.CompleteParallelMemTableWriter(&writer)) {
+        return Status::Aborted("Leader thread must complete at last and exit as memtable writer.");
+      }
       MemTableInsertStatusCheck(writer.status);
       versions_->SetLastSequence(writer.write_group->last_sequence);
       write_thread_.ExitAsMemTableWriter(&writer, *writer.write_group);
