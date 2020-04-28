@@ -49,6 +49,8 @@ matrix:
     env: TEST_GROUP=3
   - os: osx
     env: TEST_GROUP=4
+  - os: osx
+    env: TEST_GROUP=platform_dependent
   - os : linux
     compiler: clang
   - os: osx

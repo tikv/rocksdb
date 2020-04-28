@@ -164,10 +164,10 @@ Status DBImpl::MultiBatchWriteImpl(const WriteOptions& write_options,
     write_thread_.ExitAsBatchGroupLeader(wal_write_group, writer.status);
   }
   bool is_leader_thread = false;
+  WriteThread::WriteGroup memtable_write_group;
   if (writer.state == WriteThread::STATE_MEMTABLE_WRITER_LEADER) {
     PERF_TIMER_GUARD(write_memtable_time);
     assert(writer.ShouldWriteToMemtable());
-    WriteThread::WriteGroup memtable_write_group;
     write_thread_.EnterAsMemTableWriter(&writer, &memtable_write_group);
     assert(immutable_db_options_.allow_concurrent_memtable_write);
     if (memtable_write_group.size > 1) {
@@ -215,6 +215,9 @@ Status DBImpl::MultiBatchWriteImpl(const WriteOptions& write_options,
     // and it would not notify the threads in this WriteGroup. So we must make someone in
     // this WriteGroup to complete it and leader thread is easy to be decided.
     if (is_leader_thread) {
+      if (!write_thread_.CompleteParallelMemTableWriter(&writer)) {
+        return Status::Aborted("Leader thread must complete at last and exit as memtable writer.");
+      }
       MemTableInsertStatusCheck(writer.status);
       versions_->SetLastSequence(writer.write_group->last_sequence);
       write_thread_.ExitAsMemTableWriter(&writer, *writer.write_group);
