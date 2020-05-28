@@ -369,8 +369,8 @@ TEST_F(CompactionPickerTest, LevelTriggerDynamic4) {
   mutable_cf_options_.max_bytes_for_level_multiplier = 10;
   NewVersionStorage(num_levels, kCompactionStyleLevel);
   Add(0, 1U, "150", "200");
-  Add(num_levels - 1, 3U, "200", "250", 300U);
-  Add(num_levels - 1, 4U, "300", "350", 3000U);
+  Add(num_levels - 1, 2U, "200", "250", 300U);
+  Add(num_levels - 1, 3U, "300", "350", 3000U);
   Add(num_levels - 1, 4U, "400", "450", 3U);
   Add(num_levels - 2, 5U, "150", "180", 300U);
   Add(num_levels - 2, 6U, "181", "350", 500U);
@@ -575,7 +575,7 @@ TEST_F(CompactionPickerTest, CompactionPriMinOverlapping2) {
   Add(2, 8U, "201", "300",
       60000000U);  // Overlaps with file 28, 29, total size 521M
 
-  Add(3, 26U, "100", "110", 261000000U);
+  Add(3, 25U, "100", "110", 261000000U);
   Add(3, 26U, "150", "170", 261000000U);
   Add(3, 27U, "171", "179", 260000000U);
   Add(3, 28U, "191", "220", 260000000U);
@@ -1091,7 +1091,7 @@ TEST_F(CompactionPickerTest, EstimateCompactionBytesNeeded1) {
   // Size ratio L4/L3 is 9.9
   // After merge from L3, L4 size is 1000900
   Add(4, 11U, "400", "500", 999900);
-  Add(5, 11U, "400", "500", 8007200);
+  Add(5, 12U, "400", "500", 8007200);
 
   UpdateVersionStorageInfo();
 
@@ -1404,8 +1404,8 @@ TEST_F(CompactionPickerTest, IsTrivialMoveOn) {
 
   Add(3, 5U, "120", "130", 7000U);
   Add(3, 6U, "170", "180", 7000U);
-  Add(3, 5U, "220", "230", 7000U);
-  Add(3, 5U, "270", "280", 7000U);
+  Add(3, 7U, "220", "230", 7000U);
+  Add(3, 8U, "270", "280", 7000U);
   UpdateVersionStorageInfo();
 
   std::unique_ptr<Compaction> compaction(level_compaction_picker.PickCompaction(
