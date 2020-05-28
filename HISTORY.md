@@ -1,11 +1,10 @@
 # Rocksdb Change Log
 ## Cherry-picks
+* Fix corrupt key read from ingested file when iterator direction switches from reverse to forward at a key that is a prefix of another key in the same file. It is only possible in files with a non-zero global seqno.
 * Fixed issue #6316 that can cause a corruption of the MANIFEST file in the middle when writing to it fails due to no disk space.
 * Fix a bug on fractional cascading index when multiple files at the same level contain the same smallest user key, and those user keys are for merge operands. In this case, Get() the exact key may miss some merge operands.
 * Fixed an issue where the thread pools were not resized upon setting `max_background_jobs` dynamically through the `SetDBOptions` interface.
 * Fix a bug in DBIter that is_blob state isn't updated when iterating backward using seek.
-* Fix data corruption casued by output of intra-L0 compaction on ingested file not being placed in correct order in L0.
-* When user uses options.force_consistency_check in RocksDb, instead of crashing the process, we now pass the error back to the users without killing the process.
 * Fix ingested file and directory not being fsync.
 * Fix crash when memtable prefix bloom is enabled and read/write a key out of domain of prefix extractor.
 * Fix SstFileReader not able to open file ingested with write_glbal_seqno=true.
