@@ -5,9 +5,12 @@
 //
 // This file implements the "bridge" between Java and C++ for rocksdb::Options.
 
+#include "rocksdb/options.h"
+
 #include <jni.h>
 #include <stdio.h>
 #include <stdlib.h>
+
 #include <memory>
 #include <vector>
 
@@ -18,22 +21,20 @@
 #include "include/org_rocksdb_Options.h"
 #include "include/org_rocksdb_ReadOptions.h"
 #include "include/org_rocksdb_WriteOptions.h"
-
-#include "rocksjni/comparatorjnicallback.h"
-#include "rocksjni/portal.h"
-#include "rocksjni/statisticsjni.h"
-#include "rocksjni/table_filter_jnicallback.h"
-
 #include "rocksdb/comparator.h"
 #include "rocksdb/convenience.h"
 #include "rocksdb/db.h"
 #include "rocksdb/memtablerep.h"
 #include "rocksdb/merge_operator.h"
-#include "rocksdb/options.h"
 #include "rocksdb/rate_limiter.h"
 #include "rocksdb/slice_transform.h"
+#include "rocksdb/sst_partitioner.h"
 #include "rocksdb/statistics.h"
 #include "rocksdb/table.h"
+#include "rocksjni/comparatorjnicallback.h"
+#include "rocksjni/portal.h"
+#include "rocksjni/statisticsjni.h"
+#include "rocksjni/table_filter_jnicallback.h"
 #include "utilities/merge_operators.h"
 
 /*
@@ -1098,6 +1099,19 @@ void Java_org_rocksdb_Options_setTableFactory(
   auto* table_factory =
       reinterpret_cast<rocksdb::TableFactory*>(jtable_factory_handle);
   options->table_factory.reset(table_factory);
+}
+
+/*
+ * Method:    setSstPartitionerFactory
+ * Signature: (JJ)V
+ */
+void Java_org_rocksdb_Options_setSstPartitionerFactory(JNIEnv*, jobject,
+                                                       jlong jhandle,
+                                                       jlong factory_handle) {
+  auto* options = reinterpret_cast<ROCKSDB_NAMESPACE::Options*>(jhandle);
+  auto* factory = reinterpret_cast<ROCKSDB_NAMESPACE::SstPartitionerFactory*>(
+      factory_handle);
+  options->sst_partitioner_factory.reset(factory);
 }
 
 /*
@@ -3401,6 +3415,19 @@ void Java_org_rocksdb_ColumnFamilyOptions_setTableFactory(
     JNIEnv*, jobject, jlong jhandle, jlong jfactory_handle) {
   reinterpret_cast<rocksdb::ColumnFamilyOptions*>(jhandle)->table_factory.reset(
       reinterpret_cast<rocksdb::TableFactory*>(jfactory_handle));
+}
+
+/*
+ * Method:    setSstPartitionerFactory
+ * Signature: (JJ)V
+ */
+void Java_org_rocksdb_ColumnFamilyOptions_setSstPartitionerFactory(
+    JNIEnv*, jobject, jlong jhandle, jlong factory_handle) {
+  auto* options =
+      reinterpret_cast<ROCKSDB_NAMESPACE::ColumnFamilyOptions*>(jhandle);
+  auto* factory = reinterpret_cast<ROCKSDB_NAMESPACE::SstPartitionerFactory*>(
+      factory_handle);
+  options->sst_partitioner_factory.reset(factory);
 }
 
 /*

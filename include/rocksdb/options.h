@@ -48,6 +48,7 @@ class Slice;
 class Statistics;
 class InternalKeyComparator;
 class WalFilter;
+class SstPartitionerFactory;
 
 // DB contents are stored in a set of blocks, each of which holds a
 // sequence of key,value pairs.  Each block may be compressed before
@@ -315,6 +316,14 @@ struct ColumnFamilyOptions : public AdvancedColumnFamilyOptions {
   //
   // Default: nullptr
   std::shared_ptr<ConcurrentTaskLimiter> compaction_thread_limiter = nullptr;
+
+  // If non-nullptr, use the specified factory for a function to determine the
+  // partitioning of sst files. This helps compaction to split the files
+  // on interesting boundaries (key prefixes) to make propagation of sst
+  // files less write amplifying (covering the whole key space).
+  //
+  // Default: nullptr
+  std::shared_ptr<SstPartitionerFactory> sst_partitioner_factory = nullptr;
 
   // Create ColumnFamilyOptions with default values for all fields
   ColumnFamilyOptions();

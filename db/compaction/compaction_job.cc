@@ -7,6 +7,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
+#include "db/compaction/compaction_job.h"
+
+#include <algorithm>
 #include <cinttypes>
 #include <algorithm>
 #include <functional>
@@ -19,7 +22,6 @@
 #include <vector>
 
 #include "db/builder.h"
-#include "db/compaction/compaction_job.h"
 #include "db/db_impl/db_impl.h"
 #include "db/db_iter.h"
 #include "db/dbformat.h"
@@ -43,6 +45,7 @@
 #include "port/port.h"
 #include "rocksdb/db.h"
 #include "rocksdb/env.h"
+#include "rocksdb/sst_partitioner.h"
 #include "rocksdb/statistics.h"
 #include "rocksdb/status.h"
 #include "rocksdb/table.h"
@@ -899,6 +902,9 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
   }
   const auto& c_iter_stats = c_iter->iter_stats();
 
+  std::unique_ptr<SstPartitioner> partitioner =
+      sub_compact->compaction->CreateSstPartitioner();
+
   while (status.ok() && !cfd->IsDropped() && c_iter->Valid()) {
     // Invariant: c_iter.status() is guaranteed to be OK if c_iter->Valid()
     // returns true.
@@ -933,6 +939,10 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
         key, c_iter->ikey().sequence);
     sub_compact->num_output_records++;
 
+    if (partitioner.get() != nullptr) {
+      partitioner->Reset(key);
+    }
+
     // Close output file if it is big enough. Two possibilities determine it's
     // time to close it: (1) the current key should be this file's last key, (2)
     // the next key should not be in this file.
@@ -952,16 +962,19 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
       output_file_ended = true;
     }
     c_iter->Next();
-    if (!output_file_ended && c_iter->Valid() &&
-        sub_compact->compaction->output_level() != 0 &&
-        sub_compact->ShouldStopBefore(c_iter->key(),
-                                      sub_compact->current_output_file_size) &&
-        sub_compact->builder != nullptr) {
-      // (2) this key belongs to the next file. For historical reasons, the
-      // iterator status after advancing will be given to
-      // FinishCompactionOutputFile().
-      input_status = input->status();
-      output_file_ended = true;
+    if (!output_file_ended && c_iter->Valid()) {
+      if (((partitioner.get() != nullptr &&
+            partitioner->ShouldPartition(c_iter->key())) ||
+           (sub_compact->compaction->output_level() != 0 &&
+            sub_compact->ShouldStopBefore(
+                c_iter->key(), sub_compact->current_output_file_size))) &&
+          sub_compact->builder != nullptr) {
+        // (2) this key belongs to the next file. For historical reasons, the
+        // iterator status after advancing will be given to
+        // FinishCompactionOutputFile().
+        input_status = input->status();
+        output_file_ended = true;
+      }
     }
     if (output_file_ended) {
       const Slice* next_key = nullptr;
@@ -1666,4 +1679,56 @@ void CompactionJob::LogCompaction() {
   }
 }
 
-}  // namespace rocksdb
+class SstPartitionerFixedPrefix : public SstPartitioner {
+ public:
+  SstPartitionerFixedPrefix(size_t len) : len_(len) {}
+
+  virtual ~SstPartitionerFixedPrefix(){};
+
+  const char* Name() const override { return "SstPartitionerFixedPrefix"; }
+
+  bool ShouldPartition(const Slice& key) override {
+    if (last_key_.empty()) {
+      return false;
+    }
+    Slice key_fixed(key.data_, std::min(key.size_, len_));
+    return key_fixed.compare(last_key_) != 0;
+  }
+
+  void Reset(const Slice& key) override {
+    last_key_.assign(key.data_, std::min(key.size_, len_));
+  }
+
+ private:
+  size_t len_;
+  std::string last_key_;
+};
+
+class SstPartitionerFixedPrefixFactory : public SstPartitionerFactory {
+ public:
+  SstPartitionerFixedPrefixFactory(size_t len) : len_(len) {}
+
+  virtual ~SstPartitionerFixedPrefixFactory() {}
+
+  const char* Name() const override {
+    return "SstPartitionerFixedPrefixFactory";
+  }
+
+  std::unique_ptr<SstPartitioner> CreatePartitioner(
+      const SstPartitioner::Context& /* context */) const override {
+    return std::unique_ptr<SstPartitioner>(new SstPartitionerFixedPrefix(len_));
+  }
+
+  SstPartitionerFactory* Clone() const override {
+    return new SstPartitionerFixedPrefixFactory(len_);
+  }
+
+ private:
+  size_t len_;
+};
+
+SstPartitionerFactory* NewSstPartitionerFixedPrefixFactory(size_t prefix_len) {
+  return new SstPartitionerFixedPrefixFactory(prefix_len);
+}
+
+}  // namespace ROCKSDB_NAMESPACE
