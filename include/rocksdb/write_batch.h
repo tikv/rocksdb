@@ -276,6 +276,10 @@ class WriteBatch : public WriteBatchBase {
     virtual bool WriteBeforePrepare() const { return false; }
   };
   Status Iterate(Handler* handler) const;
+  class Iterator;
+  Iterator* NewIterator() const {
+    return new Iterator(this);
+  }
 
   // Retrieve the serialized version of this batch.
   const std::string& Data() const { return rep_; }
@@ -372,6 +376,28 @@ class WriteBatch : public WriteBatchBase {
   const size_t timestamp_size_;
 
   // Intentionally copyable
+ public:
+  class Iterator {
+   private:
+    Slice content_;
+    Slice input_;
+
+   public:
+    Slice key_;
+    Slice value_;
+    uint32_t column_family_;
+    char tag_;
+    bool valid_;
+
+    explicit Iterator(const WriteBatch* wb)
+        : content_(wb->rep_), valid_(false) {}
+
+    bool Valid() const { return valid_; }
+
+    void SeekToFirst();
+
+    void Next();
+  };
 };
 
 }  // namespace rocksdb

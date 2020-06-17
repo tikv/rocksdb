@@ -2077,4 +2077,26 @@ size_t WriteBatchInternal::AppendedByteSize(size_t leftByteSize,
   }
 }
 
+void WriteBatch::Iterator::SeekToFirst() {
+  input_ = content_;
+  if (input_.size() < WriteBatchInternal::kHeader) {
+    valid_ = false;
+    return;
+  }
+  input_.remove_prefix(WriteBatchInternal::kHeader);
+  valid_ = true;
+  Next();
+}
+
+void WriteBatch::Iterator::Next() {
+  if (input_.empty() || !valid_) {
+    valid_ = false;
+    return;
+  }
+  Slice blob, xid;
+  Status s = ReadRecordFromWriteBatch(&input_, &tag_, &column_family_, &key_,
+                                      &value_, &blob, &xid);
+  valid_ = s.ok();
+}
+
 }  // namespace rocksdb
