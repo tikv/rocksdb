@@ -123,7 +123,7 @@ struct ImmutableCFOptions {
 
   std::shared_ptr<ConcurrentTaskLimiter> compaction_thread_limiter;
 
-  const SstPartitionerFactory* sst_partitioner_factory;
+  std::shared_ptr<SstPartitionerFactory> sst_partitioner_factory;
 };
 
 struct MutableCFOptions {

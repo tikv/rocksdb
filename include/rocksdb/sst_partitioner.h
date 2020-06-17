@@ -28,19 +28,6 @@ class Slice;
  */
 class SstPartitioner {
  public:
-  virtual ~SstPartitioner(){};
-
-  // Return the name of this partitioner.
-  virtual const char* Name() const = 0;
-
-  // Called with key that is right after the key that was stored into the SST
-  // Returns true of partition boundary was detected and compaction should
-  // create new file.
-  virtual bool ShouldPartition(const Slice& key) = 0;
-
-  // Called for key that was stored into the SST
-  virtual void Reset(const Slice& key) = 0;
-
   // Context information of a compaction run
   struct Context {
     // Does this compaction run include all data files
@@ -50,7 +37,30 @@ class SstPartitioner {
     bool is_manual_compaction;
     // Output level for this compaction
     int output_level;
+    // Smallest key in the compaction
+    std::string smallest_key;
+    // Largest key in the compaction
+    std::string largest_key;
   };
+
+  // State of compaction.
+  struct State {
+    Slice next_key;
+    uint64_t current_output_file_size;
+  };
+
+  virtual ~SstPartitioner(){};
+
+  // Return the name of this partitioner.
+  virtual const char* Name() const = 0;
+
+  // Called with key that is right after the key that was stored into the SST
+  // Returns true of partition boundary was detected and compaction should
+  // create new file.
+  virtual bool ShouldPartition(const State& state) = 0;
+
+  // Called for key that was stored into the SST
+  virtual void Reset(const Slice& key) = 0;
 };
 
 class SstPartitionerFactory {
@@ -60,13 +70,11 @@ class SstPartitionerFactory {
   virtual std::unique_ptr<SstPartitioner> CreatePartitioner(
       const SstPartitioner::Context& context) const = 0;
 
-  virtual SstPartitionerFactory* Clone() const = 0;
-
   // Returns a name that identifies this partitioner factory.
   virtual const char* Name() const = 0;
 };
 
-extern SstPartitionerFactory* NewSstPartitionerFixedPrefixFactory(
-    size_t prefix_len);
+extern std::shared_ptr<SstPartitionerFactory>
+NewSstPartitionerFixedPrefixFactory(size_t prefix_len);
 
 }  // namespace rocksdb

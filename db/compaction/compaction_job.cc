@@ -904,6 +904,9 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
 
   std::unique_ptr<SstPartitioner> partitioner =
       sub_compact->compaction->CreateSstPartitioner();
+  if (partitioner != nullptr && c_iter->Valid()) {
+    partitioner->Reset(c_iter->user_key());
+  }
 
   while (status.ok() && !cfd->IsDropped() && c_iter->Valid()) {
     // Invariant: c_iter.status() is guaranteed to be OK if c_iter->Valid()
@@ -939,10 +942,6 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
         key, c_iter->ikey().sequence);
     sub_compact->num_output_records++;
 
-    if (partitioner.get() != nullptr) {
-      partitioner->Reset(key);
-    }
-
     // Close output file if it is big enough. Two possibilities determine it's
     // time to close it: (1) the current key should be this file's last key, (2)
     // the next key should not be in this file.
@@ -963,9 +962,7 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
     }
     c_iter->Next();
     if (!output_file_ended && c_iter->Valid()) {
-      if (((partitioner.get() != nullptr &&
-            partitioner->ShouldPartition(c_iter->key())) ||
-           (sub_compact->compaction->output_level() != 0 &&
+      if (((sub_compact->compaction->output_level() != 0 &&
             sub_compact->ShouldStopBefore(
                 c_iter->key(), sub_compact->current_output_file_size))) &&
           sub_compact->builder != nullptr) {
@@ -974,6 +971,15 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
         // FinishCompactionOutputFile().
         input_status = input->status();
         output_file_ended = true;
+      }
+      if (!output_file_ended && partitioner != nullptr) {
+        SstPartitioner::State state;
+        state.next_key = c_iter->user_key();
+        state.current_output_file_size = sub_compact->current_output_file_size;
+        if (partitioner->ShouldPartition(state)) {
+          input_status = input->status();
+          output_file_ended = true;
+        }
       }
     }
     if (output_file_ended) {
@@ -987,6 +993,9 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
                                      &range_del_out_stats, next_key);
       RecordDroppedKeys(range_del_out_stats,
                         &sub_compact->compaction_job_stats);
+      if (partitioner != nullptr) {
+        partitioner->Reset(c_iter->user_key());
+      }
     }
   }
 
@@ -1678,57 +1687,4 @@ void CompactionJob::LogCompaction() {
            << compaction->CalculateTotalInputSize();
   }
 }
-
-class SstPartitionerFixedPrefix : public SstPartitioner {
- public:
-  SstPartitionerFixedPrefix(size_t len) : len_(len) {}
-
-  virtual ~SstPartitionerFixedPrefix(){};
-
-  const char* Name() const override { return "SstPartitionerFixedPrefix"; }
-
-  bool ShouldPartition(const Slice& key) override {
-    if (last_key_.empty()) {
-      return false;
-    }
-    Slice key_fixed(key.data_, std::min(key.size_, len_));
-    return key_fixed.compare(last_key_) != 0;
-  }
-
-  void Reset(const Slice& key) override {
-    last_key_.assign(key.data_, std::min(key.size_, len_));
-  }
-
- private:
-  size_t len_;
-  std::string last_key_;
-};
-
-class SstPartitionerFixedPrefixFactory : public SstPartitionerFactory {
- public:
-  SstPartitionerFixedPrefixFactory(size_t len) : len_(len) {}
-
-  virtual ~SstPartitionerFixedPrefixFactory() {}
-
-  const char* Name() const override {
-    return "SstPartitionerFixedPrefixFactory";
-  }
-
-  std::unique_ptr<SstPartitioner> CreatePartitioner(
-      const SstPartitioner::Context& /* context */) const override {
-    return std::unique_ptr<SstPartitioner>(new SstPartitionerFixedPrefix(len_));
-  }
-
-  SstPartitionerFactory* Clone() const override {
-    return new SstPartitionerFixedPrefixFactory(len_);
-  }
-
- private:
-  size_t len_;
-};
-
-SstPartitionerFactory* NewSstPartitionerFixedPrefixFactory(size_t prefix_len) {
-  return new SstPartitionerFixedPrefixFactory(prefix_len);
-}
-
-}  // namespace ROCKSDB_NAMESPACE
+}  // namespace rocksdb

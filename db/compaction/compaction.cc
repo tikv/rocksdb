@@ -346,13 +346,6 @@ bool Compaction::IsTrivialMove() const {
     if (compaction_size > max_compaction_bytes_) {
       return false;
     }
-
-    if (partitioner.get() != nullptr) {
-      partitioner->Reset(file->smallest.user_key());
-      if (partitioner->ShouldPartition(file->largest.user_key())) {
-        return false;
-      }
-    }
   }
 
   return true;
@@ -548,6 +541,8 @@ std::unique_ptr<SstPartitioner> Compaction::CreateSstPartitioner() const {
   context.is_full_compaction = is_full_compaction_;
   context.is_manual_compaction = is_manual_compaction_;
   context.output_level = output_level_;
+  context.smallest_key = smallest_user_key_.ToString();
+  context.largest_key = largest_user_key_.ToString();
   return immutable_cf_options_.sst_partitioner_factory->CreatePartitioner(
       context);
 }

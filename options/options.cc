@@ -24,6 +24,7 @@
 #include "rocksdb/slice.h"
 #include "rocksdb/slice_transform.h"
 #include "rocksdb/sst_file_manager.h"
+#include "rocksdb/sst_partitioner.h"
 #include "rocksdb/table.h"
 #include "rocksdb/table_properties.h"
 #include "rocksdb/wal_filter.h"
@@ -126,6 +127,9 @@ void ColumnFamilyOptions::Dump(Logger* log) const {
                    table_factory->Name());
   ROCKS_LOG_HEADER(log, "           table_factory options: %s",
                    table_factory->GetPrintableTableOptions().c_str());
+  ROCKS_LOG_HEADER(
+      log, " Options.sst_partitioner_factory: %s",
+      sst_partitioner_factory ? sst_partitioner_factory->Name() : "None");
   ROCKS_LOG_HEADER(log, "       Options.write_buffer_size: %" ROCKSDB_PRIszt,
                    write_buffer_size);
   ROCKS_LOG_HEADER(log, " Options.max_write_buffer_number: %d",
