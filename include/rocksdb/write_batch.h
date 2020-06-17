@@ -277,8 +277,8 @@ class WriteBatch : public WriteBatchBase {
   };
   Status Iterate(Handler* handler) const;
   class Iterator;
-  Iterator* NewIterator() const {
-    return new Iterator(this);
+  Iterator NewIterator() const {
+    return Iterator(this);
   }
 
   // Retrieve the serialized version of this batch.
