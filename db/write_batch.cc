@@ -2078,7 +2078,7 @@ size_t WriteBatchInternal::AppendedByteSize(size_t leftByteSize,
 }
 
 void WriteBatch::Iterator::SeekToFirst() {
-  input_ = content_;
+  input_ = rep_;
   if (input_.size() < WriteBatchInternal::kHeader) {
     valid_ = false;
     return;
@@ -2097,6 +2097,10 @@ void WriteBatch::Iterator::Next() {
   Status s = ReadRecordFromWriteBatch(&input_, &tag_, &column_family_, &key_,
                                       &value_, &blob, &xid);
   valid_ = s.ok();
+}
+
+int WriteBatch::WriteBatchRef::Count() const {
+  return DecodeFixed32(rep_.data() + 8);
 }
 
 }  // namespace rocksdb

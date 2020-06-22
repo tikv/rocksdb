@@ -277,7 +277,7 @@ class WriteBatch : public WriteBatchBase {
   };
   Status Iterate(Handler* handler) const;
   class Iterator;
-  Iterator* NewIterator() const { return new Iterator(this); }
+  Iterator* NewIterator() const { return new Iterator(rep_); }
 
   // Retrieve the serialized version of this batch.
   const std::string& Data() const { return rep_; }
@@ -377,7 +377,7 @@ class WriteBatch : public WriteBatchBase {
  public:
   class Iterator {
    private:
-    Slice content_;
+    const Slice& rep_;
     Slice input_;
     Slice key_;
     Slice value_;
@@ -386,8 +386,7 @@ class WriteBatch : public WriteBatchBase {
     bool valid_;
 
    public:
-    explicit Iterator(const WriteBatch* wb)
-        : content_(wb->rep_), valid_(false) {}
+    explicit Iterator(const Slice& rep) : rep_(rep), valid_(false) {}
 
     bool Valid() const { return valid_; }
 
@@ -402,6 +401,16 @@ class WriteBatch : public WriteBatchBase {
     void SeekToFirst();
 
     void Next();
+  };
+  class WriteBatchRef {
+   public:
+    explicit WriteBatchRef(const Slice& rep) : rep_(rep) {}
+    Iterator* NewIterator() const { return new Iterator(rep_); }
+
+    int Count() const;
+
+   private:
+    const Slice& rep_;
   };
 };
 
