@@ -377,7 +377,7 @@ class WriteBatch : public WriteBatchBase {
  public:
   class Iterator {
    private:
-    const Slice& rep_;
+    Slice rep_;
     Slice input_;
     Slice key_;
     Slice value_;
