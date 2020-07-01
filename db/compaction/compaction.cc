@@ -533,7 +533,7 @@ std::unique_ptr<CompactionFilter> Compaction::CreateCompactionFilter() const {
 }
 
 std::unique_ptr<SstPartitioner> Compaction::CreateSstPartitioner() const {
-  if (!immutable_cf_options_.sst_partitioner_factory) {
+  if (!immutable_cf_options_.sst_partitioner_factory || output_level_ == 0) {
     return nullptr;
   }
 
