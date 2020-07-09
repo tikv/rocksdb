@@ -56,6 +56,10 @@ class CompactionFilter {
     bool is_manual_compaction;
     // Whether output files are in bottommost level or not.
     bool is_bottommost_level;
+
+    // End user keys for each level involved in the compaction.
+    std::vector<std::pair<int, Slice>> level_end_keys;
+
     // Which column family this compaction is for.
     uint32_t column_family_id;
   };

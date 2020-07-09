@@ -523,6 +523,17 @@ std::unique_ptr<CompactionFilter> Compaction::CreateCompactionFilter() const {
   context.is_full_compaction = is_full_compaction_;
   context.is_manual_compaction = is_manual_compaction_;
   context.is_bottommost_level = bottommost_level_;
+
+  for (size_t i = 0; i < num_input_levels(); ++i) {
+    if (inputs_[i].empty()) {
+      continue;
+    }
+    int level = inputs_[i].level;
+    int last = int(inputs_[i].size()) - 1;
+    Slice user_key = inputs_[i][last]->largest.user_key();
+    context.level_end_keys.push_back(std::pair<int, Slice>(level, user_key));
+  }
+
   context.column_family_id = cfd_->GetID();
   return cfd_->ioptions()->compaction_filter_factory->CreateCompactionFilter(
       context);
