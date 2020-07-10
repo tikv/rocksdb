@@ -338,6 +338,9 @@ struct BlockBasedTableBuilder::Rep {
 
   const bool use_delta_encoding_for_index_values;
   std::unique_ptr<FilterBlockBuilder> filter_builder;
+
+  char cache_key_prefix[BlockBasedTable::kMaxCacheKeyPrefixSize];
+  size_t cache_key_prefix_size;
   char compressed_cache_key_prefix[BlockBasedTable::kMaxCacheKeyPrefixSize];
   size_t compressed_cache_key_prefix_size;
 
@@ -394,6 +397,7 @@ struct BlockBasedTableBuilder::Rep {
                                                      : State::kUnbuffered),
         use_delta_encoding_for_index_values(table_opt.format_version >= 4 &&
                                             !table_opt.block_align),
+        cache_key_prefix_size(0),
         compressed_cache_key_prefix_size(0),
         flush_block_policy(
             table_options.flush_block_policy_factory->NewFlushBlockPolicy(
@@ -478,6 +482,11 @@ BlockBasedTableBuilder::BlockBasedTableBuilder(
 
   if (rep_->filter_builder != nullptr) {
     rep_->filter_builder->StartBlock(0);
+  }
+  if (table_options.block_cache.get() != nullptr) {
+    BlockBasedTable::GenerateCachePrefix(
+        table_options.block_cache.get(), file->writable_file(),
+        &rep_->cache_key_prefix[0], &rep_->cache_key_prefix_size);
   }
   if (table_options.block_cache_compressed.get() != nullptr) {
     BlockBasedTable::GenerateCachePrefix(
@@ -700,6 +709,11 @@ void BlockBasedTableBuilder::WriteBlock(const Slice& raw_block_contents,
   WriteRawBlock(block_contents, type, handle, is_data_block);
   r->compressed_output.clear();
   if (is_data_block) {
+    if (r->table_options.refill_block_cache) {
+      handle->set_offset(r->offset);
+      handle->set_size(raw_block_contents.size());
+      InsertBlockInCacheUncompressed(raw_block_contents, handle);
+    }
     if (r->filter_builder != nullptr) {
       r->filter_builder->StartBlock(r->offset);
     }
@@ -760,8 +774,8 @@ void BlockBasedTableBuilder::WriteRawBlock(const Slice& block_contents,
         "BlockBasedTableBuilder::WriteRawBlock:TamperWithChecksum",
         static_cast<char*>(trailer));
     r->status = r->file->Append(Slice(trailer, kBlockTrailerSize));
-    if (r->status.ok()) {
-      r->status = InsertBlockInCache(block_contents, type, handle);
+    if (r->status.ok() && type != kNoCompression) {
+      r->status = InsertBlockInCacheCompressed(block_contents, type, handle);
     }
     if (r->status.ok()) {
       r->offset += block_contents.size() + kBlockTrailerSize;
@@ -781,21 +795,23 @@ void BlockBasedTableBuilder::WriteRawBlock(const Slice& block_contents,
 
 Status BlockBasedTableBuilder::status() const { return rep_->status; }
 
-static void DeleteCachedBlockContents(const Slice& /*key*/, void* value) {
-  BlockContents* bc = reinterpret_cast<BlockContents*>(value);
-  delete bc;
+template <class ContentType>
+void DeleteCachedContent(const Slice& /*key*/, void* value) {
+  auto content = reinterpret_cast<ContentType*>(value);
+  delete content;
 }
 
 //
 // Make a copy of the block contents and insert into compressed block cache
 //
-Status BlockBasedTableBuilder::InsertBlockInCache(const Slice& block_contents,
-                                                  const CompressionType type,
-                                                  const BlockHandle* handle) {
+Status BlockBasedTableBuilder::InsertBlockInCacheCompressed(
+    const Slice& block_contents, const CompressionType type,
+    const BlockHandle* handle) {
+  assert(type != kNoCompression);
   Rep* r = rep_;
   Cache* block_cache_compressed = r->table_options.block_cache_compressed.get();
 
-  if (type != kNoCompression && block_cache_compressed != nullptr) {
+  if (block_cache_compressed != nullptr) {
     size_t size = block_contents.size();
 
     auto ubuf =
@@ -820,11 +836,44 @@ Status BlockBasedTableBuilder::InsertBlockInCache(const Slice& block_contents,
     block_cache_compressed->Insert(
         key, block_contents_to_cache,
         block_contents_to_cache->ApproximateMemoryUsage(),
-        &DeleteCachedBlockContents);
+        &DeleteCachedContent<BlockContents>);
 
     // Invalidate OS cache.
     r->file->InvalidateCache(static_cast<size_t>(r->offset), size);
   }
+  return Status::OK();
+}
+
+//
+// Make a copy of the block contents and insert into uncompressed block cache
+//
+Status BlockBasedTableBuilder::InsertBlockInCacheUncompressed(
+    const Slice& block_contents, const BlockHandle* handle) {
+  Rep* r = rep_;
+  Cache* block_cache = r->table_options.block_cache.get();
+
+  if (block_cache != nullptr) {
+    size_t size = block_contents.size();
+    auto buf = AllocateBlock(size, block_cache->memory_allocator());
+    memcpy(buf.get(), block_contents.data(), size);
+    BlockContents results(std::move(buf), size);
+
+    char
+        cache_key[BlockBasedTable::kMaxCacheKeyPrefixSize + kMaxVarint64Length];
+    Slice key = BlockBasedTable::GetCacheKey(
+        r->cache_key_prefix, r->cache_key_prefix_size, *handle, cache_key);
+
+    Block* block = new Block(std::move(results), kDisableGlobalSequenceNumber);
+    size_t charge = block->ApproximateMemoryUsage();
+
+    block_cache->Insert(key, block, charge, &DeleteCachedContent<Block>);
+    RecordTick(r->ioptions.statistics, BLOCK_CACHE_ADD);
+    RecordTick(r->ioptions.statistics, BLOCK_CACHE_DATA_ADD);
+    RecordTick(r->ioptions.statistics, BLOCK_CACHE_BYTES_WRITE, charge);
+    RecordTick(r->ioptions.statistics, BLOCK_CACHE_DATA_BYTES_INSERT, charge);
+    return Status::OK();
+  }
+
   return Status::OK();
 }
 

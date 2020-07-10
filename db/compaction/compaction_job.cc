@@ -1521,10 +1521,10 @@ void CompactionJob::CleanupCompaction() {
     } else {
       assert(!sub_status.ok() || sub_compact.outfile == nullptr);
     }
-    for (const auto& out : sub_compact.outputs) {
-      // If this file was inserted into the table cache then remove
-      // them here because this compaction was not committed.
-      if (!sub_status.ok()) {
+    // If this file was inserted into the table cache then remove
+    // them here because this compaction was not committed.
+    if (!sub_status.ok()) {
+      for (const auto& out : sub_compact.outputs) {
         TableCache::Evict(table_cache_.get(), out.meta.fd.GetNumber());
       }
     }
