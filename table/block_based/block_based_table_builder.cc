@@ -871,7 +871,6 @@ Status BlockBasedTableBuilder::InsertBlockInCacheUncompressed(
     RecordTick(r->ioptions.statistics, BLOCK_CACHE_DATA_ADD);
     RecordTick(r->ioptions.statistics, BLOCK_CACHE_BYTES_WRITE, charge);
     RecordTick(r->ioptions.statistics, BLOCK_CACHE_DATA_BYTES_INSERT, charge);
-    return Status::OK();
   }
 
   return Status::OK();
