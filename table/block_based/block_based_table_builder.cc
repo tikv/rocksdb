@@ -706,14 +706,14 @@ void BlockBasedTableBuilder::WriteBlock(const Slice& raw_block_contents,
     RecordTick(r->ioptions.statistics, NUMBER_BLOCK_NOT_COMPRESSED);
   }
 
+  if (is_data_block && r->table_options.refill_block_cache) {
+    handle->set_offset(r->offset);
+    handle->set_size(raw_block_contents.size());
+    InsertBlockInCacheUncompressed(raw_block_contents, handle);
+  }
   WriteRawBlock(block_contents, type, handle, is_data_block);
   r->compressed_output.clear();
   if (is_data_block) {
-    if (r->table_options.refill_block_cache) {
-      handle->set_offset(r->offset);
-      handle->set_size(raw_block_contents.size());
-      InsertBlockInCacheUncompressed(raw_block_contents, handle);
-    }
     if (r->filter_builder != nullptr) {
       r->filter_builder->StartBlock(r->offset);
     }
