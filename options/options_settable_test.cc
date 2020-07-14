@@ -153,7 +153,7 @@ TEST_F(OptionsSettableTest, BlockBasedTableOptionsAllFieldsSettable) {
       "verify_compression=true;read_amp_bytes_per_bit=0;"
       "enable_index_compression=false;"
       "block_align=true;"
-      "refill_block_cache=true",
+      "refill_block_cache=1",
       new_bbto));
 
   ASSERT_EQ(unset_bytes_base,

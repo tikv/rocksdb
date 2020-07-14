@@ -279,7 +279,8 @@ struct BlockBasedTableOptions {
   // Align data blocks on lesser of page size and block size
   bool block_align = false;
 
-  bool refill_block_cache = false;
+  // new block with level <= this should be refilled
+  int32_t refill_block_cache_level = -1;
 
   // This enum allows trading off increased index size for improved iterator
   // seek performance in some situations, particularly when block cache is

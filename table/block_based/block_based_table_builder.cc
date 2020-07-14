@@ -349,6 +349,7 @@ struct BlockBasedTableBuilder::Rep {
   std::string compressed_output;
   std::unique_ptr<FlushBlockPolicy> flush_block_policy;
   uint32_t column_family_id;
+  int32_t level;
   const std::string& column_family_name;
   uint64_t creation_time = 0;
   uint64_t oldest_key_time = 0;
@@ -362,7 +363,7 @@ struct BlockBasedTableBuilder::Rep {
       const InternalKeyComparator& icomparator,
       const std::vector<std::unique_ptr<IntTblPropCollectorFactory>>*
           int_tbl_prop_collector_factories,
-      uint32_t _column_family_id, WritableFileWriter* f,
+      uint32_t _column_family_id, const uint32_t _level, WritableFileWriter* f,
       const CompressionType _compression_type,
       const uint64_t _sample_for_compression,
       const CompressionOptions& _compression_opts, const bool skip_filters,
@@ -403,6 +404,7 @@ struct BlockBasedTableBuilder::Rep {
             table_options.flush_block_policy_factory->NewFlushBlockPolicy(
                 table_options, data_block)),
         column_family_id(_column_family_id),
+        level(_level),
         column_family_name(_column_family_name),
         creation_time(_creation_time),
         oldest_key_time(_oldest_key_time),
@@ -454,7 +456,7 @@ BlockBasedTableBuilder::BlockBasedTableBuilder(
     const InternalKeyComparator& internal_comparator,
     const std::vector<std::unique_ptr<IntTblPropCollectorFactory>>*
         int_tbl_prop_collector_factories,
-    uint32_t column_family_id, WritableFileWriter* file,
+    uint32_t column_family_id, const int32_t level, WritableFileWriter* file,
     const CompressionType compression_type,
     const uint64_t sample_for_compression,
     const CompressionOptions& compression_opts, const bool skip_filters,
@@ -475,7 +477,7 @@ BlockBasedTableBuilder::BlockBasedTableBuilder(
 
   rep_ =
       new Rep(ioptions, moptions, sanitized_table_options, internal_comparator,
-              int_tbl_prop_collector_factories, column_family_id, file,
+              int_tbl_prop_collector_factories, column_family_id, level, file,
               compression_type, sample_for_compression, compression_opts,
               skip_filters, column_family_name, creation_time, oldest_key_time,
               target_file_size, file_creation_time);
@@ -706,7 +708,8 @@ void BlockBasedTableBuilder::WriteBlock(const Slice& raw_block_contents,
     RecordTick(r->ioptions.statistics, NUMBER_BLOCK_NOT_COMPRESSED);
   }
 
-  if (is_data_block && r->table_options.refill_block_cache) {
+  if (is_data_block && r->table_options.refill_block_cache_level >= r->level &&
+      r->level >= 0) {
     handle->set_offset(r->offset);
     handle->set_size(raw_block_contents.size());
     InsertBlockInCacheUncompressed(raw_block_contents, handle);
