@@ -363,7 +363,7 @@ struct BlockBasedTableBuilder::Rep {
       const InternalKeyComparator& icomparator,
       const std::vector<std::unique_ptr<IntTblPropCollectorFactory>>*
           int_tbl_prop_collector_factories,
-      uint32_t _column_family_id, const uint32_t _level, WritableFileWriter* f,
+      uint32_t _column_family_id, const int32_t _level, WritableFileWriter* f,
       const CompressionType _compression_type,
       const uint64_t _sample_for_compression,
       const CompressionOptions& _compression_opts, const bool skip_filters,
