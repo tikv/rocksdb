@@ -1019,19 +1019,19 @@ class VersionSet {
 
   static uint64_t GetTotalSstFilesSize(Version* dummy_versions);
 
+  struct LogReporter : public log::Reader::Reporter {
+     Status* status;
+     virtual void Corruption(size_t /*bytes*/, const Status& s) override {
+       if (this->status->ok()) *this->status = s;
+     }
+   };
+
  protected:
   struct ManifestWriter;
 
   friend class Version;
   friend class DBImpl;
   friend class DBImplReadOnly;
-
-  struct LogReporter : public log::Reader::Reporter {
-    Status* status;
-    virtual void Corruption(size_t /*bytes*/, const Status& s) override {
-      if (this->status->ok()) *this->status = s;
-    }
-  };
 
   // ApproximateSize helper
   uint64_t ApproximateSizeLevel0(Version* v, const LevelFilesBrief& files_brief,
