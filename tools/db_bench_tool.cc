@@ -477,6 +477,10 @@ DEFINE_int32(refill_block_cache_level,
              rocksdb::BlockBasedTableOptions().refill_block_cache_level,
              "Refill block cache after flush or compaction");
 
+DEFINE_int32(refill_filter_and_index_level,
+             rocksdb::BlockBasedTableOptions().refill_filter_and_index_level,
+             "Refill block cache after flush or compaction");
+
 DEFINE_bool(use_data_block_hash_index, false,
             "if use kDataBlockBinaryAndHash "
             "instead of kDataBlockBinarySearch. "
@@ -3625,6 +3629,8 @@ class Benchmark {
       block_based_options.block_align = FLAGS_block_align;
       block_based_options.refill_block_cache_level =
           FLAGS_refill_block_cache_level;
+      block_based_options.refill_filter_and_index_level =
+          FLAGS_refill_filter_and_index_level;
       if (FLAGS_use_data_block_hash_index) {
         block_based_options.data_block_index_type =
             rocksdb::BlockBasedTableOptions::kDataBlockBinaryAndHash;

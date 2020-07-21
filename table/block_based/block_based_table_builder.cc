@@ -713,6 +713,11 @@ void BlockBasedTableBuilder::WriteBlock(const Slice& raw_block_contents,
     handle->set_offset(r->offset);
     handle->set_size(raw_block_contents.size());
     InsertBlockInCacheUncompressed(raw_block_contents, handle);
+  } else if (r->table_options.refill_filter_and_index_level >= r->level &&
+      r->level >= 0) {
+    handle->set_offset(r->offset);
+    handle->set_size(raw_block_contents.size());
+    InsertBlockInCacheUncompressed(raw_block_contents, handle);
   }
   WriteRawBlock(block_contents, type, handle, is_data_block);
   r->compressed_output.clear();
