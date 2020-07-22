@@ -713,11 +713,6 @@ void BlockBasedTableBuilder::WriteBlock(const Slice& raw_block_contents,
     handle->set_offset(r->offset);
     handle->set_size(raw_block_contents.size());
     InsertBlockInCacheUncompressed(raw_block_contents, handle);
-  } else if (r->table_options.refill_filter_and_index_level >= r->level &&
-      r->level >= 0) {
-    handle->set_offset(r->offset);
-    handle->set_size(raw_block_contents.size());
-    InsertBlockInCacheUncompressed(raw_block_contents, handle);
   }
   WriteRawBlock(block_contents, type, handle, is_data_block);
   r->compressed_output.clear();
@@ -896,6 +891,12 @@ void BlockBasedTableBuilder::WriteFilterBlock(
           rep_->filter_builder->Finish(filter_block_handle, &s);
       assert(s.ok() || s.IsIncomplete());
       rep_->props.filter_size += filter_content.size();
+      if (rep_->table_options.refill_filter_and_index_level >= rep_->level &&
+          rep_->level >= 0) {
+        filter_block_handle.set_offset(rep_->offset);
+        filter_block_handle.set_size(filter_content.size());
+        InsertBlockInCacheUncompressed(filter_content, &filter_block_handle);
+      }
       WriteRawBlock(filter_content, kNoCompression, &filter_block_handle);
     }
   }
@@ -938,6 +939,12 @@ void BlockBasedTableBuilder::WriteIndexBlock(
     }
   }
   if (ok()) {
+    if (rep_->table_options.refill_filter_and_index_level >= rep_->level &&
+        rep_->level >= 0) {
+      index_block_handle->set_offset(rep_->offset);
+      index_block_handle->set_size(index_blocks.index_block_contents.size());
+      InsertBlockInCacheUncompressed(index_blocks.index_block_contents, index_block_handle);
+    }
     if (rep_->table_options.enable_index_compression) {
       WriteBlock(index_blocks.index_block_contents, index_block_handle, false);
     } else {

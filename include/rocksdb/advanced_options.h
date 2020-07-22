@@ -508,14 +508,14 @@ struct AdvancedColumnFamilyOptions {
   uint64_t max_compaction_bytes = 0;
 
   // All writes will be slowed down to at least delayed_write_rate if estimated
-  // bytes needed to be compaction exceed this threshold.
+  // bytes needed to be compacted exceed this threshold.
   //
   // Default: 64GB
   //
   // Dynamically changeable through SetOptions() API
   uint64_t soft_pending_compaction_bytes_limit = 64 * 1073741824ull;
 
-  // All writes are stopped if estimated bytes needed to be compaction exceed
+  // All writes are stopped if estimated bytes needed to be compacted exceed
   // this threshold.
   //
   // Default: 256GB

@@ -377,7 +377,7 @@ DEFINE_int32(compaction_style, (int32_t) rocksdb::Options().compaction_style,
 
 static rocksdb::CompactionPri FLAGS_compaction_pri_e;
 DEFINE_int32(compaction_pri, (int32_t)rocksdb::Options().compaction_pri,
-             "priority of files to compaction: by size or by data age");
+             "priority of files to compact: by size or by data age");
 
 DEFINE_int32(universal_size_ratio, 0,
              "Percentage flexibility while comparing file size"
