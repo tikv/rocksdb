@@ -6,6 +6,7 @@
 * Removed unused structure `CompactionFilterContext`.
 
 ### New Features
+* Option `max_subcompactions` can be set dynamically using DB::SetDBOptions().
 * When user uses options.force_consistency_check in RocksDb, instead of crashing the process, we now pass the error back to the users without killing the process.
 * Added experimental ColumnFamilyOptions::sst_partitioner_factory to define determine the partitioning of sst files. This helps compaction to split the files on interesting boundaries (key prefixes) to make propagation of sst files less write amplifying (covering the whole key space).
 * Option `max_background_flushes` can be set dynamically using DB::SetDBOptions().
