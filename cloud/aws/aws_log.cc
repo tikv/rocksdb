@@ -85,13 +85,13 @@ Status CloudLogController::Apply(const Slice& in) {
 
     // If this file is not yet open, open it and store it in cache.
     if (iter == cache_fds_.end()) {
-      unique_ptr<RandomRWFile> result;
+      std::unique_ptr<RandomRWFile> result;
       st = env_->GetPosixEnv()->NewRandomRWFile(
           pathname, &result, EnvOptions());
 
       if (!st.ok()) {
           // create the file
-          unique_ptr<WritableFile> tmp_writable_file;
+          std::unique_ptr<WritableFile> tmp_writable_file;
           env_->GetPosixEnv()->NewWritableFile(pathname, &tmp_writable_file,
                                                EnvOptions());
           tmp_writable_file.reset();

@@ -41,7 +41,7 @@ struct JobHandle {
 
 class JobExecutor {
  public:
-  shared_ptr<JobHandle> ScheduleJob(std::chrono::steady_clock::time_point time,
+  std::shared_ptr<JobHandle> ScheduleJob(std::chrono::steady_clock::time_point time,
                                     std::function<void(void)> callback);
   void CancelJob(JobHandle* handle);
 
@@ -254,7 +254,7 @@ AwsEnv::AwsEnv(Env* underlying_env, const std::string& src_bucket_prefix,
   dest_object_prefix_ = trim(dest_object_prefix_);
   dest_bucket_region_ = trim(dest_bucket_region_);
 
-  unique_ptr<Aws::Auth::AWSCredentials> creds;
+  std::unique_ptr<Aws::Auth::AWSCredentials> creds;
   if (!cloud_env_options.credentials.access_key_id.empty() &&
       !cloud_env_options.credentials.secret_key.empty()) {
     creds.reset(new Aws::Auth::AWSCredentials(
@@ -332,7 +332,7 @@ AwsEnv::AwsEnv(Env* underlying_env, const std::string& src_bucket_prefix,
       GetBucketLocationConstraintForName(config.region);
 
   {
-    unique_ptr<Aws::S3::S3Client> s3client(
+    std::unique_ptr<Aws::S3::S3Client> s3client(
         creds ? new Aws::S3::S3Client(*creds, config)
               : new Aws::S3::S3Client(config));
 
@@ -484,10 +484,10 @@ Status AwsEnv::CheckOption(const EnvOptions& options) {
 // Ability to read a file directly from cloud storage
 Status AwsEnv::NewSequentialFileCloud(const std::string& bucket_prefix,
                                       const std::string& fname,
-                                      unique_ptr<SequentialFile>* result,
+                                      std::unique_ptr<SequentialFile>* result,
                                       const EnvOptions& options) {
   assert(status().ok());
-  unique_ptr<S3ReadableFile> file;
+  std::unique_ptr<S3ReadableFile> file;
   Status st = NewS3ReadableFile(bucket_prefix, fname, &file);
   if (!st.ok()) {
     return st;
@@ -499,7 +499,7 @@ Status AwsEnv::NewSequentialFileCloud(const std::string& bucket_prefix,
 
 // open a file for sequential reading
 Status AwsEnv::NewSequentialFile(const std::string& logical_fname,
-                                 unique_ptr<SequentialFile>* result,
+                                 std::unique_ptr<SequentialFile>* result,
                                  const EnvOptions& options) {
   assert(status().ok());
   result->reset();
@@ -534,7 +534,7 @@ Status AwsEnv::NewSequentialFile(const std::string& logical_fname,
           st = base_env_->NewSequentialFile(fname, result, options);
         }
       } else {
-        unique_ptr<S3ReadableFile> file;
+        std::unique_ptr<S3ReadableFile> file;
         if (!st.ok() && has_dest_bucket_) {  // read from destination S3
           st = NewS3ReadableFile(GetDestBucketPrefix(), destname(fname), &file);
         }
@@ -574,7 +574,7 @@ Status AwsEnv::NewSequentialFile(const std::string& logical_fname,
 
 // open a file for random reading
 Status AwsEnv::NewRandomAccessFile(const std::string& logical_fname,
-                                   unique_ptr<RandomAccessFile>* result,
+                                   std::unique_ptr<RandomAccessFile>* result,
                                    const EnvOptions& options) {
   assert(status().ok());
   result->reset();
@@ -648,7 +648,7 @@ Status AwsEnv::NewRandomAccessFile(const std::string& logical_fname,
       // Only execute this code path if keep_local_sst_files == false. If it's
       // true, we will never use S3ReadableFile to read; we copy the file
       // locally and read using base_env.
-      unique_ptr<S3ReadableFile> file;
+      std::unique_ptr<S3ReadableFile> file;
       if (!st.ok() && has_dest_bucket_) {
         st = NewS3ReadableFile(GetDestBucketPrefix(), destname(fname), &file);
       }
@@ -688,7 +688,7 @@ Status AwsEnv::NewRandomAccessFile(const std::string& logical_fname,
 
 // create a new file for writing
 Status AwsEnv::NewWritableFile(const std::string& logical_fname,
-                               unique_ptr<WritableFile>* result,
+                               std::unique_ptr<WritableFile>* result,
                                const EnvOptions& options) {
   assert(status().ok());
   result->reset();
@@ -703,7 +703,7 @@ Status AwsEnv::NewWritableFile(const std::string& logical_fname,
   Status s;
 
   if (has_dest_bucket_ && (sstfile || identity || manifest)) {
-    unique_ptr<S3WritableFile> f(
+    std::unique_ptr<S3WritableFile> f(
         new S3WritableFile(this, fname, GetDestBucketPrefix(), destname(fname),
                            options, cloud_env_options));
     s = f->status();
@@ -755,7 +755,7 @@ class S3Directory : public Directory {
   AwsEnv* env_;
   std::string name_;
   Status status_;
-  unique_ptr<Directory> posixDir;
+  std::unique_ptr<Directory> posixDir;
 };
 
 //
@@ -763,7 +763,7 @@ class S3Directory : public Directory {
 //  AWS S3 service and the posixEnv local directory exists as well.
 //
 Status AwsEnv::NewDirectory(const std::string& name,
-                            unique_ptr<Directory>* result) {
+                            std::unique_ptr<Directory>* result) {
   assert(status().ok());
   result->reset(nullptr);
 
@@ -771,7 +771,7 @@ Status AwsEnv::NewDirectory(const std::string& name,
       name.c_str());
 
   // create new object.
-  unique_ptr<S3Directory> d(new S3Directory(this, name));
+  std::unique_ptr<S3Directory> d(new S3Directory(this, name));
 
   // Check if the path exists in local dir
   if (!d->status().ok()) {
@@ -944,7 +944,7 @@ Status AwsEnv::HeadObject(const std::string& bucket_prefix,
 
 Status AwsEnv::NewS3ReadableFile(const std::string& bucket_prefix,
                                  const std::string& fname,
-                                 unique_ptr<S3ReadableFile>* result) {
+                                 std::unique_ptr<S3ReadableFile>* result) {
   // First, check if the file exists and also find its size. We use size in
   // S3ReadableFile to make sure we always read the valid ranges of the file
   uint64_t size;
@@ -1785,7 +1785,7 @@ Status AwsEnv::LockFile(const std::string& fname, FileLock** lock) {
 
 Status AwsEnv::UnlockFile(FileLock* lock) { return Status::OK(); }
 
-Status AwsEnv::NewLogger(const std::string& fname, shared_ptr<Logger>* result) {
+Status AwsEnv::NewLogger(const std::string& fname, std::shared_ptr<Logger>* result) {
   return base_env_->NewLogger(fname, result);
 }
 
@@ -1804,7 +1804,7 @@ Status AwsEnv::NewAwsEnv(Env* base_env, const std::string& src_bucket_prefix,
   if (!base_env) {
     base_env = Env::Default();
   }
-  unique_ptr<AwsEnv> aenv(
+  std::unique_ptr<AwsEnv> aenv(
       new AwsEnv(base_env, src_bucket_prefix, src_object_prefix,
                  src_bucket_region, dest_bucket_prefix, dest_object_prefix,
                  dest_bucket_region, cloud_options, info_log));

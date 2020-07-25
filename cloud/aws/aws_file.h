@@ -97,7 +97,7 @@ class S3WritableFile : public WritableFile {
   std::string fname_;
   std::string tmp_file_;
   Status status_;
-  unique_ptr<WritableFile> local_file_;
+  std::unique_ptr<WritableFile> local_file_;
   std::string bucket_prefix_;
   std::string cloud_fname_;
   bool is_manifest_;

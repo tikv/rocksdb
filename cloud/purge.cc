@@ -12,7 +12,7 @@
 #include "rocksdb/env.h"
 #include "rocksdb/options.h"
 #include "rocksdb/status.h"
-#include "util/filename.h"
+#include "file/filename.h"
 
 namespace rocksdb {
 

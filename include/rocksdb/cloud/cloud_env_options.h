@@ -207,7 +207,7 @@ class CloudEnv : public Env {
   // Reads a file from the cloud
   virtual Status NewSequentialFileCloud(const std::string& bucket_prefix,
                                         const std::string& fname,
-                                        unique_ptr<SequentialFile>* result,
+                                        std::unique_ptr<SequentialFile>* result,
                                         const EnvOptions& options) = 0;
 
   // Saves and retrieves the dbid->dirname mapping in cloud storage

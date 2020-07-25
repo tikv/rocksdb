@@ -94,7 +94,7 @@ class CloudEnvImpl : public CloudEnv {
   void StopPurger();
 
  private:
-  unique_ptr<CloudManifest> cloud_manifest_;
+  std::unique_ptr<CloudManifest> cloud_manifest_;
   // This runs only in tests when we want to disable cloud manifest
   // functionality
   bool test_disable_cloud_manifest_{false};

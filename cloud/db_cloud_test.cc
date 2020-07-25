@@ -258,7 +258,7 @@ class CloudTest : public testing::Test {
   std::string persistent_cache_path_;
   uint64_t persistent_cache_size_gb_;
   DBCloud* db_;
-  unique_ptr<CloudEnv> aenv_;
+  std::unique_ptr<CloudEnv> aenv_;
 };
 
 //
@@ -563,7 +563,7 @@ TEST_F(CloudTest, CopyToFromS3) {
 
   // create a 10 MB file and upload it to cloud
   {
-    unique_ptr<WritableFile> writer;
+    std::unique_ptr<WritableFile> writer;
     ASSERT_OK(aenv_->NewWritableFile(fname, &writer, EnvOptions()));
 
     for (int i = 0; i < 10; i++) {
@@ -577,7 +577,7 @@ TEST_F(CloudTest, CopyToFromS3) {
 
   // reopen file for reading. It should be refetched from cloud storage.
   {
-    unique_ptr<RandomAccessFile> reader;
+    std::unique_ptr<RandomAccessFile> reader;
     ASSERT_OK(aenv_->NewRandomAccessFile(fname, &reader, EnvOptions()));
 
     uint64_t offset = 0;
@@ -601,7 +601,7 @@ TEST_F(CloudTest, DelayFileDeletion) {
   ((AwsEnv*)aenv_.get())->TEST_SetFileDeletionDelay(std::chrono::seconds(2));
 
   auto createFile = [&]() {
-    unique_ptr<WritableFile> writer;
+    std::unique_ptr<WritableFile> writer;
     ASSERT_OK(aenv_->NewWritableFile(fname, &writer, EnvOptions()));
 
     for (int i = 0; i < 10; i++) {
@@ -982,7 +982,7 @@ TEST_F(CloudTest, MigrateFromPureRocksDB) {
     Options options;
     options.create_if_missing = true;
     DB* dbptr;
-    unique_ptr<DB> db;
+    std::unique_ptr<DB> db;
     ASSERT_OK(DB::Open(options, dbname_, &dbptr));
     db.reset(dbptr);
     // create 5 files

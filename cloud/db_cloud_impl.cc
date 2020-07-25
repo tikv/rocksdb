@@ -17,9 +17,9 @@
 #include "rocksdb/persistent_cache.h"
 #include "rocksdb/status.h"
 #include "rocksdb/table.h"
-#include "util/auto_roll_logger.h"
+#include "logging/auto_roll_logger.h"
+#include "file/file_util.h"
 #include "util/file_reader_writer.h"
-#include "util/file_util.h"
 #include "util/xxhash.h"
 
 namespace rocksdb {
@@ -60,7 +60,7 @@ Status writeCloudManifest(Env* local_env, CloudManifest* manifest,
   std::unique_ptr<WritableFile> file;
   Status s = local_env->NewWritableFile(tmp_fname, &file, EnvOptions());
   if (s.ok()) {
-    s = manifest->WriteToLog(unique_ptr<WritableFileWriter>(
+    s = manifest->WriteToLog(std::unique_ptr<WritableFileWriter>(
         new WritableFileWriter(std::move(file), tmp_fname, EnvOptions())));
   }
   if (s.ok()) {
@@ -179,7 +179,7 @@ Status DBCloud::Open(const Options& opt, const std::string& local_dbname,
         if (st.ok()) {
           tableopt->persistent_cache = pcache;
           Log(InfoLogLevel::INFO_LEVEL, options.info_log,
-              "Created persistent cache %s with size %ld GB",
+              "Created persistent cache %s with size %" PRIu64 "GB",
               persistent_cache_path.c_str(), persistent_cache_size_gb);
         } else {
           Log(InfoLogLevel::INFO_LEVEL, options.info_log,
@@ -313,7 +313,7 @@ Status DBCloudImpl::CreateNewIdentityFile(CloudEnv* cenv,
   Env* env = cenv->GetBaseEnv();
   Status st;
   {
-    unique_ptr<WritableFile> destfile;
+    std::unique_ptr<WritableFile> destfile;
     st = env->NewWritableFile(tmp_identity_path, &destfile, soptions);
     if (!st.ok()) {
       Log(InfoLogLevel::ERROR_LEVEL, options.info_log,
@@ -339,7 +339,7 @@ Status DBCloudImpl::CreateNewIdentityFile(CloudEnv* cenv,
   if (!st.ok()) {
     Log(InfoLogLevel::ERROR_LEVEL, options.info_log,
         "[db_cloud_impl] Unable to rename newly created IDENTITY.tmp "
-        " to IDENTITY. %S",
+        " to IDENTITY. %s",
         st.ToString().c_str());
     return st;
   }
@@ -863,7 +863,7 @@ Status DBCloudImpl::SanitizeDirectory(const Options& options,
   // remap the filename appropriately, this is just to fool the underyling
   // RocksDB)
   {
-    unique_ptr<WritableFile> destfile;
+    std::unique_ptr<WritableFile> destfile;
     st = env->NewWritableFile(CurrentFileName(local_name), &destfile, soptions);
     if (!st.ok()) {
       Log(InfoLogLevel::ERROR_LEVEL, options.info_log,
@@ -952,7 +952,7 @@ Status DBCloudImpl::FetchCloudManifest(CloudEnv* cenv, const Options& options,
       local_dbname.c_str());
 
   // No cloud manifest, create an empty one
-  unique_ptr<CloudManifest> manifest;
+  std::unique_ptr<CloudManifest> manifest;
   CloudManifest::CreateForEmptyDatabase("", &manifest);
   return writeCloudManifest(cenv->GetBaseEnv(), manifest.get(), cloudmanifest);
 }
