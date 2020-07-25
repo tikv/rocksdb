@@ -129,7 +129,8 @@ Status ManifestReader::GetMaxFileNumberFromManifest(Env* env,
       break;
     }
     uint64_t f;
-    if (edit.GetNextFileNumber(&f)) {
+    if (edit.has_next_file_number()) {
+      f = edit.next_file_number();
       assert(*maxFileNumber <= f);
       *maxFileNumber = f;
     }
