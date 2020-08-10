@@ -8,6 +8,8 @@
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 //
 #pragma once
+#include <unordered_map>
+
 #include "rocksdb/env.h"
 #include "rocksdb/slice_transform.h"
 
@@ -28,8 +30,7 @@ class VersionBuilder {
                  VersionStorageInfo* base_vstorage, Logger* info_log = nullptr);
   ~VersionBuilder();
   Status CheckConsistency(VersionStorageInfo* vstorage);
-  Status CheckConsistencyForDeletes(VersionEdit* edit, uint64_t number,
-                                    int level);
+  Status CheckConsistencyForDeletes(VersionEdit* edit);
   bool CheckConsistencyForNumLevels();
   Status Apply(VersionEdit* edit);
   Status SaveTo(VersionStorageInfo* vstorage);
