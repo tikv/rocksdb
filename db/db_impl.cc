@@ -2441,7 +2441,7 @@ Status DBImpl::DeleteFilesInRanges(ColumnFamilyHandle* column_family,
   auto cfh = reinterpret_cast<ColumnFamilyHandleImpl*>(column_family);
   ColumnFamilyData* cfd = cfh->cfd();
   VersionEdit edit;
-  std::set<FileMetaData*> deleted_files;
+  std::vector<FileMetaData*> deleted_files;
   JobContext job_context(next_job_id_.fetch_add(1), true);
   {
     InstrumentedMutexLock l(&mutex_);
@@ -2474,22 +2474,22 @@ Status DBImpl::DeleteFilesInRanges(ColumnFamilyHandle* column_family,
             i, begin_key, end_key, &level_files, -1 /* hint_index */,
             nullptr /* file_index */);
         FileMetaData* level_file;
+        deleted_files.reserve(level_files.size());
+        edit.ReserveDelete(level_files.size());
         for (uint32_t j = 0; j < level_files.size(); j++) {
           level_file = level_files[j];
           if (level_file->being_compacted) {
             continue;
           }
-          if (deleted_files.find(level_file) != deleted_files.end()) {
-            continue;
-          }
-          if (!include_end && end != nullptr &&
+          // level files are sorted in order, so here only checks the end key of the last file
+          if (j == level_files.size() - 1 && !include_end && end != nullptr &&
               cfd->user_comparator()->Compare(level_file->largest.user_key(),
                                               *end) == 0) {
             continue;
           }
           edit.SetColumnFamily(cfd->GetID());
           edit.DeleteFile(i, level_file->fd.GetNumber());
-          deleted_files.insert(level_file);
+          deleted_files.push_back(level_file);
           level_file->being_compacted = true;
         }
       }

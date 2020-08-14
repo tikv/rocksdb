@@ -256,9 +256,17 @@ class VersionEdit {
     new_files_.emplace_back(level, f);
   }
 
+  void ReserveAdd(size_t size) {
+    new_files_.reserve(new_files_.size() + size);
+  }
+
+  void ReserveDelete(size_t size) {
+    deleted_files_.reserve(deleted_files_.size() + size);
+  }
+
   // Delete the specified "file" from the specified "level".
   void DeleteFile(int level, uint64_t file) {
-    deleted_files_.insert({level, file});
+    deleted_files_.emplace_back(std::make_pair(level, file));
   }
 
   // Number of edits
@@ -295,7 +303,7 @@ class VersionEdit {
 
   const char* DecodeNewFile4From(Slice* input);
 
-  typedef std::set<std::pair<int, uint64_t>> DeletedFileSet;
+  typedef std::vector<std::pair<int, uint64_t>> DeletedFileSet;
 
   const DeletedFileSet& GetDeletedFiles() { return deleted_files_; }
   const std::vector<std::pair<int, FileMetaData>>& GetNewFiles() {

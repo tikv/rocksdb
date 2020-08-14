@@ -393,7 +393,7 @@ Status VersionEdit::DecodeFrom(const Slice& src) {
       case kDeletedFile: {
         uint64_t number;
         if (GetLevel(&input, &level, &msg) && GetVarint64(&input, &number)) {
-          deleted_files_.insert(std::make_pair(level, number));
+          deleted_files_.emplace_back(std::make_pair(level, number));
         } else {
           if (!msg) {
             msg = "deleted file";
