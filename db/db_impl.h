@@ -1383,7 +1383,7 @@ class DBImpl : public DB {
 
   // A vector to store the file numbers that have been assigned to certain
   // JobContext. Current implementation tracks ssts only.
-  std::unordered_set<uint64_t> files_grabbed_for_purge_;
+  std::vector<uint64_t> files_grabbed_for_purge_;
 
   // A queue to store log writers to close
   std::deque<log::Writer*> logs_to_free_queue_;

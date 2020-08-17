@@ -132,6 +132,7 @@ void DBImpl::FindObsoleteFiles(JobContext* job_context, bool force,
       }
     }
 
+    std::sort(files_grabbed_for_purge_.begin(), files_grabbed_for_purge_.end());
     for (auto& path : paths) {
       // set of all files in the directory. We'll exclude files that are still
       // alive in the subsequent processings.
@@ -496,15 +497,13 @@ void DBImpl::PurgeObsoleteFiles(JobContext& state, bool schedule_only) {
     // After purging obsolete files, remove them from files_grabbed_for_purge_.
     // Use a temporary vector to perform bulk deletion via swap.
     InstrumentedMutexLock guard_lock(&mutex_);
-    autovector<uint64_t> to_be_removed;
+    std::vector<uint64_t> tmp;
     for (auto fn : files_grabbed_for_purge_) {
-      if (files_to_del.count(fn) != 0) {
-        to_be_removed.emplace_back(fn);
+      if (files_to_del.count(fn) == 0) {
+        tmp.emplace_back(fn);
       }
     }
-    for (auto fn : to_be_removed) {
-      files_grabbed_for_purge_.erase(fn);
-    }
+    files_grabbed_for_purge_.swap(tmp);
   }
 
   // Delete old info log files.

@@ -2487,18 +2487,21 @@ Status DBImpl::DeleteFilesInRanges(ColumnFamilyHandle* column_family,
                                               *end) == 0) {
             continue;
           }
-          deleted_files.emplace_back(std::pair(level_file, i));
+          deleted_files.emplace_back(std::make_pair(level_file, i));
           level_file->being_compacted = true;
         }
       }
     }
     if (n > 1) {
       // deduplicate the files because multiple ranges may cover same file.
-      auto cmp = [](std::pair<FileMetaData*, int>& p1, std::pair<FileMetaData*, int>& p2) {
+      auto cmp = [](const std::pair<FileMetaData*, int>& p1, const std::pair<FileMetaData*, int>& p2) {
         return p1.first->fd.GetNumber() < p2.first->fd.GetNumber();
       };
+      auto pred = [](const std::pair<FileMetaData*, int>& p1, const std::pair<FileMetaData*, int>& p2) {
+        return p1.first->fd.GetNumber() == p2.first->fd.GetNumber();
+      };
       std::sort(deleted_files.begin(), deleted_files.end(), cmp);
-      std::unique(deleted_files.begin(), deleted_files.end());
+      std::unique(deleted_files.begin(), deleted_files.end(), pred);
     }
     for (const auto& delete_file : deleted_files) {
         edit.DeleteFile(delete_file.second, delete_file.first->fd.GetNumber());

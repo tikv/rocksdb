@@ -301,7 +301,7 @@ class VersionBuilder::Rep {
 
   // Apply all of the edits in *edit to the current state.
   Status Apply(VersionEdit* edit) {
-    Status s = CheckConsistency(base_vstorage_);
+    Status s = CheckConsistency(base_vstorage_); // 304
     if (!s.ok()) {
       return s;
     }
