@@ -2356,6 +2356,16 @@ Status WriteBatchInternal::SetContents(WriteBatch* b, const Slice& contents) {
   return Status::OK();
 }
 
+Status WriteBatchInternal::AppendContents(WriteBatch* dst,
+                                          const Slice& content) {
+  size_t src_len = content.size() - WriteBatchInternal::kHeader;
+  SetCount(dst, Count(dst) + DecodeFixed32(content.data() + 8));
+  assert(content.size() >= WriteBatchInternal::kHeader);
+  dst->rep_.append(content.data() + WriteBatchInternal::kHeader, src_len);
+  dst->content_flags_.store(ContentFlags::DEFERRED, std::memory_order_relaxed);
+  return Status::OK();
+}
+
 Status WriteBatchInternal::Append(WriteBatch* dst, const WriteBatch* src,
                                   const bool wal_only) {
   assert(dst->Count() == 0 ||

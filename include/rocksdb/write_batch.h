@@ -296,6 +296,8 @@ class WriteBatch : public WriteBatchBase {
     virtual bool WriteBeforePrepare() const { return false; }
   };
   Status Iterate(Handler* handler) const;
+  class Iterator;
+  Iterator* NewIterator() const { return new Iterator(rep_); }
 
   // Retrieve the serialized version of this batch.
   const std::string& Data() const { return rep_; }
