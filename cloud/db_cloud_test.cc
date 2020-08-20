@@ -14,10 +14,10 @@
 #include "cloud/manifest_reader.h"
 #include "rocksdb/options.h"
 #include "rocksdb/status.h"
-#include "util/filename.h"
-#include "util/logging.h"
+#include "file/filename.h"
+#include "logging/logging.h"
 #include "util/string_util.h"
-#include "util/testharness.h"
+#include "test_util/testharness.h"
 #ifndef OS_WIN
 #include <unistd.h>
 #endif
