@@ -143,7 +143,7 @@ KinesisController::KinesisController(
   topic_ = GetAwsStreamName(env_->GetSrcBucketPrefix());
 
   Log(InfoLogLevel::DEBUG_LEVEL, env_->info_log_,
-      "[%s] KinesisController opening stream %s using cachedir '%s'",
+      "[%s] KinesisController opening stream %s using cachedir ' %s '",
       GetTypeName().c_str(), topic_.c_str(), cache_dir_.c_str());
 }
 
@@ -180,7 +180,7 @@ Status KinesisController::TailStream() {
       Aws::Kinesis::KinesisErrors err = error.GetErrorType();
       if (err == Aws::Kinesis::KinesisErrors::EXPIRED_ITERATOR) {
         Log(InfoLogLevel::DEBUG_LEVEL, env_->info_log_,
-            "[%s] expired shard iterator for %s. Reseeking...",
+            "[%s] expired shard iterator for %s. Reseeking...%s",
             GetTypeName().c_str(), topic_.c_str(), error.GetMessage().c_str());
         shards_iterator_[0] = "";
         SeekShards();  // read position at last seqno

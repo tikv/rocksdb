@@ -114,8 +114,8 @@ Status CloudLogController::Apply(const Slice& in) {
     st = fd->Write(offset_in_file, payload);
     if (!st.ok()) {
       Log(InfoLogLevel::DEBUG_LEVEL, env_->info_log_,
-          "[%s] Tailer: Error writing to cached file: %s", pathname.c_str(),
-          GetTypeName().c_str(), st.ToString().c_str());
+          "[%s] Tailer: Error writing to cached file: %s \n%s",
+          pathname.c_str(), GetTypeName().c_str(), st.ToString().c_str());
     }
   } else if (operation == kDelete) {
     // Delete file from cache directory.

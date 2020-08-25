@@ -1,11 +1,15 @@
 //  Copyright (c) 2016-present, Rockset, Inc.  All rights reserved.
 //
 #include "cloud/aws/aws_env.h"
+
 #include <unistd.h>
+
 #include <chrono>
+#include <cinttypes>
 #include <fstream>
 #include <iostream>
 #include <memory>
+
 #include "rocksdb/env.h"
 #include "rocksdb/status.h"
 #include "util/stderr_logger.h"
@@ -75,7 +79,7 @@ JobExecutor::~JobExecutor() {
   }
 }
 
-shared_ptr<JobHandle> JobExecutor::ScheduleJob(
+std::shared_ptr<JobHandle> JobExecutor::ScheduleJob(
     std::chrono::steady_clock::time_point time,
     std::function<void(void)> callback) {
   std::lock_guard<std::mutex> lk(mutex_);
@@ -871,7 +875,7 @@ Status AwsEnv::GetChildrenFromS3(const std::string& path,
           s3err == Aws::S3::S3Errors::NO_SUCH_KEY ||
           s3err == Aws::S3::S3Errors::RESOURCE_NOT_FOUND) {
         Log(InfoLogLevel::ERROR_LEVEL, info_log_,
-            "[s3] GetChildren dir %s does not exist", path.c_str(),
+            "[s3] GetChildren dir %s does not exist %s", path.c_str(),
             errmsg.c_str());
         return Status::NotFound(path, errmsg.c_str());
       }
@@ -973,7 +977,7 @@ Status AwsEnv::EmptyBucket(const std::string& bucket_prefix,
     return st;
   }
   Log(InfoLogLevel::DEBUG_LEVEL, info_log_,
-      "[s3] EmptyBucket going to delete %d objects in bucket %s",
+      "[s3] EmptyBucket going to delete %" PRIi64 " objects in bucket %s",
       results.size(), bucket.c_str());
 
   // Delete all objects from bucket
@@ -1053,8 +1057,8 @@ Status AwsEnv::GetChildren(const std::string& path,
   result->erase(std::unique(result->begin(), result->end()), result->end());
 
   Log(InfoLogLevel::DEBUG_LEVEL, info_log_,
-      "[s3] GetChildren %s successfully returned %d files", path.c_str(),
-      result->size());
+      "[s3] GetChildren %s successfully returned %" PRIi64 " files",
+      path.c_str(), result->size());
   return Status::OK();
 }
 
@@ -1682,8 +1686,7 @@ Status AwsEnv::GetObject(const std::string& bucket_name_prefix,
     localenv->DeleteFile(tmp_destination);
     s = Status::IOError("Partial download of a file " + local_destination);
     Log(InfoLogLevel::ERROR_LEVEL, info_log_,
-        "[s3] GetObject %s/%s local size %ld != cloud size "
-        "%ld. %s",
+        "[s3] GetObject %s/%s local size %ld != cloud size %lld. %s",
         s3_bucket.c_str(), bucket_object_path.c_str(), file_size,
         get_outcome.GetResult().GetContentLength(), s.ToString().c_str());
   }

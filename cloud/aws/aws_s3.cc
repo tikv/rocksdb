@@ -133,8 +133,8 @@ Status S3ReadableFile::Read(uint64_t offset, size_t n, Slice* result,
   *result = Slice(scratch, size);
 
   Log(InfoLogLevel::DEBUG_LEVEL, env_->info_log_,
-      "[s3] S3ReadableFile file %s filesize %ld read %d bytes", fname_.c_str(),
-      file_size_, size);
+      "[s3] S3ReadableFile file %s filesize %" PRIi64 " read %" PRIi64 " bytes",
+      fname_.c_str(), file_size_, size);
   return Status::OK();
 }
 
@@ -350,7 +350,7 @@ Status S3WritableFile::Sync() {
     } else {
       Log(InfoLogLevel::ERROR_LEVEL, env_->info_log_,
           "[s3] S3WritableFile failed to make manifest %s durable to "
-          "bucket %s bucketpath. %s",
+          "bucket %s bucketpath. %s. %s",
           fname_.c_str(), bucket_prefix_.c_str(), cloud_fname_.c_str(),
           stat.ToString().c_str());
     }
