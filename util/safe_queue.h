@@ -18,11 +18,16 @@ class SafeFuncQueue {
   };
 
  public:
-  SafeFuncQueue() {}
+  SafeFuncQueue() : len_(0) {}
 
   ~SafeFuncQueue() {}
 
   bool RunFunc() {
+    // The memory order does not affect the correctness because we update it
+    // with mutex hold so relaxed is enough.
+    if (len_.load(std::memory_order_relaxed) == 0) {
+      return false;
+    }
     mu_.lock();
     if (que_.empty()) {
       mu_.unlock();
@@ -30,6 +35,7 @@ class SafeFuncQueue {
     }
     auto func = std::move(que_.front().func);
     que_.pop_front();
+    len_.fetch_sub(1, std::memory_order_relaxed);
     mu_.unlock();
     func();
     return true;
@@ -39,11 +45,13 @@ class SafeFuncQueue {
     std::lock_guard<std::mutex> _guard(mu_);
     que_.emplace_back();
     que_.back().func = std::move(v);
+    len_.fetch_add(1, std::memory_order_relaxed);
   }
 
  private:
   std::deque<Item> que_;
   std::mutex mu_;
+  std::atomic<size_t> len_;
 };
 
 }  // namespace rocksdb
