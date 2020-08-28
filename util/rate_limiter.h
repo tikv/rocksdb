@@ -32,6 +32,8 @@ class GenericRateLimiter : public RateLimiter {
   // This API allows user to dynamically change rate limiter's bytes per second.
   virtual void SetBytesPerSecond(int64_t bytes_per_second) override;
 
+  virtual void AlertLowLimit() override {}
+
   // Request for token to write bytes. If this request can not be satisfied,
   // the call is blocked. Caller is responsible to make sure
   // bytes <= GetSingleBurstBytes()
@@ -70,6 +72,7 @@ class GenericRateLimiter : public RateLimiter {
   void Refill();
   int64_t CalculateRefillBytesPerPeriod(int64_t rate_bytes_per_sec);
   Status Tune();
+  Status Tune2();
 
   uint64_t NowMicrosMonotonic(Env* env) {
     return env->NowNanos() / std::milli::den;
@@ -106,8 +109,11 @@ class GenericRateLimiter : public RateLimiter {
   bool auto_tuned_;
   int64_t num_drains_;
   int64_t prev_num_drains_;
+  int64_t exp_num_drains_;
   const int64_t max_bytes_per_sec_;
   std::chrono::microseconds tuned_time_;
+
+  int64_t duration_bytes_through_;
 };
 
 }  // namespace rocksdb

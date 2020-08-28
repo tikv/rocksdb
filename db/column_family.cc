@@ -734,6 +734,14 @@ WriteStallCondition ColumnFamilyData::RecalculateWriteStallConditions(
     write_stall_condition = write_stall_condition_and_cause.first;
     auto write_stall_cause = write_stall_condition_and_cause.second;
 
+    auto rate_limiter = ioptions_.rate_limiter;
+    if (rate_limiter) {
+      if (write_stall_cause == WriteStallCause::kMemtableLimit ||
+          write_stall_cause == WriteStallCause::kL0FileCountLimit) {
+        rate_limiter->AlertLowLimit();
+      }
+    }
+
     bool was_stopped = write_controller->IsStopped();
     bool needed_delay = write_controller->NeedsDelay();
 

@@ -37,6 +37,8 @@ class RateLimiter {
   // REQUIRED: bytes_per_second > 0
   virtual void SetBytesPerSecond(int64_t bytes_per_second) = 0;
 
+  virtual void AlertLowLimit() {}
+
   // Deprecated. New RateLimiter derived classes should override
   // Request(const int64_t, const Env::IOPriority, Statistics*) or
   // Request(const int64_t, const Env::IOPriority, Statistics*, OpType)
