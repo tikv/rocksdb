@@ -16,6 +16,7 @@
 #include <string>
 #include <vector>
 
+#include "rocksdb/convenience.h"
 #include "rocksdb/env.h"
 #include "rocksdb/iterator.h"
 #include "rocksdb/ldb_tool.h"
@@ -81,7 +82,9 @@ class LDBCommand {
 
   bool ValidateCmdLineOptions();
 
-  virtual Options PrepareOptionsForOpenDB();
+  virtual void PrepareOptions();
+
+  virtual void OverrideBaseOptions();
 
   virtual void SetDBOptions(Options options) { options_ = options; }
 
@@ -235,6 +238,7 @@ class LDBCommand {
 
   Options options_;
   std::vector<ColumnFamilyDescriptor> column_families_;
+  ConfigOptions config_options_;
   LDBOptions ldb_options_;
 
  private:
