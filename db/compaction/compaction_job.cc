@@ -908,6 +908,9 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
           : sub_compact->compaction->CreateSstPartitioner();
   std::string last_key_for_partitioner;
   const size_t kYieldForWriteEvery = 255;
+  const size_t kYieldWriteTimesEvery = 4;
+  bool should_yield =
+      write_queue_ != nullptr && sub_compact->compaction->start_level() != 0;
 
   while (status.ok() && !cfd->IsDropped() && c_iter->Valid()) {
     // Invariant: c_iter.status() is guaranteed to be OK if c_iter->Valid()
@@ -942,9 +945,11 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
     sub_compact->current_output()->meta.UpdateBoundaries(
         key, c_iter->ikey().sequence);
     sub_compact->num_output_records++;
-    if (write_queue_ != nullptr &&
+    if (should_yield &&
         (sub_compact->num_output_records & kYieldForWriteEvery) == 0) {
-      write_queue_->RunFunc();
+      for (size_t i = 0; write_queue_->RunFunc() && i < kYieldWriteTimesEvery;
+           i++)
+        ;
     }
 
     // Close output file if it is big enough. Two possibilities determine it's

@@ -75,6 +75,19 @@ Status DBImpl::MultiBatchWrite(const WriteOptions& options,
   }
 }
 
+void DBImpl::BackgoundWrite(void* arg) {
+  WriteThread* w = reinterpret_cast<WriteThread*>(arg);
+  const int kMaxWriteTimes = 4096;
+  for (int i = 0; w->write_queue_.RunFunc() && i < kMaxWriteTimes; i++)
+    ;
+}
+
+void DBImpl::TriggerBGWrite() {
+  if (env_->GetThreadPoolQueueLen(Env::Priority::LOW) == 0) {
+    env_->Schedule(&DBImpl::BackgoundWrite, &write_thread_, Env::Priority::LOW);
+  }
+}
+
 Status DBImpl::MultiBatchWriteImpl(const WriteOptions& write_options,
                                    std::vector<WriteBatch*>&& my_batch,
                                    WriteCallback* callback, uint64_t* log_used,
@@ -165,6 +178,7 @@ Status DBImpl::MultiBatchWriteImpl(const WriteOptions& write_options,
   }
   bool is_leader_thread = false;
   WriteThread::WriteGroup memtable_write_group;
+  const size_t kMaxBatchNumber = 32;
   if (writer.state == WriteThread::STATE_MEMTABLE_WRITER_LEADER) {
     PERF_TIMER_GUARD(write_memtable_time);
     assert(writer.ShouldWriteToMemtable());
@@ -185,6 +199,9 @@ Status DBImpl::MultiBatchWriteImpl(const WriteOptions& write_options,
             it.writer, it.writer->sequence, version_set, &flush_scheduler_,
             ignore_missing_faimly, this, &write_thread_.write_queue_);
       }
+      if (writer.batches.size() > kMaxBatchNumber) {
+        TriggerBGWrite();
+      }
       while (memtable_write_group.running.load(std::memory_order_acquire) > 0) {
         if (!write_thread_.write_queue_.RunFunc()) {
           std::this_thread::yield();
@@ -201,6 +218,10 @@ Status DBImpl::MultiBatchWriteImpl(const WriteOptions& write_options,
     WriteBatchInternal::AsyncInsertInto(
         &writer, writer.sequence, version_set, &flush_scheduler_,
         ignore_missing_faimly, this, &write_thread_.write_queue_);
+    if (writer.batches.size() > kMaxBatchNumber) {
+      TriggerBGWrite();
+    }
+
     // Because `LaunchParallelMemTableWriters` has add `write_group->size` to `running`,
     // the value of `running` is always larger than one if the leader thread does not
     // call `CompleteParallelMemTableWriter`.
