@@ -114,6 +114,7 @@ class GenericRateLimiter : public RateLimiter {
   std::chrono::microseconds tuned_time_;
 
   int64_t duration_bytes_through_;
+  int64_t long_term_duration_bytes_through_;
 };
 
 }  // namespace rocksdb

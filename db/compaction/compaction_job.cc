@@ -1480,6 +1480,8 @@ Status CompactionJob::OpenCompactionOutputFile(
   out.finished = false;
 
   sub_compact->outputs.push_back(out);
+  // if (sub_compact->compaction->output_level() ==
+  // compact_->compaction->input_version()->storage_info()->base_level()) {
   writable_file->SetIOPriority(Env::IO_LOW);
   writable_file->SetWriteLifeTimeHint(write_hint_);
   writable_file->SetPreallocationBlockSize(static_cast<size_t>(

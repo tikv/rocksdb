@@ -19,7 +19,7 @@ namespace rocksdb {
 size_t RateLimiter::RequestToken(size_t bytes, size_t alignment,
                                  Env::IOPriority io_priority, Statistics* stats,
                                  RateLimiter::OpType op_type) {
-  if (io_priority < Env::IO_TOTAL && IsRateLimited(op_type)) {
+  if (io_priority < Env::IO_HIGH && IsRateLimited(op_type)) {
     bytes = std::min(bytes, static_cast<size_t>(GetSingleBurstBytes()));
 
     if (alignment > 0) {
@@ -68,7 +68,8 @@ GenericRateLimiter::GenericRateLimiter(int64_t rate_bytes_per_sec,
       exp_num_drains_(0),
       max_bytes_per_sec_(rate_bytes_per_sec),
       tuned_time_(NowMicrosMonotonic(env_)),
-      duration_bytes_through_(0) {
+      duration_bytes_through_(0),
+      long_term_duration_bytes_through_(0) {
   total_requests_[0] = 0;
   total_requests_[1] = 0;
   total_bytes_through_[0] = 0;
@@ -112,7 +113,7 @@ void GenericRateLimiter::Request(int64_t bytes, const Env::IOPriority pri,
 
   if (auto_tuned_) {
     static const int kRefillsPerTune = 100;
-    static const int kMicrosPerTune = 1000 * 1000;  // 1s
+    static const int kMicrosPerTune = 2000 * 1000;  // 2s
     std::chrono::microseconds now(NowMicrosMonotonic(env_));
     if (now - tuned_time_ >= std::chrono::microseconds(kMicrosPerTune)) {
       // kRefillsPerTune * std::chrono::microseconds(refill_period_us_)) {
@@ -305,22 +306,23 @@ Status GenericRateLimiter::Tune() {
   assert(elapsed_intervals > 0);
   int64_t drained_pct =
       (num_drains_ - prev_num_drains_) * 100 / elapsed_intervals;
-  exp_num_drains_ = (2 * exp_num_drains_ + num_drains_ - prev_num_drains_) / 3;
-  int64_t exp_drained_pct = exp_num_drains_ * 100 / elapsed_intervals;
-
+  // exp_num_drains_ = (2 * exp_num_drains_ + num_drains_ - prev_num_drains_) /
+  // 3;
+  // int64_t exp_drained_pct = exp_num_drains_ * 100 / elapsed_intervals;
+  int64_t delta = drained_pct - exp_num_drains_;
   int64_t prev_bytes_per_sec = GetBytesPerSecond();
   int64_t new_bytes_per_sec;
   if (drained_pct == 0) {
     new_bytes_per_sec = max_bytes_per_sec_ / kAllowedRangeFactor;
-  } else if (exp_drained_pct < kLowWatermarkPct) {
+  } else if (delta + 1 <= 0) {
     // sanitize to prevent overflow
     int64_t sanitized_prev_bytes_per_sec =
         std::min(prev_bytes_per_sec, port::kMaxInt64 / 100);
     new_bytes_per_sec =
         std::max(max_bytes_per_sec_ / kAllowedRangeFactor,
                  sanitized_prev_bytes_per_sec * 100 / (100 + kAdjustFactorPct));
-  } else if (exp_drained_pct > kHighWatermarkPct) {
-    exp_num_drains_--;  // penalty
+  } else if (drained_pct >= 80 || delta >= 1) {
+    // exp_num_drains_--;  // penalty
     // sanitize to prevent overflow
     int64_t sanitized_prev_bytes_per_sec = std::min(
         prev_bytes_per_sec, port::kMaxInt64 / (100 + kAdjustFactorPct));
@@ -333,7 +335,8 @@ Status GenericRateLimiter::Tune() {
   if (new_bytes_per_sec != prev_bytes_per_sec) {
     SetBytesPerSecond(new_bytes_per_sec);
   }
-  num_drains_ = prev_num_drains_;
+  exp_num_drains_ = (2 * exp_num_drains_ + drained_pct) / 3;
+  prev_num_drains_ = num_drains_;
   return Status::OK();
 }
 
@@ -344,15 +347,21 @@ Status GenericRateLimiter::Tune2() {
   std::chrono::microseconds prev_tuned_time = tuned_time_;
   tuned_time_ = std::chrono::microseconds(NowMicrosMonotonic(env_));
   auto duration = tuned_time_ - prev_tuned_time;
-  int64_t target_bytes = duration.count() * 1000000 * GetBytesPerSecond();
-  int64_t util = duration_bytes_through_ * 100 / target_bytes;
+  int64_t target_bytes =
+      std::chrono::duration_cast<std::chrono::seconds>(duration).count() *
+      GetBytesPerSecond();
+  long_term_duration_bytes_through_ =
+      (3 * long_term_duration_bytes_through_ + duration_bytes_through_) / 4;
   duration_bytes_through_ = 0;
-  int64_t new_bytes_per_sec;
+  int64_t util = long_term_duration_bytes_through_ * 100 / target_bytes;
+  fprintf(stderr, "%ld / %ld = %ld\n",
+          long_term_duration_bytes_through_ / 1000, target_bytes / 1000, util);
   int64_t prev_bytes_per_sec = GetBytesPerSecond();
+  int64_t new_bytes_per_sec = prev_bytes_per_sec;
   assert(util <= 100);
   if (util == 0) {
     new_bytes_per_sec = max_bytes_per_sec_ / kAllowedRangeFactor;
-  } else if (util >= 95) {
+  } else if (util >= 97) {
     // maybe saturated
     // sanitize to prevent overflow
     int64_t sanitized_prev_bytes_per_sec = std::min(
@@ -360,8 +369,9 @@ Status GenericRateLimiter::Tune2() {
     new_bytes_per_sec =
         std::min(max_bytes_per_sec_,
                  sanitized_prev_bytes_per_sec * (100 + kAdjustFactorPct) / 100);
-  } else {
-    new_bytes_per_sec = util * prev_bytes_per_sec / 100;
+  } else if (util < 95) {
+    new_bytes_per_sec = std::max(max_bytes_per_sec_ / kAllowedRangeFactor,
+                                 util * prev_bytes_per_sec / 100);
   }
   if (new_bytes_per_sec != prev_bytes_per_sec) {
     SetBytesPerSecond(new_bytes_per_sec);
