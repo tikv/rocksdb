@@ -5,6 +5,7 @@
 
 #include "db/db_test_util.h"
 #include "port/stack_trace.h"
+#include "rocksdb/utilities/write_batch_with_index.h"
 #include "test_util/testutil.h"
 #include "utilities/merge_operators.h"
 
@@ -23,8 +24,8 @@ class DBRangeDelTest : public DBTestBase {
   }
 };
 
-// PlainTableFactory and NumTableFilesAtLevel() are not supported in
-// ROCKSDB_LITE
+// PlainTableFactory, WriteBatchWithIndex, and NumTableFilesAtLevel() are not
+// supported in ROCKSDB_LITE
 #ifndef ROCKSDB_LITE
 TEST_F(DBRangeDelTest, NonBlockBasedTableNotSupported) {
   // TODO: figure out why MmapReads trips the iterator pinning assertion in
@@ -37,6 +38,28 @@ TEST_F(DBRangeDelTest, NonBlockBasedTableNotSupported) {
                                  "dr1", "dr1")
                     .IsNotSupported());
   }
+}
+
+TEST_F(DBRangeDelTest, WriteBatchWithIndexNotSupported) {
+  WriteBatchWithIndex indexedBatch{};
+  ASSERT_TRUE(indexedBatch.DeleteRange(db_->DefaultColumnFamily(), "dr1", "dr1")
+                  .IsNotSupported());
+  ASSERT_TRUE(indexedBatch.DeleteRange("dr1", "dr1").IsNotSupported());
+}
+
+TEST_F(DBRangeDelTest, EndSameAsStartCoversNothing) {
+  ASSERT_OK(db_->Put(WriteOptions(), "b", "val"));
+  ASSERT_OK(
+      db_->DeleteRange(WriteOptions(), db_->DefaultColumnFamily(), "b", "b"));
+  ASSERT_EQ("val", Get("b"));
+}
+
+TEST_F(DBRangeDelTest, EndComesBeforeStartInvalidArgument) {
+  db_->Put(WriteOptions(), "b", "val");
+  ASSERT_TRUE(
+      db_->DeleteRange(WriteOptions(), db_->DefaultColumnFamily(), "b", "a")
+          .IsInvalidArgument());
+  ASSERT_EQ("val", Get("b"));
 }
 
 TEST_F(DBRangeDelTest, FlushOutputHasOnlyRangeTombstones) {
@@ -1425,6 +1448,47 @@ TEST_F(DBRangeDelTest, SnapshotPreventsDroppedKeys) {
 
   delete iter;
   db_->ReleaseSnapshot(snapshot);
+}
+
+TEST_F(DBRangeDelTest, SnapshotPreventsDroppedKeysInImmMemTables) {
+  const int kFileBytes = 1 << 20;
+
+  Options options = CurrentOptions();
+  options.compression = kNoCompression;
+  options.disable_auto_compactions = true;
+  options.target_file_size_base = kFileBytes;
+  Reopen(options);
+
+  // block flush thread -> pin immtables in memory
+  SyncPoint::GetInstance()->DisableProcessing();
+  SyncPoint::GetInstance()->LoadDependency({
+      {"SnapshotPreventsDroppedKeysInImmMemTables:AfterNewIterator",
+       "DBImpl::BGWorkFlush"},
+  });
+  SyncPoint::GetInstance()->EnableProcessing();
+
+  ASSERT_OK(Put(Key(0), "a"));
+  std::unique_ptr<const Snapshot, std::function<void(const Snapshot*)>>
+      snapshot(db_->GetSnapshot(),
+               [this](const Snapshot* s) { db_->ReleaseSnapshot(s); });
+
+  ASSERT_OK(db_->DeleteRange(WriteOptions(), db_->DefaultColumnFamily(), Key(0),
+                             Key(10)));
+
+  ASSERT_OK(dbfull()->TEST_SwitchMemtable());
+
+  ReadOptions read_opts;
+  read_opts.snapshot = snapshot.get();
+  std::unique_ptr<Iterator> iter(db_->NewIterator(read_opts));
+
+  TEST_SYNC_POINT("SnapshotPreventsDroppedKeysInImmMemTables:AfterNewIterator");
+
+  iter->SeekToFirst();
+  ASSERT_TRUE(iter->Valid());
+  ASSERT_EQ(Key(0), iter->key());
+
+  iter->Next();
+  ASSERT_FALSE(iter->Valid());
 }
 
 TEST_F(DBRangeDelTest, RangeTombstoneWrittenToMinimalSsts) {
