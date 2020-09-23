@@ -19,7 +19,7 @@ namespace rocksdb {
 size_t RateLimiter::RequestToken(size_t bytes, size_t alignment,
                                  Env::IOPriority io_priority, Statistics* stats,
                                  RateLimiter::OpType op_type) {
-  if (io_priority < Env::IO_HIGH && IsRateLimited(op_type)) {
+  if (io_priority < Env::IO_TOTAL && IsRateLimited(op_type)) {
     bytes = std::min(bytes, static_cast<size_t>(GetSingleBurstBytes()));
 
     if (alignment > 0) {
@@ -68,12 +68,20 @@ GenericRateLimiter::GenericRateLimiter(int64_t rate_bytes_per_sec,
       exp_num_drains_(0),
       max_bytes_per_sec_(rate_bytes_per_sec),
       tuned_time_(NowMicrosMonotonic(env_)),
-      duration_bytes_through_(0),
-      long_term_duration_bytes_through_(0) {
+      duration_highpri_bytes_through_(0),
+      duration_bytes_through_(0) {
   total_requests_[0] = 0;
   total_requests_[1] = 0;
   total_bytes_through_[0] = 0;
   total_bytes_through_[1] = 0;
+  for (uint32_t i = 0; i < kSmallWindow; i++) {
+    small_buckets_[i] = 0;
+    small_buckets_highpri_[i] = 0;
+  }
+  for (uint32_t i = 0; i < kLargeWindow; i++) {
+    large_buckets_[i] = 0;
+    large_buckets_highpri_[i] = 0;
+  }
 }
 
 GenericRateLimiter::~GenericRateLimiter() {
@@ -103,6 +111,10 @@ void GenericRateLimiter::SetBytesPerSecond(int64_t bytes_per_second) {
 
 void GenericRateLimiter::Request(int64_t bytes, const Env::IOPriority pri,
                                  Statistics* stats) {
+  if (pri == Env::IO_HIGH) {
+    duration_highpri_bytes_through_ += bytes;
+    return;
+  }
   auto quota = refill_bytes_per_period_.load(std::memory_order_relaxed);
   // assert(bytes <= refill_bytes_per_period_.load(std::memory_order_relaxed));
   assert(bytes <= quota);
@@ -113,10 +125,11 @@ void GenericRateLimiter::Request(int64_t bytes, const Env::IOPriority pri,
 
   if (auto_tuned_) {
     static const int kRefillsPerTune = 100;
-    static const int kMicrosPerTune = 2000 * 1000;  // 2s
+    static const int kMicrosPerTune = 1000 * 1000;  // 2s
     std::chrono::microseconds now(NowMicrosMonotonic(env_));
     if (now - tuned_time_ >= std::chrono::microseconds(kMicrosPerTune)) {
       // kRefillsPerTune * std::chrono::microseconds(refill_period_us_)) {
+      Estimate();
       Tune2();
     }
   }
@@ -340,39 +353,115 @@ Status GenericRateLimiter::Tune() {
   return Status::OK();
 }
 
+void GenericRateLimiter::Estimate() {
+  auto old_cursor = small_cursor_;
+  small_cursor_ = (small_cursor_ + 1) % kSmallWindow;
+
+  small_sum_highpri_ +=
+      duration_highpri_bytes_through_ - small_buckets_highpri_[old_cursor];
+  small_highpri_bytes_per_sec_ = small_sum_highpri_ / (kSmallWindow);
+  small_buckets_highpri_[old_cursor] = duration_highpri_bytes_through_;
+  small_sum_ += duration_bytes_through_ - small_buckets_[old_cursor];
+  small_bytes_per_sec_ = small_sum_ / (kSmallWindow);
+  small_buckets_[old_cursor] = duration_bytes_through_;
+
+  old_cursor = large_cursor_;
+  large_cursor_ = (large_cursor_ + 1) % kLargeWindow;
+
+  large_sum_highpri_ +=
+      duration_highpri_bytes_through_ - large_buckets_highpri_[old_cursor];
+  if (large_buckets_highpri_[old_cursor] < 10485760) {
+    // for cold start
+    large_highpri_bytes_per_sec_ = small_highpri_bytes_per_sec_;
+  } else {
+    large_highpri_bytes_per_sec_ = large_sum_highpri_ / (kLargeWindow);
+  }
+  large_buckets_highpri_[old_cursor] = duration_highpri_bytes_through_;
+
+  large_sum_ += duration_bytes_through_ - large_buckets_[old_cursor];
+  if (large_buckets_[old_cursor] < 10485760) {
+    large_bytes_per_sec_ = small_bytes_per_sec_;
+  } else {
+    large_bytes_per_sec_ = large_sum_ / (kLargeWindow);
+  }
+  large_buckets_[old_cursor] = duration_bytes_through_;
+}
+
+// stable period: util between [x, y], update ratio
+// high pressure: util > y, new = max (ratio * flush, 1.02 * old)
+// low pressure: util < x, new = min (ratio * flush, old / 102)
 Status GenericRateLimiter::Tune2() {
-  const int kAllowedRangeFactor = 10;
+  const int kAllowedRangeFactor = 20;
   const int kAdjustFactorPct = 2;
+  const int kScaleFactor = 3;
+  const int64_t kScaleDelta = 40 * 1024 * 1024;
 
   std::chrono::microseconds prev_tuned_time = tuned_time_;
   tuned_time_ = std::chrono::microseconds(NowMicrosMonotonic(env_));
   auto duration = tuned_time_ - prev_tuned_time;
-  int64_t target_bytes =
-      std::chrono::duration_cast<std::chrono::seconds>(duration).count() *
-      GetBytesPerSecond();
-  long_term_duration_bytes_through_ =
-      (3 * long_term_duration_bytes_through_ + duration_bytes_through_) / 4;
-  duration_bytes_through_ = 0;
-  int64_t util = long_term_duration_bytes_through_ * 100 / target_bytes;
-  fprintf(stderr, "%ld / %ld = %ld\n",
-          long_term_duration_bytes_through_ / 1000, target_bytes / 1000, util);
+  auto duration_ms =
+      std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+
   int64_t prev_bytes_per_sec = GetBytesPerSecond();
   int64_t new_bytes_per_sec = prev_bytes_per_sec;
-  assert(util <= 100);
-  if (util == 0) {
-    new_bytes_per_sec = max_bytes_per_sec_ / kAllowedRangeFactor;
-  } else if (util >= 97) {
-    // maybe saturated
-    // sanitize to prevent overflow
-    int64_t sanitized_prev_bytes_per_sec = std::min(
-        prev_bytes_per_sec, port::kMaxInt64 / (100 + kAdjustFactorPct));
-    new_bytes_per_sec =
-        std::min(max_bytes_per_sec_,
-                 sanitized_prev_bytes_per_sec * (100 + kAdjustFactorPct) / 100);
-  } else if (util < 95) {
-    new_bytes_per_sec = std::max(max_bytes_per_sec_ / kAllowedRangeFactor,
-                                 util * prev_bytes_per_sec / 100);
+
+  int64_t util = small_bytes_per_sec_ * 100 / prev_bytes_per_sec;
+  // baseline based on throughput history, +10% because actual bytes is only 90%
+  // of limit
+  int64_t baseline_bps =
+      large_bytes_per_sec_ + large_highpri_bytes_per_sec_ / 10;
+  if (baseline_bps * (10 + kScaleFactor) <= prev_bytes_per_sec * 10) {
+    baseline_bps = prev_bytes_per_sec;
   }
+  // upper bound based on write amplification
+  int64_t amplified_target_bps =
+      baseline_bps +
+      std::min(std::max(kScaleDelta, large_highpri_bytes_per_sec_),
+               baseline_bps * kScaleFactor / 10);
+
+  if (util >= 98 || util + last_util_ >= 97 * 2) {
+    credit_++;
+    auto adjust = std::min(8u, kAdjustFactorPct + credit_ - 1);
+    fprintf(stderr, "branch a (%u): ", adjust);
+    int64_t sanitized_prev_bytes_per_sec =
+        std::min(prev_bytes_per_sec, port::kMaxInt64 / (100 + adjust));
+    new_bytes_per_sec = sanitized_prev_bytes_per_sec * (100 + adjust) / 100;
+    new_bytes_per_sec = std::max(new_bytes_per_sec, baseline_bps);
+    new_bytes_per_sec = std::min(
+        new_bytes_per_sec, std::min(max_bytes_per_sec_, amplified_target_bps));
+  } else if (util < 90) {
+    credit_ = 0;
+    fprintf(stderr, "branch b: ");
+    new_bytes_per_sec = prev_bytes_per_sec * 100 / (100 + kAdjustFactorPct);
+    new_bytes_per_sec = std::min(new_bytes_per_sec, baseline_bps);
+    new_bytes_per_sec =
+        std::max(new_bytes_per_sec, max_bytes_per_sec_ / kAllowedRangeFactor);
+  } else {
+    if (util <= 93 && last_util_ <= 93 && credit_ <= 3) {
+      fprintf(stderr, "branch c: ");
+      new_bytes_per_sec = std::min(prev_bytes_per_sec, baseline_bps);
+      new_bytes_per_sec =
+          std::max(prev_bytes_per_sec * 100 / (100 + kAdjustFactorPct * 2),
+                   new_bytes_per_sec);
+    } else if (util > 93 && last_util_ > 93) {
+      fprintf(stderr, "branch d: ");
+      int64_t sanitized_prev_bytes_per_sec = std::min(
+          prev_bytes_per_sec, port::kMaxInt64 / (100 + kAdjustFactorPct * 2));
+      new_bytes_per_sec = std::max(prev_bytes_per_sec, baseline_bps);
+      new_bytes_per_sec = std::min(
+          sanitized_prev_bytes_per_sec * (100 + kAdjustFactorPct * 2) / 100,
+          new_bytes_per_sec);
+    }
+  }
+  fprintf(stderr,
+          "util = %ld, bytes = %ld, target = %ld, high = %ld, base = %ld, amp "
+          "= %ld\n",
+          util, small_bytes_per_sec_, prev_bytes_per_sec,
+          large_highpri_bytes_per_sec_, baseline_bps, amplified_target_bps);
+  duration_bytes_through_ = 0;
+  duration_highpri_bytes_through_ = 0;
+  last_util_ = util;
+
   if (new_bytes_per_sec != prev_bytes_per_sec) {
     SetBytesPerSecond(new_bytes_per_sec);
   }

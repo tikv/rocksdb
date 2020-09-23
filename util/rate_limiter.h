@@ -72,6 +72,7 @@ class GenericRateLimiter : public RateLimiter {
   void Refill();
   int64_t CalculateRefillBytesPerPeriod(int64_t rate_bytes_per_sec);
   Status Tune();
+  void Estimate();
   Status Tune2();
 
   uint64_t NowMicrosMonotonic(Env* env) {
@@ -113,8 +114,29 @@ class GenericRateLimiter : public RateLimiter {
   const int64_t max_bytes_per_sec_;
   std::chrono::microseconds tuned_time_;
 
+  static constexpr uint32_t kSmallWindow = 5;
+  static constexpr uint32_t kLargeWindow = 50;
+  uint32_t small_cursor_{0};
+  int64_t small_buckets_highpri_[kSmallWindow];
+  int64_t small_buckets_[kSmallWindow];
+  int64_t small_sum_highpri_{0};
+  int64_t small_sum_{0};
+  int64_t small_highpri_bytes_per_sec_{0};
+  int64_t small_bytes_per_sec_{0};
+  uint32_t credit_{0};
+
+  uint32_t large_cursor_{0};
+  int64_t large_buckets_highpri_[kLargeWindow];
+  int64_t large_buckets_[kLargeWindow];
+  int64_t large_sum_highpri_{0};
+  int64_t large_sum_{0};
+  int64_t large_highpri_bytes_per_sec_{0};
+  int64_t large_bytes_per_sec_{0};
+
+  int64_t duration_highpri_bytes_through_;
   int64_t duration_bytes_through_;
-  int64_t long_term_duration_bytes_through_;
+
+  int64_t last_util_{0};
 };
 
 }  // namespace rocksdb
