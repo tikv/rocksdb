@@ -394,7 +394,7 @@ Status GenericRateLimiter::Tune2() {
   const int kAllowedRangeFactor = 20;
   const int kAdjustFactorPct = 2;
   const int kScaleFactor = 3;
-  const int64_t kScaleDelta = 40 * 1024 * 1024;
+  const int64_t kScaleDelta = 30 * 1024 * 1024;
 
   std::chrono::microseconds prev_tuned_time = tuned_time_;
   tuned_time_ = std::chrono::microseconds(NowMicrosMonotonic(env_));
@@ -404,6 +404,12 @@ Status GenericRateLimiter::Tune2() {
 
   int64_t prev_bytes_per_sec = GetBytesPerSecond();
   int64_t new_bytes_per_sec = prev_bytes_per_sec;
+
+  new_bytes_per_sec = 3 * large_highpri_bytes_per_sec_;
+  if (new_bytes_per_sec != prev_bytes_per_sec) {
+    SetBytesPerSecond(new_bytes_per_sec);
+  }
+  return Status::OK();
 
   int64_t util = small_bytes_per_sec_ * 100 / prev_bytes_per_sec;
   // baseline based on throughput history, +10% because actual bytes is only 90%
@@ -415,11 +421,9 @@ Status GenericRateLimiter::Tune2() {
   }
   // upper bound based on write amplification
   int64_t amplified_target_bps =
-      baseline_bps +
-      std::min(std::max(kScaleDelta, large_highpri_bytes_per_sec_),
-               baseline_bps * kScaleFactor / 10);
+      baseline_bps + std::min(kScaleDelta, baseline_bps * kScaleFactor / 10);
 
-  if (util >= 98 || util + last_util_ >= 97 * 2) {
+  if (util >= 97 && last_util_ >= 97) {
     credit_++;
     auto adjust = std::min(8u, kAdjustFactorPct + credit_ - 1);
     fprintf(stderr, "branch a (%u): ", adjust);
@@ -429,7 +433,7 @@ Status GenericRateLimiter::Tune2() {
     new_bytes_per_sec = std::max(new_bytes_per_sec, baseline_bps);
     new_bytes_per_sec = std::min(
         new_bytes_per_sec, std::min(max_bytes_per_sec_, amplified_target_bps));
-  } else if (util < 90) {
+  } else if (util < 90 && last_util_ < 90) {
     credit_ = 0;
     fprintf(stderr, "branch b: ");
     new_bytes_per_sec = prev_bytes_per_sec * 100 / (100 + kAdjustFactorPct);
