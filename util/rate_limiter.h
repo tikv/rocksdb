@@ -72,8 +72,6 @@ class GenericRateLimiter : public RateLimiter {
   void Refill();
   int64_t CalculateRefillBytesPerPeriod(int64_t rate_bytes_per_sec);
   Status Tune();
-  void Estimate();
-  Status Tune2();
 
   uint64_t NowMicrosMonotonic(Env* env) {
     return env->NowNanos() / std::milli::den;
@@ -108,11 +106,10 @@ class GenericRateLimiter : public RateLimiter {
   std::deque<Req*> queue_[Env::IO_TOTAL];
 
   bool auto_tuned_;
-  int64_t num_drains_;
-  int64_t prev_num_drains_;
-  int64_t exp_num_drains_;
   const int64_t max_bytes_per_sec_;
   std::chrono::microseconds tuned_time_;
+  int64_t duration_highpri_bytes_through_;
+  int64_t duration_bytes_through_;
 
   template <size_t windowSize>
   struct WindowSmoother {
@@ -147,9 +144,6 @@ class GenericRateLimiter : public RateLimiter {
   WindowSmoother<kSmoothWindowSize> bytes_sampler_;
   WindowSmoother<kSmoothWindowSize> highpri_bytes_sampler_;
   int32_t ratio_delta_{0};
-
-  int64_t duration_highpri_bytes_through_;
-  int64_t duration_bytes_through_;
 };
 
 }  // namespace rocksdb
