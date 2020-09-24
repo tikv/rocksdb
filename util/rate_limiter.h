@@ -114,9 +114,7 @@ class GenericRateLimiter : public RateLimiter {
    public:
     WindowSmoother() {
       static_assert(kRecentWindowSize >= 1, "Expect window size larger than 0");
-      for (uint32_t i = 0; i < kWindowSize; i++) {
-        data_[i] = 0;
-      }
+      memset(data_, 0, sizeof(int64_t) * kWindowSize);
     }
     void AddSample(int64_t v) {
       auto recent_cursor =
@@ -141,7 +139,7 @@ class GenericRateLimiter : public RateLimiter {
   static constexpr size_t kSmoothWindowSize = 50;
   WindowSmoother<kSmoothWindowSize> bytes_sampler_;
   WindowSmoother<kSmoothWindowSize> highpri_bytes_sampler_;
-  int32_t ratio_delta_{0};
+  int32_t ratio_delta_;
 };
 
 }  // namespace rocksdb
