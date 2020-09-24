@@ -109,31 +109,31 @@ class GenericRateLimiter : public RateLimiter {
   int64_t duration_highpri_bytes_through_;
   int64_t duration_bytes_through_;
 
-  template <size_t windowSize>
-  struct WindowSmoother {
+  template <size_t kWindowSize>
+  class WindowSmoother {
    public:
     WindowSmoother() {
-      static_assert(recentWindowSize >= 1, "Expect window size larger than 0");
-      for (uint32_t i = 0; i < windowSize; i++) {
+      static_assert(kRecentWindowSize >= 1, "Expect window size larger than 0");
+      for (uint32_t i = 0; i < kWindowSize; i++) {
         data_[i] = 0;
       }
     }
     void AddSample(int64_t v) {
       auto recent_cursor =
-          (cursor_ + 1 + windowSize - recentWindowSize) % windowSize;
-      cursor_ = (cursor_ + 1) % windowSize;
+          (cursor_ + 1 + kWindowSize - kRecentWindowSize) % kWindowSize;
+      cursor_ = (cursor_ + 1) % kWindowSize;
       full_sum_ += v - data_[cursor_];
       recent_sum_ += v - data_[recent_cursor];
       data_[cursor_] = v;
     }
-    int64_t GetFullValue() { return full_sum_ / windowSize; }
-    int64_t GetRecentValue() { return recent_sum_ / recentWindowSize; }
+    int64_t GetFullValue() { return full_sum_ / kWindowSize; }
+    int64_t GetRecentValue() { return recent_sum_ / kRecentWindowSize; }
 
    private:
     static constexpr uint32_t kRecentFactor = 5;
-    static constexpr size_t recentWindowSize = windowSize / kRecentFactor;
+    static constexpr size_t kRecentWindowSize = kWindowSize / kRecentFactor;
     uint32_t cursor_{0};  // point to the most recent sample
-    int64_t data_[windowSize];
+    int64_t data_[kWindowSize];
     int64_t full_sum_{0};
     int64_t recent_sum_{0};
   };

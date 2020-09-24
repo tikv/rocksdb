@@ -284,6 +284,7 @@ Status GenericRateLimiter::Tune() {
   const int kAllowedRangeFactor = 20;
   const int64_t kRatioLower = 15;
   const int64_t kRatioUpper = 50;
+  const int kRatioPadding = 5;
 
   std::chrono::microseconds prev_tuned_time = tuned_time_;
   tuned_time_ = std::chrono::microseconds(NowMicrosMonotonic(env_));
@@ -308,13 +309,10 @@ Status GenericRateLimiter::Tune() {
                            std::min(kRatioUpper,
                                     bytes_sampler_.GetFullValue() * 10 /
                                         highpri_bytes_sampler_.GetFullValue()));
-  int64_t new_bytes_per_sec =
-      (ratio + 5 + ratio_delta_) * highpri_bytes_sampler_.GetRecentValue() / 10;
+  int64_t new_bytes_per_sec = (ratio + kRatioPadding + ratio_delta_) *
+                              highpri_bytes_sampler_.GetRecentValue() / 10;
   new_bytes_per_sec = std::max(max_bytes_per_sec_ / kAllowedRangeFactor,
                                std::min(new_bytes_per_sec, max_bytes_per_sec_));
-  // fprintf(stderr, "ratio = %d, delta = %d, high = %ld\n", ratio,
-  // ratio_delta_,
-  //         highpri_bytes_sampler_.GetRecentValue() / 1024 / 1024);
   if (new_bytes_per_sec != prev_bytes_per_sec) {
     SetBytesPerSecond(new_bytes_per_sec);
   }
