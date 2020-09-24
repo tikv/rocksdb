@@ -106,7 +106,6 @@ void GenericRateLimiter::Request(int64_t bytes, const Env::IOPriority pri,
     return;
   }
   auto quota = refill_bytes_per_period_.load(std::memory_order_relaxed);
-  // assert(bytes <= refill_bytes_per_period_.load(std::memory_order_relaxed));
   assert(bytes <= quota);
   TEST_SYNC_POINT("GenericRateLimiter::Request");
   TEST_SYNC_POINT_CALLBACK("GenericRateLimiter::Request:1",
@@ -240,9 +239,6 @@ void GenericRateLimiter::Refill() {
   auto refill_bytes_per_period =
       refill_bytes_per_period_.load(std::memory_order_relaxed);
   available_bytes_ = refill_bytes_per_period;
-  // if (available_bytes_ < refill_bytes_per_period) {
-  //   available_bytes_ += refill_bytes_per_period;
-  // }
 
   int use_low_pri_first = rnd_.OneIn(fairness_) ? 0 : 1;
   for (int q = 0; q < 2; ++q) {

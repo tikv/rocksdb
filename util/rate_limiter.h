@@ -32,8 +32,6 @@ class GenericRateLimiter : public RateLimiter {
   // This API allows user to dynamically change rate limiter's bytes per second.
   virtual void SetBytesPerSecond(int64_t bytes_per_second) override;
 
-  virtual void AlertLowLimit() override {}
-
   // Request for token to write bytes. If this request can not be satisfied,
   // the call is blocked. Caller is responsible to make sure
   // bytes <= GetSingleBurstBytes()
