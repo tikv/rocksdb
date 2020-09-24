@@ -101,15 +101,16 @@ void GenericRateLimiter::SetBytesPerSecond(int64_t bytes_per_second) {
 
 void GenericRateLimiter::Request(int64_t bytes, const Env::IOPriority pri,
                                  Statistics* stats) {
+  TEST_SYNC_POINT("GenericRateLimiter::Request");
+  TEST_SYNC_POINT_CALLBACK("GenericRateLimiter::Request:1",
+                           &rate_bytes_per_sec_);
   if (pri == Env::IO_HIGH) {
+    total_bytes_through_[Env::IO_HIGH] += bytes;
     duration_highpri_bytes_through_ += bytes;
     return;
   }
   auto quota = refill_bytes_per_period_.load(std::memory_order_relaxed);
   assert(bytes <= quota);
-  TEST_SYNC_POINT("GenericRateLimiter::Request");
-  TEST_SYNC_POINT_CALLBACK("GenericRateLimiter::Request:1",
-                           &rate_bytes_per_sec_);
   MutexLock g(&request_mutex_);
 
   if (auto_tuned_) {
@@ -126,7 +127,6 @@ void GenericRateLimiter::Request(int64_t bytes, const Env::IOPriority pri,
 
   ++total_requests_[pri];
 
-  assert(available_bytes_ <= quota);
   if (available_bytes_ >= bytes) {
     // Refill thread assigns quota and notifies requests waiting on
     // the queue under mutex. So if we get here, that means nobody
@@ -246,7 +246,6 @@ void GenericRateLimiter::Refill() {
     auto* queue = &queue_[use_pri];
     while (!queue->empty()) {
       auto* next_req = queue->front();
-      assert(next_req->request_bytes <= refill_bytes_per_period);
       if (available_bytes_ < next_req->request_bytes) {
         // avoid starvation
         next_req->request_bytes -= available_bytes_;
