@@ -74,14 +74,6 @@ GenericRateLimiter::GenericRateLimiter(int64_t rate_bytes_per_sec,
   total_requests_[1] = 0;
   total_bytes_through_[0] = 0;
   total_bytes_through_[1] = 0;
-  for (uint32_t i = 0; i < kSmallWindow; i++) {
-    small_buckets_[i] = 0;
-    small_buckets_highpri_[i] = 0;
-  }
-  for (uint32_t i = 0; i < kLargeWindow; i++) {
-    large_buckets_[i] = 0;
-    large_buckets_highpri_[i] = 0;
-  }
 }
 
 GenericRateLimiter::~GenericRateLimiter() {
@@ -129,7 +121,6 @@ void GenericRateLimiter::Request(int64_t bytes, const Env::IOPriority pri,
     std::chrono::microseconds now(NowMicrosMonotonic(env_));
     if (now - tuned_time_ >= std::chrono::microseconds(kMicrosPerTune)) {
       // kRefillsPerTune * std::chrono::microseconds(refill_period_us_)) {
-      Estimate();
       Tune2();
     }
   }
@@ -353,45 +344,14 @@ Status GenericRateLimiter::Tune() {
   return Status::OK();
 }
 
-void GenericRateLimiter::Estimate() {
-  auto old_cursor = small_cursor_;
-  small_cursor_ = (small_cursor_ + 1) % kSmallWindow;
-
-  small_sum_highpri_ +=
-      duration_highpri_bytes_through_ - small_buckets_highpri_[old_cursor];
-  small_highpri_bytes_per_sec_ = small_sum_highpri_ / (kSmallWindow);
-  small_buckets_highpri_[old_cursor] = duration_highpri_bytes_through_;
-  small_sum_ += duration_bytes_through_ - small_buckets_[old_cursor];
-  small_bytes_per_sec_ = small_sum_ / (kSmallWindow);
-  small_buckets_[old_cursor] = duration_bytes_through_;
-
-  old_cursor = large_cursor_;
-  large_cursor_ = (large_cursor_ + 1) % kLargeWindow;
-
-  large_sum_highpri_ +=
-      duration_highpri_bytes_through_ - large_buckets_highpri_[old_cursor];
-  if (large_buckets_highpri_[old_cursor] < 10485760) {
-    // for cold start
-    large_highpri_bytes_per_sec_ = small_highpri_bytes_per_sec_;
-  } else {
-    large_highpri_bytes_per_sec_ = large_sum_highpri_ / (kLargeWindow);
-  }
-  large_buckets_highpri_[old_cursor] = duration_highpri_bytes_through_;
-
-  large_sum_ += duration_bytes_through_ - large_buckets_[old_cursor];
-  if (large_buckets_[old_cursor] < 10485760) {
-    large_bytes_per_sec_ = small_bytes_per_sec_;
-  } else {
-    large_bytes_per_sec_ = large_sum_ / (kLargeWindow);
-  }
-  large_buckets_[old_cursor] = duration_bytes_through_;
-}
-
 // stable period: util between [x, y], update ratio
 // high pressure: util > y, new = max (ratio * flush, 1.02 * old)
 // low pressure: util < x, new = min (ratio * flush, old / 102)
 Status GenericRateLimiter::Tune2() {
   const int kAllowedRangeFactor = 20;
+  const int64_t kRatioLower = 15;
+  const int64_t kRatioUpper = 50;
+
   const int kAdjustFactorPct = 2;
   const int kScaleFactor = 3;
   const int64_t kScaleDelta = 30 * 1024 * 1024;
@@ -403,69 +363,26 @@ Status GenericRateLimiter::Tune2() {
       std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
 
   int64_t prev_bytes_per_sec = GetBytesPerSecond();
-  int64_t new_bytes_per_sec = prev_bytes_per_sec;
 
-  new_bytes_per_sec = 3 * large_highpri_bytes_per_sec_;
-  if (new_bytes_per_sec != prev_bytes_per_sec) {
-    SetBytesPerSecond(new_bytes_per_sec);
-  }
-  return Status::OK();
-
-  int64_t util = small_bytes_per_sec_ * 100 / prev_bytes_per_sec;
-  // baseline based on throughput history, +10% because actual bytes is only 90%
-  // of limit
-  int64_t baseline_bps =
-      large_bytes_per_sec_ + large_highpri_bytes_per_sec_ / 10;
-  if (baseline_bps * (10 + kScaleFactor) <= prev_bytes_per_sec * 10) {
-    baseline_bps = prev_bytes_per_sec;
-  }
-  // upper bound based on write amplification
-  int64_t amplified_target_bps =
-      baseline_bps + std::min(kScaleDelta, baseline_bps * kScaleFactor / 10);
-
-  if (util >= 97 && last_util_ >= 97) {
-    credit_++;
-    auto adjust = std::min(8u, kAdjustFactorPct + credit_ - 1);
-    fprintf(stderr, "branch a (%u): ", adjust);
-    int64_t sanitized_prev_bytes_per_sec =
-        std::min(prev_bytes_per_sec, port::kMaxInt64 / (100 + adjust));
-    new_bytes_per_sec = sanitized_prev_bytes_per_sec * (100 + adjust) / 100;
-    new_bytes_per_sec = std::max(new_bytes_per_sec, baseline_bps);
-    new_bytes_per_sec = std::min(
-        new_bytes_per_sec, std::min(max_bytes_per_sec_, amplified_target_bps));
-  } else if (util < 90 && last_util_ < 90) {
-    credit_ = 0;
-    fprintf(stderr, "branch b: ");
-    new_bytes_per_sec = prev_bytes_per_sec * 100 / (100 + kAdjustFactorPct);
-    new_bytes_per_sec = std::min(new_bytes_per_sec, baseline_bps);
-    new_bytes_per_sec =
-        std::max(new_bytes_per_sec, max_bytes_per_sec_ / kAllowedRangeFactor);
-  } else {
-    if (util <= 93 && last_util_ <= 93 && credit_ <= 3) {
-      fprintf(stderr, "branch c: ");
-      new_bytes_per_sec = std::min(prev_bytes_per_sec, baseline_bps);
-      new_bytes_per_sec =
-          std::max(prev_bytes_per_sec * 100 / (100 + kAdjustFactorPct * 2),
-                   new_bytes_per_sec);
-    } else if (util > 93 && last_util_ > 93) {
-      fprintf(stderr, "branch d: ");
-      int64_t sanitized_prev_bytes_per_sec = std::min(
-          prev_bytes_per_sec, port::kMaxInt64 / (100 + kAdjustFactorPct * 2));
-      new_bytes_per_sec = std::max(prev_bytes_per_sec, baseline_bps);
-      new_bytes_per_sec = std::min(
-          sanitized_prev_bytes_per_sec * (100 + kAdjustFactorPct * 2) / 100,
-          new_bytes_per_sec);
-    }
-  }
-  fprintf(stderr,
-          "util = %ld, bytes = %ld, target = %ld, high = %ld, base = %ld, amp "
-          "= %ld\n",
-          util, small_bytes_per_sec_, prev_bytes_per_sec,
-          large_highpri_bytes_per_sec_, baseline_bps, amplified_target_bps);
+  bytes_sampler_.AddSample(duration_bytes_through_ * 1000 / duration_ms);
+  highpri_bytes_sampler_.AddSample(duration_highpri_bytes_through_ * 1000 /
+                                   duration_ms);
   duration_bytes_through_ = 0;
   duration_highpri_bytes_through_ = 0;
-  last_util_ = util;
-
+  auto util = bytes_sampler_.GetRecentValue() * 100 / prev_bytes_per_sec;
+  if (util >= 98) {
+    ratio_delta_ += 1;
+  } else if (util < 90 && ratio_delta_ > 0) {
+    ratio_delta_ -= 1;
+  }
+  int32_t ratio = std::max(kRatioLower,
+                           std::min(kRatioUpper,
+                                    bytes_sampler_.GetFullValue() * 10 /
+                                        highpri_bytes_sampler_.GetFullValue()));
+  int64_t new_bytes_per_sec =
+      (ratio + 6 + ratio_delta_) * highpri_bytes_sampler_.GetRecentValue() / 10;
+  fprintf(stderr, "ratio = %d, delta = %d, high = %ld\n", ratio, ratio_delta_,
+          highpri_bytes_sampler_.GetRecentValue() / 1024 / 1024);
   if (new_bytes_per_sec != prev_bytes_per_sec) {
     SetBytesPerSecond(new_bytes_per_sec);
   }

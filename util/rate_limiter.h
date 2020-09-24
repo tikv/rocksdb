@@ -114,29 +114,42 @@ class GenericRateLimiter : public RateLimiter {
   const int64_t max_bytes_per_sec_;
   std::chrono::microseconds tuned_time_;
 
-  static constexpr uint32_t kSmallWindow = 5;
-  static constexpr uint32_t kLargeWindow = 50;
-  uint32_t small_cursor_{0};
-  int64_t small_buckets_highpri_[kSmallWindow];
-  int64_t small_buckets_[kSmallWindow];
-  int64_t small_sum_highpri_{0};
-  int64_t small_sum_{0};
-  int64_t small_highpri_bytes_per_sec_{0};
-  int64_t small_bytes_per_sec_{0};
-  uint32_t credit_{0};
+  template <size_t windowSize>
+  struct WindowSmoother {
+   public:
+    WindowSmoother() {
+      static_assert(recentWindowSize >= 1, "Expect window size larger than 0");
+      for (uint32_t i = 0; i < windowSize; i++) {
+        data_[i] = 0;
+      }
+    }
+    void AddSample(int64_t v) {
+      auto recent_cursor =
+          (cursor_ + 1 + windowSize - recentWindowSize) % windowSize;
+      cursor_ = (cursor_ + 1) % windowSize;
+      full_sum_ += v - data_[cursor_];
+      recent_sum_ += v - data_[recent_cursor];
+      data_[cursor_] = v;
+    }
+    int64_t GetFullValue() { return full_sum_ / windowSize; }
+    int64_t GetRecentValue() { return recent_sum_ / recentWindowSize; }
 
-  uint32_t large_cursor_{0};
-  int64_t large_buckets_highpri_[kLargeWindow];
-  int64_t large_buckets_[kLargeWindow];
-  int64_t large_sum_highpri_{0};
-  int64_t large_sum_{0};
-  int64_t large_highpri_bytes_per_sec_{0};
-  int64_t large_bytes_per_sec_{0};
+   private:
+    static constexpr uint32_t kRecentFactor = 5;
+    static constexpr size_t recentWindowSize = windowSize / kRecentFactor;
+    uint32_t cursor_{0};  // point to the most recent sample
+    int64_t data_[windowSize];
+    int64_t full_sum_{0};
+    int64_t recent_sum_{0};
+  };
+
+  static constexpr size_t kSmoothWindowSize = 50;
+  WindowSmoother<kSmoothWindowSize> bytes_sampler_;
+  WindowSmoother<kSmoothWindowSize> highpri_bytes_sampler_;
+  int32_t ratio_delta_{0};
 
   int64_t duration_highpri_bytes_through_;
   int64_t duration_bytes_through_;
-
-  int64_t last_util_{0};
 };
 
 }  // namespace rocksdb
