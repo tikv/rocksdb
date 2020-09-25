@@ -590,8 +590,6 @@ Status GenericRateLimiterV2::Tune() {
   bytes_sampler_.AddSample(duration_bytes_through_ * 1000 / duration_ms);
   highpri_bytes_sampler_.AddSample(duration_highpri_bytes_through_ * 1000 /
                                    duration_ms);
-  duration_bytes_through_ = 0;
-  duration_highpri_bytes_through_ = 0;
   // in case there are compaction burst even when online writes are stable
   auto util = duration_bytes_through_ * 100 / prev_bytes_per_sec;
   if (util > 98 && ratio_delta_ < kRatioPadding) {
@@ -599,6 +597,8 @@ Status GenericRateLimiterV2::Tune() {
   } else if (util < 90 && ratio_delta_ > 0) {
     ratio_delta_ -= 1;
   }
+  duration_bytes_through_ = 0;
+  duration_highpri_bytes_through_ = 0;
   int32_t ratio = std::max(
       kRatioLower,
       static_cast<int32_t>(
