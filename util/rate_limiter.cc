@@ -574,7 +574,7 @@ Status GenericRateLimiterV2::Tune() {
   // high-priority bytes are padded to 1MB
   const int64_t kHighBytesLower = 1024 * 1024;
   // lower bound for write amplification estimation
-  const int kRatioLower = 15;
+  const int kRatioLower = 12;
   // since compaction cannot fully utilize the IO quota we gave, use ratio
   // slightly bigger than estimation to adjust target limit.
   const int kRatioPadding = 4;
@@ -593,8 +593,8 @@ Status GenericRateLimiterV2::Tune() {
   duration_bytes_through_ = 0;
   duration_highpri_bytes_through_ = 0;
   // in case there are compaction burst even when online writes are stable
-  auto util = bytes_sampler_.GetRecentValue() * 100 / prev_bytes_per_sec;
-  if (util > 98) {
+  auto util = duration_bytes_through_ * 100 / prev_bytes_per_sec;
+  if (util > 98 && ratio_delta_ < kRatioPadding) {
     ratio_delta_ += 1;
   } else if (util < 90 && ratio_delta_ > 0) {
     ratio_delta_ -= 1;
