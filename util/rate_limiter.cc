@@ -577,7 +577,7 @@ Status GenericRateLimiterV2::Tune() {
   const int kRatioLower = 12;
   // since compaction cannot fully utilize the IO quota we gave, use ratio
   // slightly bigger than estimation to adjust target limit.
-  const int kRatioPadding = 4;
+  const int kRatioPaddingPercent = 20;
 
   std::chrono::microseconds prev_tuned_time = tuned_time_;
   tuned_time_ = std::chrono::microseconds(NowMicrosMonotonic(env_));
@@ -590,22 +590,25 @@ Status GenericRateLimiterV2::Tune() {
   bytes_sampler_.AddSample(duration_bytes_through_ * 1000 / duration_ms);
   highpri_bytes_sampler_.AddSample(duration_highpri_bytes_through_ * 1000 /
                                    duration_ms);
+  int32_t ratio = std::max(
+      kRatioLower,
+      static_cast<int32_t>(
+          bytes_sampler_.GetFullValue() * 10 /
+          std::max(highpri_bytes_sampler_.GetFullValue(), kHighBytesLower)));
+  int32_t ratio_padding = ratio * kRatioPaddingPercent / 100;
+
   // in case there are compaction burst even when online writes are stable
   auto util = duration_bytes_through_ * 100 / prev_bytes_per_sec;
-  if (util > 98 && ratio_delta_ < kRatioPadding) {
+  if (util > 98) {
     ratio_delta_ += 1;
   } else if (util < 90 && ratio_delta_ > 0) {
     ratio_delta_ -= 1;
   }
   duration_bytes_through_ = 0;
   duration_highpri_bytes_through_ = 0;
-  int32_t ratio = std::max(
-      kRatioLower,
-      static_cast<int32_t>(
-          bytes_sampler_.GetFullValue() * 10 /
-          std::max(highpri_bytes_sampler_.GetFullValue(), kHighBytesLower)));
+
   int64_t new_bytes_per_sec =
-      (ratio + kRatioPadding + ratio_delta_) *
+      (ratio + ratio_padding + ratio_delta_) *
       std::max(highpri_bytes_sampler_.GetRecentValue(), kHighBytesLower) / 10;
   new_bytes_per_sec = std::max(
       max_bytes_per_sec_ / kAllowedRangeFactor,
