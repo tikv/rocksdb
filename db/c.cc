@@ -101,6 +101,7 @@ using rocksdb::CompactRangeOptions;
 using rocksdb::BottommostLevelCompaction;
 using rocksdb::RateLimiter;
 using rocksdb::NewGenericRateLimiter;
+using rocksdb::NewGenericRateLimiterV2;
 using rocksdb::PinnableSlice;
 using rocksdb::TransactionDBOptions;
 using rocksdb::TransactionDB;
@@ -2727,6 +2728,15 @@ rocksdb_ratelimiter_t* rocksdb_ratelimiter_create(
   rate_limiter->rep.reset(
                NewGenericRateLimiter(rate_bytes_per_sec,
                                      refill_period_us, fairness));
+  return rate_limiter;
+}
+
+rocksdb_ratelimiter_t* rocksdb_ratelimiterv2_create(int64_t rate_bytes_per_sec,
+                                                    int64_t refill_period_us,
+                                                    int32_t fairness) {
+  rocksdb_ratelimiter_t* rate_limiter = new rocksdb_ratelimiter_t;
+  rate_limiter->rep.reset(
+      NewGenericRateLimiterV2(rate_bytes_per_sec, refill_period_us, fairness));
   return rate_limiter;
 }
 
