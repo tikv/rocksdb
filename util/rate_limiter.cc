@@ -394,6 +394,7 @@ void GenericRateLimiterV2::Request(int64_t bytes, const Env::IOPriority pri,
                            &rate_bytes_per_sec_);
   if (pri == Env::IO_HIGH) {
     total_bytes_through_[Env::IO_HIGH] += bytes;
+    ++total_requests_[Env::IO_HIGH];
     duration_highpri_bytes_through_ += bytes;
     return;
   }
@@ -568,6 +569,7 @@ int64_t GenericRateLimiterV2::CalculateRefillBytesPerPeriod(
 
 Status GenericRateLimiterV2::Tune() {
   const int kAllowedRangeFactor = 20;
+  // high-priority bytes are padded to 1MB
   const int64_t kHighBytesLower = 1024 * 1024;
   // lower bound for write amplification estimation
   const int kRatioLower = 15;
