@@ -568,6 +568,8 @@ int64_t GenericRateLimiterV2::CalculateRefillBytesPerPeriod(
 }
 
 Status GenericRateLimiterV2::Tune() {
+  // computed rate limit will be larger than
+  // `max_bytes_per_sec_ / kAllowedRangeFactor`
   const int kAllowedRangeFactor = 20;
   // high-priority bytes are padded to 1MB
   const int64_t kHighBytesLower = 1024 * 1024;
@@ -592,7 +594,7 @@ Status GenericRateLimiterV2::Tune() {
   duration_highpri_bytes_through_ = 0;
   // in case there are compaction burst even when online writes are stable
   auto util = bytes_sampler_.GetRecentValue() * 100 / prev_bytes_per_sec;
-  if (util >= 98) {
+  if (util > 98) {
     ratio_delta_ += 1;
   } else if (util < 90 && ratio_delta_ > 0) {
     ratio_delta_ -= 1;
