@@ -225,7 +225,7 @@ class GenericRateLimiterV2 : public RateLimiter {
     int64_t recent_sum_{0};
   };
 
-  static constexpr size_t kSmoothWindowSize = 300;
+  static constexpr size_t kSmoothWindowSize = 60;
   static constexpr size_t kRecentSmoothWindowSize = 10;
   WindowSmoother<kSmoothWindowSize, kRecentSmoothWindowSize> bytes_sampler_;
   WindowSmoother<kSmoothWindowSize, kRecentSmoothWindowSize>

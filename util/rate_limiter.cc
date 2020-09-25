@@ -575,8 +575,10 @@ Status GenericRateLimiterV2::Tune() {
   const int64_t kHighBytesLower = 1024 * 1024;
   // lower bound for write amplification estimation
   const int kRatioLower = 12;
-  // since compaction cannot fully utilize the IO quota we gave, use ratio
-  // slightly bigger than estimation to adjust target limit.
+  // Two reasons for using a ratio larger than estimation:
+  // 1. compaction cannot fully utilize the IO quota we set.
+  // 2. make it faster to digest unexpected burst of pending compaction bytes,
+  // generally this will help flatten IO waves.
   const int kRatioPaddingPercent = 20;
 
   std::chrono::microseconds prev_tuned_time = tuned_time_;
