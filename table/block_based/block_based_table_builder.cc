@@ -499,11 +499,15 @@ void BlockBasedTableBuilder::Add(const Slice& key, const Slice& value) {
   if (!ok()) return;
   ValueType value_type = ExtractValueType(key);
   if (IsValueType(value_type)) {
-#ifndef NDEBUG
     if (r->props.num_entries > r->props.num_range_deletions) {
-      assert(r->internal_comparator.Compare(key, Slice(r->last_key)) > 0);
+      if (r->internal_comparator.Compare(key, Slice(r->last_key)) <= 0) {
+        // We were about to insert keys out of order. Abort.
+        ROCKS_LOG_ERROR(r->ioptions.info_log,
+                        "Out-of-order key insertion into block based table");
+        r->status = Status::Corruption("Out-of-order key insertion into table");
+        return;
+      }
     }
-#endif  // NDEBUG
 
     auto should_flush = r->flush_block_policy->Update(key, value);
     if (should_flush) {

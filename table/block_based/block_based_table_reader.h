@@ -226,8 +226,9 @@ class BlockBasedTable : public TableReader {
   // input_iter: if it is not null, update this one and return it as Iterator
   template <typename TBlockIter>
   TBlockIter* NewDataBlockIterator(
-      const ReadOptions& ro, const BlockHandle& block_handle,
-      TBlockIter* input_iter, BlockType block_type, GetContext* get_context,
+      const ReadOptions& ro, const Slice& index_key,
+      const BlockHandle& block_handle, TBlockIter* input_iter,
+      BlockType block_type, GetContext* get_context,
       BlockCacheLookupContext* lookup_context, Status s,
       FilePrefetchBuffer* prefetch_buffer, bool for_compaction = false) const;
 
@@ -774,7 +775,7 @@ class BlockBasedTableIterator : public InternalIteratorBase<TValue> {
   // If `target` is null, seek to first.
   void SeekImpl(const Slice* target);
 
-  void InitDataBlock();
+  bool InitDataBlock();
   bool MaterializeCurrentBlock();
   void FindKeyForward();
   void FindBlockForward();
