@@ -226,7 +226,7 @@ class BlockConstructor: public Constructor {
     block_ = nullptr;
     BlockBuilder builder(table_options.block_restart_interval);
 
-    for (const auto kv : kv_map) {
+    for (const auto& kv : kv_map) {
       builder.Add(kv.first, kv.second);
     }
     // Open the block
@@ -349,7 +349,7 @@ class TableConstructor: public Constructor {
         TablePropertiesCollectorFactory::Context::kUnknownColumnFamily,
         file_writer_.get()));
 
-    for (const auto kv : kv_map) {
+    for (const auto& kv : kv_map) {
       if (convert_to_internal_key_) {
         ParsedInternalKey ikey(kv.first, kMaxSequenceNumber, kTypeValue);
         std::string encoded;
@@ -482,7 +482,7 @@ class MemTableConstructor: public Constructor {
                              kMaxSequenceNumber, 0 /* column_family_id */);
     memtable_->Ref();
     int seq = 1;
-    for (const auto kv : kv_map) {
+    for (const auto& kv : kv_map) {
       memtable_->Add(seq, kTypeValue, kv.first, kv.second);
       seq++;
     }
@@ -543,7 +543,7 @@ class DBConstructor: public Constructor {
     delete db_;
     db_ = nullptr;
     NewDB();
-    for (const auto kv : kv_map) {
+    for (const auto& kv : kv_map) {
       WriteBatch batch;
       batch.Put(kv.first, kv.second);
       EXPECT_TRUE(db_->Write(WriteOptions(), &batch).ok());
