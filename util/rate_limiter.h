@@ -202,8 +202,8 @@ class GenericRateLimiterV2 : public RateLimiter {
   class WindowSmoother {
    public:
     WindowSmoother() {
-      static_assert(kWindowSize > kRecentWindowSize,
-                    "Expect recent window smaller than full window");
+      static_assert(kWindowSize >= kRecentWindowSize,
+                    "Expect recent window no larger than full window");
       static_assert(kRecentWindowSize >= 1, "Expect window size larger than 0");
       memset(data_, 0, sizeof(int64_t) * kWindowSize);
     }
@@ -225,11 +225,13 @@ class GenericRateLimiterV2 : public RateLimiter {
     int64_t recent_sum_{0};
   };
 
-  static constexpr size_t kSmoothWindowSize = 60;
+  static constexpr size_t kSmoothWindowSize = 120;
   static constexpr size_t kRecentSmoothWindowSize = 10;
   WindowSmoother<kSmoothWindowSize, kRecentSmoothWindowSize> bytes_sampler_;
   WindowSmoother<kSmoothWindowSize, kRecentSmoothWindowSize>
       highpri_bytes_sampler_;
+  WindowSmoother<kRecentSmoothWindowSize, kRecentSmoothWindowSize>
+      limit_bytes_sampler_;
   int32_t ratio_delta_;
 };
 

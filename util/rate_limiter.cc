@@ -571,15 +571,15 @@ Status GenericRateLimiterV2::Tune() {
   // computed rate limit will be larger than
   // `max_bytes_per_sec_ / kAllowedRangeFactor`
   const int kAllowedRangeFactor = 20;
-  // high-priority bytes are padded to 1MB
-  const int64_t kHighBytesLower = 1024 * 1024;
+  // high-priority bytes are padded to 10MB
+  const int64_t kHighBytesLower = 10 * 1024 * 1024;
   // lower bound for write amplification estimation
   const int kRatioLower = 12;
   // Two reasons for using a ratio larger than estimation:
   // 1. compaction cannot fully utilize the IO quota we set.
   // 2. make it faster to digest unexpected burst of pending compaction bytes,
   // generally this will help flatten IO waves.
-  const int kRatioPaddingPercent = 20;
+  const int kRatioPaddingPercent = 18;
 
   std::chrono::microseconds prev_tuned_time = tuned_time_;
   tuned_time_ = std::chrono::microseconds(NowMicrosMonotonic(env_));
@@ -592,6 +592,7 @@ Status GenericRateLimiterV2::Tune() {
   bytes_sampler_.AddSample(duration_bytes_through_ * 1000 / duration_ms);
   highpri_bytes_sampler_.AddSample(duration_highpri_bytes_through_ * 1000 /
                                    duration_ms);
+  limit_bytes_sampler_.AddSample(prev_bytes_per_sec);
   int32_t ratio = std::max(
       kRatioLower,
       static_cast<int32_t>(
@@ -600,14 +601,13 @@ Status GenericRateLimiterV2::Tune() {
   int32_t ratio_padding = ratio * kRatioPaddingPercent / 100;
 
   // in case there are compaction burst even when online writes are stable
-  auto util = duration_bytes_through_ * 100 / prev_bytes_per_sec;
+  auto util = bytes_sampler_.GetRecentValue() * 100 /
+              limit_bytes_sampler_.GetRecentValue();
   if (util > 98) {
     ratio_delta_ += 1;
-  } else if (util < 90 && ratio_delta_ > 0) {
+  } else if (util < 95 && ratio_delta_ > 0) {
     ratio_delta_ -= 1;
   }
-  duration_bytes_through_ = 0;
-  duration_highpri_bytes_through_ = 0;
 
   int64_t new_bytes_per_sec =
       (ratio + ratio_padding + ratio_delta_) *
@@ -619,6 +619,9 @@ Status GenericRateLimiterV2::Tune() {
   if (new_bytes_per_sec != prev_bytes_per_sec) {
     SetBytesPerSecond(new_bytes_per_sec);
   }
+
+  duration_bytes_through_ = 0;
+  duration_highpri_bytes_through_ = 0;
   return Status::OK();
 }
 
