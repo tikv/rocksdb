@@ -109,7 +109,7 @@ class WriteAmpBasedRateLimiter : public RateLimiter {
   int64_t duration_highpri_bytes_through_;
   int64_t duration_bytes_through_;
 
-  template <size_t kWindowSize, size_t kRecentWindowSize>
+  template <size_t kWindowSize, size_t kRecentWindowSize = 1>
   class WindowSmoother {
    public:
     WindowSmoother() {
@@ -128,6 +128,7 @@ class WriteAmpBasedRateLimiter : public RateLimiter {
     }
     int64_t GetFullValue() { return full_sum_ / kWindowSize; }
     int64_t GetRecentValue() { return recent_sum_ / kRecentWindowSize; }
+    bool AtTimePoint() const { return cursor_ == 0; }
 
    private:
     uint32_t cursor_{0};  // point to the most recent sample
@@ -136,11 +137,14 @@ class WriteAmpBasedRateLimiter : public RateLimiter {
     int64_t recent_sum_{0};
   };
 
+  static constexpr size_t kLongTermWindowSize = 15;
   static constexpr size_t kSmoothWindowSize = 120;
   static constexpr size_t kRecentSmoothWindowSize = 10;
   WindowSmoother<kSmoothWindowSize, kRecentSmoothWindowSize> bytes_sampler_;
   WindowSmoother<kSmoothWindowSize, kRecentSmoothWindowSize>
       highpri_bytes_sampler_;
+  WindowSmoother<kLongTermWindowSize> long_term_bytes_sampler_;
+  WindowSmoother<kLongTermWindowSize> long_term_highpri_bytes_sampler_;
   WindowSmoother<kRecentSmoothWindowSize, kRecentSmoothWindowSize>
       limit_bytes_sampler_;
   int32_t ratio_delta_;

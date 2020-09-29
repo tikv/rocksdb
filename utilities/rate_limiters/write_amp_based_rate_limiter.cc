@@ -267,8 +267,8 @@ Status WriteAmpBasedRateLimiter::Tune() {
   // computed rate limit will be larger than
   // `max_bytes_per_sec_ / kAllowedRangeFactor`
   const int kAllowedRangeFactor = 20;
-  // high-priority bytes are padded to 10MB
-  const int64_t kHighBytesLower = 10 * 1024 * 1024;
+  // high-priority bytes are padded to 20MB
+  const int64_t kHighBytesLower = 20 * 1024 * 1024;
   // lower bound for write amplification estimation
   const int kRatioLower = 12;
   // Two reasons for using a ratio larger than estimation:
@@ -288,12 +288,21 @@ Status WriteAmpBasedRateLimiter::Tune() {
   bytes_sampler_.AddSample(duration_bytes_through_ * 1000 / duration_ms);
   highpri_bytes_sampler_.AddSample(duration_highpri_bytes_through_ * 1000 /
                                    duration_ms);
+  if (bytes_sampler_.AtTimePoint()) {
+    long_term_bytes_sampler_.AddSample(bytes_sampler_.GetFullValue());
+    long_term_highpri_bytes_sampler_.AddSample(
+        highpri_bytes_sampler_.GetFullValue());
+  }
   limit_bytes_sampler_.AddSample(prev_bytes_per_sec);
   int32_t ratio = std::max(
-      kRatioLower,
-      static_cast<int32_t>(
-          bytes_sampler_.GetFullValue() * 10 /
-          std::max(highpri_bytes_sampler_.GetFullValue(), kHighBytesLower)));
+      kRatioLower, static_cast<int32_t>(
+                       long_term_bytes_sampler_.GetFullValue() * 10 /
+                       std::max(long_term_highpri_bytes_sampler_.GetFullValue(),
+                                kHighBytesLower)));
+  ratio = std::max(ratio, static_cast<int32_t>(
+                              bytes_sampler_.GetFullValue() * 10 /
+                              std::max(highpri_bytes_sampler_.GetFullValue(),
+                                       kHighBytesLower)));
   int32_t ratio_padding = ratio * kRatioPaddingPercent / 100;
 
   // in case there are compaction burst even when online writes are stable
