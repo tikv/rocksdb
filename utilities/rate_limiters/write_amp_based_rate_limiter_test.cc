@@ -26,20 +26,21 @@ namespace rocksdb {
 class RateLimiterTest : public testing::Test {};
 
 TEST_F(RateLimiterTest, OverflowRate) {
-  GenericRateLimiter limiter(port::kMaxInt64, 1000, 10,
-                             RateLimiter::Mode::kWritesOnly, Env::Default(),
-                             false /* auto_tuned */);
+  WriteAmpBasedRateLimiter limiter(port::kMaxInt64, 1000, 10,
+                                   RateLimiter::Mode::kWritesOnly,
+                                   Env::Default(), false /* auto_tuned */);
   ASSERT_GT(limiter.GetSingleBurstBytes(), 1000000000ll);
 }
 
 TEST_F(RateLimiterTest, StartStop) {
-  std::unique_ptr<RateLimiter> limiter(NewGenericRateLimiter(100, 100, 10));
+  std::unique_ptr<RateLimiter> limiter(
+      NewWriteAmpBasedRateLimiter(100, 100, 10));
 }
 
 TEST_F(RateLimiterTest, Modes) {
   for (auto mode : {RateLimiter::Mode::kWritesOnly,
                     RateLimiter::Mode::kReadsOnly, RateLimiter::Mode::kAllIo}) {
-    GenericRateLimiter limiter(
+    WriteAmpBasedRateLimiter limiter(
         2000 /* rate_bytes_per_sec */, 1000 * 1000 /* refill_period_us */,
         10 /* fairness */, mode, Env::Default(), false /* auto_tuned */);
     limiter.Request(1000 /* bytes */, Env::IO_HIGH, nullptr /* stats */,
@@ -65,7 +66,7 @@ TEST_F(RateLimiterTest, Rate) {
   auto* env = Env::Default();
   struct Arg {
     Arg(int32_t _target_rate, int _burst)
-        : limiter(NewGenericRateLimiter(_target_rate, 100 * 1000, 10)),
+        : limiter(NewWriteAmpBasedRateLimiter(_target_rate, 100 * 1000, 10)),
           request_size(_target_rate / 10),
           burst(_burst) {}
     std::unique_ptr<RateLimiter> limiter;
@@ -118,7 +119,7 @@ TEST_F(RateLimiterTest, Rate) {
               arg.request_size - 1, target / 1024, rate / 1024,
               elapsed / 1000000.0);
 
-      ASSERT_GE(rate / target, 0.80);
+      ASSERT_GE(rate / target, 0.75);
       ASSERT_LE(rate / target, 1.25);
     }
   }
@@ -150,14 +151,14 @@ TEST_F(RateLimiterTest, LimitChangeTest) {
     // refill per second
     for (int iter = 0; iter < 2; iter++) {
       std::shared_ptr<RateLimiter> limiter =
-          std::make_shared<GenericRateLimiter>(
+          std::make_shared<WriteAmpBasedRateLimiter>(
               target, refill_period, 10, RateLimiter::Mode::kWritesOnly,
               Env::Default(), false /* auto_tuned */);
       rocksdb::SyncPoint::GetInstance()->LoadDependency(
-          {{"GenericRateLimiter::Request",
+          {{"WriteAmpBasedRateLimiter::Request",
             "RateLimiterTest::LimitChangeTest:changeLimitStart"},
            {"RateLimiterTest::LimitChangeTest:changeLimitEnd",
-            "GenericRateLimiter::Refill"}});
+            "WriteAmpBasedRateLimiter::Refill"}});
       Arg arg(target, Env::IO_HIGH, limiter);
       // The idea behind is to start a request first, then before it refills,
       // update limit to a different value (2X/0.5X). No starvation should
