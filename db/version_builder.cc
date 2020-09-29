@@ -206,13 +206,19 @@ class VersionBuilder::Rep {
           // Make sure there is no overlap in levels > 0
           if (vstorage->InternalComparator()->Compare(f1->largest,
                                                       f2->smallest) >= 0) {
-            fprintf(stderr, "L%d have overlapping ranges %s vs. %s\n", level,
-                    (f1->largest).DebugString(true).c_str(),
-                    (f2->smallest).DebugString(true).c_str());
+            fprintf(
+                stderr,
+                "L%d have overlapping ranges %s of file %s vs. %s of file %s\n",
+                level, (f1->largest).DebugString(true).c_str(),
+                NumberToString(f1->fd.GetNumber()).c_str(),
+                (f2->smallest).DebugString(true).c_str(),
+                NumberToString(f2->fd.GetNumber()).c_str());
             return Status::Corruption(
                 "L" + NumberToString(level) + " have overlapping ranges " +
-                (f1->largest).DebugString(true) + " vs. " +
-                (f2->smallest).DebugString(true));
+                (f1->largest).DebugString(true) + " of file " +
+                NumberToString(f1->fd.GetNumber()) + " vs. " +
+                (f2->smallest).DebugString(true) + " of file " +
+                NumberToString(f2->fd.GetNumber()));
           }
         }
       }

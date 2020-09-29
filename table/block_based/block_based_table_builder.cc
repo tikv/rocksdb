@@ -503,8 +503,10 @@ void BlockBasedTableBuilder::Add(const Slice& key, const Slice& value) {
       if (r->internal_comparator.Compare(key, Slice(r->last_key)) <= 0) {
         // We were about to insert keys out of order. Abort.
         ROCKS_LOG_ERROR(r->ioptions.info_log,
-                        "Out-of-order key insertion into block based table");
-        r->status = Status::Corruption("Out-of-order key insertion into table");
+                        "Out-of-order key insertion into block based table %s",
+                        rep_->file->file_name().c_str());
+        r->status = Status::Corruption(
+            "Out-of-order key insertion into table " + rep_->file->file_name());
         return;
       }
     }
@@ -1130,6 +1132,7 @@ Status BlockBasedTableBuilder::Finish() {
   // To make sure properties block is able to keep the accurate size of index
   // block, we will finish writing all index entries first.
   if (ok() && !empty_data_block) {
+    // printf("no next data %s\n", Slice(r->last_key).ToString(true).c_str());
     r->index_builder->AddIndexEntry(
         &r->last_key, nullptr /* no next data block */, r->pending_handle);
   }

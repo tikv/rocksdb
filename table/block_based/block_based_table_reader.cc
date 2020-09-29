@@ -1988,10 +1988,29 @@ TBlockIter* BlockBasedTable::NewDataBlockIterator(
   if (!index_key.empty()) {
     iter->SeekToFirst();
     if (iter->Valid()) {
-      if (rep_->internal_comparator.Compare(index_key, iter->key()) < 0) {
-        iter->Invalidate(
-            Status::Corruption("first key in block isn't smaller than or equal "
-                               "last key in index"));
+      auto& comparator = rep_->internal_comparator;
+      auto user_comparator = comparator.user_comparator();
+      // index key may not include seq, so check property to decide whether to
+      // only compare user_key part or not
+      const bool is_user_key =
+          rep_->table_properties->index_key_is_user_key > 0;
+      if ((!is_user_key && comparator.Compare(index_key, iter->key()) < 0) ||
+          (is_user_key &&
+           user_comparator->Compare(index_key, iter->user_key()) < 0)) {
+        ROCKS_LOG_ERROR(rep_->ioptions.info_log,
+                        "first key %s in block[%lu, %lu] of %s isn't smaller "
+                        "than or equal to "
+                        "index key %s\n",
+                        iter->key().ToString(true).c_str(), handle.offset(),
+                        handle.size(), rep_->file->file_name().c_str(),
+                        index_key.ToString(true).c_str());
+        iter->Invalidate(Status::Corruption(
+            "first key " + iter->key().ToString(true) + " in block[" +
+            ToString(handle.offset()) + "," + ToString(handle.size()) +
+            "] of " + rep_->file->file_name() +
+            " isn't smaller than or equal to"
+            "index key " +
+            index_key.ToString(true)));
       }
     }
   }
@@ -2959,10 +2978,10 @@ bool BlockBasedTableIterator<TBlockIter, TValue>::InitDataBlock() {
         /*get_context=*/nullptr, &lookup_context_, s, prefetch_buffer_.get(),
         /*for_compaction=*/lookup_context_.caller ==
             TableReaderCaller::kCompaction);
-    if (!block_iter_.Valid()) {
+    block_iter_points_to_real_block_ = true;
+    if (!block_iter_.status().ok()) {
       return false;
     }
-    block_iter_points_to_real_block_ = true;
     CheckDataBlockWithinUpperBound();
   }
   return true;
