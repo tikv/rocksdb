@@ -1998,9 +1998,8 @@ TBlockIter* BlockBasedTable::NewDataBlockIterator(
           (is_user_key &&
            user_comparator->Compare(index_key, iter->user_key()) < 0)) {
         ROCKS_LOG_ERROR(rep_->ioptions.info_log,
-                        "first key %s in block[%lu, %lu] of %s isn't smaller "
-                        "than or equal to "
-                        "index key %s\n",
+                        "first key %s in block[%" PRIu64 ", %" PRIu64
+                        "] of %s isn't smaller than or equal to index key %s\n",
                         iter->key().ToString(true).c_str(), handle.offset(),
                         handle.size(), rep_->file->file_name().c_str(),
                         index_key.ToString(true).c_str());

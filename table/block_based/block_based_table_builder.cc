@@ -1132,7 +1132,6 @@ Status BlockBasedTableBuilder::Finish() {
   // To make sure properties block is able to keep the accurate size of index
   // block, we will finish writing all index entries first.
   if (ok() && !empty_data_block) {
-    // printf("no next data %s\n", Slice(r->last_key).ToString(true).c_str());
     r->index_builder->AddIndexEntry(
         &r->last_key, nullptr /* no next data block */, r->pending_handle);
   }
