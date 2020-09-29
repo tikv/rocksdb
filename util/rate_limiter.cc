@@ -144,8 +144,9 @@ void GenericRateLimiter::Request(int64_t bytes, const Env::IOPriority pri,
     //     previous leader
     if (leader_ == nullptr &&
         ((!queue_[Env::IO_HIGH].empty() &&
-          &r == queue_[Env::IO_HIGH].front()) ||
-         (!queue_[Env::IO_LOW].empty() && &r == queue_[Env::IO_LOW].front()))) {
+            &r == queue_[Env::IO_HIGH].front()) ||
+         (!queue_[Env::IO_LOW].empty() &&
+            &r == queue_[Env::IO_LOW].front()))) {
       leader_ = &r;
       int64_t delta = next_refill_us_ - NowMicrosMonotonic(env_);
       delta = delta > 0 ? delta : 0;
@@ -170,11 +171,14 @@ void GenericRateLimiter::Request(int64_t bytes, const Env::IOPriority pri,
     }
 
     // Make sure the waken up request is always the header of its queue
-    assert(r.granted || (!queue_[Env::IO_HIGH].empty() &&
-                         &r == queue_[Env::IO_HIGH].front()) ||
-           (!queue_[Env::IO_LOW].empty() && &r == queue_[Env::IO_LOW].front()));
-    assert(leader_ == nullptr || (!queue_[Env::IO_HIGH].empty() &&
-                                  leader_ == queue_[Env::IO_HIGH].front()) ||
+    assert(r.granted ||
+           (!queue_[Env::IO_HIGH].empty() &&
+            &r == queue_[Env::IO_HIGH].front()) ||
+           (!queue_[Env::IO_LOW].empty() &&
+            &r == queue_[Env::IO_LOW].front()));
+    assert(leader_ == nullptr ||
+           (!queue_[Env::IO_HIGH].empty() &&
+            leader_ == queue_[Env::IO_HIGH].front()) ||
            (!queue_[Env::IO_LOW].empty() &&
             leader_ == queue_[Env::IO_LOW].front()));
 
@@ -193,9 +197,9 @@ void GenericRateLimiter::Request(int64_t bytes, const Env::IOPriority pri,
           // Current leader already got granted with quota. Notify header
           // of waiting queue to participate next round of election.
           assert((queue_[Env::IO_HIGH].empty() ||
-                  &r != queue_[Env::IO_HIGH].front()) &&
+                    &r != queue_[Env::IO_HIGH].front()) &&
                  (queue_[Env::IO_LOW].empty() ||
-                  &r != queue_[Env::IO_LOW].front()));
+                    &r != queue_[Env::IO_LOW].front()));
           if (!queue_[Env::IO_HIGH].empty()) {
             queue_[Env::IO_HIGH].front()->cv.Signal();
           } else if (!queue_[Env::IO_LOW].empty()) {
