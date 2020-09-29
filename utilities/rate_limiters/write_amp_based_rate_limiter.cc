@@ -85,10 +85,14 @@ void WriteAmpBasedRateLimiter::SetBytesPerSecond(int64_t bytes_per_second) {
 
 void WriteAmpBasedRateLimiter::Request(int64_t bytes, const Env::IOPriority pri,
                                        Statistics* stats) {
+  static constexpr int kSecondsPerTune = 1;
+  static constexpr int kMicrosPerTune = 1000 * 1000 * kSecondsPerTune;
   TEST_SYNC_POINT("WriteAmpBasedRateLimiter::Request");
   TEST_SYNC_POINT_CALLBACK("WriteAmpBasedRateLimiter::Request:1",
                            &rate_bytes_per_sec_);
-  if (pri == Env::IO_HIGH) {
+  if (auto_tuned_ && pri == Env::IO_HIGH &&
+      duration_highpri_bytes_through_ + bytes <=
+          max_bytes_per_sec_ * kSecondsPerTune) {
     total_bytes_through_[Env::IO_HIGH] += bytes;
     ++total_requests_[Env::IO_HIGH];
     duration_highpri_bytes_through_ += bytes;
@@ -98,7 +102,6 @@ void WriteAmpBasedRateLimiter::Request(int64_t bytes, const Env::IOPriority pri,
   MutexLock g(&request_mutex_);
 
   if (auto_tuned_) {
-    static const int kMicrosPerTune = 1000 * 1000;  // 1s
     std::chrono::microseconds now(NowMicrosMonotonic(env_));
     if (now - tuned_time_ >= std::chrono::microseconds(kMicrosPerTune)) {
       Tune();
