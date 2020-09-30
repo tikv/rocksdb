@@ -23,21 +23,21 @@
 namespace rocksdb {
 
 // TODO(yhchiang): the rate will not be accurate when we run test in parallel.
-class RateLimiterTest : public testing::Test {};
+class WriteAmpBasedRateLimiterTest : public testing::Test {};
 
-TEST_F(RateLimiterTest, OverflowRate) {
+TEST_F(WriteAmpBasedRateLimiterTest, OverflowRate) {
   WriteAmpBasedRateLimiter limiter(port::kMaxInt64, 1000, 10,
                                    RateLimiter::Mode::kWritesOnly,
                                    Env::Default(), false /* auto_tuned */);
   ASSERT_GT(limiter.GetSingleBurstBytes(), 1000000000ll);
 }
 
-TEST_F(RateLimiterTest, StartStop) {
+TEST_F(WriteAmpBasedRateLimiterTest, StartStop) {
   std::unique_ptr<RateLimiter> limiter(
       NewWriteAmpBasedRateLimiter(100, 100, 10));
 }
 
-TEST_F(RateLimiterTest, Modes) {
+TEST_F(WriteAmpBasedRateLimiterTest, Modes) {
   for (auto mode : {RateLimiter::Mode::kWritesOnly,
                     RateLimiter::Mode::kReadsOnly, RateLimiter::Mode::kAllIo}) {
     WriteAmpBasedRateLimiter limiter(
@@ -62,7 +62,7 @@ TEST_F(RateLimiterTest, Modes) {
 }
 
 #if !(defined(TRAVIS) && defined(OS_MACOSX))
-TEST_F(RateLimiterTest, Rate) {
+TEST_F(WriteAmpBasedRateLimiterTest, Rate) {
   auto* env = Env::Default();
   struct Arg {
     Arg(int32_t _target_rate, int _burst)
@@ -126,7 +126,7 @@ TEST_F(RateLimiterTest, Rate) {
 }
 #endif
 
-TEST_F(RateLimiterTest, LimitChangeTest) {
+TEST_F(WriteAmpBasedRateLimiterTest, LimitChangeTest) {
   // starvation test when limit changes to a smaller value
   int64_t refill_period = 1000 * 1000;
   auto* env = Env::Default();
@@ -156,8 +156,8 @@ TEST_F(RateLimiterTest, LimitChangeTest) {
               Env::Default(), false /* auto_tuned */);
       rocksdb::SyncPoint::GetInstance()->LoadDependency(
           {{"WriteAmpBasedRateLimiter::Request",
-            "RateLimiterTest::LimitChangeTest:changeLimitStart"},
-           {"RateLimiterTest::LimitChangeTest:changeLimitEnd",
+            "WriteAmpBasedRateLimiterTest::LimitChangeTest:changeLimitStart"},
+           {"WriteAmpBasedRateLimiterTest::LimitChangeTest:changeLimitEnd",
             "WriteAmpBasedRateLimiter::Refill"}});
       Arg arg(target, Env::IO_HIGH, limiter);
       // The idea behind is to start a request first, then before it refills,
@@ -166,9 +166,11 @@ TEST_F(RateLimiterTest, LimitChangeTest) {
       // TODO(lightmark): more test cases are welcome.
       env->StartThread(writer, &arg);
       int32_t new_limit = (target << 1) >> (iter << 1);
-      TEST_SYNC_POINT("RateLimiterTest::LimitChangeTest:changeLimitStart");
+      TEST_SYNC_POINT(
+          "WriteAmpBasedRateLimiterTest::LimitChangeTest:changeLimitStart");
       arg.limiter->SetBytesPerSecond(new_limit);
-      TEST_SYNC_POINT("RateLimiterTest::LimitChangeTest:changeLimitEnd");
+      TEST_SYNC_POINT(
+          "WriteAmpBasedRateLimiterTest::LimitChangeTest:changeLimitEnd");
       env->WaitForJoin();
       fprintf(stderr,
               "[COMPLETE] request size %" PRIi32 " KB, new limit %" PRIi32
