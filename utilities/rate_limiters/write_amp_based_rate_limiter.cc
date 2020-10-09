@@ -297,6 +297,8 @@ Status WriteAmpBasedRateLimiter::Tune() {
         highpri_bytes_sampler_.GetFullValue());
   }
   limit_bytes_sampler_.AddSample(prev_bytes_per_sec);
+  // As LSM grows higher, it tends to generate compaction tasks in waves
+  // (cascaded). We use extra long-term window to help reduce this fluctuation.
   int32_t ratio = std::max(
       kRatioLower, static_cast<int32_t>(
                        long_term_bytes_sampler_.GetFullValue() * 10 /
@@ -308,7 +310,7 @@ Status WriteAmpBasedRateLimiter::Tune() {
                                        kHighBytesLower)));
   int32_t ratio_padding = ratio * kRatioPaddingPercent / 100;
 
-  // in case there are compaction burst even when online writes are stable
+  // in case there are compaction bursts even when online writes are stable
   auto util = bytes_sampler_.GetRecentValue() * 100 /
               limit_bytes_sampler_.GetRecentValue();
   if (util > 98) {
