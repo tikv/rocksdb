@@ -1431,7 +1431,7 @@ Status BlockBasedTable::ReadRangeDelBlock(
   } else if (found_range_del_block && !range_del_handle.IsNull()) {
     ReadOptions read_options;
     std::unique_ptr<InternalIterator> iter(NewDataBlockIterator<DataBlockIter>(
-        read_options, range_del_handle,
+        read_options, Slice(), range_del_handle,
         /*input_iter=*/nullptr, BlockType::kRangeDeletion,
         /*get_context=*/nullptr, lookup_context, Status(), prefetch_buffer));
     assert(iter != nullptr);
@@ -1893,8 +1893,8 @@ InternalIteratorBase<IndexValue>* BlockBasedTable::NewIndexIterator(
 // If input_iter is not null, update this iter and return it
 template <typename TBlockIter>
 TBlockIter* BlockBasedTable::NewDataBlockIterator(
-    const ReadOptions& ro, const BlockHandle& handle, TBlockIter* input_iter,
-    BlockType block_type, GetContext* get_context,
+    const ReadOptions& ro, const Slice& index_key, const BlockHandle& handle,
+    TBlockIter* input_iter, BlockType block_type, GetContext* get_context,
     BlockCacheLookupContext* lookup_context, Status s,
     FilePrefetchBuffer* prefetch_buffer, bool for_compaction) const {
   PERF_TIMER_GUARD(new_table_block_iter_nanos);
@@ -1985,6 +1985,34 @@ TBlockIter* BlockBasedTable::NewDataBlockIterator(
 
   block.TransferTo(iter);
 
+  if (!index_key.empty()) {
+    iter->SeekToFirst();
+    if (iter->Valid()) {
+      auto& comparator = rep_->internal_comparator;
+      auto user_comparator = comparator.user_comparator();
+      // index key may not include seq, so check property to decide whether to
+      // only compare user_key part or not
+      const bool is_user_key =
+          rep_->table_properties->index_key_is_user_key > 0;
+      if ((!is_user_key && comparator.Compare(index_key, iter->key()) < 0) ||
+          (is_user_key &&
+           user_comparator->Compare(index_key, iter->user_key()) < 0)) {
+        ROCKS_LOG_ERROR(rep_->ioptions.info_log,
+                        "first key %s in block[%" PRIu64 ", %" PRIu64
+                        "] of %s isn't smaller than or equal to index key %s\n",
+                        iter->key().ToString(true).c_str(), handle.offset(),
+                        handle.size(), rep_->file->file_name().c_str(),
+                        index_key.ToString(true).c_str());
+        iter->Invalidate(Status::Corruption(
+            "first key " + iter->key().ToString(true) + " in block[" +
+            ToString(handle.offset()) + "," + ToString(handle.size()) +
+            "] of " + rep_->file->file_name() +
+            " isn't smaller than or equal to"
+            "index key " +
+            index_key.ToString(true)));
+      }
+    }
+  }
   return iter;
 }
 
@@ -2730,7 +2758,9 @@ void BlockBasedTableIterator<TBlockIter, TValue>::SeekImpl(
   } else {
     // Need to use the data block.
     if (!same_block) {
-      InitDataBlock();
+      if (!InitDataBlock()) {
+        return;
+      }
     } else {
       // When the user does a reseek, the iterate_upper_bound might have
       // changed. CheckDataBlockWithinUpperBound() needs to be called
@@ -2799,8 +2829,9 @@ void BlockBasedTableIterator<TBlockIter, TValue>::SeekForPrev(
     }
   }
 
-  InitDataBlock();
-
+  if (!InitDataBlock()) {
+    return;
+  }
   block_iter_.SeekForPrev(target);
 
   FindKeyBackward();
@@ -2819,7 +2850,9 @@ void BlockBasedTableIterator<TBlockIter, TValue>::SeekToLast() {
     ResetDataIter();
     return;
   }
-  InitDataBlock();
+  if (!InitDataBlock()) {
+    return;
+  }
   block_iter_.SeekToLast();
   FindKeyBackward();
   CheckDataBlockWithinUpperBound();
@@ -2858,7 +2891,9 @@ void BlockBasedTableIterator<TBlockIter, TValue>::Prev() {
       return;
     }
 
-    InitDataBlock();
+    if (!InitDataBlock()) {
+      return;
+    }
     block_iter_.SeekToLast();
   } else {
     assert(block_iter_points_to_real_block_);
@@ -2876,7 +2911,7 @@ const size_t
         256 * 1024;
 
 template <class TBlockIter, typename TValue>
-void BlockBasedTableIterator<TBlockIter, TValue>::InitDataBlock() {
+bool BlockBasedTableIterator<TBlockIter, TValue>::InitDataBlock() {
   BlockHandle data_block_handle = index_iter_->value().handle;
   if (!block_iter_points_to_real_block_ ||
       data_block_handle.offset() != prev_block_offset_ ||
@@ -2937,13 +2972,18 @@ void BlockBasedTableIterator<TBlockIter, TValue>::InitDataBlock() {
 
     Status s;
     table_->NewDataBlockIterator<TBlockIter>(
-        read_options_, data_block_handle, &block_iter_, block_type_,
+        read_options_, index_iter_->key(), data_block_handle, &block_iter_,
+        block_type_,
         /*get_context=*/nullptr, &lookup_context_, s, prefetch_buffer_.get(),
         /*for_compaction=*/lookup_context_.caller ==
             TableReaderCaller::kCompaction);
     block_iter_points_to_real_block_ = true;
+    if (!block_iter_.status().ok()) {
+      return false;
+    }
     CheckDataBlockWithinUpperBound();
   }
+  return true;
 }
 
 template <class TBlockIter, typename TValue>
@@ -2953,7 +2993,9 @@ bool BlockBasedTableIterator<TBlockIter, TValue>::MaterializeCurrentBlock() {
   assert(index_iter_->Valid());
 
   is_at_first_key_from_index_ = false;
-  InitDataBlock();
+  if (!InitDataBlock()) {
+    return false;
+  }
   assert(block_iter_points_to_real_block_);
   block_iter_.SeekToFirst();
 
@@ -3030,7 +3072,9 @@ void BlockBasedTableIterator<TBlockIter, TValue>::FindBlockForward() {
       return;
     }
 
-    InitDataBlock();
+    if (!InitDataBlock()) {
+      return;
+    }
     block_iter_.SeekToFirst();
   } while (!block_iter_.Valid());
 }
@@ -3046,7 +3090,9 @@ void BlockBasedTableIterator<TBlockIter, TValue>::FindKeyBackward() {
     index_iter_->Prev();
 
     if (index_iter_->Valid()) {
-      InitDataBlock();
+      if (!InitDataBlock()) {
+        return;
+      }
       block_iter_.SeekToLast();
     } else {
       return;
@@ -3269,8 +3315,8 @@ Status BlockBasedTable::Get(const ReadOptions& read_options, const Slice& key,
       DataBlockIter biter;
       uint64_t referenced_data_size = 0;
       NewDataBlockIterator<DataBlockIter>(
-          read_options, v.handle, &biter, BlockType::kData, get_context,
-          &lookup_data_block_context,
+          read_options, iiter->key(), v.handle, &biter, BlockType::kData,
+          get_context, &lookup_data_block_context,
           /*s=*/Status(), /*prefetch_buffer*/ nullptr);
 
       if (no_io && biter.status().IsIncomplete()) {
@@ -3550,7 +3596,7 @@ void BlockBasedTable::MultiGet(const ReadOptions& read_options,
 
           next_biter.Invalidate(Status::OK());
           NewDataBlockIterator<DataBlockIter>(
-              read_options, iiter->value().handle, &next_biter,
+              read_options, iiter->key(), iiter->value().handle, &next_biter,
               BlockType::kData, get_context, &lookup_data_block_context,
               Status(), nullptr);
           biter = &next_biter;
@@ -3710,7 +3756,8 @@ Status BlockBasedTable::Prefetch(const Slice* const begin,
     DataBlockIter biter;
 
     NewDataBlockIterator<DataBlockIter>(
-        ReadOptions(), block_handle, &biter, /*type=*/BlockType::kData,
+        ReadOptions(), iiter->key(), block_handle, &biter,
+        /*type=*/BlockType::kData,
         /*get_context=*/nullptr, &lookup_context, Status(),
         /*prefetch_buffer=*/nullptr);
 
@@ -4007,7 +4054,8 @@ Status BlockBasedTable::GetKVPairsFromDataBlocks(
 
     std::unique_ptr<InternalIterator> datablock_iter;
     datablock_iter.reset(NewDataBlockIterator<DataBlockIter>(
-        ReadOptions(), blockhandles_iter->value().handle,
+        ReadOptions(), blockhandles_iter->key(),
+        blockhandles_iter->value().handle,
         /*input_iter=*/nullptr, /*type=*/BlockType::kData,
         /*get_context=*/nullptr, /*lookup_context=*/nullptr, Status(),
         /*prefetch_buffer=*/nullptr));
@@ -4253,7 +4301,8 @@ Status BlockBasedTable::DumpDataBlocks(WritableFile* out_file) {
 
     std::unique_ptr<InternalIterator> datablock_iter;
     datablock_iter.reset(NewDataBlockIterator<DataBlockIter>(
-        ReadOptions(), blockhandles_iter->value().handle,
+        ReadOptions(), blockhandles_iter->key(),
+        blockhandles_iter->value().handle,
         /*input_iter=*/nullptr, /*type=*/BlockType::kData,
         /*get_context=*/nullptr, /*lookup_context=*/nullptr, Status(),
         /*prefetch_buffer=*/nullptr));
