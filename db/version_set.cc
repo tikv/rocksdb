@@ -1546,6 +1546,16 @@ Status Version::OverlapWithLevelIterator(const ReadOptions& read_options,
       status = OverlapWithIterator(
           ucmp, smallest_user_key, largest_user_key, iter.get(), overlap);
       if (!status.ok() || *overlap) {
+        if (*overlap) {
+          ParsedInternalKey seek_result;
+          if (!ParseInternalKey(iter->key(), &seek_result)) {
+            return Status::Corruption("DB have corrupted keys");
+          }
+          ROCKS_LOG_INFO(info_log_, "overlap in L%d, range [%s, %s], seek: %s",
+                         level, smallest_user_key.ToString(true).c_str(),
+                         largest_user_key.ToString(true).c_str(),
+                         seek_result.DebugString(true).c_str());
+        }
         break;
       }
     }
@@ -1560,6 +1570,16 @@ Status Version::OverlapWithLevelIterator(const ReadOptions& read_options,
         &range_del_agg));
     status = OverlapWithIterator(
         ucmp, smallest_user_key, largest_user_key, iter.get(), overlap);
+    if (*overlap) {
+      ParsedInternalKey seek_result;
+      if (!ParseInternalKey(iter->key(), &seek_result)) {
+        return Status::Corruption("DB have corrupted keys");
+      }
+      ROCKS_LOG_INFO(info_log_, "overlap in L%d, range [%s, %s], seek: %s",
+                     level, smallest_user_key.ToString(true).c_str(),
+                     largest_user_key.ToString(true).c_str(),
+                     seek_result.DebugString(true).c_str());
+    }
   }
 
   if (status.ok() && *overlap == false &&
@@ -2194,6 +2214,7 @@ void VersionStorageInfo::EstimateCompactionBytesNeeded(
 #ifndef NDEBUG
       uint64_t level_size2 = 0;
       for (auto* f : files_[level]) {
+        if (f->ingested_file) continue;
         level_size2 += f->fd.GetFileSize();
       }
       assert(level_size2 == bytes_next_level);
@@ -2202,6 +2223,7 @@ void VersionStorageInfo::EstimateCompactionBytesNeeded(
       bytes_next_level = 0;
     } else {
       for (auto* f : files_[level]) {
+        if (f->ingested_file) continue;
         level_size += f->fd.GetFileSize();
       }
     }
@@ -2221,6 +2243,7 @@ void VersionStorageInfo::EstimateCompactionBytesNeeded(
       assert(bytes_next_level == 0);
       if (level + 1 < num_levels_) {
         for (auto* f : files_[level + 1]) {
+          if (f->ingested_file) continue;
           bytes_next_level += f->fd.GetFileSize();
         }
       }
@@ -2329,13 +2352,26 @@ void VersionStorageInfo::ComputeCompactionScore(
     } else {
       // Compute the ratio of current size to size limit.
       uint64_t level_bytes_no_compacting = 0;
+      uint64_t ingest_files_size = 0;
       for (auto f : files_[level]) {
         if (!f->being_compacted) {
-          level_bytes_no_compacting += f->compensated_file_size;
+          if (!f->ingested_file) {
+            level_bytes_no_compacting += f->compensated_file_size;
+          } else {
+            ingest_files_size += f->compensated_file_size;
+          }
         }
       }
       score = static_cast<double>(level_bytes_no_compacting) /
               MaxBytesForLevel(level);
+
+      if (level_bytes_no_compacting + ingest_files_size >
+          MaxStaticBytesForLevel(level)) {
+        score = std::max(
+            score,
+            static_cast<double>(level_bytes_no_compacting + ingest_files_size) /
+                MaxStaticBytesForLevel(level));
+      }
     }
     compaction_level_[level] = level;
     compaction_score_[level] = score;
@@ -3089,6 +3125,14 @@ uint64_t VersionStorageInfo::MaxBytesForLevel(int level) const {
   return level_max_bytes_[level];
 }
 
+uint64_t VersionStorageInfo::MaxStaticBytesForLevel(int level) const {
+  // Note: the result for level zero is not really used since we set
+  // the level-0 compaction threshold based on number of files.
+  assert(level >= 0);
+  assert(level < static_cast<int>(level_max_bytes_static_.size()));
+  return level_max_bytes_static_[level];
+}
+
 void VersionStorageInfo::CalculateBaseBytes(const ImmutableCFOptions& ioptions,
                                             const MutableCFOptions& options) {
   // Special logic to set number of sorted runs.
@@ -3107,21 +3151,26 @@ void VersionStorageInfo::CalculateBaseBytes(const ImmutableCFOptions& ioptions,
   set_l0_delay_trigger_count(num_l0_count);
 
   level_max_bytes_.resize(ioptions.num_levels);
+  level_max_bytes_static_.resize(ioptions.num_levels);
+
+  // Calculate for static bytes base case
+  for (int i = 0; i < ioptions.num_levels; ++i) {
+    if (i == 0 && ioptions.compaction_style == kCompactionStyleUniversal) {
+      level_max_bytes_static_[i] = options.max_bytes_for_level_base;
+    } else if (i > 1) {
+      level_max_bytes_static_[i] = MultiplyCheckOverflow(
+          MultiplyCheckOverflow(level_max_bytes_static_[i - 1],
+                                options.max_bytes_for_level_multiplier),
+          options.MaxBytesMultiplerAdditional(i - 1));
+    } else {
+      level_max_bytes_static_[i] = options.max_bytes_for_level_base;
+    }
+  }
+
   if (!ioptions.level_compaction_dynamic_level_bytes) {
     base_level_ = (ioptions.compaction_style == kCompactionStyleLevel) ? 1 : -1;
-
-    // Calculate for static bytes base case
     for (int i = 0; i < ioptions.num_levels; ++i) {
-      if (i == 0 && ioptions.compaction_style == kCompactionStyleUniversal) {
-        level_max_bytes_[i] = options.max_bytes_for_level_base;
-      } else if (i > 1) {
-        level_max_bytes_[i] = MultiplyCheckOverflow(
-            MultiplyCheckOverflow(level_max_bytes_[i - 1],
-                                  options.max_bytes_for_level_multiplier),
-            options.MaxBytesMultiplerAdditional(i - 1));
-      } else {
-        level_max_bytes_[i] = options.max_bytes_for_level_base;
-      }
+      level_max_bytes_[i] = level_max_bytes_static_[i];
     }
   } else {
     uint64_t max_level_size = 0;

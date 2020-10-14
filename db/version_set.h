@@ -386,6 +386,7 @@ class VersionStorageInfo {
 
   // Returns maximum total bytes of data on a given level.
   uint64_t MaxBytesForLevel(int level) const;
+  uint64_t MaxStaticBytesForLevel(int level) const;
 
   // Must be called after any change to MutableCFOptions.
   void CalculateBaseBytes(const ImmutableCFOptions& ioptions,
@@ -426,6 +427,7 @@ class VersionStorageInfo {
                               // is guaranteed to be empty.
   // Per-level max bytes
   std::vector<uint64_t> level_max_bytes_;
+  std::vector<uint64_t> level_max_bytes_static_;
 
   // A short brief metadata of files per level
   autovector<rocksdb::LevelFilesBrief> level_files_brief_;

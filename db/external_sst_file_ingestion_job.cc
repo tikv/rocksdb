@@ -240,7 +240,7 @@ Status ExternalSstFileIngestionJob::Run() {
     edit_.AddFile(f.picked_level, f.fd.GetNumber(), f.fd.GetPathId(),
                   f.fd.GetFileSize(), f.smallest_internal_key(),
                   f.largest_internal_key(), f.assigned_seqno, f.assigned_seqno,
-                  false);
+                  false, true);
   }
   return status;
 }
@@ -538,9 +538,39 @@ Status ExternalSstFileIngestionJob::AssignLevelAndSeqnoForIngestedFile(
     // if our file can fit in it
     if (IngestedFileFitInLevel(file_to_ingest, lvl)) {
       target_level = lvl;
+    } else if (lvl == cfd_->NumberLevels() - 1) {
+      ROCKS_LOG_INFO(db_options_.info_log,
+                     "can't ingest into bottom level due to range overlap %d",
+                     cfd_->NumberLevels() - 1);
     }
   }
- TEST_SYNC_POINT_CALLBACK(
+
+  auto origin_target_level = target_level;
+  while (target_level >= vstorage->base_level()) {
+    if (vstorage->MaxStaticBytesForLevel(target_level) <=
+            file_to_ingest->file_size + vstorage->NumLevelBytes(target_level) ||
+        !IngestedFileFitInLevel(file_to_ingest, target_level)) {
+      ROCKS_LOG_INFO(db_options_.info_log,
+                     "ingest bytes %lu %lu exceed level size %lu for level %d",
+                     file_to_ingest->file_size,
+                     vstorage->NumLevelBytes(target_level),
+                     vstorage->MaxBytesForLevel(target_level), target_level);
+      target_level--;
+    } else {
+      break;
+    }
+  }
+
+  if (target_level == 0) {
+    target_level = origin_target_level;
+    ROCKS_LOG_INFO(db_options_.info_log, "ingest to origin level %d",
+                   origin_target_level);
+  } else if (target_level < vstorage->base_level()) {
+    target_level = 0;
+    ROCKS_LOG_INFO(db_options_.info_log, "ingest before base level %d",
+                   vstorage->base_level());
+  }
+  TEST_SYNC_POINT_CALLBACK(
       "ExternalSstFileIngestionJob::AssignLevelAndSeqnoForIngestedFile",
       &overlap_with_db);
   file_to_ingest->picked_level = target_level;
@@ -640,12 +670,14 @@ bool ExternalSstFileIngestionJob::IngestedFileFitInLevel(
                                &file_largest_user_key)) {
     // File overlap with another files in this level, we cannot
     // add it to this level
+    ROCKS_LOG_INFO(db_options_.info_log, "range overlap in L%d", level);
     return false;
   }
   if (cfd_->RangeOverlapWithCompaction(file_smallest_user_key,
                                        file_largest_user_key, level)) {
     // File overlap with a running compaction output that will be stored
     // in this level, we cannot add this file to this level
+    ROCKS_LOG_INFO(db_options_.info_log, "compaction overlap in L%d", level);
     return false;
   }
 

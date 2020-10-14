@@ -116,6 +116,7 @@ struct FileMetaData {
 
   bool marked_for_compaction;  // True if client asked us nicely to compact this
                                // file.
+  bool ingested_file;          // True if the file is ingested externally.
 
   FileMetaData()
       : table_reader_handle(nullptr),
@@ -127,7 +128,8 @@ struct FileMetaData {
         refs(0),
         being_compacted(false),
         init_stats_from_file(false),
-        marked_for_compaction(false) {}
+        marked_for_compaction(false),
+        ingested_file(false) {}
 
   // REQUIRED: Keys must be given to the function in sorted order (it expects
   // the last key to be the largest).
@@ -241,8 +243,8 @@ class VersionEdit {
   void AddFile(int level, uint64_t file, uint32_t file_path_id,
                uint64_t file_size, const InternalKey& smallest,
                const InternalKey& largest, const SequenceNumber& smallest_seqno,
-               const SequenceNumber& largest_seqno,
-               bool marked_for_compaction) {
+               const SequenceNumber& largest_seqno, bool marked_for_compaction,
+               bool ingest = false) {
     assert(smallest_seqno <= largest_seqno);
     FileMetaData f;
     f.fd = FileDescriptor(file, file_path_id, file_size, smallest_seqno,
@@ -252,6 +254,7 @@ class VersionEdit {
     f.fd.smallest_seqno = smallest_seqno;
     f.fd.largest_seqno = largest_seqno;
     f.marked_for_compaction = marked_for_compaction;
+    f.ingested_file = ingest;
     new_files_.emplace_back(level, std::move(f));
   }
 
