@@ -1546,16 +1546,6 @@ Status Version::OverlapWithLevelIterator(const ReadOptions& read_options,
       status = OverlapWithIterator(
           ucmp, smallest_user_key, largest_user_key, iter.get(), overlap);
       if (!status.ok() || *overlap) {
-        if (*overlap) {
-          ParsedInternalKey seek_result;
-          if (!ParseInternalKey(iter->key(), &seek_result)) {
-            return Status::Corruption("DB have corrupted keys");
-          }
-          ROCKS_LOG_INFO(info_log_, "overlap in L%d, range [%s, %s], seek: %s",
-                         level, smallest_user_key.ToString(true).c_str(),
-                         largest_user_key.ToString(true).c_str(),
-                         seek_result.DebugString(true).c_str());
-        }
         break;
       }
     }
@@ -1570,16 +1560,6 @@ Status Version::OverlapWithLevelIterator(const ReadOptions& read_options,
         &range_del_agg));
     status = OverlapWithIterator(
         ucmp, smallest_user_key, largest_user_key, iter.get(), overlap);
-    if (*overlap) {
-      ParsedInternalKey seek_result;
-      if (!ParseInternalKey(iter->key(), &seek_result)) {
-        return Status::Corruption("DB have corrupted keys");
-      }
-      ROCKS_LOG_INFO(info_log_, "overlap in L%d, range [%s, %s], seek: %s",
-                     level, smallest_user_key.ToString(true).c_str(),
-                     largest_user_key.ToString(true).c_str(),
-                     seek_result.DebugString(true).c_str());
-    }
   }
 
   if (status.ok() && *overlap == false &&
