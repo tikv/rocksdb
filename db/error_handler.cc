@@ -220,6 +220,9 @@ Status ErrorHandler::SetBGError(const Status& bg_err, BackgroundErrorReason reas
                                           db_mutex_, &auto_recovery);
     if (!s.ok() && (s.severity() > bg_error_.severity())) {
       bg_error_ = s;
+      if (bg_error_.severity() >= Status::Severity::kHardError) {
+        stop_state_.store(true, std::memory_order_release);
+      }
     } else {
       // This error is less severe than previously encountered error. Don't
       // take any further action
@@ -295,6 +298,7 @@ Status ErrorHandler::ClearBGError() {
   if (recovery_error_.ok()) {
     Status old_bg_error = bg_error_;
     bg_error_ = Status::OK();
+    stop_state_.store(false, std::memory_order_release);
     recovery_in_prog_ = false;
     EventHelpers::NotifyOnErrorRecoveryCompleted(db_options_.listeners,
                                                  old_bg_error, db_mutex_);

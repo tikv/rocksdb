@@ -80,7 +80,7 @@ bool DBImpl::RequestCompactionToken(ColumnFamilyData* cfd, bool force,
 
 Status DBImpl::SyncClosedLogs(JobContext* job_context) {
   TEST_SYNC_POINT("DBImpl::SyncClosedLogs:Start");
-  mutex_.AssertHeld();
+  InstrumentedMutexLock l(&log_write_mutex_);
   autovector<log::Writer*, 1> logs_to_sync;
   uint64_t current_log_number = logfile_number_;
   while (logs_.front().number < current_log_number &&
@@ -97,7 +97,7 @@ Status DBImpl::SyncClosedLogs(JobContext* job_context) {
 
   Status s;
   if (!logs_to_sync.empty()) {
-    mutex_.Unlock();
+    log_write_mutex_.Unlock();
 
     for (log::Writer* log : logs_to_sync) {
       ROCKS_LOG_INFO(immutable_db_options_.info_log,
@@ -119,7 +119,7 @@ Status DBImpl::SyncClosedLogs(JobContext* job_context) {
       s = directories_.GetWalDir()->Fsync();
     }
 
-    mutex_.Lock();
+    log_write_mutex_.Lock();
 
     // "number <= current_log_number - 1" is equivalent to
     // "number < current_log_number".
