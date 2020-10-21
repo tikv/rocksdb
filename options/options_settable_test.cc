@@ -238,6 +238,7 @@ TEST_F(OptionsSettableTest, DBOptionsAllFieldsSettable) {
                              "max_background_jobs=8;"
                              "base_background_compactions=3;"
                              "max_background_compactions=33;"
+                             "max_background_flushes=3;"
                              "use_fsync=true;"
                              "use_adaptive_mutex=false;"
                              "max_total_wal_size=4295005604;"
