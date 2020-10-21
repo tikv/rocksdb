@@ -268,7 +268,7 @@ int64_t WriteAmpBasedRateLimiter::CalculateRefillBytesPerPeriod(
 
 Status WriteAmpBasedRateLimiter::Tune() {
   // computed rate limit will be larger than `kMinBytesPerSec`
-  const int kMinBytesPerSec = 10 * 1024 * 1024;  // 10 MB/s
+  const int64_t kMinBytesPerSec = 10 * 1024 * 1024;
   // high-priority bytes are padded to 20MB
   const int64_t kHighBytesLower = 20 * 1024 * 1024;
   // lower bound for write amplification estimation
