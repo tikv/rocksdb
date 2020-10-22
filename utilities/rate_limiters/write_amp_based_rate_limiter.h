@@ -106,7 +106,7 @@ class WriteAmpBasedRateLimiter : public RateLimiter {
   std::deque<Req*> queue_[Env::IO_TOTAL];
 
   bool auto_tuned_;
-  const int64_t max_bytes_per_sec_;
+  std::atomic<int64_t> max_bytes_per_sec_;
   std::chrono::microseconds tuned_time_;
   int64_t duration_highpri_bytes_through_;
   int64_t duration_bytes_through_;
