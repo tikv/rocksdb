@@ -62,7 +62,7 @@ DBOptions BuildDBOptions(const ImmutableDBOptions& immutable_db_options,
   options.wal_bytes_per_sync = mutable_db_options.wal_bytes_per_sync;
   options.strict_bytes_per_sync = mutable_db_options.strict_bytes_per_sync;
   options.max_subcompactions = immutable_db_options.max_subcompactions;
-  options.max_background_flushes = immutable_db_options.max_background_flushes;
+  options.max_background_flushes = mutable_db_options.max_background_flushes;
   options.max_log_file_size = immutable_db_options.max_log_file_size;
   options.log_file_time_to_roll = immutable_db_options.log_file_time_to_roll;
   options.keep_log_file_num = immutable_db_options.keep_log_file_num;
@@ -1502,7 +1502,8 @@ std::unordered_map<std::string, OptionTypeInfo>
           offsetof(struct MutableDBOptions, base_background_compactions)}},
         {"max_background_flushes",
          {offsetof(struct DBOptions, max_background_flushes), OptionType::kInt,
-          OptionVerificationType::kNormal, false, 0}},
+          OptionVerificationType::kNormal, true,
+          offsetof(struct MutableDBOptions, max_background_flushes)}},
         {"max_file_opening_threads",
          {offsetof(struct DBOptions, max_file_opening_threads),
           OptionType::kInt, OptionVerificationType::kNormal, false, 0}},

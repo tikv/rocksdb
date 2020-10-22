@@ -34,7 +34,6 @@ struct ImmutableDBOptions {
   std::string db_log_dir;
   std::string wal_dir;
   uint32_t max_subcompactions;
-  int max_background_flushes;
   size_t max_log_file_size;
   size_t log_file_time_to_roll;
   size_t keep_log_file_num;
@@ -109,6 +108,7 @@ struct MutableDBOptions {
   uint64_t wal_bytes_per_sync;
   bool strict_bytes_per_sync;
   size_t compaction_readahead_size;
+  int max_background_flushes;
 };
 
 }  // namespace rocksdb
