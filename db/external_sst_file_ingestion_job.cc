@@ -544,32 +544,6 @@ Status ExternalSstFileIngestionJob::AssignLevelAndSeqnoForIngestedFile(
                      cfd_->NumberLevels() - 1);
     }
   }
-
-  auto origin_target_level = target_level;
-  while (target_level >= vstorage->base_level()) {
-    if (vstorage->MaxStaticBytesForLevel(target_level) <=
-            file_to_ingest->file_size + vstorage->NumLevelBytes(target_level) ||
-        !IngestedFileFitInLevel(file_to_ingest, target_level)) {
-      ROCKS_LOG_INFO(
-          db_options_.info_log, "ingest bytes %" PRIu64 " + %" PRIu64
-                                " exceed level size %" PRIu64 " for level %d",
-          file_to_ingest->file_size, vstorage->NumLevelBytes(target_level),
-          vstorage->MaxBytesForLevel(target_level), target_level);
-      target_level--;
-    } else {
-      break;
-    }
-  }
-
-  if (target_level == 0) {
-    target_level = origin_target_level;
-    ROCKS_LOG_INFO(db_options_.info_log, "ingest to origin level %d",
-                   origin_target_level);
-  } else if (target_level < vstorage->base_level()) {
-    target_level = 0;
-    ROCKS_LOG_INFO(db_options_.info_log, "ingest before base level %d",
-                   vstorage->base_level());
-  }
   TEST_SYNC_POINT_CALLBACK(
       "ExternalSstFileIngestionJob::AssignLevelAndSeqnoForIngestedFile",
       &overlap_with_db);
