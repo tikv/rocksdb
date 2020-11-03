@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "rocksdb/slice.h"
+#include "rocksdb/table_properties.h"
 
 namespace rocksdb {
 
@@ -63,6 +64,12 @@ class CompactionFilter {
     Slice start_key;
     Slice end_key;
     bool is_end_key_inclusive;
+
+    // File numbers of all involved SST files.
+    std::vector<uint32_t> file_numbers;
+
+    // Properties of all involved SST files.
+    std::vector<std::shared_ptr<const TableProperties>> table_properties;
 
     // Which column family this compaction is for.
     uint32_t column_family_id;
