@@ -66,7 +66,7 @@ class CompactionFilter {
     bool is_end_key_inclusive;
 
     // File numbers of all involved SST files.
-    std::vector<uint32_t> file_numbers;
+    std::vector<uint64_t> file_numbers;
 
     // Properties of all involved SST files.
     std::vector<std::shared_ptr<const TableProperties>> table_properties;
