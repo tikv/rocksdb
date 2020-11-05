@@ -485,7 +485,7 @@ ColumnFamilyData::ColumnFamilyData(
     }
   }
 
-  RecalculateWriteStallConditions(mutable_cf_options_);
+  RecalculateWriteStallConditions(mutable_cf_options_, ioptions_.rate_limiter);
 }
 
 // DB mutex held
@@ -657,7 +657,7 @@ int GetL0ThresholdSpeedupCompaction(int level0_file_num_compaction_trigger,
   assert(level0_file_num_compaction_trigger <= level0_slowdown_writes_trigger);
 
   if (level0_file_num_compaction_trigger < 0) {
-    return std::numeric_limits<int>::max();
+    return port::kMaxInt32;
   }
 
   const int64_t twice_level0_trigger =
@@ -720,7 +720,10 @@ ColumnFamilyData::GetWriteStallConditionAndCause(
 }
 
 WriteStallCondition ColumnFamilyData::RecalculateWriteStallConditions(
-      const MutableCFOptions& mutable_cf_options) {
+    const MutableCFOptions& mutable_cf_options, RateLimiter* rate_limiter) {
+  if (rate_limiter) {
+    rate_limiter->SetBytesPerSecond(0);
+  }
   auto write_stall_condition = WriteStallCondition::kNormal;
   if (current_ != nullptr) {
     auto* vstorage = current_->storage_info();
@@ -873,6 +876,15 @@ WriteStallCondition ColumnFamilyData::RecalculateWriteStallConditions(
         // pressure.
         write_controller->low_pri_rate_limiter()->SetBytesPerSecond(write_rate /
                                                                     4);
+      }
+    }
+    if (rate_limiter) {
+      if (write_stall_condition != WriteStallCondition::kNormal ||
+          vstorage->l0_delay_trigger_count() >=
+              0.8 * mutable_cf_options.level0_slowdown_writes_trigger ||
+          vstorage->estimated_compaction_needed_bytes() >=
+              0.8 * mutable_cf_options.soft_pending_compaction_bytes_limit) {
+        rate_limiter->RequestPaceUp();
       }
     }
     prev_compaction_needed_bytes_ = compaction_needed_bytes;
@@ -1105,8 +1117,8 @@ void ColumnFamilyData::InstallSuperVersion(
   super_version_ = new_superversion;
   ++super_version_number_;
   super_version_->version_number = super_version_number_;
-  super_version_->write_stall_condition =
-      RecalculateWriteStallConditions(mutable_cf_options);
+  super_version_->write_stall_condition = RecalculateWriteStallConditions(
+      mutable_cf_options, ioptions_.rate_limiter);
 
   if (old_superversion != nullptr) {
     // Reset SuperVersions cached in thread local storage.

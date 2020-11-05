@@ -51,6 +51,7 @@ WriteAmpBasedRateLimiter::WriteAmpBasedRateLimiter(int64_t rate_bytes_per_sec,
       tuned_time_(NowMicrosMonotonic(env_)),
       duration_highpri_bytes_through_(0),
       duration_bytes_through_(0),
+      pace_up_request_(false),
       ratio_delta_(0) {
   total_requests_[0] = 0;
   total_requests_[1] = 0;
@@ -326,6 +327,10 @@ Status WriteAmpBasedRateLimiter::Tune() {
   } else if (util < 95 && ratio_delta_ > 0) {
     ratio_delta_ -= 1;
   }
+  if (pace_up_request_.load(std::memory_order_relaxed)) {
+    ratio_delta_ += 60;  // effect lasts for at least 60 * kSecondsPerTune = 1m
+    pace_up_request_.store(false, std::memory_order_relaxed);
+  }
 
   int64_t new_bytes_per_sec =
       (ratio + ratio_padding + ratio_delta_) *
@@ -342,6 +347,12 @@ Status WriteAmpBasedRateLimiter::Tune() {
   duration_bytes_through_ = 0;
   duration_highpri_bytes_through_ = 0;
   return Status::OK();
+}
+
+void WriteAmpBasedRateLimiter::RequestPaceUp() {
+  if (auto_tuned_) {
+    pace_up_request_.store(true, std::memory_order_relaxed);
+  }
 }
 
 RateLimiter* NewWriteAmpBasedRateLimiter(

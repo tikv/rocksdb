@@ -101,6 +101,8 @@ class RateLimiter {
     return true;
   }
 
+  virtual void RequestPaceUp() {}
+
  protected:
   Mode GetMode() { return mode_; }
 
