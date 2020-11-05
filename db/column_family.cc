@@ -721,9 +721,6 @@ ColumnFamilyData::GetWriteStallConditionAndCause(
 
 WriteStallCondition ColumnFamilyData::RecalculateWriteStallConditions(
     const MutableCFOptions& mutable_cf_options, RateLimiter* rate_limiter) {
-  if (rate_limiter) {
-    rate_limiter->SetBytesPerSecond(0);
-  }
   auto write_stall_condition = WriteStallCondition::kNormal;
   if (current_ != nullptr) {
     auto* vstorage = current_->storage_info();
