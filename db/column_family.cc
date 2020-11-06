@@ -713,6 +713,10 @@ ColumnFamilyData::GetWriteStallConditionAndCause(
              mutable_cf_options.soft_pending_compaction_bytes_limit > 0 &&
              num_compaction_needed_bytes >=
                  mutable_cf_options.soft_pending_compaction_bytes_limit) {
+    fprintf(
+        stderr, "pending stall when %lu MB need and %lu MB limited\n",
+        num_compaction_needed_bytes / 1024 / 1024,
+        mutable_cf_options.soft_pending_compaction_bytes_limit / 1024 / 1024);
     return {WriteStallCondition::kDelayed,
             WriteStallCause::kPendingCompactionBytes};
   }
@@ -881,8 +885,11 @@ WriteStallCondition ColumnFamilyData::RecalculateWriteStallConditions(
               0.8 * mutable_cf_options.level0_slowdown_writes_trigger ||
           vstorage->estimated_compaction_needed_bytes() >=
               0.8 * mutable_cf_options.soft_pending_compaction_bytes_limit) {
+        fprintf(stderr, "request sent to limiter\n");
         rate_limiter->RequestPaceUp();
       }
+    } else {
+      fprintf(stderr, "limiter is null!\n");
     }
     prev_compaction_needed_bytes_ = compaction_needed_bytes;
   }
