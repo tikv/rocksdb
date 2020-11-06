@@ -876,12 +876,13 @@ WriteStallCondition ColumnFamilyData::RecalculateWriteStallConditions(
       }
     }
     if (rate_limiter) {
+      // pace up limiter when close to write stall
       if (write_stall_condition != WriteStallCondition::kNormal ||
           vstorage->l0_delay_trigger_count() >=
               0.8 * mutable_cf_options.level0_slowdown_writes_trigger ||
           vstorage->estimated_compaction_needed_bytes() >=
-              0.8 * mutable_cf_options.soft_pending_compaction_bytes_limit) {
-        rate_limiter->RequestPaceUp();
+              0.6 * mutable_cf_options.soft_pending_compaction_bytes_limit) {
+        rate_limiter->PaceUp();
       }
     }
     prev_compaction_needed_bytes_ = compaction_needed_bytes;

@@ -67,7 +67,7 @@ class WriteAmpBasedRateLimiter : public RateLimiter {
     return rate_bytes_per_sec_;
   }
 
-  virtual void RequestPaceUp() override;
+  virtual void PaceUp() override;
 
  private:
   void Refill();
@@ -151,7 +151,7 @@ class WriteAmpBasedRateLimiter : public RateLimiter {
   WindowSmoother<kLongTermWindowSize> long_term_highpri_bytes_sampler_;
   WindowSmoother<kRecentSmoothWindowSize, kRecentSmoothWindowSize>
       limit_bytes_sampler_;
-  std::atomic<bool> pace_up_request_;
+  std::atomic<bool> should_pace_up_;
   int32_t ratio_delta_;
 };
 
