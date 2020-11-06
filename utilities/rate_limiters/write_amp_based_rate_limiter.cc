@@ -328,7 +328,11 @@ Status WriteAmpBasedRateLimiter::Tune() {
     ratio_delta_ -= 1;
   }
   if (pace_up_request_.load(std::memory_order_relaxed)) {
-    ratio_delta_ += 60;  // effect lasts for at least 60 * kSecondsPerTune = 1m
+    fprintf(stderr, "received pace up request\n");
+    if (ratio_delta_ < 60) {
+      fprintf(stderr, "applied pace up request\n");
+      ratio_delta_ += 60;  // effect lasts for at least 60 * kSecondsPerTune = 1m
+    }
     pace_up_request_.store(false, std::memory_order_relaxed);
   }
 
