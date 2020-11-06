@@ -827,7 +827,7 @@ class WritableFile {
   }
 
   // Sets a unique ID for this file that could be returned in GetUniqueId.
-  virtual void SetUniqueId(std::string unique_id) { unique_id_ = unique_id; }
+  virtual void SetUniqueId(std::string unique_id) { unique_id_ = std::move(unique_id); }
 
   // Remove any kind of caching of data from the offset to offset+length
   // of this file. If the length is 0, then it refers to the end of file.
