@@ -540,12 +540,12 @@ std::unique_ptr<CompactionFilter> Compaction::CreateCompactionFilter(
   context.end_key =
       (end == nullptr) ? GetLargestUserKey() : ExtractUserKey(*end);
   context.is_end_key_inclusive = (end == nullptr);
-  for (auto level = inputs_.begin(); level != inputs_.end(); ++level) {
-    for (auto file = level->files.begin(); file != level->files.end(); ++file) {
+  for (auto l = inputs_.begin(); l != inputs_.end(); ++l) {
+    for (auto f = l->files.begin(); f != l->files.end(); ++f) {
         std::shared_ptr<const TableProperties> tp;
-        Status s = input_version_->GetTableProperties(&tp, *file);
+        Status s = input_version_->GetTableProperties(&tp, *f);
         assert(s.ok());
-        context.file_numbers.push_back((*file)->fd.GetNumber());
+        context.file_numbers.push_back((*f)->fd.GetNumber());
         context.table_properties.push_back(tp);
     }
   }
