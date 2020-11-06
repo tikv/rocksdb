@@ -173,6 +173,8 @@ class EncryptedRandomAccessFile : public RandomAccessFile {
     return file_->GetUniqueId(id, max_size);
   };
 
+  void SetUniqueId(std::string unique_id) { file_->SetUniqueId(unique_id); }
+
   void Hint(AccessPattern pattern) override { file_->Hint(pattern); }
 
   // Indicates the upper layers if the current RandomAccessFile implementation

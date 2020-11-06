@@ -747,7 +747,7 @@ char temp_id[MAX_ID_SIZE];
 
 // Returns true if any of the strings in ss are the prefix of another string.
 bool HasPrefix(const std::unordered_set<std::string>& ss) {
-  for (const std::string& s: ss) {
+  for (const std::string& s : ss) {
     if (s.empty()) {
       return true;
     }
@@ -984,67 +984,70 @@ TEST_P(EnvPosixTestWithParam, DISABLED_InvalidateCache) {
 TEST_P(EnvPosixTestWithParam, InvalidateCache) {
 #endif
   rocksdb::SyncPoint::GetInstance()->EnableProcessing();
-    EnvOptions soptions;
-    soptions.use_direct_reads = soptions.use_direct_writes = direct_io_;
-    std::string fname = test::PerThreadDBPath(env_, "testfile");
+  EnvOptions soptions;
+  soptions.use_direct_reads = soptions.use_direct_writes = direct_io_;
+  std::string fname = test::PerThreadDBPath(env_, "testfile");
 
-    const size_t kSectorSize = 512;
-    auto data = NewAligned(kSectorSize, 0);
-    Slice slice(data.get(), kSectorSize);
+  const size_t kSectorSize = 512;
+  auto data = NewAligned(kSectorSize, 0);
+  Slice slice(data.get(), kSectorSize);
 
-    // Create file.
-    {
-      std::unique_ptr<WritableFile> wfile;
-#if !defined(OS_MACOSX) && !defined(OS_WIN) && !defined(OS_SOLARIS) && !defined(OS_AIX)
-      if (soptions.use_direct_writes) {
-        soptions.use_direct_writes = false;
-      }
-#endif
-      ASSERT_OK(env_->NewWritableFile(fname, &wfile, soptions));
-      ASSERT_OK(wfile->Append(slice));
-      ASSERT_OK(wfile->InvalidateCache(0, 0));
-      ASSERT_OK(wfile->Close());
+  // Create file.
+  {
+    std::unique_ptr<WritableFile> wfile;
+#if !defined(OS_MACOSX) && !defined(OS_WIN) && !defined(OS_SOLARIS) && \
+    !defined(OS_AIX)
+    if (soptions.use_direct_writes) {
+      soptions.use_direct_writes = false;
     }
-
-    // Random Read
-    {
-      std::unique_ptr<RandomAccessFile> file;
-      auto scratch = NewAligned(kSectorSize, 0);
-      Slice result;
-#if !defined(OS_MACOSX) && !defined(OS_WIN) && !defined(OS_SOLARIS) && !defined(OS_AIX)
-      if (soptions.use_direct_reads) {
-        soptions.use_direct_reads = false;
-      }
 #endif
-      ASSERT_OK(env_->NewRandomAccessFile(fname, &file, soptions));
-      ASSERT_OK(file->Read(0, kSectorSize, &result, scratch.get()));
-      ASSERT_EQ(memcmp(scratch.get(), data.get(), kSectorSize), 0);
-      ASSERT_OK(file->InvalidateCache(0, 11));
-      ASSERT_OK(file->InvalidateCache(0, 0));
-    }
+    ASSERT_OK(env_->NewWritableFile(fname, &wfile, soptions));
+    ASSERT_OK(wfile->Append(slice));
+    ASSERT_OK(wfile->InvalidateCache(0, 0));
+    ASSERT_OK(wfile->Close());
+  }
 
-    // Sequential Read
-    {
-      std::unique_ptr<SequentialFile> file;
-      auto scratch = NewAligned(kSectorSize, 0);
-      Slice result;
-#if !defined(OS_MACOSX) && !defined(OS_WIN) && !defined(OS_SOLARIS) && !defined(OS_AIX)
-      if (soptions.use_direct_reads) {
-        soptions.use_direct_reads = false;
-      }
-#endif
-      ASSERT_OK(env_->NewSequentialFile(fname, &file, soptions));
-      if (file->use_direct_io()) {
-        ASSERT_OK(file->PositionedRead(0, kSectorSize, &result, scratch.get()));
-      } else {
-        ASSERT_OK(file->Read(kSectorSize, &result, scratch.get()));
-      }
-      ASSERT_EQ(memcmp(scratch.get(), data.get(), kSectorSize), 0);
-      ASSERT_OK(file->InvalidateCache(0, 11));
-      ASSERT_OK(file->InvalidateCache(0, 0));
+  // Random Read
+  {
+    std::unique_ptr<RandomAccessFile> file;
+    auto scratch = NewAligned(kSectorSize, 0);
+    Slice result;
+#if !defined(OS_MACOSX) && !defined(OS_WIN) && !defined(OS_SOLARIS) && \
+    !defined(OS_AIX)
+    if (soptions.use_direct_reads) {
+      soptions.use_direct_reads = false;
     }
-    // Delete the file
-    ASSERT_OK(env_->DeleteFile(fname));
+#endif
+    ASSERT_OK(env_->NewRandomAccessFile(fname, &file, soptions));
+    ASSERT_OK(file->Read(0, kSectorSize, &result, scratch.get()));
+    ASSERT_EQ(memcmp(scratch.get(), data.get(), kSectorSize), 0);
+    ASSERT_OK(file->InvalidateCache(0, 11));
+    ASSERT_OK(file->InvalidateCache(0, 0));
+  }
+
+  // Sequential Read
+  {
+    std::unique_ptr<SequentialFile> file;
+    auto scratch = NewAligned(kSectorSize, 0);
+    Slice result;
+#if !defined(OS_MACOSX) && !defined(OS_WIN) && !defined(OS_SOLARIS) && \
+    !defined(OS_AIX)
+    if (soptions.use_direct_reads) {
+      soptions.use_direct_reads = false;
+    }
+#endif
+    ASSERT_OK(env_->NewSequentialFile(fname, &file, soptions));
+    if (file->use_direct_io()) {
+      ASSERT_OK(file->PositionedRead(0, kSectorSize, &result, scratch.get()));
+    } else {
+      ASSERT_OK(file->Read(kSectorSize, &result, scratch.get()));
+    }
+    ASSERT_EQ(memcmp(scratch.get(), data.get(), kSectorSize), 0);
+    ASSERT_OK(file->InvalidateCache(0, 11));
+    ASSERT_OK(file->InvalidateCache(0, 0));
+  }
+  // Delete the file
+  ASSERT_OK(env_->DeleteFile(fname));
   rocksdb::SyncPoint::GetInstance()->ClearTrace();
 }
 #endif  // not TRAVIS
@@ -1058,7 +1061,7 @@ TEST_P(EnvPosixTestWithParam, RandomAccessUniqueID) {
   if (env_ == Env::Default()) {
     EnvOptions soptions;
     soptions.use_direct_reads = soptions.use_direct_writes = direct_io_;
-    std::string fname = test::TmpDir(env_) + "/" + + "/testfile";
+    std::string fname = test::TmpDir(env_) + "/" + +"/testfile";
     std::unique_ptr<WritableFile> wfile;
     ASSERT_OK(env_->NewWritableFile(fname, &wfile, soptions));
 
@@ -1112,7 +1115,7 @@ TEST_P(EnvPosixTestWithParam, RandomAccessUniqueIDConcurrent) {
     // Collect and check whether the IDs are unique.
     std::unordered_set<std::string> ids;
     int counter = 0;
-    for (const std::string fname : fnames) {
+    for (const std::string& fname : fnames) {
       std::unique_ptr<RandomAccessFile> file;
       std::string unique_id;
       ASSERT_OK(env_->NewRandomAccessFile(fname, &file, soptions));
@@ -1142,7 +1145,7 @@ TEST_P(EnvPosixTestWithParam, RandomAccessUniqueIDDeletes) {
     EnvOptions soptions;
     soptions.use_direct_reads = soptions.use_direct_writes = direct_io_;
 
-    std::string fname = test::TmpDir(env_) + "/" + + "testfile";
+    std::string fname = test::TmpDir(env_) + "/" + +"testfile";
 
     // Check that after file is deleted we don't get same ID again in a new
     // file.
