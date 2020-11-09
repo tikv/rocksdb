@@ -188,6 +188,8 @@ class VersionStorageInfo {
   int MaxInputLevel() const;
   int MaxOutputLevel(bool allow_ingest_behind) const;
 
+  bool FileCanIgnore(FileMetaData* f, int level) const;
+
   // Return level number that has idx'th highest score
   int CompactionScoreLevel(int idx) const { return compaction_level_[idx]; }
 
@@ -272,6 +274,10 @@ class VersionStorageInfo {
     assert(level < static_cast<int>(level_files_brief_.size()));
     return level_files_brief_[level];
   }
+
+  int GetNumLevelIngestedFiles(int level) const;
+
+  uint64_t GetNumLevelIngestedBytes(int level) const;
 
   // REQUIRES: This version has been saved (see VersionSet::SaveTo)
   const std::vector<int>& FilesByCompactionPri(int level) const {
@@ -373,7 +379,7 @@ class VersionStorageInfo {
 
   double GetEstimatedCompressionRatioAtLevel(int level) const;
 
-  // re-initializes the index that is used to offset into
+  // e-initializes the index that is used to offset into
   // files_by_compaction_pri_
   // to find the next compaction candidate file.
   void ResetNextCompactionIndex(int level) {

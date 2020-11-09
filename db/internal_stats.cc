@@ -196,6 +196,10 @@ std::pair<Slice, Slice> GetPropertyNameAndArg(const Slice& property) {
 static const std::string rocksdb_prefix = "rocksdb.";
 
 static const std::string num_files_at_level_prefix = "num-files-at-level";
+static const std::string num_ingested_files_at_level_prefix =
+    "num-ingested-files-at-level";
+static const std::string num_ingested_bytes_at_level_prefix =
+    "num-ingested-bytes-at-level";
 static const std::string compression_ratio_at_level_prefix =
     "compression-ratio-at-level";
 static const std::string allstats = "stats";
@@ -261,6 +265,10 @@ static const std::string options_statistics = "options-statistics";
 
 const std::string DB::Properties::kNumFilesAtLevelPrefix =
     rocksdb_prefix + num_files_at_level_prefix;
+const std::string DB::Properties::kNumIngestedFilesAtLevelPrefix =
+    rocksdb_prefix + num_ingested_files_at_level_prefix;
+const std::string DB::Properties::kNumIngestedBytesAtLevelPrefix =
+    rocksdb_prefix + num_ingested_bytes_at_level_prefix;
 const std::string DB::Properties::kCompressionRatioAtLevelPrefix =
     rocksdb_prefix + compression_ratio_at_level_prefix;
 const std::string DB::Properties::kStats = rocksdb_prefix + allstats;
@@ -353,6 +361,12 @@ const std::unordered_map<std::string, DBPropertyInfo>
         {DB::Properties::kNumFilesAtLevelPrefix,
          {false, &InternalStats::HandleNumFilesAtLevel, nullptr, nullptr,
           nullptr}},
+        {DB::Properties::kNumIngestedFilesAtLevelPrefix,
+         {false, &InternalStats::HandleNumIngestedFilesAtLevel, nullptr,
+          nullptr, nullptr}},
+        {DB::Properties::kNumIngestedBytesAtLevelPrefix,
+         {false, &InternalStats::HandleNumIngestedBytesAtLevel, nullptr,
+          nullptr, nullptr}},
         {DB::Properties::kCompressionRatioAtLevelPrefix,
          {false, &InternalStats::HandleCompressionRatioAtLevelPrefix, nullptr,
           nullptr, nullptr}},
@@ -541,6 +555,38 @@ bool InternalStats::HandleNumFilesAtLevel(std::string* value, Slice suffix) {
     char buf[100];
     snprintf(buf, sizeof(buf), "%d",
              vstorage->NumLevelFiles(static_cast<int>(level)));
+    *value = buf;
+    return true;
+  }
+}
+
+bool InternalStats::HandleNumIngestedFilesAtLevel(std::string* value,
+                                                  Slice suffix) {
+  uint64_t level;
+  const auto* vstorage = cfd_->current()->storage_info();
+  bool ok = ConsumeDecimalNumber(&suffix, &level) && suffix.empty();
+  if (!ok || static_cast<int>(level) >= number_levels_) {
+    return false;
+  } else {
+    char buf[100];
+    snprintf(buf, sizeof(buf), "%d",
+             vstorage->GetNumLevelIngestedFiles(static_cast<int>(level)));
+    *value = buf;
+    return true;
+  }
+}
+
+bool InternalStats::HandleNumIngestedBytesAtLevel(std::string* value,
+                                                  Slice suffix) {
+  uint64_t level;
+  const auto* vstorage = cfd_->current()->storage_info();
+  bool ok = ConsumeDecimalNumber(&suffix, &level) && suffix.empty();
+  if (!ok || static_cast<int>(level) >= number_levels_) {
+    return false;
+  } else {
+    char buf[100];
+    snprintf(buf, sizeof(buf), "%" PRIu64,
+             vstorage->GetNumLevelIngestedBytes(static_cast<int>(level)));
     *value = buf;
     return true;
   }

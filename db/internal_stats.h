@@ -516,6 +516,8 @@ class InternalStats {
   // Handler functions for getting property values. They use "value" as a value-
   // result argument, and return true upon successfully setting "value".
   bool HandleNumFilesAtLevel(std::string* value, Slice suffix);
+  bool HandleNumIngestedFilesAtLevel(std::string* value, Slice suffix);
+  bool HandleNumIngestedBytesAtLevel(std::string* value, Slice suffix);
   bool HandleCompressionRatioAtLevelPrefix(std::string* value, Slice suffix);
   bool HandleLevelStats(std::string* value, Slice suffix);
   bool HandleStats(std::string* value, Slice suffix);

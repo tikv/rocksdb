@@ -261,6 +261,8 @@ struct ExternalFileIngestionInfo {
   SequenceNumber global_seqno;
   // Table properties of the table being flushed
   TableProperties table_properties;
+  // Level that the external file is ingested into
+  int picked_level;
 };
 
 // EventListener class contains a set of callback functions that will

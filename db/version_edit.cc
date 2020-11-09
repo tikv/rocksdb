@@ -55,7 +55,6 @@ enum CustomTag : uint32_t {
   // kMinLogNumberToKeep as part of a CustomTag as a hack. This should be
   // removed when manifest becomes forward-comptabile.
   kMinLogNumberToKeepHack = 3,
-  kIngestFile = 4,
   kPathId = 65,
 };
 // If this bit for the custom tag is set, opening DB should fail if
@@ -125,8 +124,7 @@ bool VersionEdit::EncodeTo(std::string* dst) const {
       return false;
     }
     bool has_customized_fields = false;
-    if (f.marked_for_compaction || has_min_log_number_to_keep_ ||
-        f.ingested_file) {
+    if (f.marked_for_compaction || has_min_log_number_to_keep_) {
       PutVarint32(dst, kNewFile4);
       has_customized_fields = true;
     } else if (f.fd.GetPathId() == 0) {
@@ -171,9 +169,7 @@ bool VersionEdit::EncodeTo(std::string* dst) const {
       //   tag kPathId: 1 byte as path_id
       //   tag kNeedCompaction:
       //        now only can take one char value 1 indicating need-compaction
-      //   tag kIngestFile:
-      //        now only can take one char value 1 indicating it is a ingested
-      //        file
+      //
       if (f.fd.GetPathId() != 0) {
         PutVarint32(dst, CustomTag::kPathId);
         char p = static_cast<char>(f.fd.GetPathId());
@@ -190,11 +186,6 @@ bool VersionEdit::EncodeTo(std::string* dst) const {
         PutFixed64(&varint_log_number, min_log_number_to_keep_);
         PutLengthPrefixedSlice(dst, Slice(varint_log_number));
         min_log_num_written = true;
-      }
-      if (f.ingested_file) {
-        PutVarint32(dst, CustomTag::kIngestFile);
-        char p = static_cast<char>(1);
-        PutLengthPrefixedSlice(dst, Slice(&p, 1));
       }
       TEST_SYNC_POINT_CALLBACK("VersionEdit::EncodeTo:NewFile4:CustomizeFields",
                                dst);
@@ -300,12 +291,6 @@ const char* VersionEdit::DecodeNewFile4From(Slice* input) {
             return "deleted log number malformatted";
           }
           has_min_log_number_to_keep_ = true;
-          break;
-        case kIngestFile:
-          if (field.size() != 1) {
-            return "ingest file field wrong size";
-          }
-          f.ingested_file = (field[0] == 1);
           break;
         default:
           if ((custom_tag & kCustomTagNonSafeIgnoreMask) != 0) {

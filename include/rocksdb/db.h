@@ -538,6 +538,10 @@ class DB {
     //      level number (e.g., "0").
     static const std::string kNumFilesAtLevelPrefix;
 
+    static const std::string kNumIngestedFilesAtLevelPrefix;
+    
+    static const std::string kNumIngestedBytesAtLevelPrefix;
+
     //  "rocksdb.compression-ratio-at-level<N>" - returns string containing the
     //      compression ratio of data at level <N>, where <N> is an ASCII
     //      representation of a level number (e.g., "0"). Here, compression
