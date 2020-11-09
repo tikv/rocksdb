@@ -24,6 +24,7 @@
 #include "rocksdb/memtablerep.h"
 #include "rocksdb/merge_operator.h"
 #include "rocksdb/options.h"
+#include "rocksdb/perf_context.h"
 #include "rocksdb/rate_limiter.h"
 #include "rocksdb/slice_transform.h"
 #include "rocksdb/statistics.h"
@@ -39,8 +40,8 @@
 #include "rocksdb/utilities/transaction_db.h"
 #include "rocksdb/utilities/write_batch_with_index.h"
 #include "rocksdb/write_batch.h"
-#include "rocksdb/perf_context.h"
 #include "utilities/merge_operators.h"
+#include "utilities/rate_limiters/write_amp_based_rate_limiter.h"
 
 #include <vector>
 #include <unordered_set>
@@ -101,6 +102,7 @@ using rocksdb::CompactRangeOptions;
 using rocksdb::BottommostLevelCompaction;
 using rocksdb::RateLimiter;
 using rocksdb::NewGenericRateLimiter;
+using rocksdb::NewWriteAmpBasedRateLimiter;
 using rocksdb::PinnableSlice;
 using rocksdb::TransactionDBOptions;
 using rocksdb::TransactionDB;
@@ -2727,6 +2729,14 @@ rocksdb_ratelimiter_t* rocksdb_ratelimiter_create(
   rate_limiter->rep.reset(
                NewGenericRateLimiter(rate_bytes_per_sec,
                                      refill_period_us, fairness));
+  return rate_limiter;
+}
+
+rocksdb_ratelimiter_t* rocksdb_writeampbasedratelimiter_create(
+    int64_t rate_bytes_per_sec, int64_t refill_period_us, int32_t fairness) {
+  rocksdb_ratelimiter_t* rate_limiter = new rocksdb_ratelimiter_t;
+  rate_limiter->rep.reset(NewWriteAmpBasedRateLimiter(
+      rate_bytes_per_sec, refill_period_us, fairness));
   return rate_limiter;
 }
 

@@ -1,4 +1,4 @@
-dist: xenial
+dist: focal
 language: cpp
 os:
   - linux
@@ -6,9 +6,7 @@ os:
 compiler:
   - clang
   - gcc
-osx_image: xcode8.3
-jdk:
-  - openjdk7
+osx_image: xcode12
 cache:
   - ccache
   - apt
@@ -19,7 +17,7 @@ addons:
       - ubuntu-toolchain-r-test
     packages:
       - curl
-      - g++-8
+      - g++-9
       - libbz2-dev
       - libgflags-dev
       - libsnappy-dev
@@ -50,13 +48,16 @@ matrix:
   - os: osx
     env: TEST_GROUP=4
   - os: osx
-    env: TEST_GROUP=platform_dependent
+    env: JOB_NAME=lite_build
+  - os: osx
+    env: JOB_NAME=examples
+  - os: osx
+    env: JOB_NAME=encrypted_env
   - os : linux
     compiler: clang
   - os: osx
     compiler: gcc
-  - os: osx
-    env: JOB_NAME=encrypted_env
+
 
 # https://docs.travis-ci.com/user/caching/#ccache-cache
 install:
