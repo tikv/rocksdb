@@ -695,7 +695,9 @@ class ReadaheadRandomAccessFile : public RandomAccessFile {
    return file_->GetUniqueId(id, max_size);
  }
 
- void SetUniqueId(std::string unique_id) { file_->SetUniqueId(unique_id); }
+ void SetUniqueId(std::string unique_id) override {
+   file_->SetUniqueId(unique_id);
+ }
 
  void Hint(AccessPattern pattern) override { file_->Hint(pattern); }
 

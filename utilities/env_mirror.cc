@@ -93,7 +93,9 @@ class RandomAccessFileMirror : public RandomAccessFile {
     return a_->GetUniqueId(id, max_size);
   }
 
-  void SetUniqueId(std::string unique_id) { a_->SetUniqueId(unique_id); }
+  void SetUniqueId(std::string unique_id) override {
+    a_->SetUniqueId(unique_id);
+  }
 };
 
 class WritableFileMirror : public WritableFile {
