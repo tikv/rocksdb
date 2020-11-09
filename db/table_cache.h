@@ -193,6 +193,9 @@ class TableCache {
   std::string row_cache_id_;
   bool immortal_tables_;
   BlockCacheTracer* const block_cache_tracer_;
+  const uint64_t cache_id_;
+
+  static std::atomic<uint64_t> cache_id_alloc;
 };
 
 }  // namespace rocksdb

@@ -175,62 +175,6 @@ Status ftruncate(const std::string& filename, HANDLE hFile,
   return status;
 }
 
-size_t GetUniqueIdFromFile(HANDLE hFile, char* id, size_t max_size) {
-
-  if (max_size < kMaxVarint64Length * 3) {
-    return 0;
-  }
-#if (_WIN32_WINNT == _WIN32_WINNT_VISTA)
-  // MINGGW as defined by CMake file.
-  // yuslepukhin: I hate the guts of the above macros.
-  // This impl does not guarantee uniqueness everywhere
-  // is reasonably good
-  BY_HANDLE_FILE_INFORMATION FileInfo;
-
-  BOOL result = GetFileInformationByHandle(hFile, &FileInfo);
-
-  TEST_SYNC_POINT_CALLBACK("GetUniqueIdFromFile:FS_IOC_GETVERSION", &result);
-
-  if (!result) {
-    return 0;
-  }
-
-  char* rid = id;
-  rid = EncodeVarint64(rid, uint64_t(FileInfo.dwVolumeSerialNumber));
-  rid = EncodeVarint64(rid, uint64_t(FileInfo.nFileIndexHigh));
-  rid = EncodeVarint64(rid, uint64_t(FileInfo.nFileIndexLow));
-
-  assert(rid >= id);
-  return static_cast<size_t>(rid - id);
-#else
-  FILE_ID_INFO FileInfo;
-  BOOL result = GetFileInformationByHandleEx(hFile, FileIdInfo, &FileInfo,
-    sizeof(FileInfo));
-
-  TEST_SYNC_POINT_CALLBACK("GetUniqueIdFromFile:FS_IOC_GETVERSION", &result);
-
-  if (!result) {
-    return 0;
-  }
-
-  static_assert(sizeof(uint64_t) == sizeof(FileInfo.VolumeSerialNumber),
-    "Wrong sizeof expectations");
-  // FileId.Identifier is an array of 16 BYTEs, we encode them as two uint64_t
-  static_assert(sizeof(uint64_t) * 2 == sizeof(FileInfo.FileId.Identifier),
-    "Wrong sizeof expectations");
-
-  char* rid = id;
-  rid = EncodeVarint64(rid, uint64_t(FileInfo.VolumeSerialNumber));
-  uint64_t* file_id = reinterpret_cast<uint64_t*>(&FileInfo.FileId.Identifier[0]);
-  rid = EncodeVarint64(rid, *file_id);
-  ++file_id;
-  rid = EncodeVarint64(rid, *file_id);
-
-  assert(rid >= id);
-  return static_cast<size_t>(rid - id);
-#endif
-}
-
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // WinMmapReadableFile
 
@@ -269,10 +213,6 @@ Status WinMmapReadableFile::Read(uint64_t offset, size_t n, Slice* result,
 
 Status WinMmapReadableFile::InvalidateCache(size_t offset, size_t length) {
   return Status::OK();
-}
-
-size_t WinMmapReadableFile::GetUniqueId(char* id, size_t max_size) const {
-  return GetUniqueIdFromFile(hFile_, id, max_size);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -595,10 +535,6 @@ Status WinMmapFile::Allocate(uint64_t offset, uint64_t len) {
   return status;
 }
 
-size_t WinMmapFile::GetUniqueId(char* id, size_t max_size) const {
-  return GetUniqueIdFromFile(hFile_, id, max_size);
-}
-
 //////////////////////////////////////////////////////////////////////////////////
 // WinSequentialFile
 
@@ -760,10 +696,6 @@ Status WinRandomAccessFile::Read(uint64_t offset, size_t n, Slice* result,
 
 Status WinRandomAccessFile::InvalidateCache(size_t offset, size_t length) {
   return Status::OK();
-}
-
-size_t WinRandomAccessFile::GetUniqueId(char* id, size_t max_size) const {
-  return GetUniqueIdFromFile(GetFileHandle(), id, max_size);
 }
 
 size_t WinRandomAccessFile::GetRequiredBufferAlignment() const {
@@ -1023,10 +955,6 @@ Status WinWritableFile::Allocate(uint64_t offset, uint64_t len) {
   return AllocateImpl(offset, len);
 }
 
-size_t WinWritableFile::GetUniqueId(char* id, size_t max_size) const {
-  return GetUniqueIdFromFile(GetFileHandle(), id, max_size);
-}
-
 /////////////////////////////////////////////////////////////////////////
 /// WinRandomRWFile
 
@@ -1089,10 +1017,6 @@ WinMemoryMappedBuffer::~WinMemoryMappedBuffer() {
 /// WinDirectory
 
 Status WinDirectory::Fsync() { return Status::OK(); }
-
-size_t WinDirectory::GetUniqueId(char* id, size_t max_size) const {
-  return GetUniqueIdFromFile(handle_, id, max_size);
-}
 //////////////////////////////////////////////////////////////////////////
 /// WinFileLock
 
