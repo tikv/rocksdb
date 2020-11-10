@@ -159,6 +159,7 @@ struct MutableCFOptions {
             options.max_bytes_for_level_multiplier_additional),
         compaction_options_fifo(options.compaction_options_fifo),
         compaction_options_universal(options.compaction_options_universal),
+        ingest_tolerant_ratio(options.ingest_tolerant_ratio),
         max_sequential_skip_in_iterations(
             options.max_sequential_skip_in_iterations),
         paranoid_file_checks(options.paranoid_file_checks),
@@ -193,6 +194,7 @@ struct MutableCFOptions {
         ttl(0),
         periodic_compaction_seconds(0),
         compaction_options_fifo(),
+        ingest_tolerant_ratio(0),
         max_sequential_skip_in_iterations(0),
         paranoid_file_checks(false),
         report_bg_io_stats(false),
@@ -247,6 +249,7 @@ struct MutableCFOptions {
   std::vector<int> max_bytes_for_level_multiplier_additional;
   CompactionOptionsFIFO compaction_options_fifo;
   CompactionOptionsUniversal compaction_options_universal;
+  size_t ingest_tolerant_ratio;
 
   // Misc options
   uint64_t max_sequential_skip_in_iterations;

@@ -184,6 +184,8 @@ struct FdWithKeyRange {
 // Actual data is guaranteed to be stored closely
 struct LevelFilesBrief {
   size_t num_files;
+  size_t num_ingested_files;
+  uint64_t num_ingested_bytes;
   FdWithKeyRange* files;
   LevelFilesBrief() {
     num_files = 0;

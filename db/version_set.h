@@ -189,6 +189,7 @@ class VersionStorageInfo {
   int MaxOutputLevel(bool allow_ingest_behind) const;
 
   bool FileCanIgnore(FileMetaData* f, int level) const;
+  bool LikelyIngestedFile(FileMetaData* f, int level) const;
 
   // Return level number that has idx'th highest score
   int CompactionScoreLevel(int idx) const { return compaction_level_[idx]; }
@@ -274,10 +275,6 @@ class VersionStorageInfo {
     assert(level < static_cast<int>(level_files_brief_.size()));
     return level_files_brief_[level];
   }
-
-  int GetNumLevelIngestedFiles(int level) const;
-
-  uint64_t GetNumLevelIngestedBytes(int level) const;
 
   // REQUIRES: This version has been saved (see VersionSet::SaveTo)
   const std::vector<int>& FilesByCompactionPri(int level) const {
@@ -379,7 +376,7 @@ class VersionStorageInfo {
 
   double GetEstimatedCompressionRatioAtLevel(int level) const;
 
-  // e-initializes the index that is used to offset into
+  // re-initializes the index that is used to offset into
   // files_by_compaction_pri_
   // to find the next compaction candidate file.
   void ResetNextCompactionIndex(int level) {
@@ -392,7 +389,6 @@ class VersionStorageInfo {
 
   // Returns maximum total bytes of data on a given level.
   uint64_t MaxBytesForLevel(int level) const;
-  uint64_t MaxStaticBytesForLevel(int level) const;
 
   // Must be called after any change to MutableCFOptions.
   void CalculateBaseBytes(const ImmutableCFOptions& ioptions,
@@ -433,7 +429,6 @@ class VersionStorageInfo {
                               // is guaranteed to be empty.
   // Per-level max bytes
   std::vector<uint64_t> level_max_bytes_;
-  std::vector<uint64_t> level_max_bytes_static_;
 
   // A short brief metadata of files per level
   autovector<rocksdb::LevelFilesBrief> level_files_brief_;
@@ -540,6 +535,7 @@ class VersionStorageInfo {
   // If set to true, we will run consistency checks even if RocksDB
   // is compiled in release mode
   bool force_consistency_checks_;
+  bool dynamic_level_bytes_;
 
   friend class Version;
   friend class VersionSet;

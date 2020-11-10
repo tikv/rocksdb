@@ -772,6 +772,8 @@ void DoGenerateLevelFilesBrief(LevelFilesBrief* file_level,
   file_level->num_files = num;
   char* mem = arena->AllocateAligned(num * sizeof(FdWithKeyRange));
   file_level->files = new (mem)FdWithKeyRange[num];
+  file_level->num_ingested_files = 0;
+  file_level->num_ingested_bytes = 0;
 
   for (size_t i = 0; i < num; i++) {
     Slice smallest_key = files[i]->smallest.Encode();
@@ -1600,7 +1602,8 @@ VersionStorageInfo::VersionStorageInfo(
       current_num_samples_(0),
       estimated_compaction_needed_bytes_(0),
       finalized_(false),
-      force_consistency_checks_(_force_consistency_checks) {
+      force_consistency_checks_(_force_consistency_checks),
+      dynamic_level_bytes_(false) {
   if (ref_vstorage != nullptr) {
     accumulated_file_size_ = ref_vstorage->accumulated_file_size_;
     accumulated_raw_key_size_ = ref_vstorage->accumulated_raw_key_size_;
@@ -1986,6 +1989,12 @@ void VersionStorageInfo::GenerateLevelFilesBrief() {
   for (int level = 0; level < num_non_empty_levels_; level++) {
     DoGenerateLevelFilesBrief(
         &level_files_brief_[level], files_[level], &arena_);
+    for (const auto& f: files_[level]) {
+      if (LikelyIngestedFile(f, level)) {
+        level_files_brief_[level].num_ingested_files += 1;
+        level_files_brief_[level].num_ingested_bytes += f->fd.GetFileSize();
+      }
+    }
   }
 }
 
@@ -2152,37 +2161,19 @@ int VersionStorageInfo::MaxOutputLevel(bool allow_ingest_behind) const {
 }
 
 bool VersionStorageInfo::FileCanIgnore(FileMetaData* f, int level) const {
-  // Exclude ingested files not in the bottom level
+  // only ignore files when dynamic level bytes enabled.
+  return dynamic_level_bytes_ && LikelyIngestedFile(f, level); 
+}
+
+bool VersionStorageInfo::LikelyIngestedFile(FileMetaData* f, int level) const {
   // A file is an ingested file iff it has
   // ExternalSstFilePropertyNames::kVersion property.
   // But it's hard to get the information here, so using smallest_seqno ==
-  // largest_seqno to decide
-  // if it is an ingested file. Files which zero-out sequence number also
-  // satisfy the condition, so here just excludes the bottom level.
+  // largest_seqno to decide if it is an ingested file. 
+  // Files which zero-out sequence number also
+  // satisfy the condition, so here just excludes the files in the bottom level with 0 sequence number.
   return f->fd.smallest_seqno == f->fd.largest_seqno &&
-         num_levels() - 1 != level;
-}
-
-int VersionStorageInfo::GetNumLevelIngestedFiles(int level) const {
-  assert(level < num_levels_);
-  int count = 0;
-  for (auto* f : files_[level]) {
-    if (FileCanIgnore(f, level)) {
-      count++;
-    }
-  }
-  return count;
-}
-
-uint64_t VersionStorageInfo::GetNumLevelIngestedBytes(int level) const {
-  assert(level < num_levels_);
-  uint64_t bytes = 0;
-  for (auto* f : files_[level]) {
-    if (FileCanIgnore(f, level)) {
-      bytes += f->fd.GetFileSize();
-    }
-  }
-  return bytes;
+         (num_levels() - 1 != level || f->fd.largest_seqno != 0);
 }
 
 void VersionStorageInfo::EstimateCompactionBytesNeeded(
@@ -2379,12 +2370,12 @@ void VersionStorageInfo::ComputeCompactionScore(
       score = static_cast<double>(level_bytes_no_compacting) /
               MaxBytesForLevel(level);
 
-      if (level_bytes_no_compacting + ingest_files_size >
-          MaxStaticBytesForLevel(level)) {
+      if (level_bytes_no_compacting + ingest_files_size > ( 1 + static_cast<double>(mutable_cf_options.ingest_tolerant_ratio) / (level - base_level_ + 1)) * 
+          MaxBytesForLevel(level)) {
         score = std::max(
             score,
             static_cast<double>(level_bytes_no_compacting + ingest_files_size) /
-                MaxStaticBytesForLevel(level));
+                (1 + static_cast<double>(mutable_cf_options.ingest_tolerant_ratio) / (level - base_level_ + 1) * MaxBytesForLevel(level)));
       }
     }
     compaction_level_[level] = level;
@@ -3139,14 +3130,6 @@ uint64_t VersionStorageInfo::MaxBytesForLevel(int level) const {
   return level_max_bytes_[level];
 }
 
-uint64_t VersionStorageInfo::MaxStaticBytesForLevel(int level) const {
-  // Note: the result for level zero is not really used since we set
-  // the level-0 compaction threshold based on number of files.
-  assert(level >= 0);
-  assert(level < static_cast<int>(level_max_bytes_static_.size()));
-  return level_max_bytes_static_[level];
-}
-
 void VersionStorageInfo::CalculateBaseBytes(const ImmutableCFOptions& ioptions,
                                             const MutableCFOptions& options) {
   // Special logic to set number of sorted runs.
@@ -3165,26 +3148,24 @@ void VersionStorageInfo::CalculateBaseBytes(const ImmutableCFOptions& ioptions,
   set_l0_delay_trigger_count(num_l0_count);
 
   level_max_bytes_.resize(ioptions.num_levels);
-  level_max_bytes_static_.resize(ioptions.num_levels);
-
-  // Calculate for static bytes base case
-  for (int i = 0; i < ioptions.num_levels; ++i) {
-    if (i == 0 && ioptions.compaction_style == kCompactionStyleUniversal) {
-      level_max_bytes_static_[i] = options.max_bytes_for_level_base;
-    } else if (i > 1) {
-      level_max_bytes_static_[i] = MultiplyCheckOverflow(
-          MultiplyCheckOverflow(level_max_bytes_static_[i - 1],
-                                options.max_bytes_for_level_multiplier),
-          options.MaxBytesMultiplerAdditional(i - 1));
-    } else {
-      level_max_bytes_static_[i] = options.max_bytes_for_level_base;
-    }
-  }
-
   if (!ioptions.level_compaction_dynamic_level_bytes) {
     base_level_ = (ioptions.compaction_style == kCompactionStyleLevel) ? 1 : -1;
-    level_max_bytes_ = level_max_bytes_static_;
+
+    // Calculate for static bytes base case
+    for (int i = 0; i < ioptions.num_levels; ++i) {
+      if (i == 0 && ioptions.compaction_style == kCompactionStyleUniversal) {
+        level_max_bytes_[i] = options.max_bytes_for_level_base;
+      } else if (i > 1) {
+        level_max_bytes_[i] = MultiplyCheckOverflow(
+            MultiplyCheckOverflow(level_max_bytes_[i - 1],
+                                  options.max_bytes_for_level_multiplier),
+            options.MaxBytesMultiplerAdditional(i - 1));
+      } else {
+        level_max_bytes_[i] = options.max_bytes_for_level_base;
+      }
+    }
   } else {
+    dynamic_level_bytes_ = true;
     uint64_t max_level_size = 0;
 
     int first_non_empty_level = -1;

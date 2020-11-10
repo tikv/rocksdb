@@ -569,8 +569,8 @@ bool InternalStats::HandleNumIngestedFilesAtLevel(std::string* value,
     return false;
   } else {
     char buf[100];
-    snprintf(buf, sizeof(buf), "%d",
-             vstorage->GetNumLevelIngestedFiles(static_cast<int>(level)));
+    snprintf(buf, sizeof(buf), "%" ROCKSDB_PRIszt,
+             vstorage->LevelFilesBrief(static_cast<int>(level)).num_ingested_files);
     *value = buf;
     return true;
   }
@@ -586,7 +586,7 @@ bool InternalStats::HandleNumIngestedBytesAtLevel(std::string* value,
   } else {
     char buf[100];
     snprintf(buf, sizeof(buf), "%" PRIu64,
-             vstorage->GetNumLevelIngestedBytes(static_cast<int>(level)));
+             vstorage->LevelFilesBrief(static_cast<int>(level)).num_ingested_bytes);
     *value = buf;
     return true;
   }
