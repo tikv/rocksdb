@@ -282,11 +282,8 @@ struct BlockBasedTableBuilder::Rep {
   const BlockBasedTableOptions table_options;
   const InternalKeyComparator& internal_comparator;
   WritableFileWriter* file;
-  uint64_t offset = 0;
-  Status status;
-  // Synchronize status accesses across threads from main thread,
-  // compression thread and write thread in parallel compression.
-  std::mutex status_mutex;
+  std::atomic<uint64_t> offset;
+
   size_t alignment;
   BlockBuilder data_block;
   // Buffers uncompressed data blocks and keys to replay later. Needed when
@@ -361,6 +358,31 @@ struct BlockBasedTableBuilder::Rep {
 
   std::unique_ptr<ParallelCompressionRep> pc_rep;
 
+  uint64_t get_offset() { return offset.load(std::memory_order_relaxed); }
+  void set_offset(uint64_t o) { offset.store(o, std::memory_order_relaxed); }
+
+  const Status& GetStatus() {
+    if (compression_opts.parallel_threads > 1) {
+      std::lock_guard<std::mutex> lock(status_mutex);
+      return status;
+    } else {
+      return status;
+    }
+  }
+
+  // Never erase an existing status that is not OK.
+  void SetStatus(Status s) {
+    if (!s.ok()) {
+      // Locking is an overkill for non compression_opts.parallel_threads
+      // case but since it's unlikely that s is not OK, we take this cost
+      // to be simplicity.
+      std::lock_guard<std::mutex> lock(status_mutex);
+      if (status.ok()) {
+        status = s;
+      }
+    }
+  }
+
   Rep(const ImmutableCFOptions& _ioptions, const MutableCFOptions& _moptions,
       const BlockBasedTableOptions& table_opt,
       const InternalKeyComparator& icomparator,
@@ -378,6 +400,7 @@ struct BlockBasedTableBuilder::Rep {
         table_options(table_opt),
         internal_comparator(icomparator),
         file(f),
+        offset(0),
         alignment(table_options.block_align
                       ? std::min(table_options.block_size, kDefaultPageSize)
                       : 0),
@@ -455,6 +478,12 @@ struct BlockBasedTableBuilder::Rep {
   Rep& operator=(const Rep&) = delete;
 
   ~Rep() {}
+
+ private:
+  Status status;
+  // Synchronize status accesses across threads from main thread,
+  // compression thread and write thread in parallel compression.
+  std::mutex status_mutex;
 };
 
 struct BlockBasedTableBuilder::ParallelCompressionRep {
@@ -675,8 +704,9 @@ void BlockBasedTableBuilder::Add(const Slice& key, const Slice& value) {
         ROCKS_LOG_ERROR(r->ioptions.info_log,
                         "Out-of-order key insertion into block based table %s",
                         rep_->file->file_name().c_str());
-        r->status = Status::Corruption(
-            "Out-of-order key insertion into table " + rep_->file->file_name());
+        r->SetStatus(
+            Status::Corruption("Out-of-order key insertion into table " +
+                               rep_->file->file_name()));
         return;
       }
     }
@@ -738,13 +768,13 @@ void BlockBasedTableBuilder::Add(const Slice& key, const Slice& value) {
         r->index_builder->OnKeyAdded(key);
       }
     }
-    NotifyCollectTableCollectorsOnAdd(key, value, r->offset,
+    NotifyCollectTableCollectorsOnAdd(key, value, r->get_offset(),
                                       r->table_properties_collectors,
                                       r->ioptions.info_log);
 
   } else if (value_type == kTypeRangeDeletion) {
     r->range_del_block.Add(key, value);
-    NotifyCollectTableCollectorsOnAdd(key, value, r->offset,
+    NotifyCollectTableCollectorsOnAdd(key, value, r->get_offset(),
                                       r->table_properties_collectors,
                                       r->ioptions.info_log);
   } else {
@@ -801,7 +831,7 @@ void BlockBasedTableBuilder::Flush() {
     uint64_t new_blocks_inflight =
         r->pc_rep->blocks_inflight.fetch_add(1, std::memory_order_relaxed) + 1;
     r->pc_rep->estimated_file_size =
-        r->offset +
+        r->get_offset() +
         static_cast<uint64_t>(static_cast<double>(new_raw_bytes_inflight) *
                               r->pc_rep->curr_compression_ratio) +
         new_blocks_inflight * kBlockTrailerSize;
@@ -847,9 +877,12 @@ void BlockBasedTableBuilder::WriteBlock(const Slice& raw_block_contents,
     r->data_begin_offset += r->data_block_and_keys_buffers.back().first.size();
     return;
   }
+  Status compress_status;
   CompressAndVerifyBlock(raw_block_contents, is_data_block,
                          *(r->compression_ctxs[0]), r->verify_ctxs[0].get(),
-                         r->compressed_output, block_contents, type, r->status);
+                         &(r->compressed_output), &(block_contents), &type,
+                         &compress_status);
+  r->SetStatus(compress_status);
   if (!ok()) {
     return;
   }
@@ -857,9 +890,9 @@ void BlockBasedTableBuilder::WriteBlock(const Slice& raw_block_contents,
   r->compressed_output.clear();
   if (is_data_block) {
     if (r->filter_builder != nullptr) {
-      r->filter_builder->StartBlock(r->offset);
+      r->filter_builder->StartBlock(r->get_offset());
     }
-    r->props.data_size = r->offset;
+    r->props.data_size = r->get_offset();
     ++r->props.num_data_blocks;
   }
 }
@@ -870,8 +903,9 @@ void BlockBasedTableBuilder::BGWorkCompression(
   while (rep_->pc_rep->compress_queue.pop(block_rep)) {
     CompressAndVerifyBlock(block_rep->contents, true, /* is_data_block*/
                            compression_ctx, verify_ctx,
-                           *(block_rep->compressed_data), block_rep->contents,
-                           block_rep->compression_type, block_rep->status);
+                           block_rep->compressed_data.get(),
+                           &block_rep->contents, &(block_rep->compression_type),
+                           &block_rep->status);
     block_rep->slot->Fill(block_rep);
   }
 }
@@ -879,8 +913,8 @@ void BlockBasedTableBuilder::BGWorkCompression(
 void BlockBasedTableBuilder::CompressAndVerifyBlock(
     const Slice& raw_block_contents, bool is_data_block,
     CompressionContext& compression_ctx, UncompressionContext* verify_ctx_ptr,
-    std::string& compressed_output, Slice& block_contents,
-    CompressionType& type, Status& out_status) {
+    std::string* compressed_output, Slice* block_contents,
+    CompressionType* type, Status* out_status) {
   // File format contains a sequence of blocks where each block has:
   //    block_data: uint8[n]
   //    type: uint8
@@ -888,7 +922,7 @@ void BlockBasedTableBuilder::CompressAndVerifyBlock(
   assert(ok());
   Rep* r = rep_;
 
-  type = r->compression_type;
+  *type = r->compression_type;
   uint64_t sample_for_compression = r->sample_for_compression;
   bool abort_compression = false;
 
@@ -905,15 +939,15 @@ void BlockBasedTableBuilder::CompressAndVerifyBlock(
     }
     assert(compression_dict != nullptr);
     CompressionInfo compression_info(r->compression_opts, compression_ctx,
-                                     *compression_dict, type,
+                                     *compression_dict, *type,
                                      sample_for_compression);
 
     std::string sampled_output_fast;
     std::string sampled_output_slow;
-    block_contents = CompressBlock(
-        raw_block_contents, compression_info, &type,
+    *block_contents = CompressBlock(
+        raw_block_contents, compression_info, type,
         r->table_options.format_version, is_data_block /* do_sample */,
-        &compressed_output, &sampled_output_fast, &sampled_output_slow);
+        compressed_output, &sampled_output_fast, &sampled_output_slow);
 
     // notify collectors on block add
     NotifyCollectTableCollectorsOnBlockAdd(
@@ -923,7 +957,7 @@ void BlockBasedTableBuilder::CompressAndVerifyBlock(
     // Some of the compression algorithms are known to be unreliable. If
     // the verify_compression flag is set then try to de-compress the
     // compressed data and compare to the input.
-    if (type != kNoCompression && r->table_options.verify_compression) {
+    if (*type != kNoCompression && r->table_options.verify_compression) {
       // Retrieve the uncompressed contents into a new buffer
       const UncompressionDict* verify_dict;
       if (!is_data_block || r->verify_dict == nullptr) {
@@ -936,7 +970,7 @@ void BlockBasedTableBuilder::CompressAndVerifyBlock(
       UncompressionInfo uncompression_info(*verify_ctx_ptr, *verify_dict,
                                            r->compression_type);
       Status stat = UncompressBlockContentsForCompressionType(
-          uncompression_info, block_contents.data(), block_contents.size(),
+          uncompression_info, block_contents->data(), block_contents->size(),
           &contents, r->table_options.format_version, r->ioptions);
 
       if (stat.ok()) {
@@ -946,12 +980,12 @@ void BlockBasedTableBuilder::CompressAndVerifyBlock(
           abort_compression = true;
           ROCKS_LOG_ERROR(r->ioptions.info_log,
                           "Decompressed block did not match raw block");
-          out_status =
+          *out_status =
               Status::Corruption("Decompressed block did not match raw block");
         }
       } else {
         // Decompression reported an error. abort.
-        out_status = Status::Corruption("Could not decompress");
+        *out_status = Status::Corruption("Could not decompress");
         abort_compression = true;
       }
     }
@@ -964,9 +998,9 @@ void BlockBasedTableBuilder::CompressAndVerifyBlock(
   // verification.
   if (abort_compression) {
     RecordTick(r->ioptions.statistics, NUMBER_BLOCK_NOT_COMPRESSED);
-    type = kNoCompression;
-    block_contents = raw_block_contents;
-  } else if (type != kNoCompression) {
+    *type = kNoCompression;
+    *block_contents = raw_block_contents;
+  } else if (*type != kNoCompression) {
     if (ShouldReportDetailedTime(r->ioptions.env, r->ioptions.statistics)) {
       RecordTimeToHistogram(r->ioptions.statistics, COMPRESSION_TIMES_NANOS,
                             timer.ElapsedNanos());
@@ -974,7 +1008,7 @@ void BlockBasedTableBuilder::CompressAndVerifyBlock(
     RecordInHistogram(r->ioptions.statistics, BYTES_COMPRESSED,
                       raw_block_contents.size());
     RecordTick(r->ioptions.statistics, NUMBER_BLOCK_COMPRESSED);
-  } else if (type != r->compression_type) {
+  } else if (*type != r->compression_type) {
     RecordTick(r->ioptions.statistics, NUMBER_BLOCK_NOT_COMPRESSED);
   }
 }
@@ -986,7 +1020,7 @@ void BlockBasedTableBuilder::WriteRawBlock(const Slice& block_contents,
   Rep* r = rep_;
   Status s = Status::OK();
   StopWatch sw(r->ioptions.env, r->ioptions.statistics, WRITE_RAW_BLOCK_MICROS);
-  handle->set_offset(r->offset);
+  handle->set_offset(r->get_offset());
   handle->set_size(block_contents.size());
   assert(status().ok());
   s = r->file->Append(block_contents);
@@ -1036,7 +1070,7 @@ void BlockBasedTableBuilder::WriteRawBlock(const Slice& block_contents,
       s = InsertBlockInCache(block_contents, type, handle);
     }
     if (!s.ok()) {
-      SetStatusAtom(s);
+      r->SetStatus(s);
     } else {
       r->offset += block_contents.size() + kBlockTrailerSize;
       if (r->table_options.block_align && is_data_block) {
@@ -1048,7 +1082,7 @@ void BlockBasedTableBuilder::WriteRawBlock(const Slice& block_contents,
         if (s.ok()) {
           r->offset += pad_bytes;
         } else {
-          SetStatusAtom(s);
+          r->SetStatus(s);
         }
       }
       if (r->compression_opts.parallel_threads > 1) {
@@ -1071,18 +1105,19 @@ void BlockBasedTableBuilder::WriteRawBlock(const Slice& block_contents,
                                              1, std::memory_order_relaxed) -
                                          1;
           r->pc_rep->estimated_file_size =
-              r->offset +
-              static_cast<uint64_t>(static_cast<double>(new_raw_bytes_inflight) *
-                                    r->pc_rep->curr_compression_ratio) +
+              r->get_offset() +
+              static_cast<uint64_t>(
+                  static_cast<double>(new_raw_bytes_inflight) *
+                  r->pc_rep->curr_compression_ratio) +
               new_blocks_inflight * kBlockTrailerSize;
         } else {
-          r->pc_rep->estimated_file_size = r->offset;
+          r->pc_rep->estimated_file_size = r->get_offset();
         }
       }
     }
   }
   if (!s.ok()) {
-    SetStatusAtom(s);
+    r->SetStatus(s);
   }
 }
 
@@ -1093,7 +1128,7 @@ void BlockBasedTableBuilder::BGWorkWriteRawBlock() {
   while (r->pc_rep->write_queue.pop(slot)) {
     slot->Take(block_rep);
     if (!block_rep->status.ok()) {
-      SetStatusAtom(block_rep->status);
+      r->SetStatus(block_rep->status);
       break;
     }
 
@@ -1110,7 +1145,7 @@ void BlockBasedTableBuilder::BGWorkWriteRawBlock() {
     r->pc_rep->raw_bytes_curr_block = block_rep->data->size();
     WriteRawBlock(block_rep->contents, block_rep->compression_type,
                   &r->pending_handle, true /* is_data_block*/);
-    if (!r->status.ok()) {
+    if (!ok()) {
       break;
     }
 
@@ -1121,9 +1156,9 @@ void BlockBasedTableBuilder::BGWorkWriteRawBlock() {
     }
 
     if (r->filter_builder != nullptr) {
-      r->filter_builder->StartBlock(r->offset);
+      r->filter_builder->StartBlock(r->get_offset());
     }
-    r->props.data_size = r->offset;
+    r->props.data_size = r->get_offset();
     ++r->props.num_data_blocks;
 
     if (block_rep->first_key_in_next_block == nullptr) {
@@ -1141,23 +1176,7 @@ void BlockBasedTableBuilder::BGWorkWriteRawBlock() {
   }
 }
 
-Status BlockBasedTableBuilder::status() const {
-  if (rep_->compression_opts.parallel_threads > 1) {
-    std::lock_guard<std::mutex> lock(rep_->status_mutex);
-    return rep_->status;
-  } else {
-    return rep_->status;
-  }
-}
-
-void BlockBasedTableBuilder::SetStatusAtom(Status _status) {
-  if (rep_->compression_opts.parallel_threads > 1) {
-    std::lock_guard<std::mutex> lock(rep_->status_mutex);
-    rep_->status = _status;
-  } else {
-    rep_->status = _status;
-  }
-}
+Status BlockBasedTableBuilder::status() const { return rep_->GetStatus(); }
 
 static void DeleteCachedBlockContents(const Slice& /*key*/, void* value) {
   BlockContents* bc = reinterpret_cast<BlockContents*>(value);
@@ -1201,7 +1220,7 @@ Status BlockBasedTableBuilder::InsertBlockInCache(const Slice& block_contents,
         &DeleteCachedBlockContents);
 
     // Invalidate OS cache.
-    r->file->InvalidateCache(static_cast<size_t>(r->offset), size);
+    r->file->InvalidateCache(static_cast<size_t>(r->get_offset()), size);
   }
   return Status::OK();
 }
@@ -1247,7 +1266,7 @@ void BlockBasedTableBuilder::WriteIndexBlock(
     // HashIndexBuilder which is not multi-partition.
     assert(index_blocks.meta_blocks.empty());
   } else if (ok() && !index_builder_status.ok()) {
-    rep_->status = index_builder_status;
+    rep_->SetStatus(index_builder_status);
   }
   if (ok()) {
     for (const auto& item : index_blocks.meta_blocks) {
@@ -1272,7 +1291,7 @@ void BlockBasedTableBuilder::WriteIndexBlock(
   while (ok() && s.IsIncomplete()) {
     s = rep_->index_builder->Finish(&index_blocks, *index_block_handle);
     if (!s.ok() && !s.IsIncomplete()) {
-      rep_->status = s;
+      rep_->SetStatus(s);
       return;
     }
     if (rep_->table_options.enable_index_compression) {
@@ -1330,7 +1349,7 @@ void BlockBasedTableBuilder::WritePropertiesBlock(
       assert(rep_->p_index_builder_ != nullptr);
       rep_->props.index_partitions = rep_->p_index_builder_->NumPartitions();
       rep_->props.top_level_index_size =
-          rep_->p_index_builder_->TopLevelIndexSize(rep_->offset);
+          rep_->p_index_builder_->TopLevelIndexSize(rep_->get_offset());
     }
     rep_->props.index_key_is_user_key =
         !rep_->index_builder->seperator_is_key_plus_seq();
@@ -1422,9 +1441,10 @@ void BlockBasedTableBuilder::WriteFooter(BlockHandle& metaindex_block_handle,
   footer.set_checksum(r->table_options.checksum);
   std::string footer_encoding;
   footer.EncodeTo(&footer_encoding);
-  assert(r->status.ok());
-  r->status = r->file->Append(footer_encoding);
-  if (r->status.ok()) {
+  assert(ok());
+  Status s = r->file->Append(footer_encoding);
+  r->SetStatus(s);
+  if (s.ok()) {
     r->offset += footer_encoding.size();
   }
 }
@@ -1573,7 +1593,7 @@ Status BlockBasedTableBuilder::Finish() {
     WriteFooter(metaindex_block_handle, index_block_handle);
   }
   r->state = Rep::State::kClosed;
-  return r->status;
+  return r->GetStatus();
 }
 
 void BlockBasedTableBuilder::Abandon() {
@@ -1594,7 +1614,7 @@ uint64_t BlockBasedTableBuilder::NumEntries() const {
   return rep_->props.num_entries;
 }
 
-uint64_t BlockBasedTableBuilder::FileSize() const { return rep_->offset; }
+uint64_t BlockBasedTableBuilder::FileSize() const { return rep_->get_offset(); }
 
 uint64_t BlockBasedTableBuilder::EstimatedFileSize() const {
   if (rep_->compression_opts.parallel_threads > 1) {
