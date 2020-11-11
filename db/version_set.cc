@@ -1984,7 +1984,7 @@ bool Version::IsFilterSkipped(int level, bool is_file_last_in_level) {
          level == storage_info_.num_non_empty_levels() - 1;
 }
 
-void VersionStorageInfo::GenerateLevelFilesBrief() {
+void VersionStorageInfo::GenerateLevelFilesBrief(const MutableCFOptions& options) {
   level_files_brief_.resize(num_non_empty_levels_);
   for (int level = 0; level < num_non_empty_levels_; level++) {
     DoGenerateLevelFilesBrief(
@@ -1993,6 +1993,7 @@ void VersionStorageInfo::GenerateLevelFilesBrief() {
       if (LikelyIngestedFile(f, level)) {
         level_files_brief_[level].num_ingested_files += 1;
         level_files_brief_[level].num_ingested_bytes += f->fd.GetFileSize();
+        level_files_brief_[level].tolerant_bytes += static_cast<double>(options.ingest_tolerant_ratio) / (level - base_level_ + 1) * MaxBytesForLevel(level);
       }
     }
   }
@@ -2006,7 +2007,7 @@ void Version::PrepareApply(
   storage_info_.CalculateBaseBytes(*cfd_->ioptions(), mutable_cf_options);
   storage_info_.UpdateFilesByCompactionPri(cfd_->ioptions()->compaction_pri);
   storage_info_.GenerateFileIndexer();
-  storage_info_.GenerateLevelFilesBrief();
+  storage_info_.GenerateLevelFilesBrief(mutable_cf_options);
   storage_info_.GenerateLevel0NonOverlapping();
   storage_info_.GenerateBottommostFiles();
 }

@@ -164,7 +164,7 @@ class VersionStorageInfo {
   void ComputeBottommostFilesMarkedForCompaction();
 
   // Generate level_files_brief_ from files_
-  void GenerateLevelFilesBrief();
+  void GenerateLevelFilesBrief(const MutableCFOptions& options);
   // Sort all files for this version based on their file size and
   // record results in files_by_compaction_pri_. The largest files are listed
   // first.

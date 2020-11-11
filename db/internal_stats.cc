@@ -200,6 +200,8 @@ static const std::string num_ingested_files_at_level_prefix =
     "num-ingested-files-at-level";
 static const std::string num_ingested_bytes_at_level_prefix =
     "num-ingested-bytes-at-level";
+static const std::string num_tolerant_bytes_at_level_prefix =
+    "num-tolerant-bytes-at-level";
 static const std::string compression_ratio_at_level_prefix =
     "compression-ratio-at-level";
 static const std::string allstats = "stats";
@@ -269,6 +271,8 @@ const std::string DB::Properties::kNumIngestedFilesAtLevelPrefix =
     rocksdb_prefix + num_ingested_files_at_level_prefix;
 const std::string DB::Properties::kNumIngestedBytesAtLevelPrefix =
     rocksdb_prefix + num_ingested_bytes_at_level_prefix;
+const std::string DB::Properties::kNumTolerantBytesAtLevelPrefix =
+    rocksdb_prefix + num_tolerant_bytes_at_level_prefix;
 const std::string DB::Properties::kCompressionRatioAtLevelPrefix =
     rocksdb_prefix + compression_ratio_at_level_prefix;
 const std::string DB::Properties::kStats = rocksdb_prefix + allstats;
@@ -366,6 +370,9 @@ const std::unordered_map<std::string, DBPropertyInfo>
           nullptr, nullptr}},
         {DB::Properties::kNumIngestedBytesAtLevelPrefix,
          {false, &InternalStats::HandleNumIngestedBytesAtLevel, nullptr,
+          nullptr, nullptr}},
+        {DB::Properties::kNumTolerantBytesAtLevelPrefix,
+         {false, &InternalStats::HandleTolerantBytesAtLevel, nullptr,
           nullptr, nullptr}},
         {DB::Properties::kCompressionRatioAtLevelPrefix,
          {false, &InternalStats::HandleCompressionRatioAtLevelPrefix, nullptr,
@@ -587,6 +594,22 @@ bool InternalStats::HandleNumIngestedBytesAtLevel(std::string* value,
     char buf[100];
     snprintf(buf, sizeof(buf), "%" PRIu64,
              vstorage->LevelFilesBrief(static_cast<int>(level)).num_ingested_bytes);
+    *value = buf;
+    return true;
+  }
+}
+
+bool InternalStats::HandleTolerantBytesAtLevel(std::string* value,
+                                                  Slice suffix) {
+  uint64_t level;
+  const auto* vstorage = cfd_->current()->storage_info();
+  bool ok = ConsumeDecimalNumber(&suffix, &level) && suffix.empty();
+  if (!ok || static_cast<int>(level) >= number_levels_) {
+    return false;
+  } else {
+    char buf[100];
+    snprintf(buf, sizeof(buf), "%" PRIu64,
+             vstorage->LevelFilesBrief(static_cast<int>(level)).tolerant_bytes);
     *value = buf;
     return true;
   }

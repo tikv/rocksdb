@@ -518,6 +518,7 @@ class InternalStats {
   bool HandleNumFilesAtLevel(std::string* value, Slice suffix);
   bool HandleNumIngestedFilesAtLevel(std::string* value, Slice suffix);
   bool HandleNumIngestedBytesAtLevel(std::string* value, Slice suffix);
+  bool HandleTolerantBytesAtLevel(std::string* value, Slice suffix);
   bool HandleCompressionRatioAtLevelPrefix(std::string* value, Slice suffix);
   bool HandleLevelStats(std::string* value, Slice suffix);
   bool HandleStats(std::string* value, Slice suffix);

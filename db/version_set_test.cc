@@ -387,7 +387,8 @@ TEST_F(VersionStorageInfoTest, GetOverlappingInputs) {
   Add(1, 5U, {"g", 0, kTypeValue}, {"h", 0, kTypeValue}, 1);
   Add(1, 6U, {"i", 0, kTypeValue}, {"j", 0, kTypeValue}, 1);
   vstorage_.UpdateNumNonEmptyLevels();
-  vstorage_.GenerateLevelFilesBrief();
+  MutableCFOptions opt;
+  vstorage_.GenerateLevelFilesBrief(opt);
 
   ASSERT_EQ("1,2", GetOverlappingFiles(
       1, {"a", 0, kTypeValue}, {"b", 0, kTypeValue}));

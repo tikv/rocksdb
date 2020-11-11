@@ -541,6 +541,7 @@ class DB {
     static const std::string kNumIngestedFilesAtLevelPrefix;
     
     static const std::string kNumIngestedBytesAtLevelPrefix;
+    static const std::string kNumTolerantBytesAtLevelPrefix;
 
     //  "rocksdb.compression-ratio-at-level<N>" - returns string containing the
     //      compression ratio of data at level <N>, where <N> is an ASCII

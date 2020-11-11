@@ -80,7 +80,7 @@ class VersionBuilderTest : public testing::Test {
     vstorage_.UpdateFilesByCompactionPri(ioptions_.compaction_pri);
     vstorage_.UpdateNumNonEmptyLevels();
     vstorage_.GenerateFileIndexer();
-    vstorage_.GenerateLevelFilesBrief();
+    vstorage_.GenerateLevelFilesBrief(mutable_cf_options_);
     vstorage_.CalculateBaseBytes(ioptions_, mutable_cf_options_);
     vstorage_.GenerateLevel0NonOverlapping();
     vstorage_.SetFinalized();
