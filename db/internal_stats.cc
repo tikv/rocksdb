@@ -372,7 +372,7 @@ const std::unordered_map<std::string, DBPropertyInfo>
          {false, &InternalStats::HandleNumIngestedBytesAtLevel, nullptr,
           nullptr, nullptr}},
         {DB::Properties::kNumTolerantBytesAtLevelPrefix,
-         {false, &InternalStats::HandleTolerantBytesAtLevel, nullptr,
+         {false, &InternalStats::HandleNumTolerantBytesAtLevel, nullptr,
           nullptr, nullptr}},
         {DB::Properties::kCompressionRatioAtLevelPrefix,
          {false, &InternalStats::HandleCompressionRatioAtLevelPrefix, nullptr,
@@ -599,7 +599,7 @@ bool InternalStats::HandleNumIngestedBytesAtLevel(std::string* value,
   }
 }
 
-bool InternalStats::HandleTolerantBytesAtLevel(std::string* value,
+bool InternalStats::HandleNumTolerantBytesAtLevel(std::string* value,
                                                   Slice suffix) {
   uint64_t level;
   const auto* vstorage = cfd_->current()->storage_info();
@@ -609,7 +609,7 @@ bool InternalStats::HandleTolerantBytesAtLevel(std::string* value,
   } else {
     char buf[100];
     snprintf(buf, sizeof(buf), "%" PRIu64,
-             vstorage->LevelFilesBrief(static_cast<int>(level)).tolerant_bytes);
+             vstorage->LevelFilesBrief(static_cast<int>(level)).num_tolerant_bytes);
     *value = buf;
     return true;
   }

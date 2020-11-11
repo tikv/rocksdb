@@ -774,6 +774,7 @@ void DoGenerateLevelFilesBrief(LevelFilesBrief* file_level,
   file_level->files = new (mem)FdWithKeyRange[num];
   file_level->num_ingested_files = 0;
   file_level->num_ingested_bytes = 0;
+  file_level->num_tolerant_bytes = 0;
 
   for (size_t i = 0; i < num; i++) {
     Slice smallest_key = files[i]->smallest.Encode();
@@ -1993,7 +1994,7 @@ void VersionStorageInfo::GenerateLevelFilesBrief(const MutableCFOptions& options
       if (LikelyIngestedFile(f, level)) {
         level_files_brief_[level].num_ingested_files += 1;
         level_files_brief_[level].num_ingested_bytes += f->fd.GetFileSize();
-        level_files_brief_[level].tolerant_bytes += static_cast<double>(options.ingest_tolerant_ratio) / (level - base_level_ + 1) * MaxBytesForLevel(level);
+        level_files_brief_[level].num_tolerant_bytes += static_cast<double>(options.ingest_tolerant_ratio) / (level - base_level_ + 1) * MaxBytesForLevel(level);
       }
     }
   }

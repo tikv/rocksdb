@@ -186,7 +186,7 @@ struct LevelFilesBrief {
   size_t num_files;
   size_t num_ingested_files;
   uint64_t num_ingested_bytes;
-  uint64_t tolerant_bytes;
+  uint64_t num_tolerant_bytes;
   FdWithKeyRange* files;
   LevelFilesBrief() {
     num_files = 0;
