@@ -1201,6 +1201,7 @@ work_queue_test: util/work_queue_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
 corruption_test: db/corruption_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(AM_LINK)
 
 crc32c_test: util/crc32c_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
