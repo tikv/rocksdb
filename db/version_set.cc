@@ -1994,8 +1994,10 @@ void VersionStorageInfo::GenerateLevelFilesBrief(const MutableCFOptions& options
       if (LikelyIngestedFile(f, level)) {
         level_files_brief_[level].num_ingested_files += 1;
         level_files_brief_[level].num_ingested_bytes += f->fd.GetFileSize();
-        level_files_brief_[level].num_tolerant_bytes += static_cast<double>(options.ingest_tolerant_ratio) / (level - base_level_ + 1) * MaxBytesForLevel(level);
       }
+    }
+    if (level != 0) {
+      level_files_brief_[level].num_tolerant_bytes = static_cast<double>(options.ingest_tolerant_ratio) / (level - base_level_ + 1) * MaxBytesForLevel(level);
     }
   }
 }
