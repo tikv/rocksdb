@@ -2171,7 +2171,7 @@ int VersionStorageInfo::MaxOutputLevel(bool allow_ingest_behind) const {
 
 bool VersionStorageInfo::FileCanIgnore(FileMetaData* f, int level) const {
   // only ignore files when dynamic level bytes enabled.
-  return dynamic_level_bytes_ && LikelyIngestedFile(f, level);
+  return dynamic_level_bytes_ && LikelyIngestedFile(f, level) && false;
 }
 
 bool VersionStorageInfo::LikelyIngestedFile(FileMetaData* f, int level) const {
@@ -2381,6 +2381,7 @@ void VersionStorageInfo::ComputeCompactionScore(
               MaxBytesForLevel(level);
 
       if (level >= base_level_ &&
+          mutable_cf_options.ingest_tolerant_ratio != 0 &&
           level_bytes_no_compacting + ingest_files_size >
               (1 +
                static_cast<double>(mutable_cf_options.ingest_tolerant_ratio) /
@@ -2389,9 +2390,11 @@ void VersionStorageInfo::ComputeCompactionScore(
         score = std::max(
             score,
             static_cast<double>(level_bytes_no_compacting + ingest_files_size) /
-                (1 +
-                 static_cast<double>(mutable_cf_options.ingest_tolerant_ratio) /
-                     (level - base_level_ + 1) * MaxBytesForLevel(level)));
+                ((1 +
+                  static_cast<double>(
+                      mutable_cf_options.ingest_tolerant_ratio) /
+                      (level - base_level_ + 1)) *
+                 MaxBytesForLevel(level)));
       }
     }
     compaction_level_[level] = level;
