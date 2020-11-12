@@ -538,10 +538,6 @@ Status ExternalSstFileIngestionJob::AssignLevelAndSeqnoForIngestedFile(
     // if our file can fit in it
     if (IngestedFileFitInLevel(file_to_ingest, lvl)) {
       target_level = lvl;
-    } else if (lvl == cfd_->NumberLevels() - 1) {
-      ROCKS_LOG_INFO(db_options_.info_log,
-                     "can't ingest into bottom level due to range overlap %d",
-                     cfd_->NumberLevels() - 1);
     }
   }
   TEST_SYNC_POINT_CALLBACK(
@@ -644,14 +640,12 @@ bool ExternalSstFileIngestionJob::IngestedFileFitInLevel(
                                &file_largest_user_key)) {
     // File overlap with another files in this level, we cannot
     // add it to this level
-    ROCKS_LOG_INFO(db_options_.info_log, "range overlap in L%d", level);
     return false;
   }
   if (cfd_->RangeOverlapWithCompaction(file_smallest_user_key,
                                        file_largest_user_key, level)) {
     // File overlap with a running compaction output that will be stored
     // in this level, we cannot add this file to this level
-    ROCKS_LOG_INFO(db_options_.info_log, "compaction overlap in L%d", level);
     return false;
   }
 

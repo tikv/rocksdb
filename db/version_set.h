@@ -188,7 +188,7 @@ class VersionStorageInfo {
   int MaxInputLevel() const;
   int MaxOutputLevel(bool allow_ingest_behind) const;
 
-  bool FileCanIgnore(FileMetaData* f, int level) const;
+  bool CanIgnoreFile(FileMetaData* f, int level) const;
   bool LikelyIngestedFile(FileMetaData* f, int level) const;
 
   // Return level number that has idx'th highest score
