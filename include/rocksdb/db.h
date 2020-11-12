@@ -538,9 +538,16 @@ class DB {
     //      level number (e.g., "0").
     static const std::string kNumFilesAtLevelPrefix;
 
+    //  "rocksdb.num-ingested-files-at-level<N>" - returns string containing the
+    //  number of ingested files at level <N>.
     static const std::string kNumIngestedFilesAtLevelPrefix;
-    
+
+    //  "rocksdb.num-ingested-bytes-at-level<N>" - returns string containing the
+    //  number of ingested bytes at level <N>.
     static const std::string kNumIngestedBytesAtLevelPrefix;
+
+    //  "rocksdb.num-tolerant-bytes-at-level<N>" - returns string containing the
+    //  number of tolerant bytes for ingestion at level <N>.
     static const std::string kNumTolerantBytesAtLevelPrefix;
 
     //  "rocksdb.compression-ratio-at-level<N>" - returns string containing the

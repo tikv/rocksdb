@@ -1985,19 +1985,24 @@ bool Version::IsFilterSkipped(int level, bool is_file_last_in_level) {
          level == storage_info_.num_non_empty_levels() - 1;
 }
 
-void VersionStorageInfo::GenerateLevelFilesBrief(const MutableCFOptions& options) {
+void VersionStorageInfo::GenerateLevelFilesBrief(
+    const MutableCFOptions& options) {
   level_files_brief_.resize(num_non_empty_levels_);
   for (int level = 0; level < num_non_empty_levels_; level++) {
     DoGenerateLevelFilesBrief(
         &level_files_brief_[level], files_[level], &arena_);
-    for (const auto& f: files_[level]) {
+    for (const auto& f : files_[level]) {
       if (LikelyIngestedFile(f, level)) {
         level_files_brief_[level].num_ingested_files += 1;
         level_files_brief_[level].num_ingested_bytes += f->fd.GetFileSize();
       }
     }
-    if (level != 0) {
-      level_files_brief_[level].num_tolerant_bytes = static_cast<double>(options.ingest_tolerant_ratio) / (level - base_level_ + 1) * MaxBytesForLevel(level);
+    if (level >= base_level_) {
+      level_files_brief_[level].num_tolerant_bytes =
+          static_cast<double>(options.ingest_tolerant_ratio) /
+          (level - base_level_ + 1) * MaxBytesForLevel(level);
+    } else {
+      level_files_brief_[level].num_tolerant_bytes = 0;
     }
   }
 }
@@ -2166,16 +2171,17 @@ int VersionStorageInfo::MaxOutputLevel(bool allow_ingest_behind) const {
 
 bool VersionStorageInfo::FileCanIgnore(FileMetaData* f, int level) const {
   // only ignore files when dynamic level bytes enabled.
-  return dynamic_level_bytes_ && LikelyIngestedFile(f, level); 
+  return dynamic_level_bytes_ && LikelyIngestedFile(f, level);
 }
 
 bool VersionStorageInfo::LikelyIngestedFile(FileMetaData* f, int level) const {
   // A file is an ingested file iff it has
   // ExternalSstFilePropertyNames::kVersion property.
   // But it's hard to get the information here, so using smallest_seqno ==
-  // largest_seqno to decide if it is an ingested file. 
+  // largest_seqno to decide if it is an ingested file.
   // Files which zero-out sequence number also
-  // satisfy the condition, so here just excludes the files in the bottom level with 0 sequence number.
+  // satisfy the condition, so here just excludes the files in the bottom level
+  // with 0 sequence number.
   return f->fd.smallest_seqno == f->fd.largest_seqno &&
          (num_levels() - 1 != level || f->fd.largest_seqno != 0);
 }
@@ -2374,12 +2380,18 @@ void VersionStorageInfo::ComputeCompactionScore(
       score = static_cast<double>(level_bytes_no_compacting) /
               MaxBytesForLevel(level);
 
-      if (level_bytes_no_compacting + ingest_files_size > ( 1 + static_cast<double>(mutable_cf_options.ingest_tolerant_ratio) / (level - base_level_ + 1)) * 
-          MaxBytesForLevel(level)) {
+      if (level >= base_level_ &&
+          level_bytes_no_compacting + ingest_files_size >
+              (1 +
+               static_cast<double>(mutable_cf_options.ingest_tolerant_ratio) /
+                   (level - base_level_ + 1)) *
+                  MaxBytesForLevel(level)) {
         score = std::max(
             score,
             static_cast<double>(level_bytes_no_compacting + ingest_files_size) /
-                (1 + static_cast<double>(mutable_cf_options.ingest_tolerant_ratio) / (level - base_level_ + 1) * MaxBytesForLevel(level)));
+                (1 +
+                 static_cast<double>(mutable_cf_options.ingest_tolerant_ratio) /
+                     (level - base_level_ + 1) * MaxBytesForLevel(level)));
       }
     }
     compaction_level_[level] = level;

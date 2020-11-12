@@ -187,6 +187,7 @@ ColumnFamilyOptions BuildColumnFamilyOptions(
   cf_opts.ttl = mutable_cf_options.ttl;
   cf_opts.periodic_compaction_seconds =
       mutable_cf_options.periodic_compaction_seconds;
+  cf_opts.ingest_tolerant_ratio = mutable_cf_options.ingest_tolerant_ratio;
 
   cf_opts.max_bytes_for_level_multiplier_additional.clear();
   for (auto value :
@@ -2033,7 +2034,11 @@ std::unordered_map<std::string, OptionTypeInfo>
         {"sample_for_compression",
          {offset_of(&ColumnFamilyOptions::sample_for_compression),
           OptionType::kUInt64T, OptionVerificationType::kNormal, true,
-          offsetof(struct MutableCFOptions, sample_for_compression)}}};
+          offsetof(struct MutableCFOptions, sample_for_compression)}},
+        {"ingest_tolerant_ratio",
+         {offset_of(&ColumnFamilyOptions::ingest_tolerant_ratio),
+          OptionType::kSizeT, OptionVerificationType::kNormal, true,
+          offsetof(struct MutableCFOptions, ingest_tolerant_ratio)}}};
 
 std::unordered_map<std::string, OptionTypeInfo>
     OptionsHelper::fifo_compaction_options_type_info = {
