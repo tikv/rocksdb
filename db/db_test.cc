@@ -4632,6 +4632,10 @@ TEST_F(DBTest, DynamicCompactionOptions) {
   }
   dbfull()->TEST_WaitForCompact();
   ASSERT_LT(NumTableFilesAtLevel(0), 4);
+
+  ASSERT_EQ(dbfull()->GetOptions().ingest_tolerant_ratio, 0);
+  ASSERT_OK(dbfull()->SetOptions({{"ingest_tolerant_ratio", "10"}}));
+  ASSERT_EQ(dbfull()->GetOptions().ingest_tolerant_ratio, 10);
 }
 
 // Test dynamic FIFO compaction options.
