@@ -287,8 +287,8 @@ Status WriteAmpBasedRateLimiter::Tune() {
   // 1. compaction cannot fully utilize the IO quota we set.
   // 2. make it faster to digest unexpected burst of pending compaction bytes,
   // generally this will help flatten IO waves.
-  const int kRatioPaddingPercent = 16;
-  const int kRatioPaddingMax = 10;
+  const int kRatioPaddingPercent = 15;
+  const int kRatioPaddingMax = 8;
 
   std::chrono::microseconds prev_tuned_time = tuned_time_;
   tuned_time_ = std::chrono::microseconds(NowMicrosMonotonic(env_));
