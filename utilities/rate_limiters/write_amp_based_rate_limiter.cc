@@ -277,9 +277,9 @@ int64_t WriteAmpBasedRateLimiter::CalculateRefillBytesPerPeriod(
 }
 
 Status WriteAmpBasedRateLimiter::Tune() {
-  // computed rate limit will be larger than `kMinBytesPerSec`
+  // computed rate limit will be larger than 10MB/s
   const int64_t kMinBytesPerSec = 10 * 1024 * 1024;
-  // high-priority bytes are padded to 1MB
+  // high-priority bytes are padded to 5MB
   const int64_t kHighBytesLower = 5 * 1024 * 1024;
   // lower bound for write amplification estimation
   const int kRatioLower = 12;
@@ -288,7 +288,7 @@ Status WriteAmpBasedRateLimiter::Tune() {
   // 2. make it faster to digest unexpected burst of pending compaction bytes,
   // generally this will help flatten IO waves.
   const int kRatioPaddingPercent = 15;
-  const int kRatioPaddingMax = 8;
+  const int kRatioPaddingMax = 5;
 
   std::chrono::microseconds prev_tuned_time = tuned_time_;
   tuned_time_ = std::chrono::microseconds(NowMicrosMonotonic(env_));
