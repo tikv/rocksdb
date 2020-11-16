@@ -28,6 +28,9 @@ class RateLimiter {
     kAllIo,
   };
 
+  virtual uint32_t ratio_base() const { return 0; }
+  virtual uint32_t ratio_delta() const { return 0; }
+
   // For API compatibility, default to rate-limiting writes only.
   explicit RateLimiter(Mode mode = Mode::kWritesOnly) : mode_(mode) {}
 

@@ -722,6 +722,8 @@ class DB {
     //  "rocksdb.is-write-stopped" - Return 1 if write has been stopped.
     static const std::string kIsWriteStopped;
 
+    static const std::string kLimiterRatioBase;
+    static const std::string kLimiterRatioDelta;
     //  "rocksdb.estimate-oldest-key-time" - returns an estimation of
     //      oldest key timestamp in the DB. Currently only available for
     //      FIFO compaction with

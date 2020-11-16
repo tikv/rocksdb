@@ -318,6 +318,7 @@ Status WriteAmpBasedRateLimiter::Tune() {
                               std::max(highpri_bytes_sampler_.GetFullValue(),
                                        kHighBytesLower)));
   int32_t ratio_padding = ratio * kRatioPaddingPercent / 100;
+  ratio_base_cache_ = ratio + ratio_padding;
 
   // in case there are compaction bursts even when online writes are stable
   auto util = bytes_sampler_.GetRecentValue() * 100 /
