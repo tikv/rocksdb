@@ -71,8 +71,9 @@ class CompactionPickerTest : public testing::Test {
   void NewVersionStorage(int num_levels, CompactionStyle style) {
     DeleteVersionStorage();
     options_.num_levels = num_levels;
-    vstorage_.reset(new VersionStorageInfo(&icmp_, ucmp_, options_.num_levels,
-                                           style, nullptr, false));
+    vstorage_.reset(new VersionStorageInfo(
+        &icmp_, ucmp_, options_.num_levels, style, nullptr, false,
+        options_.level_compaction_dynamic_level_bytes));
     vstorage_->CalculateBaseBytes(ioptions_, mutable_cf_options_);
   }
 
@@ -85,7 +86,7 @@ class CompactionPickerTest : public testing::Test {
 
   void Add(int level, uint32_t file_number, const char* smallest,
            const char* largest, uint64_t file_size = 1, uint32_t path_id = 0,
-           SequenceNumber smallest_seq = 100, SequenceNumber largest_seq = 100,
+           SequenceNumber smallest_seq = 100, SequenceNumber largest_seq = 101,
            size_t compensated_file_size = 0) {
     assert(level < vstorage_->num_levels());
     FileMetaData* f = new FileMetaData;
@@ -120,9 +121,9 @@ class CompactionPickerTest : public testing::Test {
   }
 
   void UpdateVersionStorageInfo() {
-    vstorage_->CalculateBaseBytes(ioptions_, mutable_cf_options_);
     vstorage_->UpdateFilesByCompactionPri(ioptions_.compaction_pri);
     vstorage_->UpdateNumNonEmptyLevels();
+    vstorage_->CalculateBaseBytes(ioptions_, mutable_cf_options_);
     vstorage_->GenerateFileIndexer();
     vstorage_->GenerateLevelFilesBrief(mutable_cf_options_);
     vstorage_->ComputeCompactionScore(ioptions_, mutable_cf_options_);

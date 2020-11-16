@@ -99,7 +99,7 @@ class VersionStorageInfoTest : public testing::Test {
   Options options_;
   ImmutableCFOptions ioptions_;
   MutableCFOptions mutable_cf_options_;
-  VersionStorageInfo vstorage_;
+  VersionStorageInfo* vstorage_;
 
   InternalKey GetInternalKey(const char* ukey,
                              SequenceNumber smallest_seq = 100) {
@@ -113,11 +113,11 @@ class VersionStorageInfoTest : public testing::Test {
         options_(GetOptionsWithNumLevels(6, logger_)),
         ioptions_(options_),
         mutable_cf_options_(options_),
-        vstorage_(&icmp_, ucmp_, 6, kCompactionStyleLevel, nullptr, false) {}
+        vstorage_(nullptr) {}
 
   ~VersionStorageInfoTest() override {
-    for (int i = 0; i < vstorage_.num_levels(); i++) {
-      for (auto* f : vstorage_.LevelFiles(i)) {
+    for (int i = 0; i < vstorage_->num_levels(); i++) {
+      for (auto* f : vstorage_->LevelFiles(i)) {
         if (--f->refs == 0) {
           delete f;
         }
@@ -125,9 +125,15 @@ class VersionStorageInfoTest : public testing::Test {
     }
   }
 
+  void InitVersionStorage() {
+    vstorage_ = new VersionStorageInfo(
+        &icmp_, ucmp_, 6, kCompactionStyleLevel, nullptr, false,
+        ioptions_.level_compaction_dynamic_level_bytes);
+  }
+
   void Add(int level, uint32_t file_number, const char* smallest,
            const char* largest, uint64_t file_size = 0) {
-    assert(level < vstorage_.num_levels());
+    assert(level < vstorage_->num_levels());
     FileMetaData* f = new FileMetaData;
     f->fd = FileDescriptor(file_number, 0, file_size);
     f->smallest = GetInternalKey(smallest, 0);
@@ -136,12 +142,12 @@ class VersionStorageInfoTest : public testing::Test {
     f->refs = 0;
     f->num_entries = 0;
     f->num_deletions = 0;
-    vstorage_.AddFile(level, f);
+    vstorage_->AddFile(level, f);
   }
 
   void Add(int level, uint32_t file_number, const InternalKey& smallest,
            const InternalKey& largest, uint64_t file_size = 0) {
-    assert(level < vstorage_.num_levels());
+    assert(level < vstorage_->num_levels());
     FileMetaData* f = new FileMetaData;
     f->fd = FileDescriptor(file_number, 0, file_size);
     f->smallest = smallest;
@@ -150,13 +156,13 @@ class VersionStorageInfoTest : public testing::Test {
     f->refs = 0;
     f->num_entries = 0;
     f->num_deletions = 0;
-    vstorage_.AddFile(level, f);
+    vstorage_->AddFile(level, f);
   }
 
   std::string GetOverlappingFiles(int level, const InternalKey& begin,
                                   const InternalKey& end) {
     std::vector<FileMetaData*> inputs;
-    vstorage_.GetOverlappingInputs(level, &begin, &end, &inputs);
+    vstorage_->GetOverlappingInputs(level, &begin, &end, &inputs);
 
     std::string result;
     for (size_t i = 0; i < inputs.size(); ++i) {
@@ -173,14 +179,15 @@ TEST_F(VersionStorageInfoTest, MaxBytesForLevelStatic) {
   ioptions_.level_compaction_dynamic_level_bytes = false;
   mutable_cf_options_.max_bytes_for_level_base = 10;
   mutable_cf_options_.max_bytes_for_level_multiplier = 5;
+  InitVersionStorage();
   Add(4, 100U, "1", "2");
   Add(5, 101U, "1", "2");
 
-  vstorage_.CalculateBaseBytes(ioptions_, mutable_cf_options_);
-  ASSERT_EQ(vstorage_.MaxBytesForLevel(1), 10U);
-  ASSERT_EQ(vstorage_.MaxBytesForLevel(2), 50U);
-  ASSERT_EQ(vstorage_.MaxBytesForLevel(3), 250U);
-  ASSERT_EQ(vstorage_.MaxBytesForLevel(4), 1250U);
+  vstorage_->CalculateBaseBytes(ioptions_, mutable_cf_options_);
+  ASSERT_EQ(vstorage_->MaxBytesForLevel(1), 10U);
+  ASSERT_EQ(vstorage_->MaxBytesForLevel(2), 50U);
+  ASSERT_EQ(vstorage_->MaxBytesForLevel(3), 250U);
+  ASSERT_EQ(vstorage_->MaxBytesForLevel(4), 1250U);
 
   ASSERT_EQ(0, logger_->log_count);
 }
@@ -189,48 +196,50 @@ TEST_F(VersionStorageInfoTest, MaxBytesForLevelDynamic) {
   ioptions_.level_compaction_dynamic_level_bytes = true;
   mutable_cf_options_.max_bytes_for_level_base = 1000;
   mutable_cf_options_.max_bytes_for_level_multiplier = 5;
+  InitVersionStorage();
   Add(5, 1U, "1", "2", 500U);
 
-  vstorage_.CalculateBaseBytes(ioptions_, mutable_cf_options_);
+  vstorage_->CalculateBaseBytes(ioptions_, mutable_cf_options_);
   ASSERT_EQ(0, logger_->log_count);
-  ASSERT_EQ(vstorage_.base_level(), 5);
+  ASSERT_EQ(vstorage_->base_level(), 5);
 
   Add(5, 2U, "3", "4", 550U);
-  vstorage_.CalculateBaseBytes(ioptions_, mutable_cf_options_);
+  vstorage_->CalculateBaseBytes(ioptions_, mutable_cf_options_);
   ASSERT_EQ(0, logger_->log_count);
-  ASSERT_EQ(vstorage_.MaxBytesForLevel(4), 1000U);
-  ASSERT_EQ(vstorage_.base_level(), 4);
+  ASSERT_EQ(vstorage_->MaxBytesForLevel(4), 1000U);
+  ASSERT_EQ(vstorage_->base_level(), 4);
 
   Add(4, 3U, "3", "4", 550U);
-  vstorage_.CalculateBaseBytes(ioptions_, mutable_cf_options_);
+  vstorage_->CalculateBaseBytes(ioptions_, mutable_cf_options_);
   ASSERT_EQ(0, logger_->log_count);
-  ASSERT_EQ(vstorage_.MaxBytesForLevel(4), 1000U);
-  ASSERT_EQ(vstorage_.base_level(), 4);
+  ASSERT_EQ(vstorage_->MaxBytesForLevel(4), 1000U);
+  ASSERT_EQ(vstorage_->base_level(), 4);
 
   Add(3, 4U, "3", "4", 250U);
   Add(3, 5U, "5", "7", 300U);
-  vstorage_.CalculateBaseBytes(ioptions_, mutable_cf_options_);
+  vstorage_->CalculateBaseBytes(ioptions_, mutable_cf_options_);
   ASSERT_EQ(1, logger_->log_count);
-  ASSERT_EQ(vstorage_.MaxBytesForLevel(4), 1005U);
-  ASSERT_EQ(vstorage_.MaxBytesForLevel(3), 1000U);
-  ASSERT_EQ(vstorage_.base_level(), 3);
+  ASSERT_EQ(vstorage_->MaxBytesForLevel(4), 1005U);
+  ASSERT_EQ(vstorage_->MaxBytesForLevel(3), 1000U);
+  ASSERT_EQ(vstorage_->base_level(), 3);
 
   Add(1, 6U, "3", "4", 5U);
   Add(1, 7U, "8", "9", 5U);
   logger_->log_count = 0;
-  vstorage_.CalculateBaseBytes(ioptions_, mutable_cf_options_);
+  vstorage_->CalculateBaseBytes(ioptions_, mutable_cf_options_);
   ASSERT_EQ(1, logger_->log_count);
-  ASSERT_GT(vstorage_.MaxBytesForLevel(4), 1005U);
-  ASSERT_GT(vstorage_.MaxBytesForLevel(3), 1005U);
-  ASSERT_EQ(vstorage_.MaxBytesForLevel(2), 1005U);
-  ASSERT_EQ(vstorage_.MaxBytesForLevel(1), 1000U);
-  ASSERT_EQ(vstorage_.base_level(), 1);
+  ASSERT_GT(vstorage_->MaxBytesForLevel(4), 1005U);
+  ASSERT_GT(vstorage_->MaxBytesForLevel(3), 1005U);
+  ASSERT_EQ(vstorage_->MaxBytesForLevel(2), 1005U);
+  ASSERT_EQ(vstorage_->MaxBytesForLevel(1), 1000U);
+  ASSERT_EQ(vstorage_->base_level(), 1);
 }
 
 TEST_F(VersionStorageInfoTest, MaxBytesForLevelDynamicLotsOfData) {
   ioptions_.level_compaction_dynamic_level_bytes = true;
   mutable_cf_options_.max_bytes_for_level_base = 100;
   mutable_cf_options_.max_bytes_for_level_multiplier = 2;
+  InitVersionStorage();
   Add(0, 1U, "1", "2", 50U);
   Add(1, 2U, "1", "2", 50U);
   Add(2, 3U, "1", "2", 500U);
@@ -238,12 +247,12 @@ TEST_F(VersionStorageInfoTest, MaxBytesForLevelDynamicLotsOfData) {
   Add(4, 5U, "1", "2", 1700U);
   Add(5, 6U, "1", "2", 500U);
 
-  vstorage_.CalculateBaseBytes(ioptions_, mutable_cf_options_);
-  ASSERT_EQ(vstorage_.MaxBytesForLevel(4), 800U);
-  ASSERT_EQ(vstorage_.MaxBytesForLevel(3), 400U);
-  ASSERT_EQ(vstorage_.MaxBytesForLevel(2), 200U);
-  ASSERT_EQ(vstorage_.MaxBytesForLevel(1), 100U);
-  ASSERT_EQ(vstorage_.base_level(), 1);
+  vstorage_->CalculateBaseBytes(ioptions_, mutable_cf_options_);
+  ASSERT_EQ(vstorage_->MaxBytesForLevel(4), 800U);
+  ASSERT_EQ(vstorage_->MaxBytesForLevel(3), 400U);
+  ASSERT_EQ(vstorage_->MaxBytesForLevel(2), 200U);
+  ASSERT_EQ(vstorage_->MaxBytesForLevel(1), 100U);
+  ASSERT_EQ(vstorage_->base_level(), 1);
   ASSERT_EQ(0, logger_->log_count);
 }
 
@@ -252,17 +261,18 @@ TEST_F(VersionStorageInfoTest, MaxBytesForLevelDynamicLargeLevel) {
   ioptions_.level_compaction_dynamic_level_bytes = true;
   mutable_cf_options_.max_bytes_for_level_base = 10U * kOneGB;
   mutable_cf_options_.max_bytes_for_level_multiplier = 10;
+  InitVersionStorage();
   Add(0, 1U, "1", "2", 50U);
   Add(3, 4U, "1", "2", 32U * kOneGB);
   Add(4, 5U, "1", "2", 500U * kOneGB);
   Add(5, 6U, "1", "2", 3000U * kOneGB);
 
-  vstorage_.CalculateBaseBytes(ioptions_, mutable_cf_options_);
-  ASSERT_EQ(vstorage_.MaxBytesForLevel(5), 3000U * kOneGB);
-  ASSERT_EQ(vstorage_.MaxBytesForLevel(4), 300U * kOneGB);
-  ASSERT_EQ(vstorage_.MaxBytesForLevel(3), 30U * kOneGB);
-  ASSERT_EQ(vstorage_.MaxBytesForLevel(2), 10U * kOneGB);
-  ASSERT_EQ(vstorage_.base_level(), 2);
+  vstorage_->CalculateBaseBytes(ioptions_, mutable_cf_options_);
+  ASSERT_EQ(vstorage_->MaxBytesForLevel(5), 3000U * kOneGB);
+  ASSERT_EQ(vstorage_->MaxBytesForLevel(4), 300U * kOneGB);
+  ASSERT_EQ(vstorage_->MaxBytesForLevel(3), 30U * kOneGB);
+  ASSERT_EQ(vstorage_->MaxBytesForLevel(2), 10U * kOneGB);
+  ASSERT_EQ(vstorage_->base_level(), 2);
   ASSERT_EQ(0, logger_->log_count);
 }
 
@@ -271,6 +281,7 @@ TEST_F(VersionStorageInfoTest, MaxBytesForLevelDynamicWithLargeL0_1) {
   mutable_cf_options_.max_bytes_for_level_base = 40000;
   mutable_cf_options_.max_bytes_for_level_multiplier = 5;
   mutable_cf_options_.level0_file_num_compaction_trigger = 2;
+  InitVersionStorage();
 
   Add(0, 1U, "1", "2", 10000U);
   Add(0, 2U, "1", "2", 10000U);
@@ -281,15 +292,15 @@ TEST_F(VersionStorageInfoTest, MaxBytesForLevelDynamicWithLargeL0_1) {
   Add(3, 6U, "1", "2", 40000U);
   Add(2, 7U, "1", "2", 8000U);
 
-  vstorage_.CalculateBaseBytes(ioptions_, mutable_cf_options_);
+  vstorage_->CalculateBaseBytes(ioptions_, mutable_cf_options_);
   ASSERT_EQ(0, logger_->log_count);
-  ASSERT_EQ(2, vstorage_.base_level());
+  ASSERT_EQ(2, vstorage_->base_level());
   // level multiplier should be 3.5
-  ASSERT_EQ(vstorage_.level_multiplier(), 5.0);
+  ASSERT_EQ(vstorage_->level_multiplier(), 5.0);
   // Level size should be around 30,000, 105,000, 367,500
-  ASSERT_EQ(40000U, vstorage_.MaxBytesForLevel(2));
-  ASSERT_EQ(51450U, vstorage_.MaxBytesForLevel(3));
-  ASSERT_EQ(257250U, vstorage_.MaxBytesForLevel(4));
+  ASSERT_EQ(40000U, vstorage_->MaxBytesForLevel(2));
+  ASSERT_EQ(51450U, vstorage_->MaxBytesForLevel(3));
+  ASSERT_EQ(257250U, vstorage_->MaxBytesForLevel(4));
 }
 
 TEST_F(VersionStorageInfoTest, MaxBytesForLevelDynamicWithLargeL0_2) {
@@ -297,6 +308,7 @@ TEST_F(VersionStorageInfoTest, MaxBytesForLevelDynamicWithLargeL0_2) {
   mutable_cf_options_.max_bytes_for_level_base = 10000;
   mutable_cf_options_.max_bytes_for_level_multiplier = 5;
   mutable_cf_options_.level0_file_num_compaction_trigger = 2;
+  InitVersionStorage();
 
   Add(0, 11U, "1", "2", 10000U);
   Add(0, 12U, "1", "2", 10000U);
@@ -307,18 +319,18 @@ TEST_F(VersionStorageInfoTest, MaxBytesForLevelDynamicWithLargeL0_2) {
   Add(3, 6U, "1", "2", 40000U);
   Add(2, 7U, "1", "2", 8000U);
 
-  vstorage_.CalculateBaseBytes(ioptions_, mutable_cf_options_);
+  vstorage_->CalculateBaseBytes(ioptions_, mutable_cf_options_);
   ASSERT_EQ(0, logger_->log_count);
-  ASSERT_EQ(2, vstorage_.base_level());
+  ASSERT_EQ(2, vstorage_->base_level());
   // level multiplier should be 3.5
-  ASSERT_LT(vstorage_.level_multiplier(), 3.6);
-  ASSERT_GT(vstorage_.level_multiplier(), 3.4);
+  ASSERT_LT(vstorage_->level_multiplier(), 3.6);
+  ASSERT_GT(vstorage_->level_multiplier(), 3.4);
   // Level size should be around 30,000, 105,000, 367,500
-  ASSERT_EQ(30000U, vstorage_.MaxBytesForLevel(2));
-  ASSERT_LT(vstorage_.MaxBytesForLevel(3), 110000U);
-  ASSERT_GT(vstorage_.MaxBytesForLevel(3), 100000U);
-  ASSERT_LT(vstorage_.MaxBytesForLevel(4), 370000U);
-  ASSERT_GT(vstorage_.MaxBytesForLevel(4), 360000U);
+  ASSERT_EQ(30000U, vstorage_->MaxBytesForLevel(2));
+  ASSERT_LT(vstorage_->MaxBytesForLevel(3), 110000U);
+  ASSERT_GT(vstorage_->MaxBytesForLevel(3), 100000U);
+  ASSERT_LT(vstorage_->MaxBytesForLevel(4), 370000U);
+  ASSERT_GT(vstorage_->MaxBytesForLevel(4), 360000U);
 }
 
 TEST_F(VersionStorageInfoTest, MaxBytesForLevelDynamicWithLargeL0_3) {
@@ -326,6 +338,7 @@ TEST_F(VersionStorageInfoTest, MaxBytesForLevelDynamicWithLargeL0_3) {
   mutable_cf_options_.max_bytes_for_level_base = 10000;
   mutable_cf_options_.max_bytes_for_level_multiplier = 5;
   mutable_cf_options_.level0_file_num_compaction_trigger = 2;
+  InitVersionStorage();
 
   Add(0, 11U, "1", "2", 5000U);
   Add(0, 12U, "1", "2", 5000U);
@@ -339,21 +352,22 @@ TEST_F(VersionStorageInfoTest, MaxBytesForLevelDynamicWithLargeL0_3) {
   Add(3, 6U, "1", "2", 40000U);
   Add(2, 7U, "1", "2", 8000U);
 
-  vstorage_.CalculateBaseBytes(ioptions_, mutable_cf_options_);
+  vstorage_->CalculateBaseBytes(ioptions_, mutable_cf_options_);
   ASSERT_EQ(0, logger_->log_count);
-  ASSERT_EQ(2, vstorage_.base_level());
+  ASSERT_EQ(2, vstorage_->base_level());
   // level multiplier should be 3.5
-  ASSERT_LT(vstorage_.level_multiplier(), 3.6);
-  ASSERT_GT(vstorage_.level_multiplier(), 3.4);
+  ASSERT_LT(vstorage_->level_multiplier(), 3.6);
+  ASSERT_GT(vstorage_->level_multiplier(), 3.4);
   // Level size should be around 30,000, 105,000, 367,500
-  ASSERT_EQ(30000U, vstorage_.MaxBytesForLevel(2));
-  ASSERT_LT(vstorage_.MaxBytesForLevel(3), 110000U);
-  ASSERT_GT(vstorage_.MaxBytesForLevel(3), 100000U);
-  ASSERT_LT(vstorage_.MaxBytesForLevel(4), 370000U);
-  ASSERT_GT(vstorage_.MaxBytesForLevel(4), 360000U);
+  ASSERT_EQ(30000U, vstorage_->MaxBytesForLevel(2));
+  ASSERT_LT(vstorage_->MaxBytesForLevel(3), 110000U);
+  ASSERT_GT(vstorage_->MaxBytesForLevel(3), 100000U);
+  ASSERT_LT(vstorage_->MaxBytesForLevel(4), 370000U);
+  ASSERT_GT(vstorage_->MaxBytesForLevel(4), 360000U);
 }
 
 TEST_F(VersionStorageInfoTest, EstimateLiveDataSize) {
+  InitVersionStorage();
   // Test whether the overlaps are detected as expected
   Add(1, 1U, "4", "7", 1U);  // Perfect overlap with last level
   Add(2, 2U, "3", "5", 1U);  // Partial overlap with last level
@@ -362,10 +376,11 @@ TEST_F(VersionStorageInfoTest, EstimateLiveDataSize) {
   Add(4, 5U, "4", "5", 1U);  // Inside range of last level
   Add(4, 5U, "6", "7", 1U);  // Inside range of last level
   Add(5, 6U, "4", "7", 10U);
-  ASSERT_EQ(10U, vstorage_.EstimateLiveDataSize());
+  ASSERT_EQ(10U, vstorage_->EstimateLiveDataSize());
 }
 
 TEST_F(VersionStorageInfoTest, EstimateLiveDataSize2) {
+  InitVersionStorage();
   Add(0, 1U, "9", "9", 1U);  // Level 0 is not ordered
   Add(0, 1U, "5", "6", 1U);  // Ignored because of [5,6] in l1
   Add(1, 1U, "1", "2", 1U);  // Ignored because of [2,3] in l2
@@ -373,10 +388,11 @@ TEST_F(VersionStorageInfoTest, EstimateLiveDataSize2) {
   Add(1, 3U, "5", "6", 1U);
   Add(2, 4U, "2", "3", 1U);
   Add(3, 5U, "7", "8", 1U);
-  ASSERT_EQ(4U, vstorage_.EstimateLiveDataSize());
+  ASSERT_EQ(4U, vstorage_->EstimateLiveDataSize());
 }
 
 TEST_F(VersionStorageInfoTest, GetOverlappingInputs) {
+  InitVersionStorage();
   // Two files that overlap at the range deletion tombstone sentinel.
   Add(1, 1U, {"a", 0, kTypeValue}, {"b", kMaxSequenceNumber, kTypeRangeDeletion}, 1);
   Add(1, 2U, {"b", 0, kTypeValue}, {"c", 0, kTypeValue}, 1);
@@ -386,9 +402,9 @@ TEST_F(VersionStorageInfoTest, GetOverlappingInputs) {
   // Two files that do not overlap.
   Add(1, 5U, {"g", 0, kTypeValue}, {"h", 0, kTypeValue}, 1);
   Add(1, 6U, {"i", 0, kTypeValue}, {"j", 0, kTypeValue}, 1);
-  vstorage_.UpdateNumNonEmptyLevels();
-  vstorage_.CalculateBaseBytes(ioptions_, mutable_cf_options_);
-  vstorage_.GenerateLevelFilesBrief(mutable_cf_options_);
+  vstorage_->UpdateNumNonEmptyLevels();
+  vstorage_->CalculateBaseBytes(ioptions_, mutable_cf_options_);
+  vstorage_->GenerateLevelFilesBrief(mutable_cf_options_);
 
   ASSERT_EQ("1,2", GetOverlappingFiles(
       1, {"a", 0, kTypeValue}, {"b", 0, kTypeValue}));
