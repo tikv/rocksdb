@@ -73,7 +73,7 @@ class CompactionPickerTest : public testing::Test {
     options_.num_levels = num_levels;
     vstorage_.reset(new VersionStorageInfo(
         &icmp_, ucmp_, options_.num_levels, style, nullptr, false,
-        options_.level_compaction_dynamic_level_bytes));
+        ioptions_.level_compaction_dynamic_level_bytes));
     vstorage_->CalculateBaseBytes(ioptions_, mutable_cf_options_);
   }
 
