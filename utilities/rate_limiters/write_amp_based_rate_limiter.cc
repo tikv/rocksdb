@@ -324,11 +324,11 @@ Status WriteAmpBasedRateLimiter::Tune() {
   ratio_base_cache_ = ratio + ratio_padding;
 
   // in case there are compaction bursts even when online writes are stable
-  auto util = bytes_sampler_.GetRecentValue() * 100 /
+  auto util = bytes_sampler_.GetRecentValue() * 1000 /
               limit_bytes_sampler_.GetRecentValue();
-  if (util > 98) {
+  if (util > 990) {
     ratio_delta_ += 1;
-  } else if (util < 95 && ratio_delta_ > 0) {
+  } else if (util < 950 && ratio_delta_ > 0) {
     ratio_delta_ -= 1;
   }
   if (should_pace_up_.load(std::memory_order_relaxed)) {
