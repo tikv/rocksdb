@@ -94,6 +94,28 @@ class TestFilterFactory : public CompactionFilterFactory {
   }
 };
 
+class NoTombstonesOnFiltered : public CompactionFilter {
+ public:
+  bool* filter_all_records_;
+  bool tombstones_on_filtered_;
+  NoTombstonesOnFiltered(bool* filter_all_records) {
+    filter_all_records_ = filter_all_records;
+    tombstones_on_filtered_ = true;
+  }
+  ~NoTombstonesOnFiltered() {}
+
+  virtual bool Filter(int /*level*/, const Slice& /*key*/,
+                      const Slice& /*existing_value*/,
+                      std::string* /*new_value*/,
+                      bool* /*value_changed*/) const {
+    return *filter_all_records_;
+  }
+  const char* Name() const override {
+    return "CompactionIteratorTest NoTombstonesOnFiltered";
+  }
+  bool TombstonesOnFiltered() const { return tombstones_on_filtered_; }
+};
+
 TEST_F(CompactFilesTest, FilterContext) {
   Options options;
   // to trigger compaction more easily
@@ -489,6 +511,59 @@ TEST_F(CompactFilesTest, GetCompactionJobInfo) {
   ASSERT_OK(compaction_job_info.status);
   // no assertion failure
   delete db;
+}
+
+TEST_F(CompactFilesTest, TombstonesOnFiltered) {
+  bool testCases[2] = {true, false};
+  for (int i = 0; i < 2; ++i) {
+    bool filter_all_records = false;
+    NoTombstonesOnFiltered* filter =
+        new NoTombstonesOnFiltered(&filter_all_records);
+    filter->tombstones_on_filtered_ = testCases[i];
+
+    Options options;
+    options.create_if_missing = true;
+    options.compaction_filter = filter;
+
+    CompactRangeOptions compact_opts;
+    compact_opts.change_level = true;
+    compact_opts.target_level = 4;
+    Slice keyAAAAA = Slice("AAAAA");
+    Slice keyCCCCCC = Slice("CCCCCC");
+
+    DB* db = nullptr;
+    DestroyDB(db_name_, options);
+    Status s = DB::Open(options, db_name_, &db);
+    assert(s.ok());
+    assert(db);
+
+    // Put "DDDDD" -> "value" into DB, and compact it to level 4.
+    db->Put(WriteOptions(), "DDDDD", "value");
+    db->Flush(FlushOptions());
+    db->CompactRange(compact_opts, nullptr, nullptr);
+
+    // Put more key value pairs, and compact them to level 4.
+    db->Put(WriteOptions(), "AAAAA", "value");
+    db->Put(WriteOptions(), "CCCCC", "value");
+    db->Flush(FlushOptions());
+    db->CompactRange(compact_opts, &keyAAAAA, &keyCCCCCC);
+
+    // Compact again and filter all records. The oldest "DDDDD" should be
+    // exposed.
+    filter_all_records = true;
+    db->Put(WriteOptions(), "BBBBB", "value");
+    db->Put(WriteOptions(), "DDDDD", "value");
+    db->Flush(FlushOptions());
+    db->CompactRange(compact_opts, &keyAAAAA, &keyCCCCCC);
+    std::string getValue;
+    db->Get(ReadOptions(), "DDDDD", &getValue);
+    if (testCases[i] /*tombstones_on_filtered*/) {
+      ASSERT_EQ(getValue, "");
+    } else {
+      ASSERT_EQ(getValue, "value");
+    }
+    delete (db);
+  }
 }
 
 }  // namespace rocksdb

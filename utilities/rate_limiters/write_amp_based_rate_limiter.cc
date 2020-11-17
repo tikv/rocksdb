@@ -329,7 +329,8 @@ Status WriteAmpBasedRateLimiter::Tune() {
   }
   if (should_pace_up_.load(std::memory_order_relaxed)) {
     if (ratio_delta_ < 60) {
-      ratio_delta_ += 60;  // effect lasts for at least 60 * kSecondsPerTune = 1m
+      ratio_delta_ +=
+          60;  // effect lasts for at least 60 * kSecondsPerTune = 1m
     }
     should_pace_up_.store(false, std::memory_order_relaxed);
   }

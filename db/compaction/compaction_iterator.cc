@@ -523,7 +523,10 @@ void CompactionIterator::NextFromInput() {
         ++iter_stats_.num_optimized_del_drop_obsolete;
       }
       input_->Next();
-    } else if ((ikey_.type == kTypeDeletion) && bottommost_level_ &&
+    } else if ((ikey_.type == kTypeDeletion) &&
+               (bottommost_level_ ||
+                (compaction_filter_ &&
+                 !compaction_filter_->TombstonesOnFiltered())) &&
                ikeyNotNeededForIncrementalSnapshot()) {
       // Handle the case where we have a delete key at the bottom most level
       // We can skip outputting the key iff there are no subsequent puts for this

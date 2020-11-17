@@ -202,6 +202,12 @@ class CompactionFilter {
   // Returns a name that identifies this compaction filter.
   // The name will be printed to LOG file on start up for diagnosis.
   virtual const char* Name() const = 0;
+
+  // Leave tombstones on filtered records or not if the target level is not
+  // the bottommost one. By default it's true to avoid keys in lower level
+  // get exposed incorrectly. You can only set to `false` only when you can
+  // handle this situation.
+  virtual bool TombstonesOnFiltered() const { return true; }
 };
 
 // Each compaction will create a new CompactionFilter allowing the
