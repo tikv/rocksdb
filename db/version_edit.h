@@ -190,6 +190,9 @@ struct LevelFilesBrief {
   FdWithKeyRange* files;
   LevelFilesBrief() {
     num_files = 0;
+    num_ingested_files = 0;
+    num_ingested_bytes = 0;
+    num_tolerant_bytes = 0;
     files = nullptr;
   }
 };
