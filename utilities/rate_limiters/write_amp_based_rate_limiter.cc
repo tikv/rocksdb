@@ -328,7 +328,7 @@ Status WriteAmpBasedRateLimiter::Tune() {
               limit_bytes_sampler_.GetRecentValue();
   if (util > 990) {
     ratio_delta_ += 1;
-  } else if (util < 950 && ratio_delta_ > 0) {
+  } else if (ratio_delta_ > 0) {
     ratio_delta_ -= 1;
   }
   if (should_pace_up_.load(std::memory_order_relaxed)) {
