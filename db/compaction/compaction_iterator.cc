@@ -156,7 +156,8 @@ void CompactionIterator::Next() {
 }
 
 void CompactionIterator::InvokeFilterIfNeeded(bool* need_skip,
-                                              Slice* skip_until) {
+                                              Slice* skip_until,
+                                              bool* filtered) {
   if (compaction_filter_ != nullptr &&
       (ikey_.type == kTypeValue || ikey_.type == kTypeBlobIndex)) {
     // If the user has specified a compaction filter and the sequence
@@ -197,6 +198,7 @@ void CompactionIterator::InvokeFilterIfNeeded(bool* need_skip,
       // no value associated with delete
       value_.clear();
       iter_stats_.num_record_drop_user++;
+      *filtered = true;
     } else if (filter == CompactionFilter::Decision::kChangeValue) {
       value_ = compaction_filter_value_;
     } else if (filter == CompactionFilter::Decision::kRemoveAndSkipUntil) {
@@ -204,6 +206,7 @@ void CompactionIterator::InvokeFilterIfNeeded(bool* need_skip,
       compaction_filter_skip_until_.ConvertFromUserKey(kMaxSequenceNumber,
                                                        kValueTypeForSeek);
       *skip_until = compaction_filter_skip_until_.Encode();
+      *filtered = true;
     }
   }
 }
@@ -271,6 +274,8 @@ void CompactionIterator::NextFromInput() {
     // Points either into compaction_filter_skip_until_ or into
     // merge_helper_->compaction_filter_skip_until_.
     Slice skip_until;
+    // Indicates the current key is filterd or not.
+    bool filtered = false;
 
     // Check whether the user key changed. After this if statement current_key_
     // is a copy of the current input key (maybe converted to a delete by the
@@ -297,7 +302,7 @@ void CompactionIterator::NextFromInput() {
       // Apply the compaction filter to the first committed version of the user
       // key.
       if (current_key_committed_) {
-        InvokeFilterIfNeeded(&need_skip, &skip_until);
+        InvokeFilterIfNeeded(&need_skip, &skip_until, &filtered);
       }
     } else {
       // Update the current key to reflect the new sequence number/type without
@@ -318,7 +323,7 @@ void CompactionIterator::NextFromInput() {
         // Apply the compaction filter to the first committed version of the
         // user key.
         if (current_key_committed_) {
-          InvokeFilterIfNeeded(&need_skip, &skip_until);
+          InvokeFilterIfNeeded(&need_skip, &skip_until, &filtered);
         }
       }
     }
@@ -525,7 +530,7 @@ void CompactionIterator::NextFromInput() {
       input_->Next();
     } else if ((ikey_.type == kTypeDeletion) &&
                (bottommost_level_ ||
-                (compaction_filter_ &&
+                (filtered && compaction_filter_ &&
                  !compaction_filter_->TombstonesOnFiltered())) &&
                ikeyNotNeededForIncrementalSnapshot()) {
       // Handle the case where we have a delete key at the bottom most level
