@@ -169,7 +169,7 @@ class CompactionIterator {
   void PrepareOutput();
 
   // Invoke compaction filter if needed.
-  void InvokeFilterIfNeeded(bool* need_skip, Slice* skip_until);
+  void InvokeFilterIfNeeded(bool* need_skip, Slice* skip_until, bool* filtered);
 
   // Given a sequence number, return the sequence number of the
   // earliest snapshot that this sequence number is visible in.
