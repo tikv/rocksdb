@@ -1577,7 +1577,7 @@ VersionStorageInfo::VersionStorageInfo(
     const InternalKeyComparator* internal_comparator,
     const Comparator* user_comparator, int levels,
     CompactionStyle compaction_style, VersionStorageInfo* ref_vstorage,
-    bool _force_consistency_checks, bool _dynamic_level_bytes)
+    bool _force_consistency_checks, bool dynamic_level_bytes)
     : internal_comparator_(internal_comparator),
       user_comparator_(user_comparator),
       // cfd is nullptr if Version is dummy
@@ -1605,7 +1605,7 @@ VersionStorageInfo::VersionStorageInfo(
       estimated_compaction_needed_bytes_(0),
       finalized_(false),
       force_consistency_checks_(_force_consistency_checks),
-      dynamic_level_bytes_(_dynamic_level_bytes) {
+      dynamic_level_bytes_(dynamic_level_bytes) {
   if (ref_vstorage != nullptr) {
     accumulated_file_size_ = ref_vstorage->accumulated_file_size_;
     accumulated_raw_key_size_ = ref_vstorage->accumulated_raw_key_size_;
@@ -1996,7 +1996,7 @@ void VersionStorageInfo::GenerateLevelFilesBrief(
     DoGenerateLevelFilesBrief(
         &level_files_brief_[level], files_[level], &arena_);
     for (const auto& f : files_[level]) {
-      if (LikelyIngestedFile(f, level)) {
+      if (CanIgnoreFile(f, level)) {
         level_files_brief_[level].num_ingested_files += 1;
         level_files_brief_[level].num_ingested_bytes += f->fd.GetFileSize();
       }
