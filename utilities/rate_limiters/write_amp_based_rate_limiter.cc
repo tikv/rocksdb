@@ -314,11 +314,10 @@ Status WriteAmpBasedRateLimiter::Tune() {
                        long_term_bytes_sampler_.GetFullValue() * 10 /
                        std::max(long_term_highpri_bytes_sampler_.GetFullValue(),
                                 kHighBytesLower)));
-  ratio = std::max(
-      kRatioLower,
-      static_cast<int32_t>(
-          bytes_sampler_.GetFullValue() * 10 /
-          std::max(highpri_bytes_sampler_.GetFullValue(), kHighBytesLower)));
+  ratio = std::max(ratio, static_cast<int32_t>(
+                              bytes_sampler_.GetFullValue() * 10 /
+                              std::max(highpri_bytes_sampler_.GetFullValue(),
+                                       kHighBytesLower)));
   int32_t ratio_padding =
       std::min(kRatioPaddingMax, ratio * kRatioPaddingPercent / 100);
 
