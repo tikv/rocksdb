@@ -2232,7 +2232,7 @@ void VersionStorageInfo::EstimateCompactionBytesNeeded(
 #ifndef NDEBUG
       uint64_t level_size2 = 0;
       for (auto* f : files_[level]) {
-        if (CanIgnoreFile(f, level)) continue;
+        if (mutable_cf_options.ingest_tolerant_ratio != 0 && CanIgnoreFile(f, level)) continue;
         level_size2 += f->fd.GetFileSize();
       }
       assert(level_size2 == bytes_next_level);
@@ -2241,7 +2241,7 @@ void VersionStorageInfo::EstimateCompactionBytesNeeded(
       bytes_next_level = 0;
     } else {
       for (auto* f : files_[level]) {
-        if (CanIgnoreFile(f, level)) continue;
+        if (mutable_cf_options.ingest_tolerant_ratio != 0 && CanIgnoreFile(f, level)) continue;
         level_size += f->fd.GetFileSize();
       }
     }
@@ -2261,7 +2261,7 @@ void VersionStorageInfo::EstimateCompactionBytesNeeded(
       assert(bytes_next_level == 0);
       if (level + 1 < num_levels_) {
         for (auto* f : files_[level + 1]) {
-          if (CanIgnoreFile(f, level + 1)) continue;
+          if (mutable_cf_options.ingest_tolerant_ratio != 0 && CanIgnoreFile(f, level + 1)) continue;
           bytes_next_level += f->fd.GetFileSize();
         }
       }
@@ -2373,7 +2373,7 @@ void VersionStorageInfo::ComputeCompactionScore(
       uint64_t ingest_files_size = 0;
       for (auto f : files_[level]) {
         if (!f->being_compacted) {
-          if (CanIgnoreFile(f, level)) {
+          if (mutable_cf_options.ingest_tolerant_ratio != 0 && CanIgnoreFile(f, level)) {
             ingest_files_size += f->compensated_file_size;
           } else {
             level_bytes_no_compacting += f->compensated_file_size;
