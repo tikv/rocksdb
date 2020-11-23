@@ -538,6 +538,8 @@ class DB {
     //      level number (e.g., "0").
     static const std::string kNumFilesAtLevelPrefix;
 
+    static const std::string kNumMaxBytesAtLevelPrefix;
+
     //  "rocksdb.num-ingested-files-at-level<N>" - returns string containing the
     //  number of ingested files at level <N>.
     static const std::string kNumIngestedFilesAtLevelPrefix;

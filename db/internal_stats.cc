@@ -196,6 +196,7 @@ std::pair<Slice, Slice> GetPropertyNameAndArg(const Slice& property) {
 static const std::string rocksdb_prefix = "rocksdb.";
 
 static const std::string num_files_at_level_prefix = "num-files-at-level";
+static const std::string num_max_bytes_at_level_prefix = "num-max-bytes-at-level";
 static const std::string num_ingested_files_at_level_prefix =
     "num-ingested-files-at-level";
 static const std::string num_ingested_bytes_at_level_prefix =
@@ -267,6 +268,8 @@ static const std::string options_statistics = "options-statistics";
 
 const std::string DB::Properties::kNumFilesAtLevelPrefix =
     rocksdb_prefix + num_files_at_level_prefix;
+const std::string DB::Properties::kNumMaxBytesAtLevelPrefix =
+    rocksdb_prefix + num_max_bytes_at_level_prefix;
 const std::string DB::Properties::kNumIngestedFilesAtLevelPrefix =
     rocksdb_prefix + num_ingested_files_at_level_prefix;
 const std::string DB::Properties::kNumIngestedBytesAtLevelPrefix =
@@ -364,6 +367,9 @@ const std::unordered_map<std::string, DBPropertyInfo>
     InternalStats::ppt_name_to_info = {
         {DB::Properties::kNumFilesAtLevelPrefix,
          {false, &InternalStats::HandleNumFilesAtLevel, nullptr, nullptr,
+          nullptr}},
+        {DB::Properties::kNumMaxBytesAtLevelPrefix,
+         {false, &InternalStats::HandleNumMaxBytesAtLevel, nullptr, nullptr,
           nullptr}},
         {DB::Properties::kNumIngestedFilesAtLevelPrefix,
          {false, &InternalStats::HandleNumIngestedFilesAtLevel, nullptr,
@@ -562,6 +568,21 @@ bool InternalStats::HandleNumFilesAtLevel(std::string* value, Slice suffix) {
     char buf[100];
     snprintf(buf, sizeof(buf), "%d",
              vstorage->NumLevelFiles(static_cast<int>(level)));
+    *value = buf;
+    return true;
+  }
+}
+
+bool InternalStats::HandleNumMaxBytesAtLevel(std::string* value, Slice suffix) {
+  uint64_t level;
+  const auto* vstorage = cfd_->current()->storage_info();
+  bool ok = ConsumeDecimalNumber(&suffix, &level) && suffix.empty();
+  if (!ok || static_cast<int>(level) >= number_levels_) {
+    return false;
+  } else {
+    char buf[100];
+    snprintf(buf, sizeof(buf), "%" PRIu64,
+             vstorage->MaxBytesForLevel(static_cast<int>(level)));
     *value = buf;
     return true;
   }
