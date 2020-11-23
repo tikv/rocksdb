@@ -253,8 +253,6 @@ static const std::string num_running_flushes = "num-running-flushes";
 static const std::string actual_delayed_write_rate =
     "actual-delayed-write-rate";
 static const std::string is_write_stopped = "is-write-stopped";
-static const std::string limiter_ratio_base = "limiter-ratio-base";
-static const std::string limiter_ratio_delta = "limiter-ratio-delta";
 static const std::string estimate_oldest_key_time = "estimate-oldest-key-time";
 static const std::string block_cache_capacity = "block-cache-capacity";
 static const std::string block_cache_usage = "block-cache-usage";
@@ -339,10 +337,6 @@ const std::string DB::Properties::kActualDelayedWriteRate =
     rocksdb_prefix + actual_delayed_write_rate;
 const std::string DB::Properties::kIsWriteStopped =
     rocksdb_prefix + is_write_stopped;
-const std::string DB::Properties::kLimiterRatioBase =
-    rocksdb_prefix + limiter_ratio_base;
-const std::string DB::Properties::kLimiterRatioDelta =
-    rocksdb_prefix + limiter_ratio_delta;
 const std::string DB::Properties::kEstimateOldestKeyTime =
     rocksdb_prefix + estimate_oldest_key_time;
 const std::string DB::Properties::kBlockCacheCapacity =
@@ -477,12 +471,6 @@ const std::unordered_map<std::string, DBPropertyInfo>
         {DB::Properties::kIsWriteStopped,
          {false, nullptr, &InternalStats::HandleIsWriteStopped, nullptr,
           nullptr}},
-        {DB::Properties::kLimiterRatioBase,
-         {false, nullptr, &InternalStats::HandleLimiterRatioBase, nullptr,
-          nullptr}},
-        {DB::Properties::kLimiterRatioDelta,
-         {false, nullptr, &InternalStats::HandleLimiterRatioDelta, nullptr,
-          nullptr}},
         {DB::Properties::kEstimateOldestKeyTime,
          {false, nullptr, &InternalStats::HandleEstimateOldestKeyTime, nullptr,
           nullptr}},
@@ -555,26 +543,6 @@ bool InternalStats::HandleNumFilesAtLevel(std::string* value, Slice suffix) {
              vstorage->NumLevelFiles(static_cast<int>(level)));
     *value = buf;
     return true;
-  }
-}
-
-bool InternalStats::HandleLimiterRatioBase(uint64_t* value, DBImpl* /*db*/,
-                                           Version* /*version*/) {
-  if (cfd_->ioptions()->rate_limiter) {
-    *value = cfd_->ioptions()->rate_limiter->ratio_base();
-    return true;
-  } else {
-    return false;
-  }
-}
-
-bool InternalStats::HandleLimiterRatioDelta(uint64_t* value, DBImpl* /*db*/,
-                                            Version* /*version*/) {
-  if (cfd_->ioptions()->rate_limiter) {
-    *value = cfd_->ioptions()->rate_limiter->ratio_delta();
-    return true;
-  } else {
-    return false;
   }
 }
 
