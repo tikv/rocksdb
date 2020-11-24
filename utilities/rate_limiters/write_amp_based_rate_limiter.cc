@@ -325,7 +325,7 @@ Status WriteAmpBasedRateLimiter::Tune() {
   // in case there are compaction bursts even when online writes are stable
   auto util = bytes_sampler_.GetRecentValue() * 1000 /
               limit_bytes_sampler_.GetRecentValue();
-  if (util < 990) {
+  if (util < 990 && ratio_delta_ > 0) {
     ratio_delta_ -= 1;
   }
   // if (util >= 995) {
