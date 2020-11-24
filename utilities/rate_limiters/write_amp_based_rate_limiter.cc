@@ -289,6 +289,7 @@ Status WriteAmpBasedRateLimiter::Tune() {
   // generally this will help flatten IO waves.
   const int kRatioPaddingPercent = 10;
   const int kRatioPaddingMax = 10;
+  const int kRatioDeltaMax = 5;
 
   std::chrono::microseconds prev_tuned_time = tuned_time_;
   tuned_time_ = std::chrono::microseconds(NowMicrosMonotonic(env_));
@@ -325,7 +326,9 @@ Status WriteAmpBasedRateLimiter::Tune() {
   auto util = bytes_sampler_.GetRecentValue() * 1000 /
               limit_bytes_sampler_.GetRecentValue();
   if (util >= 995) {
-    ratio_delta_ += 1;
+    if (ratio_delta_ < kRatioDeltaMax) {
+      ratio_delta_ += 1;
+    }
   } else if (ratio_delta_ > 0) {
     ratio_delta_ -= 1;
   }
