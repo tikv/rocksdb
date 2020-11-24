@@ -288,7 +288,7 @@ Status WriteAmpBasedRateLimiter::Tune() {
   // 2. make it faster to digest unexpected burst of pending compaction bytes,
   // generally this will help flatten IO waves.
   const int kRatioPaddingPercent = 20;
-  const int kRatioPaddingMax = 10;
+  const int kRatioPaddingMax = 0;
   const int kRatioDeltaMax = 3;
 
   std::chrono::microseconds prev_tuned_time = tuned_time_;
@@ -341,7 +341,8 @@ Status WriteAmpBasedRateLimiter::Tune() {
 
   int64_t new_bytes_per_sec =
       (ratio + ratio_padding + ratio_delta_) *
-      std::max(highpri_bytes_sampler_.GetRecentValue(), kHighBytesLower) / 10;
+      std::max(highpri_bytes_sampler_.GetRecentValue(), kHighBytesLower) * 11 /
+      100;
   new_bytes_per_sec =
       std::max(kMinBytesPerSec,
                std::min(new_bytes_per_sec,
