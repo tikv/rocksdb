@@ -291,7 +291,7 @@ Status WriteAmpBasedRateLimiter::Tune() {
   const int kRatioPaddingMax = 0;
   const int kRatioDeltaMax = 3;
   const int kPaddingPercent = 15;
-  const int kPaddingMin = 5 * 1024 * 1024;  // 5MB/s
+  const int64_t kPaddingMin = 5 * 1024 * 1024;  // 5MB/s
 
   std::chrono::microseconds prev_tuned_time = tuned_time_;
   tuned_time_ = std::chrono::microseconds(NowMicrosMonotonic(env_));
