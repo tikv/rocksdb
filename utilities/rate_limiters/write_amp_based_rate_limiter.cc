@@ -278,6 +278,18 @@ int64_t WriteAmpBasedRateLimiter::CalculateRefillBytesPerPeriod(
   }
 }
 
+namespace {
+
+int64_t CalculatePadding(int64_t base) {
+  // 20MB --> 25%
+  // 25MB --> 20%
+  auto base_mb = base >> 20;
+  auto percent = 15 + 6000 / (base_mb * base_mb + 200);
+  return base * (100 + percent) / 100;
+}
+
+}  // anonymous namespace
+
 Status WriteAmpBasedRateLimiter::Tune() {
   // computed rate limit will be larger than 10MB/s
   const int64_t kMinBytesPerSec = 10 * 1024 * 1024;
@@ -290,8 +302,6 @@ Status WriteAmpBasedRateLimiter::Tune() {
   // 1. compaction cannot fully utilize the IO quota we set.
   // 2. make it faster to digest unexpected burst of pending compaction bytes,
   // generally this will help flatten IO waves.
-  const int kPaddingPercent = 16;
-  const int64_t kPaddingMin = 4 * 1024 * 1024;
 
   std::chrono::microseconds prev_tuned_time = tuned_time_;
   tuned_time_ = std::chrono::microseconds(NowMicrosMonotonic(env_));
@@ -336,8 +346,7 @@ Status WriteAmpBasedRateLimiter::Tune() {
   int64_t new_bytes_per_sec =
       (ratio + ratio_delta_) *
       std::max(highpri_bytes_sampler_.GetRecentValue(), kHighBytesLower) / 10;
-  new_bytes_per_sec +=
-      std::max(kPaddingMin, kPaddingPercent * new_bytes_per_sec / 100);
+  new_bytes_per_sec += CalculatePadding(new_bytes_per_sec);
   new_bytes_per_sec =
       std::max(kMinBytesPerSec,
                std::min(new_bytes_per_sec,
