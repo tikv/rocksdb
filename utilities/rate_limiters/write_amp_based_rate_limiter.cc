@@ -279,12 +279,16 @@ int64_t WriteAmpBasedRateLimiter::CalculateRefillBytesPerPeriod(
 }
 
 namespace {
-
 int64_t CalculatePadding(int64_t base) {
-  // smoothly transit from 4MB/s to 10%
-  return std::max((4l << 20), std::max(base / 10, base / 20 + (2 << 20)));
+  auto base_mb = base >> 20;
+  int64_t permillage = 100;  // 10%
+  if (base_mb <= 25) {
+    permillage = 700 - 20 * base_mb;
+  } else if (base_mb <= 125) {
+    permillage = 225 - base_mb;
+  }
+  return base + base * permillage / 1000;
 }
-
 }  // anonymous namespace
 
 Status WriteAmpBasedRateLimiter::Tune() {
