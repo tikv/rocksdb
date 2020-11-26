@@ -2176,16 +2176,8 @@ void VersionStorageInfo::EstimateCompactionBytesNeeded(
     level_size += f->fd.GetFileSize();
   }
   // Level 0
-  bool level0_compact_triggered = false;
-  if (static_cast<int>(files_[0].size()) >=
-          mutable_cf_options.level0_file_num_compaction_trigger ||
-      level_size >= mutable_cf_options.max_bytes_for_level_base) {
-    level0_compact_triggered = true;
-    estimated_compaction_needed_bytes_ = level_size;
-    bytes_compact_to_next_level = level_size;
-  } else {
-    estimated_compaction_needed_bytes_ = 0;
-  }
+  estimated_compaction_needed_bytes_ = level_size;
+  bytes_compact_to_next_level = level_size;
 
   // Level 1 and up.
   uint64_t bytes_next_level = 0;
@@ -2206,7 +2198,7 @@ void VersionStorageInfo::EstimateCompactionBytesNeeded(
         level_size += f->fd.GetFileSize();
       }
     }
-    if (level == base_level() && level0_compact_triggered) {
+    if (level == base_level()) {
       // Add base level size to compaction if level0 compaction triggered.
       estimated_compaction_needed_bytes_ += level_size;
     }
