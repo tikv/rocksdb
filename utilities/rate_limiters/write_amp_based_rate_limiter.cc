@@ -283,9 +283,9 @@ int64_t CalculatePadding(int64_t base) {
   auto base_mb = base >> 20;
   int64_t permillage = 100;  // 10%
   if (base_mb <= 25) {
-    permillage = 700 - 20 * base_mb;
+    permillage = 760 - 24 * base_mb;
   } else if (base_mb <= 125) {
-    permillage = 225 - base_mb;
+    permillage = 175 - 0.6 * base_mb;
   }
   return base + base * permillage / 1000;
 }
