@@ -94,8 +94,6 @@ void WriteAmpBasedRateLimiter::SetActualBytesPerSecond(
 
 void WriteAmpBasedRateLimiter::Request(int64_t bytes, const Env::IOPriority pri,
                                        Statistics* stats) {
-  static constexpr int kSecondsPerTune = 1;
-  static constexpr int kMicrosPerTune = 1000 * 1000 * kSecondsPerTune;
   TEST_SYNC_POINT("WriteAmpBasedRateLimiter::Request");
   TEST_SYNC_POINT_CALLBACK("WriteAmpBasedRateLimiter::Request:1",
                            &rate_bytes_per_sec_);
@@ -291,7 +289,7 @@ Status WriteAmpBasedRateLimiter::Tune() {
   const int kRatioPaddingMax = 0;
   const int kRatioDeltaMax = 3;
   const int kPaddingPercent = 16;
-  const int64_t kPaddingMin = 4 * 1024 * 1024;  // 4MB/s
+  const int64_t kPaddingMin = 3.5 * 1024 * 1024;
 
   std::chrono::microseconds prev_tuned_time = tuned_time_;
   tuned_time_ = std::chrono::microseconds(NowMicrosMonotonic(env_));
@@ -301,15 +299,17 @@ Status WriteAmpBasedRateLimiter::Tune() {
 
   int64_t prev_bytes_per_sec = GetBytesPerSecond();
 
-  bytes_sampler_.AddSample(duration_bytes_through_ * 1000 / duration_ms);
-  highpri_bytes_sampler_.AddSample(duration_highpri_bytes_through_ * 1000 /
-                                   duration_ms);
-  if (bytes_sampler_.AtTimePoint()) {
-    long_term_bytes_sampler_.AddSample(bytes_sampler_.GetFullValue());
-    long_term_highpri_bytes_sampler_.AddSample(
-        highpri_bytes_sampler_.GetFullValue());
+  for (uint32_t i = 0; i < duration_ms / kMillisPerTune; i++) {
+    bytes_sampler_.AddSample(duration_bytes_through_ * 1000 / duration_ms);
+    highpri_bytes_sampler_.AddSample(duration_highpri_bytes_through_ * 1000 /
+                                     duration_ms);
+    if (bytes_sampler_.AtTimePoint()) {
+      long_term_bytes_sampler_.AddSample(bytes_sampler_.GetFullValue());
+      long_term_highpri_bytes_sampler_.AddSample(
+          highpri_bytes_sampler_.GetFullValue());
+    }
+    limit_bytes_sampler_.AddSample(prev_bytes_per_sec);
   }
-  limit_bytes_sampler_.AddSample(prev_bytes_per_sec);
   // As LSM grows higher, it tends to generate compaction tasks in waves
   // (cascaded). We use extra long-term window to help reduce this fluctuation.
   int32_t ratio = std::max(

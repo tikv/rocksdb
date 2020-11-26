@@ -79,6 +79,10 @@ class WriteAmpBasedRateLimiter : public RateLimiter {
     return env->NowNanos() / std::milli::den;
   }
 
+  static constexpr int kSecondsPerTune = 1;
+  static constexpr int kMillisPerTune = 1000 * kSecondsPerTune;
+  static constexpr int kMicrosPerTune = 1000 * 1000 * kSecondsPerTune;
+
   // This mutex guard all internal states
   mutable port::Mutex request_mutex_;
 
@@ -141,9 +145,9 @@ class WriteAmpBasedRateLimiter : public RateLimiter {
     int64_t recent_sum_{0};
   };
 
-  static constexpr size_t kSmoothWindowSize = 180;       // 180 * 1s = 3m
+  static constexpr size_t kSmoothWindowSize = 300;       // 300 * 1s = 5m
   static constexpr size_t kRecentSmoothWindowSize = 10;  // 10 * 1s = 10s
-  static constexpr size_t kLongTermWindowSize = 15;      // 15 * 2m = 30m
+  static constexpr size_t kLongTermWindowSize = 10;      // 10 * 5m = 50m
   WindowSmoother<kSmoothWindowSize, kRecentSmoothWindowSize> bytes_sampler_;
   WindowSmoother<kSmoothWindowSize, kRecentSmoothWindowSize>
       highpri_bytes_sampler_;
