@@ -281,20 +281,17 @@ int64_t WriteAmpBasedRateLimiter::CalculateRefillBytesPerPeriod(
 namespace {
 
 int64_t CalculatePadding(int64_t base) {
-  // 20MB --> 25%
-  // 25MB --> 20%
-  auto base_mb = base >> 20;
-  auto percent = 15 + 6000 / (base_mb * base_mb + 200);
-  return base * (100 + percent) / 100;
+  // smoothly transit from 4MB/s to 10%
+  return std::max((4l << 20), std::max(base / 10, base / 20 + (2 << 20)));
 }
 
 }  // anonymous namespace
 
 Status WriteAmpBasedRateLimiter::Tune() {
   // computed rate limit will be larger than 10MB/s
-  const int64_t kMinBytesPerSec = 10 * 1024 * 1024;
+  const int64_t kMinBytesPerSec = 10 << 20;
   // high-priority bytes are padded to 10MB
-  const int64_t kHighBytesLower = 10 * 1024 * 1024;
+  const int64_t kHighBytesLower = 10 << 20;
   // lower bound for write amplification estimation
   const int kRatioLower = 11;
   const int kRatioDeltaMax = 3;
