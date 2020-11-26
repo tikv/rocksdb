@@ -26,6 +26,10 @@ struct WriteAmpBasedRateLimiter::Req {
   bool granted;
 };
 
+static constexpr int kSecondsPerTune = 1;
+static constexpr int kMillisPerTune = 1000 * kSecondsPerTune;
+static constexpr int kMicrosPerTune = 1000 * 1000 * kSecondsPerTune;
+
 WriteAmpBasedRateLimiter::WriteAmpBasedRateLimiter(int64_t rate_bytes_per_sec,
                                                    int64_t refill_period_us,
                                                    int32_t fairness,
@@ -280,16 +284,14 @@ Status WriteAmpBasedRateLimiter::Tune() {
   // high-priority bytes are padded to 10MB
   const int64_t kHighBytesLower = 10 * 1024 * 1024;
   // lower bound for write amplification estimation
-  const int kRatioLower = 12;
+  const int kRatioLower = 11;
+  const int kRatioDeltaMax = 3;
   // Two reasons for using a ratio larger than estimation:
   // 1. compaction cannot fully utilize the IO quota we set.
   // 2. make it faster to digest unexpected burst of pending compaction bytes,
   // generally this will help flatten IO waves.
-  const int kRatioPaddingPercent = 20;
-  const int kRatioPaddingMax = 0;
-  const int kRatioDeltaMax = 3;
   const int kPaddingPercent = 16;
-  const int64_t kPaddingMin = 3.5 * 1024 * 1024;
+  const int64_t kPaddingMin = 4 * 1024 * 1024;
 
   std::chrono::microseconds prev_tuned_time = tuned_time_;
   tuned_time_ = std::chrono::microseconds(NowMicrosMonotonic(env_));
@@ -303,26 +305,13 @@ Status WriteAmpBasedRateLimiter::Tune() {
     bytes_sampler_.AddSample(duration_bytes_through_ * 1000 / duration_ms);
     highpri_bytes_sampler_.AddSample(duration_highpri_bytes_through_ * 1000 /
                                      duration_ms);
-    if (bytes_sampler_.AtTimePoint()) {
-      long_term_bytes_sampler_.AddSample(bytes_sampler_.GetFullValue());
-      long_term_highpri_bytes_sampler_.AddSample(
-          highpri_bytes_sampler_.GetFullValue());
-    }
     limit_bytes_sampler_.AddSample(prev_bytes_per_sec);
   }
-  // As LSM grows higher, it tends to generate compaction tasks in waves
-  // (cascaded). We use extra long-term window to help reduce this fluctuation.
   int32_t ratio = std::max(
-      kRatioLower, static_cast<int32_t>(
-                       long_term_bytes_sampler_.GetFullValue() * 10 /
-                       std::max(long_term_highpri_bytes_sampler_.GetFullValue(),
-                                kHighBytesLower)));
-  ratio = std::max(ratio, static_cast<int32_t>(
-                              bytes_sampler_.GetFullValue() * 10 /
-                              std::max(highpri_bytes_sampler_.GetFullValue(),
-                                       kHighBytesLower)));
-  int32_t ratio_padding =
-      std::min(kRatioPaddingMax, ratio * kRatioPaddingPercent / 100);
+      kRatioLower,
+      static_cast<int32_t>(
+          bytes_sampler_.GetFullValue() * 10 /
+          std::max(highpri_bytes_sampler_.GetFullValue(), kHighBytesLower)));
 
   // in case there are compaction bursts even when online writes are stable
   auto util = bytes_sampler_.GetRecentValue() * 1000 /
@@ -341,8 +330,11 @@ Status WriteAmpBasedRateLimiter::Tune() {
     should_pace_up_.store(false, std::memory_order_relaxed);
   }
 
+  ratio_base_cache_ = ratio + ratio_delta_;
+  ratio_delta_cache_ = bytes_sampler_.GetFullValue();
+
   int64_t new_bytes_per_sec =
-      (ratio + ratio_padding + ratio_delta_) *
+      (ratio + ratio_delta_) *
       std::max(highpri_bytes_sampler_.GetRecentValue(), kHighBytesLower) / 10;
   new_bytes_per_sec +=
       std::max(kPaddingMin, kPaddingPercent * new_bytes_per_sec / 100);
