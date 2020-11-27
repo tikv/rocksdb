@@ -279,8 +279,14 @@ int64_t WriteAmpBasedRateLimiter::CalculateRefillBytesPerPeriod(
 }
 
 namespace {
+// Two reasons for adding padding to baseline limit:
+// 1. compaction cannot fully utilize the IO quota we set.
+// 2. make it faster to digest unexpected burst of pending compaction bytes,
+// generally this will help flatten IO waves.
+// The calculation is based on the empirical value of 14%, with special
+// care for low-band.
 int64_t CalculatePadding(int64_t base) {
-  return 16 * base / 100 + 13600958835589l / (base - 10108052);
+  return 14 * base / 100 + 23838621552974l / (base - 7355572);
 }
 }  // anonymous namespace
 
@@ -292,10 +298,6 @@ Status WriteAmpBasedRateLimiter::Tune() {
   // lower bound for write amplification estimation
   const int kRatioLower = 11;
   const int kRatioDeltaMax = 3;
-  // Two reasons for using a ratio larger than estimation:
-  // 1. compaction cannot fully utilize the IO quota we set.
-  // 2. make it faster to digest unexpected burst of pending compaction bytes,
-  // generally this will help flatten IO waves.
 
   std::chrono::microseconds prev_tuned_time = tuned_time_;
   tuned_time_ = std::chrono::microseconds(NowMicrosMonotonic(env_));
@@ -320,7 +322,7 @@ Status WriteAmpBasedRateLimiter::Tune() {
   // in case there are compaction bursts even when online writes are stable
   auto util = bytes_sampler_.GetRecentValue() * 1000 /
               limit_bytes_sampler_.GetRecentValue();
-  if (util >= 998) {
+  if (util >= 995) {
     if (ratio_delta_ < kRatioDeltaMax) {
       ratio_delta_ += 1;
     }
