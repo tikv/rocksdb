@@ -26,9 +26,21 @@ struct WriteAmpBasedRateLimiter::Req {
   bool granted;
 };
 
-static constexpr int kSecondsPerTune = 1;
-static constexpr int kMillisPerTune = 1000 * kSecondsPerTune;
-static constexpr int kMicrosPerTune = 1000 * 1000 * kSecondsPerTune;
+namespace {
+constexpr int kSecondsPerTune = 1;
+constexpr int kMillisPerTune = 1000 * kSecondsPerTune;
+constexpr int kMicrosPerTune = 1000 * 1000 * kSecondsPerTune;
+
+// Two reasons for adding padding to baseline limit:
+// 1. compaction cannot fully utilize the IO quota we set.
+// 2. make it faster to digest unexpected burst of pending compaction bytes,
+// generally this will help flatten IO waves.
+// The calculation is based on the empirical value of 16%, with special
+// care for low-band.
+int64_t CalculatePadding(int64_t base) {
+  return 16 * base / 100 + 13600958835589l / (base - 10108052);
+}
+}  // unnamed namespace
 
 WriteAmpBasedRateLimiter::WriteAmpBasedRateLimiter(int64_t rate_bytes_per_sec,
                                                    int64_t refill_period_us,
@@ -278,25 +290,13 @@ int64_t WriteAmpBasedRateLimiter::CalculateRefillBytesPerPeriod(
   }
 }
 
-namespace {
-// Two reasons for adding padding to baseline limit:
-// 1. compaction cannot fully utilize the IO quota we set.
-// 2. make it faster to digest unexpected burst of pending compaction bytes,
-// generally this will help flatten IO waves.
-// The calculation is based on the empirical value of 14%, with special
-// care for low-band.
-int64_t CalculatePadding(int64_t base) {
-  return 14 * base / 100 + 23838621552974l / (base - 7355572);
-}
-}  // anonymous namespace
-
 Status WriteAmpBasedRateLimiter::Tune() {
   // computed rate limit will be larger than 10MB/s
   const int64_t kMinBytesPerSec = 10 << 20;
   // high-priority bytes are padded to 10MB
   const int64_t kHighBytesLower = 10 << 20;
   // lower bound for write amplification estimation
-  const int kRatioLower = 11;
+  const int kRatioLower = 12;
   const int kRatioDeltaMax = 5;
 
   std::chrono::microseconds prev_tuned_time = tuned_time_;
@@ -331,7 +331,7 @@ Status WriteAmpBasedRateLimiter::Tune() {
   }
   if (should_pace_up_.load(std::memory_order_relaxed)) {
     if (ratio_delta_ < 60) {
-      ratio_delta_ += 60;  // effect lasts for at least 60 * kSecondsPerTune = 1m
+      ratio_delta_ += 60;  // effect lasts for at least 60s
     }
     should_pace_up_.store(false, std::memory_order_relaxed);
   }
