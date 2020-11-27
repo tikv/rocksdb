@@ -280,7 +280,7 @@ int64_t WriteAmpBasedRateLimiter::CalculateRefillBytesPerPeriod(
 
 namespace {
 int64_t CalculatePadding(int64_t base) {
-  return base / 10 + 60517119950848l / (base - 869269);
+  return 16 * base / 100 + 13600958835589l / (base - 10108052);
 }
 }  // anonymous namespace
 
