@@ -280,17 +280,7 @@ int64_t WriteAmpBasedRateLimiter::CalculateRefillBytesPerPeriod(
 
 namespace {
 int64_t CalculatePadding(int64_t base) {
-  auto base_mb = base >> 20;
-  int64_t permillage = 100;  // 10%
-  // 11MB --> 59%(6.5MB)
-  // 25MB --> 19%(4.75MB)
-  // 225MB --> 10%(22.5MB)
-  if (base_mb <= 25) {
-    permillage = -9 * base_mb + 200 + 5420 / base_mb;
-  } else if (base_mb <= 225) {
-    permillage = 190 - 0.4 * base_mb;
-  }
-  return base * permillage / 1000;
+  return base / 10 + 60517119950848l / (base - 869269);
 }
 }  // anonymous namespace
 
