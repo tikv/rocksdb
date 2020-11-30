@@ -336,9 +336,6 @@ Status WriteAmpBasedRateLimiter::Tune() {
     should_pace_up_.store(false, std::memory_order_relaxed);
   }
 
-  ratio_base_cache_ = ratio + ratio_delta_;
-  ratio_delta_cache_ = bytes_sampler_.GetFullValue();
-
   int64_t new_bytes_per_sec =
       (ratio + ratio_delta_) *
       std::max(highpri_bytes_sampler_.GetRecentValue(), kHighBytesLower) / 10;
