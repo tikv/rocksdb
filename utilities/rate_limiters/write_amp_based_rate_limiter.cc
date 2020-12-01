@@ -38,7 +38,7 @@ constexpr int kMicrosPerTune = 1000 * 1000 * kSecondsPerTune;
 // The calculation is based on the empirical value of 16%, with special
 // care for low-band.
 int64_t CalculatePadding(int64_t base) {
-  return 16 * base / 100 + 25208063285369l / (base - 7684898);
+  return 16 * base / 100 + 25208063285369ll / (base - 7684898);
 }
 }  // unnamed namespace
 
@@ -307,6 +307,8 @@ Status WriteAmpBasedRateLimiter::Tune() {
 
   int64_t prev_bytes_per_sec = GetBytesPerSecond();
 
+  // Loop through the actual time slice to make sure bytes flow from long period
+  // of time is properly estimated.
   for (uint32_t i = 0; i < duration_ms / kMillisPerTune; i++) {
     bytes_sampler_.AddSample(duration_bytes_through_ * 1000 / duration_ms);
     highpri_bytes_sampler_.AddSample(duration_highpri_bytes_through_ * 1000 /
@@ -320,8 +322,8 @@ Status WriteAmpBasedRateLimiter::Tune() {
           std::max(highpri_bytes_sampler_.GetFullValue(), kHighBytesLower)));
 
   // in case there are compaction bursts even when online writes are stable
-  auto util = bytes_sampler_.GetRecentValue() * 1000 /
-              limit_bytes_sampler_.GetRecentValue();
+  int64_t util = bytes_sampler_.GetRecentValue() * 1000 /
+                 limit_bytes_sampler_.GetRecentValue();
   if (util >= 995) {
     if (ratio_delta_ < kRatioDeltaMax) {
       ratio_delta_ += 1;
