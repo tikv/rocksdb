@@ -38,8 +38,8 @@ constexpr int kMicrosPerTune = 1000 * 1000 * kSecondsPerTune;
 // The calculation is based on the empirical value of 16%, with special
 // care for low-band.
 int64_t CalculatePadding(int64_t base) {
-  assert(base > 7684898);
-  return 16 * base / 100 + 25208063285369ll / (base - 7684898);
+  assert(base > 236705);
+  return 16 * base / 100 + 192837846837493ll / (base - 236705);
 }
 }  // unnamed namespace
 
@@ -309,7 +309,7 @@ Status WriteAmpBasedRateLimiter::Tune() {
   int64_t prev_bytes_per_sec = GetBytesPerSecond();
 
   // Loop through the actual time slice to make sure bytes flow from long period
-  // of time is properly estimated.
+  // of time is properly estimated when the compaction rate is low.
   for (uint32_t i = 0; i < duration_ms / kMillisPerTune; i++) {
     bytes_sampler_.AddSample(duration_bytes_through_ * 1000 / duration_ms);
     highpri_bytes_sampler_.AddSample(duration_highpri_bytes_through_ * 1000 /
