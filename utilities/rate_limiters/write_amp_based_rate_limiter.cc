@@ -35,8 +35,9 @@ constexpr int kMicrosPerTune = 1000 * 1000 * kSecondsPerTune;
 // 1. compaction cannot fully utilize the IO quota we set.
 // 2. make it faster to digest unexpected burst of pending compaction bytes,
 // generally this will help flatten IO waves.
-// The calculation is based on the empirical value of 16%, with special
-// care for low-band.
+// Padding is calculated through hyperbola based on empirical percentage of 16%
+// and special care for low-pressure domain. E.g. coordinates (11M, 18M) and
+// (20M, 12M) are on this curve.
 int64_t CalculatePadding(int64_t base) {
   assert(base > 236705);
   return 16 * base / 100 + 192837846837493ll / (base - 236705);
