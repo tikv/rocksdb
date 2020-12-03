@@ -28,8 +28,6 @@ class FileSystemInspectedEnv : public EnvWrapper {
   FileSystemInspectedEnv(Env* base_env,
                          std::shared_ptr<FileSystemInspector>& inspector);
 
-  virtual ~FileSystemInspectedEnv();
-
   Status NewSequentialFile(const std::string& fname,
                            std::unique_ptr<SequentialFile>* result,
                            const EnvOptions& options) override;
@@ -55,7 +53,7 @@ class FileSystemInspectedEnv : public EnvWrapper {
 };
 
 extern Env* NewFileSystemInspectedEnv(
-    Env* base_env, std::shared_ptr<FileSystemInspector>& inspector);
+    Env* base_env, std::shared_ptr<FileSystemInspector> inspector);
 
 }  // namespace rocksdb
 

@@ -11,6 +11,7 @@
 
 #include "env/mock_env.h"
 #include "rocksdb/env.h"
+#include "rocksdb/env_inspected.h"
 #include "test_util/testharness.h"
 
 namespace rocksdb {
@@ -94,6 +95,37 @@ static std::unique_ptr<Env> mem_env(NewMemEnv(Env::Default()));
 INSTANTIATE_TEST_CASE_P(MemEnv, EnvBasicTestWithParam,
                         ::testing::Values(mem_env.get()));
 
+class DummyFileSystemInspector : public FileSystemInspector {
+ public:
+  DummyFileSystemInspector(size_t refill_bytes = 0)
+      : refill_bytes_(refill_bytes) {}
+
+  size_t Read(Env::IOType io_type, size_t len) override {
+    if (refill_bytes_ == 0) {
+      return len;
+    } else {
+      return std::min(refill_bytes_, len);
+    }
+  }
+
+  size_t Write(Env::IOType io_type, size_t len) override {
+    if (refill_bytes_ == 0) {
+      return len;
+    } else {
+      return std::min(refill_bytes_, len);
+    }
+  }
+
+ private:
+  size_t refill_bytes_;
+};
+
+static std::unique_ptr<Env> inspected_env(
+    NewFileSystemInspectedEnv(new NormalizingEnvWrapper(Env::Default()),
+                              std::make_shared<DummyFileSystemInspector>(1)));
+INSTANTIATE_TEST_CASE_P(FileSystemInspectedEnv, EnvBasicTestWithParam,
+                        ::testing::Values(inspected_env.get()));
+
 namespace {
 
 // Returns a vector of 0 or 1 Env*, depending whether an Env is registered for
@@ -133,6 +165,7 @@ TEST_P(EnvBasicTestWithParam, Basics) {
   uint64_t file_size;
   std::unique_ptr<WritableFile> writable_file;
   std::vector<std::string> children;
+  ASSERT_OK(env_->GetChildren(test_dir_, &children));
 
   // Check that the directory is empty.
   ASSERT_EQ(Status::NotFound(), env_->FileExists(test_dir_ + "/non_existent"));

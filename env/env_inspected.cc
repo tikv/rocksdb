@@ -7,32 +7,38 @@ namespace rocksdb {
 
 class InspectedSequentialFile : public SequentialFileWrapper {
  public:
-  InspectedSequentialFile(SequentialFile* target,
+  InspectedSequentialFile(std::unique_ptr<SequentialFile>&& target,
                           FileSystemInspector* inspector)
-      : SequentialFileWrapper(target), inspector_(inspector) {}
+      : SequentialFileWrapper(target.get()),
+        holder_(std::move(target)),
+        inspector_(inspector) {}
 
   Status Read(size_t n, Slice* result, char* scratch) override {
     assert(inspector_);
     Status s;
     size_t offset = 0;
     size_t allowed = 0;
-    while (offset + 1 < n) {
+    while (offset < n) {
       allowed = inspector_->Read(Env::IO_UNCATEGORIZED, n - offset);
       if (allowed > 0) {
         s = SequentialFileWrapper::Read(allowed, result, scratch + offset);
         if (!s.ok()) {
           break;
         }
+        size_t actual_read = result->size();
         if (result->data() != scratch + offset) {
-          memcpy(scratch + offset, result->data(), allowed);
+          memcpy(scratch + offset, result->data(), actual_read);
+        }
+        offset += actual_read;
+        if (actual_read < allowed) {
+          break;
         }
       } else {
         s = Status::IOError("Failed file system inspection");
         break;
       }
-      offset += allowed;
     }
-    *result = Slice(scratch, n);
+    *result = Slice(scratch, offset);
     return s;
   }
 
@@ -42,7 +48,7 @@ class InspectedSequentialFile : public SequentialFileWrapper {
     Status s;
     size_t roffset = 0;
     size_t allowed = 0;
-    while (roffset + 1 < n) {
+    while (roffset < n) {
       allowed = inspector_->Read(Env::IO_UNCATEGORIZED, n - roffset);
       if (allowed > 0) {
         s = SequentialFileWrapper::PositionedRead(offset + roffset, allowed,
@@ -50,28 +56,35 @@ class InspectedSequentialFile : public SequentialFileWrapper {
         if (!s.ok()) {
           break;
         }
+        size_t actual_read = result->size();
         if (result->data() != scratch + roffset) {
-          memcpy(scratch + roffset, result->data(), allowed);
+          memcpy(scratch + roffset, result->data(), actual_read);
+        }
+        roffset += actual_read;
+        if (actual_read < allowed) {
+          break;
         }
       } else {
         s = Status::IOError("Failed file system inspection");
         break;
       }
-      roffset += allowed;
     }
-    *result = Slice(scratch, n);
+    *result = Slice(scratch, roffset);
     return s;
   }
 
  private:
+  std::unique_ptr<SequentialFile> holder_;
   FileSystemInspector* inspector_;
 };
 
 class InspectedRandomAccessFile : public RandomAccessFileWrapper {
  public:
-  InspectedRandomAccessFile(RandomAccessFile* target,
+  InspectedRandomAccessFile(std::unique_ptr<RandomAccessFile>&& target,
                             FileSystemInspector* inspector)
-      : RandomAccessFileWrapper(target), inspector_(inspector) {}
+      : RandomAccessFileWrapper(target.get()),
+        holder_(std::move(target)),
+        inspector_(inspector) {}
 
   Status Read(uint64_t offset, size_t n, Slice* result,
               char* scratch) const override {
@@ -79,7 +92,7 @@ class InspectedRandomAccessFile : public RandomAccessFileWrapper {
     Status s;
     size_t roffset = 0;
     size_t allowed = 0;
-    while (roffset + 1 < n) {
+    while (roffset < n) {
       allowed = inspector_->Read(Env::IO_UNCATEGORIZED, n - roffset);
       if (allowed > 0) {
         s = RandomAccessFileWrapper::Read(offset + roffset, allowed, result,
@@ -87,16 +100,20 @@ class InspectedRandomAccessFile : public RandomAccessFileWrapper {
         if (!s.ok()) {
           break;
         }
+        size_t actual_read = result->size();
         if (result->data() != scratch + roffset) {
-          memcpy(scratch + roffset, result->data(), allowed);
+          memcpy(scratch + roffset, result->data(), actual_read);
+        }
+        roffset += actual_read;
+        if (actual_read < allowed) {
+          break;
         }
       } else {
         s = Status::IOError("Failed file system inspection");
         break;
       }
-      roffset += allowed;
     }
-    *result = Slice(scratch, n);
+    *result = Slice(scratch, roffset);
     return s;
   }
 
@@ -110,13 +127,17 @@ class InspectedRandomAccessFile : public RandomAccessFileWrapper {
   }
 
  private:
+  std::unique_ptr<RandomAccessFile> holder_;
   FileSystemInspector* inspector_;
 };
 
 class InspectedWritableFile : public WritableFileWrapper {
  public:
-  InspectedWritableFile(WritableFile* target, FileSystemInspector* inspector)
-      : WritableFileWrapper(target), inspector_(inspector) {}
+  InspectedWritableFile(std::unique_ptr<WritableFile>&& target,
+                        FileSystemInspector* inspector)
+      : WritableFileWrapper(target.get()),
+        holder_(std::move(target)),
+        inspector_(inspector) {}
 
   Status Append(const Slice& data) override {
     assert(inspector_);
@@ -124,7 +145,7 @@ class InspectedWritableFile : public WritableFileWrapper {
     size_t size = data.size();
     size_t offset = 0;
     size_t allowed = 0;
-    while (offset + 1 < size) {
+    while (offset < size) {
       allowed = inspector_->Write(GetIOType(), size - offset);
       if (allowed > 0) {
         s = WritableFileWrapper::Append(Slice(data.data() + offset, allowed));
@@ -146,7 +167,7 @@ class InspectedWritableFile : public WritableFileWrapper {
     size_t size = data.size();
     size_t roffset = 0;
     size_t allowed = 0;
-    while (roffset + 1 < size) {
+    while (roffset < size) {
       allowed = inspector_->Write(GetIOType(), size - roffset);
       if (allowed > 0) {
         s = WritableFileWrapper::PositionedAppend(
@@ -164,13 +185,17 @@ class InspectedWritableFile : public WritableFileWrapper {
   }
 
  private:
+  std::unique_ptr<WritableFile> holder_;
   FileSystemInspector* inspector_;
 };
 
 class InspectedRandomRWFile : public RandomRWFileWrapper {
  public:
-  InspectedRandomRWFile(RandomRWFile* target, FileSystemInspector* inspector)
-      : RandomRWFileWrapper(target), inspector_(inspector) {}
+  InspectedRandomRWFile(std::unique_ptr<RandomRWFile>&& target,
+                        FileSystemInspector* inspector)
+      : RandomRWFileWrapper(target.get()),
+        holder_(std::move(target)),
+        inspector_(inspector) {}
 
   Status Write(uint64_t offset, const Slice& data) override {
     assert(inspector_);
@@ -178,7 +203,7 @@ class InspectedRandomRWFile : public RandomRWFileWrapper {
     size_t size = data.size();
     size_t roffset = 0;
     size_t allowed = 0;
-    while (roffset + 1 < size) {
+    while (roffset < size) {
       allowed = inspector_->Write(Env::IO_UNCATEGORIZED, size - roffset);
       if (allowed > 0) {
         s = RandomRWFileWrapper::Write(offset + roffset,
@@ -201,7 +226,7 @@ class InspectedRandomRWFile : public RandomRWFileWrapper {
     Status s;
     size_t roffset = 0;
     size_t allowed = 0;
-    while (roffset + 1 < n) {
+    while (roffset < n) {
       allowed = inspector_->Read(Env::IO_UNCATEGORIZED, n - roffset);
       if (allowed > 0) {
         s = RandomRWFileWrapper::Read(offset + roffset, allowed, result,
@@ -209,27 +234,31 @@ class InspectedRandomRWFile : public RandomRWFileWrapper {
         if (!s.ok()) {
           return s;
         }
+        size_t actual_read = result->size();
         if (result->data() != scratch + roffset) {
-          memcpy(scratch + roffset, result->data(), allowed);
+          memcpy(scratch + roffset, result->data(), actual_read);
+        }
+        roffset += actual_read;
+        if (actual_read < allowed) {
+          break;
         }
       } else {
         s = Status::IOError("Failed file system inspection");
         break;
       }
     }
-    *result = Slice(scratch, n);
+    *result = Slice(scratch, roffset);
     return s;
   }
 
  private:
+  std::unique_ptr<RandomRWFile> holder_;
   FileSystemInspector* inspector_;
 };
 
 FileSystemInspectedEnv::FileSystemInspectedEnv(
     Env* base_env, std::shared_ptr<FileSystemInspector>& inspector)
     : EnvWrapper(base_env), inspector_(inspector) {}
-
-FileSystemInspectedEnv::~FileSystemInspectedEnv() = default;
 
 Status FileSystemInspectedEnv::NewSequentialFile(
     const std::string& fname, std::unique_ptr<SequentialFile>* result,
@@ -238,7 +267,8 @@ Status FileSystemInspectedEnv::NewSequentialFile(
   if (!s.ok()) {
     return s;
   }
-  result->reset(new InspectedSequentialFile(result->get(), inspector_.get()));
+  result->reset(
+      new InspectedSequentialFile(std::move(*result), inspector_.get()));
   return s;
 }
 
@@ -249,7 +279,8 @@ Status FileSystemInspectedEnv::NewRandomAccessFile(
   if (!s.ok()) {
     return s;
   }
-  result->reset(new InspectedRandomAccessFile(result->get(), inspector_.get()));
+  result->reset(
+      new InspectedRandomAccessFile(std::move(*result), inspector_.get()));
   return s;
 }
 
@@ -260,7 +291,8 @@ Status FileSystemInspectedEnv::NewWritableFile(
   if (!s.ok()) {
     return s;
   }
-  result->reset(new InspectedWritableFile(result->get(), inspector_.get()));
+  result->reset(
+      new InspectedWritableFile(std::move(*result), inspector_.get()));
   return s;
 }
 
@@ -271,7 +303,8 @@ Status FileSystemInspectedEnv::ReopenWritableFile(
   if (!s.ok()) {
     return s;
   }
-  result->reset(new InspectedWritableFile(result->get(), inspector_.get()));
+  result->reset(
+      new InspectedWritableFile(std::move(*result), inspector_.get()));
   return s;
 }
 
@@ -282,7 +315,8 @@ Status FileSystemInspectedEnv::ReuseWritableFile(
   if (!s.ok()) {
     return s;
   }
-  result->reset(new InspectedWritableFile(result->get(), inspector_.get()));
+  result->reset(
+      new InspectedWritableFile(std::move(*result), inspector_.get()));
   return s;
 }
 
@@ -293,8 +327,14 @@ Status FileSystemInspectedEnv::NewRandomRWFile(
   if (!s.ok()) {
     return s;
   }
-  result->reset(new InspectedRandomRWFile(result->get(), inspector_.get()));
+  result->reset(
+      new InspectedRandomRWFile(std::move(*result), inspector_.get()));
   return s;
+}
+
+Env* NewFileSystemInspectedEnv(Env* base_env,
+                               std::shared_ptr<FileSystemInspector> inspector) {
+  return new FileSystemInspectedEnv(base_env, inspector);
 }
 
 }  // namespace rocksdb
