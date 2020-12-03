@@ -364,6 +364,8 @@ class Env {
   // Priority for requesting bytes in rate limiter scheduler
   enum IOPriority { IO_LOW = 0, IO_HIGH = 1, IO_TOTAL = 2 };
 
+  enum IOType { IO_UNCATEGORIZED = 0, IO_FLUSH = 1, IO_COMPACTION = 2 };
+
   // Arrange to run "(*function)(arg)" once in a background thread, in
   // the thread pool specified by pri. By default, jobs go to the 'LOW'
   // priority thread pool.
@@ -532,6 +534,18 @@ class Env {
   // No copying allowed
   Env(const Env&);
   void operator=(const Env&);
+};
+
+template <class FileType>
+class IOTypeGuard {
+ public:
+  IOTypeGuard(const FileType* file, Env::IOType io_type) : file_(file) {
+    file_->SetIOType(io_type);
+  }
+  ~IOTypeGuard() { file_->SetIOType(Env::IO_UNCATEGORIZED); }
+
+ private:
+  const FileType* file_;
 };
 
 // The factory function to construct a ThreadStatusUpdater.  Any Env
@@ -791,6 +805,10 @@ class WritableFile {
 
   virtual Env::IOPriority GetIOPriority() { return io_priority_; }
 
+  virtual void SetIOType(Env::IOType io_type) { io_type_ = io_type; }
+
+  virtual Env::IOType GetIOType() { return io_type_; }
+
   virtual void SetWriteLifeTimeHint(Env::WriteLifeTimeHint hint) {
     write_hint_ = hint;
   }
@@ -897,6 +915,7 @@ class WritableFile {
 
  protected:
   Env::IOPriority io_priority_;
+  Env::IOType io_type_;
   Env::WriteLifeTimeHint write_hint_;
   const bool strict_bytes_per_sync_;
 };
