@@ -539,13 +539,13 @@ class Env {
 template <class FileType>
 class IOTypeGuard {
  public:
-  IOTypeGuard(const FileType* file, Env::IOType io_type) : file_(file) {
-    file_->SetIOType(io_type);
+  IOTypeGuard(FileType* file, Env::IOType io_type) : file_(file) {
+    file->SetIOType(io_type);
   }
   ~IOTypeGuard() { file_->SetIOType(Env::IO_UNCATEGORIZED); }
 
  private:
-  const FileType* file_;
+  FileType* file_;
 };
 
 // The factory function to construct a ThreadStatusUpdater.  Any Env
@@ -626,9 +626,6 @@ struct ReadRequest {
 
 // A file abstraction for randomly reading the contents of a file.
 class RandomAccessFile {
- private:
-  std::string unique_id_;
-
  public:
   RandomAccessFile() {}
   virtual ~RandomAccessFile();
@@ -707,6 +704,10 @@ class RandomAccessFile {
   // aligned buffer for Direct I/O
   virtual size_t GetRequiredBufferAlignment() const { return kDefaultPageSize; }
 
+  virtual void SetIOType(Env::IOType io_type) { io_type_ = io_type; }
+
+  virtual Env::IOType GetIOType() const { return io_type_; }
+
   // Remove any kind of caching of data from the offset to offset+length
   // of this file. If the length is 0, then it refers to the end of file.
   // If the system is not caching the file contents, then this is a noop.
@@ -716,6 +717,10 @@ class RandomAccessFile {
 
   // If you're adding methods here, remember to add them to
   // RandomAccessFileWrapper too.
+
+ private:
+  std::string unique_id_;
+  Env::IOType io_type_;
 };
 
 // A file abstraction for sequential writing.  The implementation
@@ -727,6 +732,7 @@ class WritableFile {
       : last_preallocated_block_(0),
         preallocation_block_size_(0),
         io_priority_(Env::IO_TOTAL),
+        io_type_(Env::IO_UNCATEGORIZED),
         write_hint_(Env::WLTH_NOT_SET),
         strict_bytes_per_sync_(false) {}
 
@@ -734,6 +740,7 @@ class WritableFile {
       : last_preallocated_block_(0),
         preallocation_block_size_(0),
         io_priority_(Env::IO_TOTAL),
+        io_type_(Env::IO_UNCATEGORIZED),
         write_hint_(Env::WLTH_NOT_SET),
         strict_bytes_per_sync_(options.strict_bytes_per_sync) {}
 
@@ -807,7 +814,7 @@ class WritableFile {
 
   virtual void SetIOType(Env::IOType io_type) { io_type_ = io_type; }
 
-  virtual Env::IOType GetIOType() { return io_type_; }
+  virtual Env::IOType GetIOType() const { return io_type_; }
 
   virtual void SetWriteLifeTimeHint(Env::WriteLifeTimeHint hint) {
     write_hint_ = hint;

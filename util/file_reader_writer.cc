@@ -78,6 +78,9 @@ Status RandomAccessFileReader::Read(uint64_t offset, size_t n, Slice* result,
                  (stats_ != nullptr) ? &elapsed : nullptr, true /*overwrite*/,
                 true /*delay_enabled*/);
     auto prev_perf_level = GetPerfLevel();
+    // TODO: pass in IO type instead of for_compaction
+    IOTypeGuard<RandomAccessFile> io_guard(
+        file_.get(), for_compaction ? Env::IO_COMPACTION : Env::IO_UNCATEGORIZED);
     IOSTATS_TIMER_GUARD(read_nanos);
     if (use_direct_io()) {
 #ifndef ROCKSDB_LITE
@@ -484,6 +487,8 @@ Status WritableFileWriter::WriteBuffered(const char* data, size_t size) {
   assert(!use_direct_io());
   const char* src = data;
   size_t left = size;
+  // TODO: distinguish between compaction and flush
+  IOTypeGuard<WritableFile> io_guard(writable_file_.get(), Env::IO_COMPACTION);
 
   while (left > 0) {
     size_t allowed;

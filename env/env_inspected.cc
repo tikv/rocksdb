@@ -93,7 +93,7 @@ class InspectedRandomAccessFile : public RandomAccessFileWrapper {
     size_t roffset = 0;
     size_t allowed = 0;
     while (roffset < n) {
-      allowed = inspector_->Read(Env::IO_UNCATEGORIZED, n - roffset);
+      allowed = inspector_->Read(GetIOType(), n - roffset);
       if (allowed > 0) {
         s = RandomAccessFileWrapper::Read(offset + roffset, allowed, result,
                                           scratch + roffset);
