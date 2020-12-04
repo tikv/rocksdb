@@ -13,6 +13,9 @@
 #include <string>
 #include <vector>
 
+#include "rocksdb/slice.h"
+#include "rocksdb/table_properties.h"
+
 namespace rocksdb {
 
 class Slice;
@@ -56,6 +59,18 @@ class CompactionFilter {
     bool is_manual_compaction;
     // Whether output files are in bottommost level or not.
     bool is_bottommost_level;
+
+    // The range of the compaction.
+    Slice start_key;
+    Slice end_key;
+    bool is_end_key_inclusive;
+
+    // File numbers of all involved SST files.
+    std::vector<uint64_t> file_numbers;
+
+    // Properties of all involved SST files.
+    std::vector<std::shared_ptr<const TableProperties>> table_properties;
+
     // Which column family this compaction is for.
     uint32_t column_family_id;
   };

@@ -51,6 +51,7 @@ WriteAmpBasedRateLimiter::WriteAmpBasedRateLimiter(int64_t rate_bytes_per_sec,
       tuned_time_(NowMicrosMonotonic(env_)),
       duration_highpri_bytes_through_(0),
       duration_bytes_through_(0),
+      should_pace_up_(false),
       ratio_delta_(0) {
   total_requests_[0] = 0;
   total_requests_[1] = 0;
@@ -74,9 +75,17 @@ WriteAmpBasedRateLimiter::~WriteAmpBasedRateLimiter() {
   }
 }
 
-// This API allows user to dynamically change rate limiter's bytes per second.
 void WriteAmpBasedRateLimiter::SetBytesPerSecond(int64_t bytes_per_second) {
   assert(bytes_per_second > 0);
+  if (auto_tuned_) {
+    max_bytes_per_sec_.store(bytes_per_second, std::memory_order_relaxed);
+  } else {
+    SetActualBytesPerSecond(bytes_per_second);
+  }
+}
+
+void WriteAmpBasedRateLimiter::SetActualBytesPerSecond(
+    int64_t bytes_per_second) {
   rate_bytes_per_sec_ = bytes_per_second;
   refill_bytes_per_period_.store(
       CalculateRefillBytesPerPeriod(bytes_per_second),
@@ -91,8 +100,9 @@ void WriteAmpBasedRateLimiter::Request(int64_t bytes, const Env::IOPriority pri,
   TEST_SYNC_POINT_CALLBACK("WriteAmpBasedRateLimiter::Request:1",
                            &rate_bytes_per_sec_);
   if (auto_tuned_ && pri == Env::IO_HIGH &&
-      duration_highpri_bytes_through_ + bytes <=
-          max_bytes_per_sec_ * kSecondsPerTune) {
+      duration_highpri_bytes_through_ + duration_bytes_through_ + bytes <=
+          max_bytes_per_sec_.load(std::memory_order_relaxed) *
+              kSecondsPerTune) {
     total_bytes_through_[Env::IO_HIGH] += bytes;
     ++total_requests_[Env::IO_HIGH];
     duration_highpri_bytes_through_ += bytes;
@@ -267,9 +277,8 @@ int64_t WriteAmpBasedRateLimiter::CalculateRefillBytesPerPeriod(
 }
 
 Status WriteAmpBasedRateLimiter::Tune() {
-  // computed rate limit will be larger than
-  // `max_bytes_per_sec_ / kAllowedRangeFactor`
-  const int kAllowedRangeFactor = 20;
+  // computed rate limit will be larger than `kMinBytesPerSec`
+  const int64_t kMinBytesPerSec = 10 * 1024 * 1024;
   // high-priority bytes are padded to 20MB
   const int64_t kHighBytesLower = 20 * 1024 * 1024;
   // lower bound for write amplification estimation
@@ -318,21 +327,34 @@ Status WriteAmpBasedRateLimiter::Tune() {
   } else if (util < 95 && ratio_delta_ > 0) {
     ratio_delta_ -= 1;
   }
+  if (should_pace_up_.load(std::memory_order_relaxed)) {
+    if (ratio_delta_ < 60) {
+      ratio_delta_ += 60;  // effect lasts for at least 60 * kSecondsPerTune = 1m
+    }
+    should_pace_up_.store(false, std::memory_order_relaxed);
+  }
 
   int64_t new_bytes_per_sec =
       (ratio + ratio_padding + ratio_delta_) *
       std::max(highpri_bytes_sampler_.GetRecentValue(), kHighBytesLower) / 10;
-  new_bytes_per_sec = std::max(
-      max_bytes_per_sec_ / kAllowedRangeFactor,
-      std::min(new_bytes_per_sec,
-               max_bytes_per_sec_ - highpri_bytes_sampler_.GetRecentValue()));
+  new_bytes_per_sec =
+      std::max(kMinBytesPerSec,
+               std::min(new_bytes_per_sec,
+                        max_bytes_per_sec_.load(std::memory_order_relaxed) -
+                            highpri_bytes_sampler_.GetRecentValue()));
   if (new_bytes_per_sec != prev_bytes_per_sec) {
-    SetBytesPerSecond(new_bytes_per_sec);
+    SetActualBytesPerSecond(new_bytes_per_sec);
   }
 
   duration_bytes_through_ = 0;
   duration_highpri_bytes_through_ = 0;
   return Status::OK();
+}
+
+void WriteAmpBasedRateLimiter::PaceUp() {
+  if (auto_tuned_) {
+    should_pace_up_.store(true, std::memory_order_relaxed);
+  }
 }
 
 RateLimiter* NewWriteAmpBasedRateLimiter(
