@@ -100,7 +100,7 @@ class DummyFileSystemInspector : public FileSystemInspector {
   DummyFileSystemInspector(size_t refill_bytes = 0)
       : refill_bytes_(refill_bytes) {}
 
-  size_t Read(Env::IOType io_type, size_t len) override {
+  size_t Read(Env::IOType /*io_type*/, size_t len) override {
     if (refill_bytes_ == 0) {
       return len;
     } else {
@@ -108,7 +108,7 @@ class DummyFileSystemInspector : public FileSystemInspector {
     }
   }
 
-  size_t Write(Env::IOType io_type, size_t len) override {
+  size_t Write(Env::IOType /*io_type*/, size_t len) override {
     if (refill_bytes_ == 0) {
       return len;
     } else {
