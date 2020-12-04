@@ -10,7 +10,7 @@ class InspectedSequentialFile : public SequentialFileWrapper {
   InspectedSequentialFile(std::unique_ptr<SequentialFile>&& target,
                           FileSystemInspector* inspector)
       : SequentialFileWrapper(target.get()),
-        holder_(std::move(target)),
+        owner_(std::move(target)),
         inspector_(inspector) {}
 
   Status Read(size_t n, Slice* result, char* scratch) override {
@@ -74,7 +74,7 @@ class InspectedSequentialFile : public SequentialFileWrapper {
   }
 
  private:
-  std::unique_ptr<SequentialFile> holder_;
+  std::unique_ptr<SequentialFile> owner_;
   FileSystemInspector* inspector_;
 };
 
@@ -83,7 +83,7 @@ class InspectedRandomAccessFile : public RandomAccessFileWrapper {
   InspectedRandomAccessFile(std::unique_ptr<RandomAccessFile>&& target,
                             FileSystemInspector* inspector)
       : RandomAccessFileWrapper(target.get()),
-        holder_(std::move(target)),
+        owner_(std::move(target)),
         inspector_(inspector) {}
 
   Status Read(uint64_t offset, size_t n, Slice* result,
@@ -127,7 +127,7 @@ class InspectedRandomAccessFile : public RandomAccessFileWrapper {
   }
 
  private:
-  std::unique_ptr<RandomAccessFile> holder_;
+  std::unique_ptr<RandomAccessFile> owner_;
   FileSystemInspector* inspector_;
 };
 
@@ -136,7 +136,7 @@ class InspectedWritableFile : public WritableFileWrapper {
   InspectedWritableFile(std::unique_ptr<WritableFile>&& target,
                         FileSystemInspector* inspector)
       : WritableFileWrapper(target.get()),
-        holder_(std::move(target)),
+        owner_(std::move(target)),
         inspector_(inspector) {}
 
   Status Append(const Slice& data) override {
@@ -185,7 +185,7 @@ class InspectedWritableFile : public WritableFileWrapper {
   }
 
  private:
-  std::unique_ptr<WritableFile> holder_;
+  std::unique_ptr<WritableFile> owner_;
   FileSystemInspector* inspector_;
 };
 
@@ -194,7 +194,7 @@ class InspectedRandomRWFile : public RandomRWFileWrapper {
   InspectedRandomRWFile(std::unique_ptr<RandomRWFile>&& target,
                         FileSystemInspector* inspector)
       : RandomRWFileWrapper(target.get()),
-        holder_(std::move(target)),
+        owner_(std::move(target)),
         inspector_(inspector) {}
 
   Status Write(uint64_t offset, const Slice& data) override {
@@ -252,7 +252,7 @@ class InspectedRandomRWFile : public RandomRWFileWrapper {
   }
 
  private:
-  std::unique_ptr<RandomRWFile> holder_;
+  std::unique_ptr<RandomRWFile> owner_;
   FileSystemInspector* inspector_;
 };
 

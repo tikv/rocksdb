@@ -10,9 +10,8 @@
 
 namespace rocksdb {
 
-// Interface to manage encryption keys for files. FileSystemInspectedEnv
-// will query KeyManager for the key being used for each file, and update
-// KeyManager when it creates a new file or moving files around.
+// Interface to inspect storage requests. FileSystemInspectedEnv will consult
+// FileSystemInspector before issuing actual disk IO.
 class FileSystemInspector {
  public:
   virtual ~FileSystemInspector() = default;
@@ -21,8 +20,8 @@ class FileSystemInspector {
   virtual size_t Write(Env::IOType io_type, size_t len) = 0;
 };
 
-// An Env with underlying files being encrypted. It holds a reference to an
-// external KeyManager for encryption key management.
+// An Env with underlying IO requests being inspected. It holds a reference to
+// an external FileSystemInspector to consult for IO inspection.
 class FileSystemInspectedEnv : public EnvWrapper {
  public:
   FileSystemInspectedEnv(Env* base_env,
