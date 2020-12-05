@@ -165,7 +165,6 @@ TEST_P(EnvBasicTestWithParam, Basics) {
   uint64_t file_size;
   std::unique_ptr<WritableFile> writable_file;
   std::vector<std::string> children;
-  ASSERT_OK(env_->GetChildren(test_dir_, &children));
 
   // Check that the directory is empty.
   ASSERT_EQ(Status::NotFound(), env_->FileExists(test_dir_ + "/non_existent"));

@@ -1479,10 +1479,7 @@ class WritableFileWrapper : public WritableFile {
     return target_->PositionedAppend(data, offset);
   }
   Status Truncate(uint64_t size) override { return target_->Truncate(size); }
-  Status Close() override {
-    assert(target_);
-    return target_->Close();
-  }
+  Status Close() override { return target_->Close(); }
   Status Flush() override { return target_->Flush(); }
   Status Sync() override { return target_->Sync(); }
   Status Fsync() override { return target_->Fsync(); }
