@@ -482,6 +482,11 @@ bool LevelCompactionBuilder::PickFileToCompact() {
     int index = file_size[cmp_idx];
     auto* f = level_files[index];
 
+    // TODO: if (mutable_cf_options.ingest_tolerant_ratio != 0 && CanIgnoreFile(f, level)) continue;
+    if (vstorage_->CanIgnoreFile(f, start_level_)) {
+      continue;
+    }
+
     // do not pick a file to compact if it is being compacted
     // from n-1 level.
     if (f->being_compacted) {
