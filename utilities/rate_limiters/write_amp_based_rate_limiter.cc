@@ -87,6 +87,7 @@ void WriteAmpBasedRateLimiter::SetBytesPerSecond(int64_t bytes_per_second) {
 void WriteAmpBasedRateLimiter::SetAutoTuned(bool auto_tuned) {
   MutexLock g(&auto_tuned_mutex_);
   if (auto_tuned_.load(std::memory_order_relaxed) != auto_tuned) {
+    auto_tuned_.store(auto_tuned, std::memory_order_relaxed);
     if (auto_tuned) {
       max_bytes_per_sec_.store(rate_bytes_per_sec_, std::memory_order_relaxed);
       refill_bytes_per_period_.store(
