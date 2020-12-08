@@ -34,7 +34,7 @@ class WriteAmpBasedRateLimiter : public RateLimiter {
   virtual void SetBytesPerSecond(int64_t bytes_per_second) override;
 
   // Dynamically change rate limiter's auto_tuned mode.
-  virtual void WriteAmpBasedRateLimiter::SetAutoTuned(bool auto_tuned) override;
+  virtual void SetAutoTuned(bool auto_tuned) override;
 
   // Request for token to write bytes. If this request can not be satisfied,
   // the call is blocked. Caller is responsible to make sure
