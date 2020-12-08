@@ -111,7 +111,7 @@ class WriteAmpBasedRateLimiter : public RateLimiter {
   std::deque<Req*> queue_[Env::IO_TOTAL];
 
   // only used to synchronize auto_tuned setters
-  mutable port::Mutex auto_tuned_mutex_;
+  port::Mutex auto_tuned_mutex_;
 
   std::atomic<bool> auto_tuned_;
   std::atomic<int64_t> max_bytes_per_sec_;
