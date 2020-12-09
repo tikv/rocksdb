@@ -100,7 +100,7 @@ void WriteAmpBasedRateLimiter::SetAutoTuned(bool auto_tuned) {
           CalculateRefillBytesPerPeriod(rate_bytes_per_sec_),
           std::memory_order_relaxed);
     }
-    auto_tuned_.store(auto_tuned, std::memory_order_released);
+    auto_tuned_.store(auto_tuned, std::memory_order_release);
   }
 }
 
