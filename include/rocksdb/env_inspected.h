@@ -16,8 +16,8 @@ class FileSystemInspector {
  public:
   virtual ~FileSystemInspector() = default;
 
-  virtual size_t Read(Env::IOType io_type, size_t len) = 0;
-  virtual size_t Write(Env::IOType io_type, size_t len) = 0;
+  virtual size_t Read(size_t len) = 0;
+  virtual size_t Write(size_t len) = 0;
 };
 
 // An Env with underlying IO requests being inspected. It holds a reference to
