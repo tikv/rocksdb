@@ -43,6 +43,7 @@
 #include "port/port.h"
 #include "rocksdb/db.h"
 #include "rocksdb/env.h"
+#include "rocksdb/listener.h"
 #include "rocksdb/sst_partitioner.h"
 #include "rocksdb/statistics.h"
 #include "rocksdb/status.h"
@@ -233,6 +234,8 @@ struct CompactionJob::SubcompactionState {
 
     return false;
   }
+
+  bool IsPartialCompaction() { return start || end; }
 };
 
 // Maintains state for the entire compaction
@@ -812,6 +815,17 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
 
   ColumnFamilyData* cfd = sub_compact->compaction->column_family_data();
 
+  SubcompactionJobInfo info;
+  if (sub_compact->IsPartialCompaction()) {
+    info.cf_name = cfd->GetName();
+    info.thread_id = env_->GetThreadID();
+    info.base_input_level = sub_compact->compaction->start_level();
+    info.output_level = sub_compact->compaction->output_level();
+    for (auto listener : db_options_.listeners) {
+      listener->OnSubcompactionBegin(info);
+    }
+  }
+
   // Create compaction filter and fail the compaction if
   // IgnoreSnapshots() = false because it is not supported anymore
   const CompactionFilter* compaction_filter =
@@ -1070,6 +1084,12 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
   sub_compact->c_iter.reset();
   input.reset();
   sub_compact->status = status;
+  info.status = status;
+  if (sub_compact->IsPartialCompaction()) {
+    for (auto listener : db_options_.listeners) {
+      listener->OnSubcompactionCompleted(info);
+    }
+  }
 }
 
 void CompactionJob::RecordDroppedKeys(
