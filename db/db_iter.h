@@ -89,6 +89,7 @@ class ArenaWrappedDBIter : public Iterator {
   virtual void Prev() override;
   virtual Slice key() const override;
   virtual Slice value() const override;
+  virtual bool seqno(SequenceNumber* no) const override;
   virtual Status status() const override;
   virtual Status Refresh() override;
   bool IsBlob() const;
