@@ -148,6 +148,43 @@ TEST_F(CompactFilesTest, FilterContext) {
   delete(db);
 }
 
+TEST_F(CompactFilesTest, FilterCancelInstall) {
+  class FilterCancelInstall : public CompactionFilter {
+   public:
+    bool Filter(int, const Slice&, const Slice&, std::string*, bool*) const
+        override {
+      return true;
+    }
+    Status status() const override {
+      return Status::NotSupported(Slice("test-not-supported"));
+    }
+    virtual const char* Name() const override { return "FilterCancelInstall"; }
+  };
+
+  std::shared_ptr<FilterCancelInstall> cf(new FilterCancelInstall());
+
+  Options options;
+  options.create_if_missing = true;
+  options.compaction_filter = cf.get();
+
+  DB* db = nullptr;
+  DestroyDB(db_name_, options);
+  Status s = DB::Open(options, db_name_, &db);
+  ASSERT_OK(s);
+
+  // Write one L0 file
+  db->Put(WriteOptions(), "K1", "V1");
+  db->Flush(FlushOptions());
+
+  // The compaction result won't be installed.
+  db->CompactRange(CompactRangeOptions(), nullptr, nullptr);
+  std::string value;
+  ASSERT_OK(db->Get(ReadOptions(), Slice("K1"), &value));
+  ASSERT_EQ(value, "V1");
+
+  delete db;
+}
+
 TEST_F(CompactFilesTest, L0ConflictsFiles) {
   Options options;
   // to trigger compaction more easily

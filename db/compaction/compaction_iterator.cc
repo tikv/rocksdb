@@ -178,6 +178,10 @@ void CompactionIterator::InvokeFilterIfNeeded(bool* need_skip,
       filter = compaction_filter_->FilterV3(
           compaction_->level(), filter_key, seqno, value_type, value_,
           &compaction_filter_value_, compaction_filter_skip_until_.rep());
+      if (!compaction_filter_->status().ok()) {
+        status_ = compaction_filter_->status();
+        return;
+      }
       iter_stats_.total_filter_time +=
           env_ != nullptr && report_detailed_time_ ? timer.ElapsedNanos() : 0;
     }
@@ -299,6 +303,10 @@ void CompactionIterator::NextFromInput() {
       // key.
       if (current_key_committed_) {
         InvokeFilterIfNeeded(&need_skip, &skip_until);
+        if (!status_.ok()) {
+          valid_ = false;
+          return;
+        }
       }
     } else {
       // Update the current key to reflect the new sequence number/type without
@@ -320,6 +328,10 @@ void CompactionIterator::NextFromInput() {
         // user key.
         if (current_key_committed_) {
           InvokeFilterIfNeeded(&need_skip, &skip_until);
+          if (!status_.ok()) {
+            valid_ = false;
+            return;
+          }
         }
       }
     }
