@@ -815,6 +815,7 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
 
   ColumnFamilyData* cfd = sub_compact->compaction->column_family_data();
 
+#ifndef ROCKSDB_LITE
   SubcompactionJobInfo info;
   if (sub_compact->IsPartialCompaction()) {
     info.cf_name = cfd->GetName();
@@ -825,6 +826,7 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
       listener->OnSubcompactionBegin(info);
     }
   }
+#endif  // !ROCKSDB_LITE
 
   // Create compaction filter and fail the compaction if
   // IgnoreSnapshots() = false because it is not supported anymore
@@ -1084,12 +1086,14 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
   sub_compact->c_iter.reset();
   input.reset();
   sub_compact->status = status;
+#ifndef ROCKSDB_LITE
   info.status = status;
   if (sub_compact->IsPartialCompaction()) {
     for (auto listener : db_options_.listeners) {
       listener->OnSubcompactionCompleted(info);
     }
   }
+#endif  // !ROCKSDB_LITE
 }
 
 void CompactionJob::RecordDroppedKeys(
