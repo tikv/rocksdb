@@ -1,11 +1,7 @@
 dist: focal
 language: cpp
-os:
-  - linux
-compiler:
-  - clang
-  - gcc
-osx_image: xcode12
+os: linux
+compiler: gcc
 cache:
   - ccache
   - apt
@@ -43,6 +39,7 @@ matrix:
       env: TEST_GROUP=platform_dependent
     - os: osx
       os_image: xcode12.2
+      compailer: clang
       env: TEST_GROUP=platform_dependent
 
 
