@@ -38,6 +38,11 @@ env:
   - JOB_NAME=encrypted_env # 16-18 minutes
 
 matrix:
+  include:
+    - os: linux
+      arch: arm64
+      env:
+        - TEST_GROUP=platform_dependent
   exclude:
   - os: osx
     env: TEST_GROUP=1
