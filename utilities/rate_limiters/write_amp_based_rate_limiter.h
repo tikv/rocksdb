@@ -142,7 +142,7 @@ class WriteAmpBasedRateLimiter : public RateLimiter {
   };
 
   static constexpr size_t kSmoothWindowSize = 300;       // 300 * 1s = 5m
-  static constexpr size_t kRecentSmoothWindowSize = 30;  // 10 * 1s = 30s
+  static constexpr size_t kRecentSmoothWindowSize = 40;  // 40 * 1s = 40s
 
   WindowSmoother<kSmoothWindowSize, kRecentSmoothWindowSize> bytes_sampler_;
   WindowSmoother<kSmoothWindowSize, kRecentSmoothWindowSize>

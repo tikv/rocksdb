@@ -39,7 +39,7 @@ constexpr int kMicrosPerTune = 1000 * 1000 * kSecondsPerTune;
 // and special care for low-pressure domain. E.g. coordinates (11M, 18M) and
 // (20M, 12M) are on this curve.
 int64_t CalculatePadding(int64_t base) {
-  return base / 10 + 384910433582055ll / (base + 15732519);
+  return base / 10 + 577464606419583ll / (base + 26225305);
 }
 }  // unnamed namespace
 
@@ -294,8 +294,8 @@ int64_t WriteAmpBasedRateLimiter::CalculateRefillBytesPerPeriod(
 Status WriteAmpBasedRateLimiter::Tune() {
   // computed rate limit will be larger than 10MB/s
   const int64_t kMinBytesPerSec = 10 << 20;
-  // high-priority bytes are padded to 5MB
-  const int64_t kHighBytesLower = 5 << 20;
+  // high-priority bytes are padded to 8MB
+  const int64_t kHighBytesLower = 8 << 20;
   // lower bound for write amplification estimation
   const int kRatioLower = 10;
   const int kRatioDeltaMax = 5;
