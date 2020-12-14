@@ -70,6 +70,10 @@ class WriteAmpBasedRateLimiter : public RateLimiter {
     return rate_bytes_per_sec_;
   }
 
+  virtual bool GetAutoTuned() const override {
+    return auto_tuned_.load(std::memory_order_acquire);
+  }
+
   virtual void PaceUp() override;
 
  private:

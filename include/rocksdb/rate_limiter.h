@@ -94,6 +94,8 @@ class RateLimiter {
 
   virtual int64_t GetBytesPerSecond() const = 0;
 
+  virtual bool GetAutoTuned() const { return false; }
+
   virtual bool IsRateLimited(OpType op_type) {
     if ((mode_ == RateLimiter::Mode::kWritesOnly &&
          op_type == RateLimiter::OpType::kRead) ||
