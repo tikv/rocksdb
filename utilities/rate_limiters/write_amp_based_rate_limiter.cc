@@ -294,10 +294,10 @@ int64_t WriteAmpBasedRateLimiter::CalculateRefillBytesPerPeriod(
 Status WriteAmpBasedRateLimiter::Tune() {
   // computed rate limit will be larger than 10MB/s
   const int64_t kMinBytesPerSec = 10 << 20;
-  // high-priority bytes are padded to 10MB
-  const int64_t kHighBytesLower = 10 << 20;
+  // high-priority bytes are padded to 5MB
+  const int64_t kHighBytesLower = 5 << 20;
   // lower bound for write amplification estimation
-  const int kRatioLower = 12;
+  const int kRatioLower = 10;
   const int kRatioDeltaMax = 5;
 
   std::chrono::microseconds prev_tuned_time = tuned_time_;
