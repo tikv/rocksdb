@@ -4,10 +4,10 @@
 #ifdef OPENSSL
 #include "encryption/encryption.h"
 
+#include <openssl/opensslv.h>
+
 #include <algorithm>
 #include <limits>
-
-#include <openssl/opensslv.h>
 
 #include "port/port.h"
 
@@ -434,14 +434,16 @@ Status KeyManagedEncryptedEnv::LinkFile(const std::string& src_fname,
 
 Status KeyManagedEncryptedEnv::RenameFile(const std::string& src_fname,
                                           const std::string& dst_fname) {
-  Status s = key_manager_->RenameFile(src_fname, dst_fname);
+  Status s = key_manager_->NewFile(dst_fname);
   if (!s.ok()) {
     return s;
   }
   s = target()->RenameFile(src_fname, dst_fname);
-  if (!s.ok()) {
+  if (s.ok()) {
+    key_manager_->DeleteFile(src_fname);
+  } else {
     // Ignore error
-    key_manager_->RenameFile(dst_fname, src_fname);
+    key_manager_->DeleteFile(dst_fname);
   }
   return s;
 }
