@@ -20,6 +20,7 @@ class InspectedSequentialFile : public SequentialFileWrapper {
     size_t allowed = 0;
     while (offset < n) {
       allowed = inspector_->Read(n - offset);
+      assert(allowed <= n - offset);
       if (allowed > 0) {
         s = SequentialFileWrapper::Read(allowed, result, scratch + offset);
         if (!s.ok()) {
@@ -27,7 +28,10 @@ class InspectedSequentialFile : public SequentialFileWrapper {
         }
         size_t actual_read = result->size();
         if (result->data() != scratch + offset) {
-          memcpy(scratch + offset, result->data(), actual_read);
+          // Only possible when underlying file ignore or misuse user provided
+          // buffer. Reject this case.
+          memmove(scratch + offset, result->data(), actual_read);
+          assert(false);
         }
         offset += actual_read;
         if (actual_read < allowed) {
@@ -50,6 +54,7 @@ class InspectedSequentialFile : public SequentialFileWrapper {
     size_t allowed = 0;
     while (roffset < n) {
       allowed = inspector_->Read(n - roffset);
+      assert(allowed <= n - roffset);
       if (allowed > 0) {
         s = SequentialFileWrapper::PositionedRead(offset + roffset, allowed,
                                                   result, scratch + roffset);
@@ -58,7 +63,8 @@ class InspectedSequentialFile : public SequentialFileWrapper {
         }
         size_t actual_read = result->size();
         if (result->data() != scratch + roffset) {
-          memcpy(scratch + roffset, result->data(), actual_read);
+          memmove(scratch + roffset, result->data(), actual_read);
+          assert(false);
         }
         roffset += actual_read;
         if (actual_read < allowed) {
@@ -94,6 +100,7 @@ class InspectedRandomAccessFile : public RandomAccessFileWrapper {
     size_t allowed = 0;
     while (roffset < n) {
       allowed = inspector_->Read(n - roffset);
+      assert(allowed <= n - roffset);
       if (allowed > 0) {
         s = RandomAccessFileWrapper::Read(offset + roffset, allowed, result,
                                           scratch + roffset);
@@ -102,7 +109,8 @@ class InspectedRandomAccessFile : public RandomAccessFileWrapper {
         }
         size_t actual_read = result->size();
         if (result->data() != scratch + roffset) {
-          memcpy(scratch + roffset, result->data(), actual_read);
+          memmove(scratch + roffset, result->data(), actual_read);
+          assert(false);
         }
         roffset += actual_read;
         if (actual_read < allowed) {
@@ -117,6 +125,7 @@ class InspectedRandomAccessFile : public RandomAccessFileWrapper {
     return s;
   }
 
+  // TODO: support parallel MultiRead
   Status MultiRead(ReadRequest* reqs, size_t num_reqs) override {
     assert(reqs != nullptr);
     for (size_t i = 0; i < num_reqs; ++i) {
@@ -147,6 +156,7 @@ class InspectedWritableFile : public WritableFileWrapper {
     size_t allowed = 0;
     while (offset < size) {
       allowed = inspector_->Write(size - offset);
+      assert(allowed <= size - offset);
       if (allowed > 0) {
         s = WritableFileWrapper::Append(Slice(data.data() + offset, allowed));
         if (!s.ok()) {
@@ -169,6 +179,7 @@ class InspectedWritableFile : public WritableFileWrapper {
     size_t allowed = 0;
     while (roffset < size) {
       allowed = inspector_->Write(size - roffset);
+      assert(allowed <= size - roffset);
       if (allowed > 0) {
         s = WritableFileWrapper::PositionedAppend(
             Slice(data.data() + roffset, allowed), offset + roffset);
@@ -205,6 +216,7 @@ class InspectedRandomRWFile : public RandomRWFileWrapper {
     size_t allowed = 0;
     while (roffset < size) {
       allowed = inspector_->Write(size - roffset);
+      assert(allowed <= size - roffset);
       if (allowed > 0) {
         s = RandomRWFileWrapper::Write(offset + roffset,
                                        Slice(data.data() + roffset, allowed));
@@ -228,6 +240,7 @@ class InspectedRandomRWFile : public RandomRWFileWrapper {
     size_t allowed = 0;
     while (roffset < n) {
       allowed = inspector_->Read(n - roffset);
+      assert(allowed <= n - roffset);
       if (allowed > 0) {
         s = RandomRWFileWrapper::Read(offset + roffset, allowed, result,
                                       scratch + roffset);
@@ -236,7 +249,8 @@ class InspectedRandomRWFile : public RandomRWFileWrapper {
         }
         size_t actual_read = result->size();
         if (result->data() != scratch + roffset) {
-          memcpy(scratch + roffset, result->data(), actual_read);
+          memmove(scratch + roffset, result->data(), actual_read);
+          assert(false);
         }
         roffset += actual_read;
         if (actual_read < allowed) {
