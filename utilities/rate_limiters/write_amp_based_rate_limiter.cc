@@ -321,7 +321,7 @@ Status WriteAmpBasedRateLimiter::Tune() {
   const int64_t kHighBytesLower = 8 << 20;
   // lower bound for write amplification estimation
   const int kRatioLower = 10;
-  const int kPercentDeltaMax = 10;
+  const int kPercentDeltaMax = 6;
 
   std::chrono::microseconds prev_tuned_time = tuned_time_;
   tuned_time_ = std::chrono::microseconds(NowMicrosMonotonic(env_));
