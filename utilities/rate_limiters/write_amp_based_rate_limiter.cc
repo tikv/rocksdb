@@ -38,8 +38,9 @@ constexpr int kMicrosPerTune = 1000 * 1000 * kSecondsPerTune;
 // Padding is calculated through hyperbola based on empirical percentage of 10%
 // and special care for low-pressure domain. E.g. coordinates (5M, 18M) and
 // (10M, 16M) are on this curve.
-int64_t CalculatePadding(int64_t base) {
-  return base / 10 + 577464606419583ll / (base + 26225305);
+int64_t CalculatePadding(int64_t base, int64_t percent_delta) {
+  return base * (10 + percent_delta) / 100 +
+         577464606419583ll / (base + 26225305);
 }
 }  // unnamed namespace
 
@@ -70,7 +71,7 @@ WriteAmpBasedRateLimiter::WriteAmpBasedRateLimiter(int64_t rate_bytes_per_sec,
       duration_bytes_through_(0),
       critical_pace_up_(false),
       should_pace_up_(false),
-      ratio_delta_(0) {
+      percent_delta_(0) {
   total_requests_[0] = 0;
   total_requests_[1] = 0;
   total_bytes_through_[0] = 0;
@@ -319,7 +320,7 @@ Status WriteAmpBasedRateLimiter::Tune() {
   const int64_t kHighBytesLower = 8 << 20;
   // lower bound for write amplification estimation
   const int kRatioLower = 10;
-  const int kRatioDeltaMax = 5;
+  const int kPercentDeltaMax = 6;
 
   std::chrono::microseconds prev_tuned_time = tuned_time_;
   tuned_time_ = std::chrono::microseconds(NowMicrosMonotonic(env_));
@@ -347,27 +348,27 @@ Status WriteAmpBasedRateLimiter::Tune() {
   int64_t util = bytes_sampler_.GetRecentValue() * 1000 /
                  limit_bytes_sampler_.GetRecentValue();
   if (util >= 995) {
-    if (ratio_delta_ < kRatioDeltaMax) {
-      ratio_delta_ += 1;
+    if (percent_delta_ < kPercentDeltaMax) {
+      percent_delta_ += 1;
     }
-  } else if (ratio_delta_ > 0) {
-    ratio_delta_ -= 1;
+  } else if (percent_delta_ > 0) {
+    percent_delta_ -= 1;
   }
   if (should_pace_up_.load(std::memory_order_acquire)) {
     if (critical_pace_up_) {
-      if (ratio_delta_ < 60) {
-        ratio_delta_ += 60;  // effect lasts for at least 60s
-      }
+      percent_delta_ = 100;
     } else {
-      ratio_delta_ = 15;
+      percent_delta_ = 10;
     }
     should_pace_up_.store(false, std::memory_order_relaxed);
   }
 
   int64_t new_bytes_per_sec =
-      (ratio + ratio_delta_) *
+      ratio *
       std::max(highpri_bytes_sampler_.GetRecentValue(), kHighBytesLower) / 10;
-  new_bytes_per_sec += CalculatePadding(new_bytes_per_sec);
+  ratio_delta_cache_ = CalculatePadding(new_bytes_per_sec, percent_delta_);
+  new_bytes_per_sec += ratio_delta_cache_;
+  // new_bytes_per_sec += CalculatePadding(new_bytes_per_sec);
   new_bytes_per_sec =
       std::max(kMinBytesPerSec,
                std::min(new_bytes_per_sec,
