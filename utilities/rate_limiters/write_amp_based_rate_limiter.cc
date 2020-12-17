@@ -369,9 +369,7 @@ Status WriteAmpBasedRateLimiter::Tune() {
                  static_cast<uint32_t>(padding * 100 / new_bytes_per_sec));
     normal_pace_up_.store(false, std::memory_order_relaxed);
   }
-  padding += new_bytes_per_sec * percent_delta_ / 100;
-  ratio_delta_cache_ = padding;
-  new_bytes_per_sec += padding;
+  new_bytes_per_sec += padding + new_bytes_per_sec * percent_delta_ / 100;
   new_bytes_per_sec =
       std::max(kMinBytesPerSec,
                std::min(new_bytes_per_sec,
