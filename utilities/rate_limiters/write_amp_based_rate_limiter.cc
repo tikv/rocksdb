@@ -68,6 +68,7 @@ WriteAmpBasedRateLimiter::WriteAmpBasedRateLimiter(int64_t rate_bytes_per_sec,
       tuned_time_(NowMicrosMonotonic(env_)),
       duration_highpri_bytes_through_(0),
       duration_bytes_through_(0),
+      critical_pace_up_(false),
       should_pace_up_(false),
       ratio_delta_(0) {
   total_requests_[0] = 0;
@@ -352,9 +353,13 @@ Status WriteAmpBasedRateLimiter::Tune() {
   } else if (ratio_delta_ > 0) {
     ratio_delta_ -= 1;
   }
-  if (should_pace_up_.load(std::memory_order_relaxed)) {
-    if (ratio_delta_ < 60) {
-      ratio_delta_ += 60;  // effect lasts for at least 60s
+  if (should_pace_up_.load(std::memory_order_acquire)) {
+    if (critical_pace_up_) {
+      if (ratio_delta_ < 60) {
+        ratio_delta_ += 60;  // effect lasts for at least 60s
+      }
+    } else {
+      ratio_delta_ = 15;
     }
     should_pace_up_.store(false, std::memory_order_relaxed);
   }
@@ -377,9 +382,10 @@ Status WriteAmpBasedRateLimiter::Tune() {
   return Status::OK();
 }
 
-void WriteAmpBasedRateLimiter::PaceUp() {
+void WriteAmpBasedRateLimiter::PaceUp(bool critical) {
   if (auto_tuned_.load(std::memory_order_acquire)) {
-    should_pace_up_.store(true, std::memory_order_relaxed);
+    critical_pace_up_ = critical;
+    should_pace_up_.store(true, std::memory_order_release);
   }
 }
 
