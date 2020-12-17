@@ -362,8 +362,9 @@ Status WriteAmpBasedRateLimiter::Tune() {
     percent_delta_ = 100;
     critical_pace_up_.store(false, std::memory_order_relaxed);
   } else if (normal_pace_up_.load(std::memory_order_relaxed)) {
-    percent_delta_ = std::max(
-        percent_delta_, static_cast<uint32_t>(padding / new_bytes_per_sec));
+    percent_delta_ =
+        std::max(percent_delta_,
+                 static_cast<uint32_t>(padding * 100 / new_bytes_per_sec));
     normal_pace_up_.store(false, std::memory_order_relaxed);
   }
   padding += new_bytes_per_sec * percent_delta_ / 100;
