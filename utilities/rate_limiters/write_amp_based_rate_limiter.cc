@@ -38,9 +38,8 @@ constexpr int kMicrosPerTune = 1000 * 1000 * kSecondsPerTune;
 // Padding is calculated through hyperbola based on empirical percentage of 10%
 // and special care for low-pressure domain. E.g. coordinates (5M, 18M) and
 // (10M, 16M) are on this curve.
-int64_t CalculatePadding(int64_t base, int64_t percent_delta) {
-  return base * (10 + percent_delta) / 100 +
-         577464606419583ll / (base + 26225305);
+int64_t CalculatePadding(int64_t base) {
+  return base / 10 + 577464606419583ll / (base + 26225305);
 }
 }  // unnamed namespace
 
@@ -70,7 +69,7 @@ WriteAmpBasedRateLimiter::WriteAmpBasedRateLimiter(int64_t rate_bytes_per_sec,
       duration_highpri_bytes_through_(0),
       duration_bytes_through_(0),
       critical_pace_up_(false),
-      should_pace_up_(false),
+      normal_pace_up_(false),
       percent_delta_(0) {
   total_requests_[0] = 0;
   total_requests_[1] = 0;
@@ -354,21 +353,21 @@ Status WriteAmpBasedRateLimiter::Tune() {
   } else if (percent_delta_ > 0) {
     percent_delta_ -= 1;
   }
-  if (should_pace_up_.load(std::memory_order_acquire)) {
-    if (critical_pace_up_) {
-      percent_delta_ = 100;
-    } else {
-      percent_delta_ = 10;
-    }
-    should_pace_up_.store(false, std::memory_order_relaxed);
-  }
 
   int64_t new_bytes_per_sec =
       ratio *
       std::max(highpri_bytes_sampler_.GetRecentValue(), kHighBytesLower) / 10;
-  ratio_delta_cache_ = CalculatePadding(new_bytes_per_sec, percent_delta_);
-  new_bytes_per_sec += ratio_delta_cache_;
-  // new_bytes_per_sec += CalculatePadding(new_bytes_per_sec);
+  int64_t padding = CalculatePadding(new_bytes_per_sec);
+  if (critical_pace_up_.load(std::memory_order_relaxed)) {
+    percent_delta_ = 100;
+    critical_pace_up_.store(false, std::memory_order_relaxed);
+  } else if (normal_pace_up_.load(std::memory_order_relaxed)) {
+    padding *= 2;
+    normal_pace_up_.store(false, std::memory_order_relaxed);
+  }
+  padding += new_bytes_per_sec * percent_delta_ / 100;
+  ratio_delta_cache_ = padding;
+  new_bytes_per_sec += padding;
   new_bytes_per_sec =
       std::max(kMinBytesPerSec,
                std::min(new_bytes_per_sec,
@@ -385,8 +384,11 @@ Status WriteAmpBasedRateLimiter::Tune() {
 
 void WriteAmpBasedRateLimiter::PaceUp(bool critical) {
   if (auto_tuned_.load(std::memory_order_acquire)) {
-    critical_pace_up_ = critical;
-    should_pace_up_.store(true, std::memory_order_release);
+    if (critical) {
+      critical_pace_up_.store(true, std::memory_order_relaxed);
+    } else {
+      normal_pace_up_.store(true, std::memory_order_relaxed);
+    }
   }
 }
 

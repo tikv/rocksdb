@@ -159,8 +159,8 @@ class WriteAmpBasedRateLimiter : public RateLimiter {
       highpri_bytes_sampler_;
   WindowSmoother<kRecentSmoothWindowSize, kRecentSmoothWindowSize>
       limit_bytes_sampler_;
-  bool critical_pace_up_;
-  std::atomic<bool> should_pace_up_;
+  std::atomic<bool> critical_pace_up_;
+  std::atomic<bool> normal_pace_up_;
   uint32_t percent_delta_;
 };
 
