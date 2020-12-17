@@ -106,7 +106,7 @@ class RateLimiter {
     return true;
   }
 
-  virtual void PaceUp(bool critical) {}
+  virtual void PaceUp(bool /*critical*/) {}
 
  protected:
   Mode GetMode() { return mode_; }
