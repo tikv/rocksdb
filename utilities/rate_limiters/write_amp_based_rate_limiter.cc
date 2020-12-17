@@ -139,6 +139,8 @@ void WriteAmpBasedRateLimiter::Request(int64_t bytes, const Env::IOPriority pri,
       duration_highpri_bytes_through_ + duration_bytes_through_ + bytes <=
           max_bytes_per_sec_.load(std::memory_order_relaxed) *
               kSecondsPerTune) {
+    // In the case where low-priority request is absent, actual time elapsed
+    // will be larger than kSecondsPerTune, making the limit even tighter.
     total_bytes_through_[Env::IO_HIGH] += bytes;
     ++total_requests_[Env::IO_HIGH];
     duration_highpri_bytes_through_ += bytes;
