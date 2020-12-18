@@ -8,7 +8,7 @@ namespace rocksdb {
 class InspectedSequentialFile : public SequentialFileWrapper {
  public:
   InspectedSequentialFile(std::unique_ptr<SequentialFile>&& target,
-                          FileSystemInspector* inspector)
+                          std::shared_ptr<FileSystemInspector> inspector)
       : SequentialFileWrapper(target.get()),
         owner_(std::move(target)),
         inspector_(inspector) {}
@@ -19,7 +19,10 @@ class InspectedSequentialFile : public SequentialFileWrapper {
     size_t offset = 0;
     size_t allowed = 0;
     while (offset < n) {
-      allowed = inspector_->Read(n - offset);
+      s = inspector_->Read(n - offset, allowed);
+      if (!s.ok()) {
+        break;
+      }
       assert(allowed <= n - offset);
       if (allowed > 0) {
         s = SequentialFileWrapper::Read(allowed, result, scratch + offset);
@@ -37,9 +40,6 @@ class InspectedSequentialFile : public SequentialFileWrapper {
         if (actual_read < allowed) {
           break;
         }
-      } else {
-        s = Status::IOError("Failed file system inspection");
-        break;
       }
     }
     *result = Slice(scratch, offset);
@@ -53,7 +53,10 @@ class InspectedSequentialFile : public SequentialFileWrapper {
     size_t roffset = 0;
     size_t allowed = 0;
     while (roffset < n) {
-      allowed = inspector_->Read(n - roffset);
+      s = inspector_->Read(n - roffset, allowed);
+      if (!s.ok()) {
+        break;
+      }
       assert(allowed <= n - roffset);
       if (allowed > 0) {
         s = SequentialFileWrapper::PositionedRead(offset + roffset, allowed,
@@ -70,9 +73,6 @@ class InspectedSequentialFile : public SequentialFileWrapper {
         if (actual_read < allowed) {
           break;
         }
-      } else {
-        s = Status::IOError("Failed file system inspection");
-        break;
       }
     }
     *result = Slice(scratch, roffset);
@@ -81,13 +81,13 @@ class InspectedSequentialFile : public SequentialFileWrapper {
 
  private:
   std::unique_ptr<SequentialFile> owner_;
-  FileSystemInspector* inspector_;
+  std::shared_ptr<FileSystemInspector> inspector_;
 };
 
 class InspectedRandomAccessFile : public RandomAccessFileWrapper {
  public:
   InspectedRandomAccessFile(std::unique_ptr<RandomAccessFile>&& target,
-                            FileSystemInspector* inspector)
+                            std::shared_ptr<FileSystemInspector> inspector)
       : RandomAccessFileWrapper(target.get()),
         owner_(std::move(target)),
         inspector_(inspector) {}
@@ -99,7 +99,10 @@ class InspectedRandomAccessFile : public RandomAccessFileWrapper {
     size_t roffset = 0;
     size_t allowed = 0;
     while (roffset < n) {
-      allowed = inspector_->Read(n - roffset);
+      s = inspector_->Read(n - roffset, allowed);
+      if (!s.ok()) {
+        break;
+      }
       assert(allowed <= n - roffset);
       if (allowed > 0) {
         s = RandomAccessFileWrapper::Read(offset + roffset, allowed, result,
@@ -116,9 +119,6 @@ class InspectedRandomAccessFile : public RandomAccessFileWrapper {
         if (actual_read < allowed) {
           break;
         }
-      } else {
-        s = Status::IOError("Failed file system inspection");
-        break;
       }
     }
     *result = Slice(scratch, roffset);
@@ -137,13 +137,13 @@ class InspectedRandomAccessFile : public RandomAccessFileWrapper {
 
  private:
   std::unique_ptr<RandomAccessFile> owner_;
-  FileSystemInspector* inspector_;
+  std::shared_ptr<FileSystemInspector> inspector_;
 };
 
 class InspectedWritableFile : public WritableFileWrapper {
  public:
   InspectedWritableFile(std::unique_ptr<WritableFile>&& target,
-                        FileSystemInspector* inspector)
+                        std::shared_ptr<FileSystemInspector> inspector)
       : WritableFileWrapper(target.get()),
         owner_(std::move(target)),
         inspector_(inspector) {}
@@ -155,16 +155,16 @@ class InspectedWritableFile : public WritableFileWrapper {
     size_t offset = 0;
     size_t allowed = 0;
     while (offset < size) {
-      allowed = inspector_->Write(size - offset);
+      s = inspector_->Write(size - offset, allowed);
+      if (!s.ok()) {
+        break;
+      }
       assert(allowed <= size - offset);
       if (allowed > 0) {
         s = WritableFileWrapper::Append(Slice(data.data() + offset, allowed));
         if (!s.ok()) {
           break;
         }
-      } else {
-        s = Status::IOError("Failed file system inspection");
-        break;
       }
       offset += allowed;
     }
@@ -178,7 +178,10 @@ class InspectedWritableFile : public WritableFileWrapper {
     size_t roffset = 0;
     size_t allowed = 0;
     while (roffset < size) {
-      allowed = inspector_->Write(size - roffset);
+      s = inspector_->Write(size - roffset, allowed);
+      if (!s.ok()) {
+        break;
+      }
       assert(allowed <= size - roffset);
       if (allowed > 0) {
         s = WritableFileWrapper::PositionedAppend(
@@ -186,9 +189,6 @@ class InspectedWritableFile : public WritableFileWrapper {
         if (!s.ok()) {
           break;
         }
-      } else {
-        s = Status::IOError("Failed file system inspection");
-        break;
       }
       roffset += allowed;
     }
@@ -197,13 +197,13 @@ class InspectedWritableFile : public WritableFileWrapper {
 
  private:
   std::unique_ptr<WritableFile> owner_;
-  FileSystemInspector* inspector_;
+  std::shared_ptr<FileSystemInspector> inspector_;
 };
 
 class InspectedRandomRWFile : public RandomRWFileWrapper {
  public:
   InspectedRandomRWFile(std::unique_ptr<RandomRWFile>&& target,
-                        FileSystemInspector* inspector)
+                        std::shared_ptr<FileSystemInspector> inspector)
       : RandomRWFileWrapper(target.get()),
         owner_(std::move(target)),
         inspector_(inspector) {}
@@ -215,7 +215,10 @@ class InspectedRandomRWFile : public RandomRWFileWrapper {
     size_t roffset = 0;
     size_t allowed = 0;
     while (roffset < size) {
-      allowed = inspector_->Write(size - roffset);
+      s = inspector_->Write(size - roffset, allowed);
+      if (!s.ok()) {
+        break;
+      }
       assert(allowed <= size - roffset);
       if (allowed > 0) {
         s = RandomRWFileWrapper::Write(offset + roffset,
@@ -223,9 +226,6 @@ class InspectedRandomRWFile : public RandomRWFileWrapper {
         if (!s.ok()) {
           break;
         }
-      } else {
-        s = Status::IOError("Failed file system inspection");
-        break;
       }
       roffset += allowed;
     }
@@ -239,7 +239,10 @@ class InspectedRandomRWFile : public RandomRWFileWrapper {
     size_t roffset = 0;
     size_t allowed = 0;
     while (roffset < n) {
-      allowed = inspector_->Read(n - roffset);
+      s = inspector_->Read(n - roffset, allowed);
+      if (!s.ok()) {
+        break;
+      }
       assert(allowed <= n - roffset);
       if (allowed > 0) {
         s = RandomRWFileWrapper::Read(offset + roffset, allowed, result,
@@ -256,9 +259,6 @@ class InspectedRandomRWFile : public RandomRWFileWrapper {
         if (actual_read < allowed) {
           break;
         }
-      } else {
-        s = Status::IOError("Failed file system inspection");
-        break;
       }
     }
     *result = Slice(scratch, roffset);
@@ -267,7 +267,7 @@ class InspectedRandomRWFile : public RandomRWFileWrapper {
 
  private:
   std::unique_ptr<RandomRWFile> owner_;
-  FileSystemInspector* inspector_;
+  std::shared_ptr<FileSystemInspector> inspector_;
 };
 
 FileSystemInspectedEnv::FileSystemInspectedEnv(
@@ -281,8 +281,7 @@ Status FileSystemInspectedEnv::NewSequentialFile(
   if (!s.ok()) {
     return s;
   }
-  result->reset(
-      new InspectedSequentialFile(std::move(*result), inspector_.get()));
+  result->reset(new InspectedSequentialFile(std::move(*result), inspector_));
   return s;
 }
 
@@ -293,8 +292,7 @@ Status FileSystemInspectedEnv::NewRandomAccessFile(
   if (!s.ok()) {
     return s;
   }
-  result->reset(
-      new InspectedRandomAccessFile(std::move(*result), inspector_.get()));
+  result->reset(new InspectedRandomAccessFile(std::move(*result), inspector_));
   return s;
 }
 
@@ -305,8 +303,7 @@ Status FileSystemInspectedEnv::NewWritableFile(
   if (!s.ok()) {
     return s;
   }
-  result->reset(
-      new InspectedWritableFile(std::move(*result), inspector_.get()));
+  result->reset(new InspectedWritableFile(std::move(*result), inspector_));
   return s;
 }
 
@@ -317,8 +314,7 @@ Status FileSystemInspectedEnv::ReopenWritableFile(
   if (!s.ok()) {
     return s;
   }
-  result->reset(
-      new InspectedWritableFile(std::move(*result), inspector_.get()));
+  result->reset(new InspectedWritableFile(std::move(*result), inspector_));
   return s;
 }
 
@@ -329,8 +325,7 @@ Status FileSystemInspectedEnv::ReuseWritableFile(
   if (!s.ok()) {
     return s;
   }
-  result->reset(
-      new InspectedWritableFile(std::move(*result), inspector_.get()));
+  result->reset(new InspectedWritableFile(std::move(*result), inspector_));
   return s;
 }
 
@@ -341,8 +336,7 @@ Status FileSystemInspectedEnv::NewRandomRWFile(
   if (!s.ok()) {
     return s;
   }
-  result->reset(
-      new InspectedRandomRWFile(std::move(*result), inspector_.get()));
+  result->reset(new InspectedRandomRWFile(std::move(*result), inspector_));
   return s;
 }
 

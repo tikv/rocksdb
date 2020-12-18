@@ -100,20 +100,22 @@ class DummyFileSystemInspector : public FileSystemInspector {
   DummyFileSystemInspector(size_t refill_bytes = 0)
       : refill_bytes_(refill_bytes) {}
 
-  size_t Read(size_t len) override {
+  Status Read(size_t len, size_t& allowed) override {
     if (refill_bytes_ == 0) {
-      return len;
+      allowed = len;
     } else {
-      return std::min(refill_bytes_, len);
+      allowed = std::min(refill_bytes_, len);
     }
+    return Status::OK();
   }
 
-  size_t Write(size_t len) override {
+  Status Write(size_t len, size_t& allowed) override {
     if (refill_bytes_ == 0) {
-      return len;
+      allowed = len;
     } else {
-      return std::min(refill_bytes_, len);
+      allowed = std::min(refill_bytes_, len);
     }
+    return Status::OK();
   }
 
  private:
