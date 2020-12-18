@@ -372,9 +372,14 @@ Status KeyManagedEncryptedEnv::ReuseWritableFile(
       s = Status::InvalidArgument("Unsupported encryption method: " +
                                   ToString(static_cast<int>(file_info.method)));
   }
-  if (s.ok()) {
-    s = key_manager_->RenameFile(old_fname, fname);
+  if (!s.ok()) {
+    return s;
   }
+  s = key_manager_->LinkFile(old_fname, fname);
+  if (!s.ok()) {
+    return s;
+  }
+  s = key_manager_->DeleteFile(old_fname);
   return s;
 }
 
@@ -426,24 +431,28 @@ Status KeyManagedEncryptedEnv::LinkFile(const std::string& src_fname,
   }
   s = target()->LinkFile(src_fname, dst_fname);
   if (!s.ok()) {
-    // Ignore error
-    key_manager_->DeleteFile(dst_fname);
+    Status delete_status __attribute__((__unused__)) =
+        key_manager_->DeleteFile(dst_fname);
+    assert(delete_status.ok());
   }
   return s;
 }
 
 Status KeyManagedEncryptedEnv::RenameFile(const std::string& src_fname,
                                           const std::string& dst_fname) {
-  Status s = key_manager_->NewFile(dst_fname);
+  // Link(copy)File instead of RenameFile to avoid losing src_fname info when
+  // failed to rename the src_fname in the file system.
+  Status s = key_manager_->LinkFile(src_fname, dst_fname);
   if (!s.ok()) {
     return s;
   }
   s = target()->RenameFile(src_fname, dst_fname);
   if (s.ok()) {
-    key_manager_->DeleteFile(src_fname);
+    s = key_manager_->DeleteFile(src_fname);
   } else {
-    // Ignore error
-    key_manager_->DeleteFile(dst_fname);
+    Status delete_status __attribute__((__unused__)) =
+        key_manager_->DeleteFile(dst_fname);
+    assert(delete_status.ok());
   }
   return s;
 }
