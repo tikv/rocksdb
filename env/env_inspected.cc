@@ -21,7 +21,7 @@ class InspectedSequentialFile : public SequentialFileWrapper {
     while (offset < n) {
       s = inspector_->Read(n - offset, allowed);
       if (!s.ok()) {
-        break;
+        return s;
       }
       assert(allowed <= n - offset);
       if (allowed > 0) {
@@ -55,7 +55,7 @@ class InspectedSequentialFile : public SequentialFileWrapper {
     while (roffset < n) {
       s = inspector_->Read(n - roffset, allowed);
       if (!s.ok()) {
-        break;
+        return s;
       }
       assert(allowed <= n - roffset);
       if (allowed > 0) {
@@ -101,7 +101,7 @@ class InspectedRandomAccessFile : public RandomAccessFileWrapper {
     while (roffset < n) {
       s = inspector_->Read(n - roffset, allowed);
       if (!s.ok()) {
-        break;
+        return s;
       }
       assert(allowed <= n - roffset);
       if (allowed > 0) {
@@ -157,7 +157,7 @@ class InspectedWritableFile : public WritableFileWrapper {
     while (offset < size) {
       s = inspector_->Write(size - offset, allowed);
       if (!s.ok()) {
-        break;
+        return s;
       }
       assert(allowed <= size - offset);
       if (allowed > 0) {
@@ -180,7 +180,7 @@ class InspectedWritableFile : public WritableFileWrapper {
     while (roffset < size) {
       s = inspector_->Write(size - roffset, allowed);
       if (!s.ok()) {
-        break;
+        return s;
       }
       assert(allowed <= size - roffset);
       if (allowed > 0) {
@@ -217,7 +217,7 @@ class InspectedRandomRWFile : public RandomRWFileWrapper {
     while (roffset < size) {
       s = inspector_->Write(size - roffset, allowed);
       if (!s.ok()) {
-        break;
+        return s;
       }
       assert(allowed <= size - roffset);
       if (allowed > 0) {
@@ -241,7 +241,7 @@ class InspectedRandomRWFile : public RandomRWFileWrapper {
     while (roffset < n) {
       s = inspector_->Read(n - roffset, allowed);
       if (!s.ok()) {
-        break;
+        return s;
       }
       assert(allowed <= n - roffset);
       if (allowed > 0) {
