@@ -19,7 +19,7 @@ class InspectedSequentialFile : public SequentialFileWrapper {
     size_t offset = 0;
     size_t allowed = 0;
     while (offset < n) {
-      s = inspector_->Read(n - offset, allowed);
+      s = inspector_->Read(n - offset, &allowed);
       if (!s.ok()) {
         return s;
       }
@@ -31,8 +31,8 @@ class InspectedSequentialFile : public SequentialFileWrapper {
         }
         size_t actual_read = result->size();
         if (result->data() != scratch + offset) {
-          // Only possible when underlying file ignore or misuse user provided
-          // buffer. Reject this case.
+          // Only possible when underlying file ignores or misuses user
+          // provided buffer. Reject this case.
           memmove(scratch + offset, result->data(), actual_read);
           assert(false);
         }
@@ -53,7 +53,7 @@ class InspectedSequentialFile : public SequentialFileWrapper {
     size_t roffset = 0;
     size_t allowed = 0;
     while (roffset < n) {
-      s = inspector_->Read(n - roffset, allowed);
+      s = inspector_->Read(n - roffset, &allowed);
       if (!s.ok()) {
         return s;
       }
@@ -99,7 +99,7 @@ class InspectedRandomAccessFile : public RandomAccessFileWrapper {
     size_t roffset = 0;
     size_t allowed = 0;
     while (roffset < n) {
-      s = inspector_->Read(n - roffset, allowed);
+      s = inspector_->Read(n - roffset, &allowed);
       if (!s.ok()) {
         return s;
       }
@@ -155,7 +155,7 @@ class InspectedWritableFile : public WritableFileWrapper {
     size_t offset = 0;
     size_t allowed = 0;
     while (offset < size) {
-      s = inspector_->Write(size - offset, allowed);
+      s = inspector_->Write(size - offset, &allowed);
       if (!s.ok()) {
         return s;
       }
@@ -178,7 +178,7 @@ class InspectedWritableFile : public WritableFileWrapper {
     size_t roffset = 0;
     size_t allowed = 0;
     while (roffset < size) {
-      s = inspector_->Write(size - roffset, allowed);
+      s = inspector_->Write(size - roffset, &allowed);
       if (!s.ok()) {
         return s;
       }
@@ -215,7 +215,7 @@ class InspectedRandomRWFile : public RandomRWFileWrapper {
     size_t roffset = 0;
     size_t allowed = 0;
     while (roffset < size) {
-      s = inspector_->Write(size - roffset, allowed);
+      s = inspector_->Write(size - roffset, &allowed);
       if (!s.ok()) {
         return s;
       }
@@ -239,7 +239,7 @@ class InspectedRandomRWFile : public RandomRWFileWrapper {
     size_t roffset = 0;
     size_t allowed = 0;
     while (roffset < n) {
-      s = inspector_->Read(n - roffset, allowed);
+      s = inspector_->Read(n - roffset, &allowed);
       if (!s.ok()) {
         return s;
       }
