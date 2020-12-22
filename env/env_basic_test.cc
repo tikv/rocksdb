@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "db/db_test_util.h"
 #include "env/mock_env.h"
 #include "rocksdb/env.h"
 #include "rocksdb/env_inspected.h"
@@ -131,15 +132,14 @@ INSTANTIATE_TEST_CASE_P(FileSystemInspectedEnv, EnvBasicTestWithParam,
                         ::testing::Values(fs_inspected_env.get()));
 
 #ifdef OPENSSL
-static std::unique_ptr<Env> key_managed_encrypted_env(
-    NewKeyManagedEncryptedEnv(new NormalizingEnvWrapper(Env::Default()),
-                              std::make_shared<KeyManager>(TestKeyManager)));
-INSTANTIATE_TEST_CASE_P(FileSystemInspectedEnv, EnvBasicTestWithParam,
+std::shared_ptr<encryption::KeyManager> key_manager(new TestKeyManager);
+static std::unique_ptr<Env> key_managed_encrypted_env(NewKeyManagedEncryptedEnv(
+    new NormalizingEnvWrapper(Env::Default()), key_manager));
+INSTANTIATE_TEST_CASE_P(KeyManagedEncryptedEnv, EnvBasicTestWithParam,
                         ::testing::Values(key_managed_encrypted_env.get()));
 #endif  // OPENSSL
 
 namespace {
-
 // Returns a vector of 0 or 1 Env*, depending whether an Env is registered for
 // TEST_ENV_URI.
 //
