@@ -443,12 +443,13 @@ Status KeyManagedEncryptedEnv::RenameFile(const std::string& src_fname,
   // In order to ensure that the key manager does not have this dst_fname
   // information, it may exist in the file system, rename will rewrite
   // the file, so this is acceptable.
-  Status delete_status __attribute__((__unused__)) =
-      key_manager_->DeleteFile(dst_fname);
-  assert(delete_status.ok());
+  Status s = = key_manager_->DeleteFile(dst_fname);
+  if (!s.ok()) {
+    return s;
+  }
   // Link(copy)File instead of RenameFile to avoid losing src_fname info when
   // failed to rename the src_fname in the file system.
-  Status s = key_manager_->LinkFile(src_fname, dst_fname);
+  s = key_manager_->LinkFile(src_fname, dst_fname);
   if (!s.ok()) {
     return s;
   }
@@ -456,7 +457,8 @@ Status KeyManagedEncryptedEnv::RenameFile(const std::string& src_fname,
   if (s.ok()) {
     s = key_manager_->DeleteFile(src_fname);
   } else {
-    delete_status = key_manager_->DeleteFile(dst_fname);
+    Status delete_status __attribute__((__unused__)) =
+        key_manager_->DeleteFile(dst_fname);
     assert(delete_status.ok());
   }
   return s;
