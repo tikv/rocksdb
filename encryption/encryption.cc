@@ -443,7 +443,7 @@ Status KeyManagedEncryptedEnv::RenameFile(const std::string& src_fname,
   // In order to ensure that the key manager does not have this dst_fname
   // information, it may exist in the file system, rename will rewrite
   // the file, so this is acceptable.
-  Status s = = key_manager_->DeleteFile(dst_fname);
+  Status s = key_manager_->DeleteFile(dst_fname);
   if (!s.ok()) {
     return s;
   }

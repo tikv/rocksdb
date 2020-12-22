@@ -124,21 +124,19 @@ class DummyFileSystemInspector : public FileSystemInspector {
   size_t refill_bytes_;
 };
 
-static std::unique_ptr<Env> inspected_fs_env(
+static std::unique_ptr<Env> fs_inspected_env(
     NewFileSystemInspectedEnv(new NormalizingEnvWrapper(Env::Default()),
                               std::make_shared<DummyFileSystemInspector>(1)));
 INSTANTIATE_TEST_CASE_P(FileSystemInspectedEnv, EnvBasicTestWithParam,
-                        ::testing::Values(inspected_fs_env.get()));
+                        ::testing::Values(fs_inspected_env.get()));
 
-#ifdef ROCKSDB_LITE
 #ifdef OPENSSL
-static std::unique_ptr<Env> inspected_encrypt_env(
+static std::unique_ptr<Env> key_managed_encrypted_env(
     NewKeyManagedEncryptedEnv(new NormalizingEnvWrapper(Env::Default()),
                               std::make_shared<KeyManager>(TestKeyManager)));
 INSTANTIATE_TEST_CASE_P(FileSystemInspectedEnv, EnvBasicTestWithParam,
-                        ::testing::Values(inspected_encrypt_env.get()));
-#endif
-#endif
+                        ::testing::Values(key_managed_encrypted_env.get()));
+#endif  // OPENSSL
 
 namespace {
 
