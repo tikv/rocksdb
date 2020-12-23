@@ -15,6 +15,17 @@ namespace rocksdb {
 namespace encryption {
 
 namespace {
+// For some files, we don't require them to be encrypted.
+bool skip_encryption(const std::string& fname) {
+  std::string skip_name = "CURRENT";
+  size_t fname_idx = fname.rfind(skip_name);
+  if (fname.length() - fname_idx != skip_name.length()) {
+    return false;
+  } else {
+    return true;
+  }
+}
+
 uint64_t GetBigEndian64(const unsigned char* buf) {
   if (port::kLittleEndian) {
     return (static_cast<uint64_t>(buf[0]) << 56) +
@@ -300,10 +311,17 @@ Status KeyManagedEncryptedEnv::NewWritableFile(
     const std::string& fname, std::unique_ptr<WritableFile>* result,
     const EnvOptions& options) {
   FileEncryptionInfo file_info;
-  Status s = key_manager_->NewFile(fname, &file_info);
-  if (!s.ok()) {
-    return s;
+  Status s;
+  bool skipped = skip_encryption(fname);
+  if (!skipped) {
+    s = key_manager_->NewFile(fname, &file_info);
+    if (!s.ok()) {
+      return s;
+    }
+  } else {
+    file_info.method = EncryptionMethod::kPlaintext;
   }
+
   switch (file_info.method) {
     case EncryptionMethod::kPlaintext:
       s = target()->NewWritableFile(fname, result, options);
@@ -317,7 +335,7 @@ Status KeyManagedEncryptedEnv::NewWritableFile(
       s = Status::InvalidArgument("Unsupported encryption method: " +
                                   ToString(static_cast<int>(file_info.method)));
   }
-  if (!s.ok()) {
+  if (!s.ok() && !skipped) {
     // Ignore error
     key_manager_->DeleteFile(fname);
   }
@@ -440,16 +458,9 @@ Status KeyManagedEncryptedEnv::LinkFile(const std::string& src_fname,
 
 Status KeyManagedEncryptedEnv::RenameFile(const std::string& src_fname,
                                           const std::string& dst_fname) {
-  // In order to ensure that the key manager does not have this dst_fname
-  // information, it may exist in the file system, rename will rewrite
-  // the file, so this is acceptable.
-  Status s = key_manager_->DeleteFile(dst_fname);
-  if (!s.ok()) {
-    return s;
-  }
   // Link(copy)File instead of RenameFile to avoid losing src_fname info when
   // failed to rename the src_fname in the file system.
-  s = key_manager_->LinkFile(src_fname, dst_fname);
+  Status s = key_manager_->LinkFile(src_fname, dst_fname);
   if (!s.ok()) {
     return s;
   }

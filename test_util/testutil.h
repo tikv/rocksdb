@@ -32,6 +32,7 @@ namespace rocksdb {
 
 // TODO(yiwu): Use InMemoryKeyManager instead for tests.
 #ifdef OPENSSL
+#ifndef ROCKSDB_LITE
 class TestKeyManager : public encryption::KeyManager {
  public:
   virtual ~TestKeyManager() = default;
@@ -60,6 +61,7 @@ class TestKeyManager : public encryption::KeyManager {
     return Status::OK();
   }
 };
+#endif
 #endif
 
 class SequentialFile;
