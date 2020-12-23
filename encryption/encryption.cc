@@ -443,6 +443,12 @@ Status KeyManagedEncryptedEnv::DeleteFile(const std::string& fname) {
 
 Status KeyManagedEncryptedEnv::LinkFile(const std::string& src_fname,
                                         const std::string& dst_fname) {
+  if (skip_encryption(dst_fname)) {
+    Status s = target()->LinkFile(src_fname, dst_fname);
+    if (!s.ok()) {
+      return s;
+    }
+  }
   Status s = key_manager_->LinkFile(src_fname, dst_fname);
   if (!s.ok()) {
     return s;
@@ -458,6 +464,14 @@ Status KeyManagedEncryptedEnv::LinkFile(const std::string& src_fname,
 
 Status KeyManagedEncryptedEnv::RenameFile(const std::string& src_fname,
                                           const std::string& dst_fname) {
+  if (skip_encryption(dst_fname)) {
+    Status s = target()->RenameFile(src_fname, dst_fname);
+    if (!s.ok()) {
+      return s;
+    }
+    s = key_manager_->DeleteFile(src_fname);
+    return s;
+  }
   // Link(copy)File instead of RenameFile to avoid losing src_fname info when
   // failed to rename the src_fname in the file system.
   Status s = key_manager_->LinkFile(src_fname, dst_fname);
