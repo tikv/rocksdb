@@ -24,6 +24,18 @@ namespace rocksdb {
 static const std::string kRocksDbTFileExt = "sst";
 static const std::string kLevelDbTFileExt = "ldb";
 static const std::string kRocksDBBlobFileExt = "blob";
+static const std::string kEncryptionSkipSuffix  = "CURRENT";
+
+bool ShouldSkipEncryption(const std::string& fname) {
+  size_t check_length = kEncryptionSkipSuffix.length();
+  if (fname.length() >= check_length &&
+      !fname.compare(fname.length() - check_length, check_length,
+                     kEncryptionSkipSuffix)) {
+    return true;
+  } else {
+    return false;
+  }
+}
 
 // Given a path, flatten the path name by replacing all chars not in
 // {[0-9,a-z,A-Z,-,_,.]} with _. And append '_LOG\0' at the end.

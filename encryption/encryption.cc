@@ -9,23 +9,13 @@
 #include <algorithm>
 #include <limits>
 
+#include "file/filename.h"
 #include "port/port.h"
 
 namespace rocksdb {
 namespace encryption {
 
 namespace {
-// For some files, we don't require them to be encrypted.
-bool skip_encryption(const std::string& fname) {
-  std::string skip_name = "CURRENT";
-  size_t fname_idx = fname.rfind(skip_name);
-  if (fname.length() - fname_idx != skip_name.length()) {
-    return false;
-  } else {
-    return true;
-  }
-}
-
 uint64_t GetBigEndian64(const unsigned char* buf) {
   if (port::kLittleEndian) {
     return (static_cast<uint64_t>(buf[0]) << 56) +
@@ -312,7 +302,7 @@ Status KeyManagedEncryptedEnv::NewWritableFile(
     const EnvOptions& options) {
   FileEncryptionInfo file_info;
   Status s;
-  bool skipped = skip_encryption(fname);
+  bool skipped = ShouldSkipEncryption(fname);
   if (!skipped) {
     s = key_manager_->NewFile(fname, &file_info);
     if (!s.ok()) {
@@ -443,11 +433,9 @@ Status KeyManagedEncryptedEnv::DeleteFile(const std::string& fname) {
 
 Status KeyManagedEncryptedEnv::LinkFile(const std::string& src_fname,
                                         const std::string& dst_fname) {
-  if (skip_encryption(dst_fname)) {
+  if (ShouldSkipEncryption(dst_fname)) {
     Status s = target()->LinkFile(src_fname, dst_fname);
-    if (!s.ok()) {
-      return s;
-    }
+    return s;
   }
   Status s = key_manager_->LinkFile(src_fname, dst_fname);
   if (!s.ok()) {
@@ -464,7 +452,7 @@ Status KeyManagedEncryptedEnv::LinkFile(const std::string& src_fname,
 
 Status KeyManagedEncryptedEnv::RenameFile(const std::string& src_fname,
                                           const std::string& dst_fname) {
-  if (skip_encryption(dst_fname)) {
+  if (ShouldSkipEncryption(dst_fname)) {
     Status s = target()->RenameFile(src_fname, dst_fname);
     if (!s.ok()) {
       return s;
