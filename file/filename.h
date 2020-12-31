@@ -42,7 +42,8 @@ enum FileType {
   kBlobFile
 };
 
-// For some files, we don't require them to be encrypted.
+// Some non-sensitive files are not encrypted to preserve atomicity of file
+// operations.
 extern bool ShouldSkipEncryption(const std::string& fname);
 
 // Return the name of the log file with the specified number

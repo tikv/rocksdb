@@ -25,16 +25,24 @@ static const std::string kRocksDbTFileExt = "sst";
 static const std::string kLevelDbTFileExt = "ldb";
 static const std::string kRocksDBBlobFileExt = "blob";
 static const std::string kEncryptionSkipName  = "CURRENT";
+static const std::string kUnencryptedTempFileNameSuffix = "plain";
 
 bool ShouldSkipEncryption(const std::string& fname) {
-  size_t check_length = kEncryptionSkipName.length();
-  if (fname.length() >= check_length &&
-      !fname.compare(fname.length() - check_length, check_length,
+  // skip CURRENT file.
+  size_t current_length = kEncryptionSkipName.length();
+  if (fname.length() >= current_length &&
+      !fname.compare(fname.length() - current_length, current_length,
                      kEncryptionSkipName)) {
     return true;
-  } else {
-    return false;
   }
+  // skip temporary file for CURRENT file.
+  size_t temp_length = kUnencryptedTempFileNameSuffix.length();
+  if (fname.length() >= temp_length &&
+      !fname.compare(fname.length() - temp_length, temp_length,
+                     kUnencryptedTempFileNameSuffix)) {
+    return true;
+  }
+  return false;
 }
 
 // Given a path, flatten the path name by replacing all chars not in
@@ -377,7 +385,7 @@ Status SetCurrentFile(Env* env, const std::string& dbname,
   assert(contents.starts_with(dbname + "/"));
   contents.remove_prefix(dbname.size() + 1);
   std::string tmp =
-      TempFileName(dbname, descriptor_number) + "." + kEncryptionSkipName;
+      TempFileName(dbname, descriptor_number) + "." + kUnencryptedTempFileNameSuffix;
   Status s = WriteStringToFile(env, contents.ToString() + "\n", tmp, true);
   if (s.ok()) {
     TEST_KILL_RANDOM("SetCurrentFile:0", rocksdb_kill_odds * REDUCE_ODDS2);

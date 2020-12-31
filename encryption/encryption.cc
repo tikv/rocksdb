@@ -457,7 +457,7 @@ Status KeyManagedEncryptedEnv::RenameFile(const std::string& src_fname,
     if (!s.ok()) {
       return s;
     }
-    s = key_manager_->DeleteFile(src_fname);
+    assert(ShouldSkipEncryption(src_fname));
     return s;
   }
   // Link(copy)File instead of RenameFile to avoid losing src_fname info when
