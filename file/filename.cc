@@ -24,13 +24,13 @@ namespace rocksdb {
 static const std::string kRocksDbTFileExt = "sst";
 static const std::string kLevelDbTFileExt = "ldb";
 static const std::string kRocksDBBlobFileExt = "blob";
-static const std::string kEncryptionSkipSuffix  = "CURRENT";
+static const std::string kEncryptionSkipName  = "CURRENT";
 
 bool ShouldSkipEncryption(const std::string& fname) {
-  size_t check_length = kEncryptionSkipSuffix.length();
+  size_t check_length = kEncryptionSkipName.length();
   if (fname.length() >= check_length &&
       !fname.compare(fname.length() - check_length, check_length,
-                     kEncryptionSkipSuffix)) {
+                     kEncryptionSkipName)) {
     return true;
   } else {
     return false;
@@ -376,7 +376,8 @@ Status SetCurrentFile(Env* env, const std::string& dbname,
   Slice contents = manifest;
   assert(contents.starts_with(dbname + "/"));
   contents.remove_prefix(dbname.size() + 1);
-  std::string tmp = TempFileName(dbname, descriptor_number);
+  std::string tmp =
+      TempFileName(dbname, descriptor_number) + "." + kEncryptionSkipName;
   Status s = WriteStringToFile(env, contents.ToString() + "\n", tmp, true);
   if (s.ok()) {
     TEST_KILL_RANDOM("SetCurrentFile:0", rocksdb_kill_odds * REDUCE_ODDS2);
