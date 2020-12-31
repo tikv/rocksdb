@@ -24,15 +24,14 @@ namespace rocksdb {
 static const std::string kRocksDbTFileExt = "sst";
 static const std::string kLevelDbTFileExt = "ldb";
 static const std::string kRocksDBBlobFileExt = "blob";
-static const std::string kEncryptionSkipName  = "CURRENT";
-static const std::string kUnencryptedTempFileNameSuffix = "plain";
+static const std::string kUnencryptedTempFileNameSuffix = "dbtmp.plain";
 
 bool ShouldSkipEncryption(const std::string& fname) {
   // skip CURRENT file.
-  size_t current_length = kEncryptionSkipName.length();
+  size_t current_length = strlen("CURRENT");
   if (fname.length() >= current_length &&
       !fname.compare(fname.length() - current_length, current_length,
-                     kEncryptionSkipName)) {
+                     "CURRENT")) {
     return true;
   }
   // skip temporary file for CURRENT file.
@@ -177,6 +176,10 @@ std::string LockFileName(const std::string& dbname) {
 
 std::string TempFileName(const std::string& dbname, uint64_t number) {
   return MakeFileName(dbname, number, kTempFileNameSuffix.c_str());
+}
+
+std::string TempPlainFileName(const std::string& dbname, uint64_t number) {
+  return MakeFileName(dbname, number, kUnencryptedTempFileNameSuffix.c_str());
 }
 
 InfoLogPrefix::InfoLogPrefix(bool has_log_dir,
@@ -384,8 +387,7 @@ Status SetCurrentFile(Env* env, const std::string& dbname,
   Slice contents = manifest;
   assert(contents.starts_with(dbname + "/"));
   contents.remove_prefix(dbname.size() + 1);
-  std::string tmp =
-      TempFileName(dbname, descriptor_number) + "." + kUnencryptedTempFileNameSuffix;
+  std::string tmp = TempPlainFileName(dbname, descriptor_number);
   Status s = WriteStringToFile(env, contents.ToString() + "\n", tmp, true);
   if (s.ok()) {
     TEST_KILL_RANDOM("SetCurrentFile:0", rocksdb_kill_odds * REDUCE_ODDS2);

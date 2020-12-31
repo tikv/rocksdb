@@ -434,8 +434,8 @@ Status KeyManagedEncryptedEnv::DeleteFile(const std::string& fname) {
 Status KeyManagedEncryptedEnv::LinkFile(const std::string& src_fname,
                                         const std::string& dst_fname) {
   if (ShouldSkipEncryption(dst_fname)) {
-    Status s = target()->LinkFile(src_fname, dst_fname);
     assert(ShouldSkipEncryption(src_fname));
+    Status s = target()->LinkFile(src_fname, dst_fname);
     return s;
   } else {
     assert(!ShouldSkipEncryption(src_fname));
@@ -456,12 +456,8 @@ Status KeyManagedEncryptedEnv::LinkFile(const std::string& src_fname,
 Status KeyManagedEncryptedEnv::RenameFile(const std::string& src_fname,
                                           const std::string& dst_fname) {
   if (ShouldSkipEncryption(dst_fname)) {
-    Status s = target()->RenameFile(src_fname, dst_fname);
-    if (!s.ok()) {
-      return s;
-    }
     assert(ShouldSkipEncryption(src_fname));
-    return s;
+    return target()->RenameFile(src_fname, dst_fname);
   } else {
     assert(!ShouldSkipEncryption(src_fname));
   }
