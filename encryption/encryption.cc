@@ -435,7 +435,10 @@ Status KeyManagedEncryptedEnv::LinkFile(const std::string& src_fname,
                                         const std::string& dst_fname) {
   if (ShouldSkipEncryption(dst_fname)) {
     Status s = target()->LinkFile(src_fname, dst_fname);
+    assert(ShouldSkipEncryption(src_fname));
     return s;
+  } else {
+    assert(!ShouldSkipEncryption(src_fname));
   }
   Status s = key_manager_->LinkFile(src_fname, dst_fname);
   if (!s.ok()) {
@@ -459,6 +462,8 @@ Status KeyManagedEncryptedEnv::RenameFile(const std::string& src_fname,
     }
     assert(ShouldSkipEncryption(src_fname));
     return s;
+  } else {
+    assert(!ShouldSkipEncryption(src_fname));
   }
   // Link(copy)File instead of RenameFile to avoid losing src_fname info when
   // failed to rename the src_fname in the file system.
