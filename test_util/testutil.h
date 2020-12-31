@@ -48,7 +48,6 @@ class TestKeyManager : public encryption::KeyManager {
     } else {
       file_info->method = encryption::EncryptionMethod::kAES192_CTR;
     }
-    file_info->method = encryption::EncryptionMethod::kAES192_CTR;
     file_info->key = default_key;
     file_info->iv = default_iv;
     return Status::OK();
