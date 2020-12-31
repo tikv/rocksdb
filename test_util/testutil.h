@@ -27,6 +27,7 @@
 #include "table/plain/plain_table_factory.h"
 #include "util/mutexlock.h"
 #include "util/random.h"
+#include "file/filename.h"
 
 namespace rocksdb {
 
@@ -40,8 +41,13 @@ class TestKeyManager : public encryption::KeyManager {
   static const std::string default_key;
   static const std::string default_iv;
 
-  Status GetFile(const std::string& /*fname*/,
+  Status GetFile(const std::string& fname,
                  encryption::FileEncryptionInfo* file_info) override {
+    if (ShouldSkipEncryption(fname)) {
+      file_info->method = encryption::EncryptionMethod::kPlaintext;
+    } else {
+      file_info->method = encryption::EncryptionMethod::kAES192_CTR;
+    }
     file_info->method = encryption::EncryptionMethod::kAES192_CTR;
     file_info->key = default_key;
     file_info->iv = default_iv;
