@@ -21,11 +21,13 @@
 namespace rocksdb {
 
 #ifdef OPENSSL
+#ifndef ROCKSDB_LITE
 const std::string TestKeyManager::default_key =
     "\x12\x34\x56\x78\x12\x34\x56\x78\x12\x34\x56\x78\x12\x34\x56\x78\x12\x34"
     "\x56\x78\x12\x34\x56\x78";
 const std::string TestKeyManager::default_iv =
     "\xaa\xbb\xcc\xdd\xaa\xbb\xcc\xdd\xaa\xbb\xcc\xdd\xaa\xbb\xcc\xdd";
+#endif
 #endif
 
 namespace test {
