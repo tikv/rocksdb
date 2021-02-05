@@ -4,11 +4,12 @@
 #ifdef OPENSSL
 #include "encryption/encryption.h"
 
+#include <openssl/opensslv.h>
+
 #include <algorithm>
 #include <limits>
 
-#include <openssl/opensslv.h>
-
+#include "file/filename.h"
 #include "port/port.h"
 
 namespace rocksdb {
@@ -300,10 +301,17 @@ Status KeyManagedEncryptedEnv::NewWritableFile(
     const std::string& fname, std::unique_ptr<WritableFile>* result,
     const EnvOptions& options) {
   FileEncryptionInfo file_info;
-  Status s = key_manager_->NewFile(fname, &file_info);
-  if (!s.ok()) {
-    return s;
+  Status s;
+  bool skipped = ShouldSkipEncryption(fname);
+  if (!skipped) {
+    s = key_manager_->NewFile(fname, &file_info);
+    if (!s.ok()) {
+      return s;
+    }
+  } else {
+    file_info.method = EncryptionMethod::kPlaintext;
   }
+
   switch (file_info.method) {
     case EncryptionMethod::kPlaintext:
       s = target()->NewWritableFile(fname, result, options);
@@ -317,7 +325,7 @@ Status KeyManagedEncryptedEnv::NewWritableFile(
       s = Status::InvalidArgument("Unsupported encryption method: " +
                                   ToString(static_cast<int>(file_info.method)));
   }
-  if (!s.ok()) {
+  if (!s.ok() && !skipped) {
     // Ignore error
     key_manager_->DeleteFile(fname);
   }
@@ -372,9 +380,14 @@ Status KeyManagedEncryptedEnv::ReuseWritableFile(
       s = Status::InvalidArgument("Unsupported encryption method: " +
                                   ToString(static_cast<int>(file_info.method)));
   }
-  if (s.ok()) {
-    s = key_manager_->RenameFile(old_fname, fname);
+  if (!s.ok()) {
+    return s;
   }
+  s = key_manager_->LinkFile(old_fname, fname);
+  if (!s.ok()) {
+    return s;
+  }
+  s = key_manager_->DeleteFile(old_fname);
   return s;
 }
 
@@ -420,28 +433,47 @@ Status KeyManagedEncryptedEnv::DeleteFile(const std::string& fname) {
 
 Status KeyManagedEncryptedEnv::LinkFile(const std::string& src_fname,
                                         const std::string& dst_fname) {
+  if (ShouldSkipEncryption(dst_fname)) {
+    assert(ShouldSkipEncryption(src_fname));
+    Status s = target()->LinkFile(src_fname, dst_fname);
+    return s;
+  } else {
+    assert(!ShouldSkipEncryption(src_fname));
+  }
   Status s = key_manager_->LinkFile(src_fname, dst_fname);
   if (!s.ok()) {
     return s;
   }
   s = target()->LinkFile(src_fname, dst_fname);
   if (!s.ok()) {
-    // Ignore error
-    key_manager_->DeleteFile(dst_fname);
+    Status delete_status __attribute__((__unused__)) =
+        key_manager_->DeleteFile(dst_fname);
+    assert(delete_status.ok());
   }
   return s;
 }
 
 Status KeyManagedEncryptedEnv::RenameFile(const std::string& src_fname,
                                           const std::string& dst_fname) {
-  Status s = key_manager_->RenameFile(src_fname, dst_fname);
+  if (ShouldSkipEncryption(dst_fname)) {
+    assert(ShouldSkipEncryption(src_fname));
+    return target()->RenameFile(src_fname, dst_fname);
+  } else {
+    assert(!ShouldSkipEncryption(src_fname));
+  }
+  // Link(copy)File instead of RenameFile to avoid losing src_fname info when
+  // failed to rename the src_fname in the file system.
+  Status s = key_manager_->LinkFile(src_fname, dst_fname);
   if (!s.ok()) {
     return s;
   }
   s = target()->RenameFile(src_fname, dst_fname);
-  if (!s.ok()) {
-    // Ignore error
-    key_manager_->RenameFile(dst_fname, src_fname);
+  if (s.ok()) {
+    s = key_manager_->DeleteFile(src_fname);
+  } else {
+    Status delete_status __attribute__((__unused__)) =
+        key_manager_->DeleteFile(dst_fname);
+    assert(delete_status.ok());
   }
   return s;
 }
