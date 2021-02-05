@@ -195,6 +195,11 @@ class DBIter final: public Iterator {
       return iter_.value();
     }
   }
+  bool seqno(SequenceNumber* no) const override {
+    assert(valid_);
+    *no = ikey_.sequence;
+    return true;
+  }
   Status status() const override {
     if (status_.ok()) {
       return iter_.status();
@@ -1602,6 +1607,9 @@ inline void ArenaWrappedDBIter::Next() { db_iter_->Next(); }
 inline void ArenaWrappedDBIter::Prev() { db_iter_->Prev(); }
 inline Slice ArenaWrappedDBIter::key() const { return db_iter_->key(); }
 inline Slice ArenaWrappedDBIter::value() const { return db_iter_->value(); }
+inline bool ArenaWrappedDBIter::seqno(SequenceNumber* no) const {
+  return db_iter_->seqno(no);
+}
 inline Status ArenaWrappedDBIter::status() const { return db_iter_->status(); }
 bool ArenaWrappedDBIter::IsBlob() const { return db_iter_->IsBlob(); }
 inline Status ArenaWrappedDBIter::GetProperty(std::string prop_name,
