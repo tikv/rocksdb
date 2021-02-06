@@ -35,7 +35,8 @@ env:
 matrix:
   include:
     - os: linux
-      arch: arm64
+      arch: arm64-graviton2
+      virt: vm
       env: TEST_GROUP=platform_dependent
     - os: osx
       os_image: xcode12.2
