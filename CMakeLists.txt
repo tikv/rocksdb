@@ -560,6 +560,7 @@ set(SOURCES
         env/env_chroot.cc
         env/env_encryption.cc
         env/env_hdfs.cc
+        env/env_inspected.cc
         env/mock_env.cc
         file/delete_scheduler.cc
         file/file_util.cc

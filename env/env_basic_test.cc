@@ -4,13 +4,15 @@
 //
 // Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
 
+#include <algorithm>
 #include <memory>
 #include <string>
 #include <vector>
-#include <algorithm>
 
+#include "db/db_test_util.h"
 #include "env/mock_env.h"
 #include "rocksdb/env.h"
+#include "rocksdb/env_inspected.h"
 #include "test_util/testharness.h"
 
 namespace rocksdb {
@@ -94,8 +96,50 @@ static std::unique_ptr<Env> mem_env(NewMemEnv(Env::Default()));
 INSTANTIATE_TEST_CASE_P(MemEnv, EnvBasicTestWithParam,
                         ::testing::Values(mem_env.get()));
 
-namespace {
+class DummyFileSystemInspector : public FileSystemInspector {
+ public:
+  DummyFileSystemInspector(size_t refill_bytes = 0)
+      : refill_bytes_(refill_bytes) {}
 
+  Status Read(size_t len, size_t* allowed) override {
+    assert(allowed);
+    if (refill_bytes_ == 0) {
+      *allowed = len;
+    } else {
+      *allowed = std::min(refill_bytes_, len);
+    }
+    return Status::OK();
+  }
+
+  Status Write(size_t len, size_t* allowed) override {
+    assert(allowed);
+    if (refill_bytes_ == 0) {
+      *allowed = len;
+    } else {
+      *allowed = std::min(refill_bytes_, len);
+    }
+    return Status::OK();
+  }
+
+ private:
+  size_t refill_bytes_;
+};
+
+static std::unique_ptr<Env> fs_inspected_env(
+    NewFileSystemInspectedEnv(new NormalizingEnvWrapper(Env::Default()),
+                              std::make_shared<DummyFileSystemInspector>(1)));
+INSTANTIATE_TEST_CASE_P(FileSystemInspectedEnv, EnvBasicTestWithParam,
+                        ::testing::Values(fs_inspected_env.get()));
+
+#ifdef OPENSSL
+std::shared_ptr<encryption::KeyManager> key_manager(new TestKeyManager);
+static std::unique_ptr<Env> key_managed_encrypted_env(NewKeyManagedEncryptedEnv(
+    new NormalizingEnvWrapper(Env::Default()), key_manager));
+INSTANTIATE_TEST_CASE_P(KeyManagedEncryptedEnv, EnvBasicTestWithParam,
+                        ::testing::Values(key_managed_encrypted_env.get()));
+#endif  // OPENSSL
+
+namespace {
 // Returns a vector of 0 or 1 Env*, depending whether an Env is registered for
 // TEST_ENV_URI.
 //
@@ -285,7 +329,7 @@ TEST_P(EnvBasicTestWithParam, LargeWrite) {
     read += result.size();
   }
   ASSERT_TRUE(write_data == read_data);
-  delete [] scratch;
+  delete[] scratch;
 }
 
 TEST_P(EnvMoreTestWithParam, GetModTime) {

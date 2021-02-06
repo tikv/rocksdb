@@ -15,6 +15,8 @@
 
 #include "rocksdb/compaction_filter.h"
 #include "rocksdb/env.h"
+#include "rocksdb/db.h"
+#include "rocksdb/encryption.h"
 #include "rocksdb/iterator.h"
 #include "rocksdb/merge_operator.h"
 #include "rocksdb/options.h"
@@ -25,8 +27,48 @@
 #include "table/plain/plain_table_factory.h"
 #include "util/mutexlock.h"
 #include "util/random.h"
+#include "file/filename.h"
 
 namespace rocksdb {
+
+// TODO(yiwu): Use InMemoryKeyManager instead for tests.
+#ifdef OPENSSL
+#ifndef ROCKSDB_LITE
+class TestKeyManager : public encryption::KeyManager {
+ public:
+  virtual ~TestKeyManager() = default;
+
+  static const std::string default_key;
+  static const std::string default_iv;
+
+  Status GetFile(const std::string& fname,
+                 encryption::FileEncryptionInfo* file_info) override {
+    if (ShouldSkipEncryption(fname)) {
+      file_info->method = encryption::EncryptionMethod::kPlaintext;
+    } else {
+      file_info->method = encryption::EncryptionMethod::kAES192_CTR;
+    }
+    file_info->key = default_key;
+    file_info->iv = default_iv;
+    return Status::OK();
+  }
+
+  Status NewFile(const std::string& /*fname*/,
+                 encryption::FileEncryptionInfo* file_info) override {
+    file_info->method = encryption::EncryptionMethod::kAES192_CTR;
+    file_info->key = default_key;
+    file_info->iv = default_iv;
+    return Status::OK();
+  }
+
+  Status DeleteFile(const std::string&) override { return Status::OK(); }
+  Status LinkFile(const std::string&, const std::string&) override {
+    return Status::OK();
+  }
+};
+#endif
+#endif
+
 class SequentialFile;
 class SequentialFileReader;
 
@@ -420,6 +462,20 @@ class SleepingBackgroundTask {
       bg_cv_.Wait();
     }
   }
+  // Waits for the status to change to sleeping,
+  // otherwise times out.
+  // wait_time is in microseconds.
+  // Returns true when times out, false otherwise.
+  bool TimedWaitUntilSleeping(uint64_t wait_time) {
+    auto abs_time = Env::Default()->NowMicros() + wait_time;
+    MutexLock l(&mutex_);
+    while (!sleeping_ || !should_sleep_) {
+      if (bg_cv_.TimedWait(abs_time)) {
+        return true;
+      }
+    }
+    return false;
+  }
   void WakeUp() {
     MutexLock l(&mutex_);
     should_sleep_ = false;
@@ -430,6 +486,18 @@ class SleepingBackgroundTask {
     while (!done_with_sleep_) {
       bg_cv_.Wait();
     }
+  }
+  // Similar to TimedWaitUntilSleeping.
+  // Waits until the task is done.
+  bool TimedWaitUntilDone(uint64_t wait_time) {
+    auto abs_time = Env::Default()->NowMicros() + wait_time;
+    MutexLock l(&mutex_);
+    while (!done_with_sleep_) {
+      if (bg_cv_.TimedWait(abs_time)) {
+        return true;
+      }
+    }
+    return false;
   }
   bool WokenUp() {
     MutexLock l(&mutex_);
