@@ -169,6 +169,7 @@ class ColumnFamilyHandleImpl : public ColumnFamilyHandle {
   virtual const std::string& GetName() const override;
   virtual Status GetDescriptor(ColumnFamilyDescriptor* desc) override;
   virtual const Comparator* GetComparator() const override;
+  virtual bool IsStalled() const override;
 
  private:
   ColumnFamilyData* cfd_;
@@ -497,6 +498,11 @@ class ColumnFamilyData {
   Directory* GetDataDir(size_t path_id) const;
 
   ThreadLocalPtr* TEST_GetLocalSV() { return local_sv_.get(); }
+
+  bool IsStalled() const {
+    return super_version_ && super_version_->write_stall_condition !=
+                                 WriteStallCondition::kNormal;
+  }
 
  private:
   friend class ColumnFamilySet;
