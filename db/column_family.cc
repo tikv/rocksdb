@@ -105,8 +105,6 @@ const Comparator* ColumnFamilyHandleImpl::GetComparator() const {
   return cfd()->user_comparator();
 }
 
-bool ColumnFamilyHandleImpl::IsStalled() const { return cfd()->IsStalled(); }
-
 void GetIntTblPropCollectorFactory(
     const ImmutableCFOptions& ioptions,
     std::vector<std::unique_ptr<IntTblPropCollectorFactory>>*

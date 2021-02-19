@@ -88,8 +88,6 @@ class ColumnFamilyHandle {
   // Returns the comparator of the column family associated with the
   // current handle.
   virtual const Comparator* GetComparator() const = 0;
-  // Returns whether the column family is stalled or not.
-  virtual bool IsStalled() const = 0;
 };
 
 static const int kMajorVersion = __ROCKSDB_MAJOR__;
@@ -724,6 +722,9 @@ class DB {
     //  "rocksdb.is-write-stopped" - Return 1 if write has been stopped.
     static const std::string kIsWriteStopped;
 
+    //  "rocksdb.is-write-stalled" - Return 1 if write has been stalled.
+    static const std::string kIsWriteStalled;
+
     //  "rocksdb.estimate-oldest-key-time" - returns an estimation of
     //      oldest key timestamp in the DB. Currently only available for
     //      FIFO compaction with
@@ -796,6 +797,7 @@ class DB {
   //  "rocksdb.num-running-flushes"
   //  "rocksdb.actual-delayed-write-rate"
   //  "rocksdb.is-write-stopped"
+  //  "rocksdb.is-write-stalled"
   //  "rocksdb.estimate-oldest-key-time"
   //  "rocksdb.block-cache-capacity"
   //  "rocksdb.block-cache-usage"

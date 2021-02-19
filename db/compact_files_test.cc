@@ -491,7 +491,7 @@ TEST_F(CompactFilesTest, GetCompactionJobInfo) {
   delete db;
 }
 
-TEST_F(CompactFilesTest, IsStalled) {
+TEST_F(CompactFilesTest, IsWriteStalled) {
   class SlowFilter : public CompactionFilter {
    public:
     SlowFilter(std::atomic<bool>* would_block) { would_block_ = would_block; }
@@ -560,7 +560,9 @@ TEST_F(CompactFilesTest, IsStalled) {
 
   // The write loop must be terminated by write stall.
   ASSERT_EQ(flushed_l0_files, 12);
-  ASSERT_TRUE(handles[0]->IsStalled());
+  uint64_t stalled = false;
+  db->GetIntProperty(handles[0], "rocksdb.is-write-stalled", &stalled);
+  ASSERT_TRUE(stalled);
 
   compaction_would_block.store(false, std::memory_order_relaxed);
   for (size_t i = 0; i < handles.size(); ++i) {

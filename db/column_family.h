@@ -169,7 +169,6 @@ class ColumnFamilyHandleImpl : public ColumnFamilyHandle {
   virtual const std::string& GetName() const override;
   virtual Status GetDescriptor(ColumnFamilyDescriptor* desc) override;
   virtual const Comparator* GetComparator() const override;
-  virtual bool IsStalled() const override;
 
  private:
   ColumnFamilyData* cfd_;
