@@ -498,11 +498,6 @@ class ColumnFamilyData {
 
   ThreadLocalPtr* TEST_GetLocalSV() { return local_sv_.get(); }
 
-  bool IsStalled() const {
-    return super_version_ && super_version_->write_stall_condition !=
-                                 WriteStallCondition::kNormal;
-  }
-
  private:
   friend class ColumnFamilySet;
   ColumnFamilyData(uint32_t id, const std::string& name,

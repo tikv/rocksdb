@@ -880,9 +880,9 @@ bool InternalStats::HandleIsWriteStopped(uint64_t* value, DBImpl* db,
   return true;
 }
 
-bool InternalStats::HandleIsWriteStalled(uint64_t* value, DBImpl* /*db*/,
+bool InternalStats::HandleIsWriteStalled(uint64_t* value, DBImpl* db,
                                          Version* /*version*/) {
-  *value = cfd_->IsStalled() ? 1 : 0;
+  *value = db->write_controller().NeedsDelay() ? 1 : 0;
   return true;
 }
 
