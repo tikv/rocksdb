@@ -173,6 +173,37 @@ INSTANTIATE_TEST_CASE_P(CustomEnv, EnvMoreTestWithParam,
 
 #endif  // ROCKSDB_LITE
 
+TEST_P(EnvBasicTestWithParam, RenameCurrent) {
+  uint64_t file_size;
+  std::unique_ptr<WritableFile> writable_file;
+  std::vector<std::string> children;
+
+  ASSERT_OK(
+      env_->NewWritableFile(test_dir_ + "/tmp", &writable_file, soptions_));
+  ASSERT_OK(writable_file->Append("abc"));
+  ASSERT_OK(writable_file->Close());
+  writable_file.reset();
+
+  SyncPoint::GetInstance()->SetCallBack("Encryption:new_file", [&](void* arg) {
+    bool* skip = static_cast<bool*>(arg);
+    *skip = false;
+  });
+  ASSERT_OK(
+      env_->NewWritableFile(test_dir_ + "/CURRENT", &writable_file, soptions_));
+  ASSERT_OK(writable_file->Append("xxxxx"));
+  ASSERT_OK(writable_file->Close());
+  writable_file.reset();
+
+  ASSERT_OK(env_->RenameFile(test_dir_ + "/tmp", test_dir_ + "/CURRENT"));
+
+  Slice result;
+  char scratch[100];
+  std::unique_ptr<SequentialFile> seq_file;
+  ASSERT_OK(env_->NewSequentialFile(test_dir_ + "/CURRENT", &seq_file, soptions_));
+  ASSERT_OK(seq_file->Read(5, &result, scratch));
+  ASSERT_EQ(0, result.compare("xxxxx"));
+}
+
 TEST_P(EnvBasicTestWithParam, Basics) {
   uint64_t file_size;
   std::unique_ptr<WritableFile> writable_file;

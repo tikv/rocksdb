@@ -303,6 +303,9 @@ Status KeyManagedEncryptedEnv::NewWritableFile(
   FileEncryptionInfo file_info;
   Status s;
   bool skipped = ShouldSkipEncryption(fname);
+#ifndef NDEBUG
+  TEST_SYNC_POINT_CALLBACK("Encryption:new_file", &skipped);
+#endif  // !NDEBUG
   if (!skipped) {
     s = key_manager_->NewFile(fname, &file_info);
     if (!s.ok()) {
@@ -457,7 +460,12 @@ Status KeyManagedEncryptedEnv::RenameFile(const std::string& src_fname,
                                           const std::string& dst_fname) {
   if (ShouldSkipEncryption(dst_fname)) {
     assert(ShouldSkipEncryption(src_fname));
-    return target()->RenameFile(src_fname, dst_fname);
+    Status s = target()->RenameFile(src_fname, dst_fname);
+    // Replacing with plaintext requires deleting the info in the key manager.
+    Status delete_status __attribute__((__unused__)) =
+        key_manager_->DeleteFile(dst_fname);
+    assert(delete_status.ok());
+    return s;
   } else {
     assert(!ShouldSkipEncryption(src_fname));
   }
