@@ -174,7 +174,6 @@ INSTANTIATE_TEST_CASE_P(CustomEnv, EnvMoreTestWithParam,
 #endif  // ROCKSDB_LITE
 
 TEST_P(EnvBasicTestWithParam, RenameCurrent) {
-  uint64_t file_size;
   std::unique_ptr<WritableFile> writable_file;
   std::vector<std::string> children;
 

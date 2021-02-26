@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <limits>
 
+#include "test_util/sync_point.h"
 #include "file/filename.h"
 #include "port/port.h"
 
