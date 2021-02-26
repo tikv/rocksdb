@@ -178,8 +178,8 @@ void CompactionIterator::InvokeFilterIfNeeded(bool* need_skip,
       filter = compaction_filter_->FilterV3(
           compaction_->level(), filter_key, seqno, value_type, value_,
           &compaction_filter_value_, compaction_filter_skip_until_.rep());
-      if (!compaction_filter_->status().ok()) {
-        status_ = compaction_filter_->status();
+      if (!compaction_filter_->Valid()) {
+        status_ = Status::Incomplete();
         return;
       }
       iter_stats_.total_filter_time +=

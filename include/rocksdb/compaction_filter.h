@@ -214,10 +214,11 @@ class CompactionFilter {
   // The name will be printed to LOG file on start up for diagnosis.
   virtual const char* Name() const = 0;
 
-  // This function will be called after the respective sub compaction finishes.
-  // Return an error will cause the compaction result get dropped instead of
-  // installed into the DB.
-  virtual Status status() const { return Status::OK(); }
+  // This function will be called after every input key/value pair gets
+  // processed or
+  // before the compaction result gets installed. Return false will cancel the
+  // compaction.
+  virtual bool Valid() const { return true; }
 };
 
 // Each compaction will create a new CompactionFilter allowing the

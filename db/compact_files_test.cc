@@ -156,9 +156,7 @@ TEST_F(CompactFilesTest, FilterCancelInstall) {
         override {
       return true;
     }
-    Status status() const override {
-      return Status::NotSupported(Slice("test-not-supported"));
-    }
+    bool Valid() const override { return false; }
     virtual const char* Name() const override { return "FilterCancelInstall"; }
   };
 
