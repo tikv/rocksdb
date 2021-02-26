@@ -200,7 +200,7 @@ TEST_P(EnvBasicTestWithParam, RenameCurrent) {
   std::unique_ptr<SequentialFile> seq_file;
   ASSERT_OK(env_->NewSequentialFile(test_dir_ + "/CURRENT", &seq_file, soptions_));
   ASSERT_OK(seq_file->Read(5, &result, scratch));
-  ASSERT_EQ(0, result.compare("xxxxx"));
+  ASSERT_EQ(0, result.compare("abc"));
 }
 
 TEST_P(EnvBasicTestWithParam, Basics) {
