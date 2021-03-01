@@ -266,6 +266,16 @@ Status KeyManagedEncryptedEnv::NewSequentialFile(
     case EncryptionMethod::kAES192_CTR:
     case EncryptionMethod::kAES256_CTR:
       s = encrypted_env_->NewSequentialFile(fname, result, options);
+      if (!s.ok()) {
+        return s;
+      }
+      // Hack: sometimes the current file may be read as an encrypted
+      // file by mistakes.
+      if (ShouldSkipEncryption(fname) && !isValidCurrentFile(result)) {
+        s = target()->NewSequentialFile(fname, result, options);
+      } else {
+        s = encrypted_env_->NewSequentialFile(fname, result, options);
+      }
       break;
     default:
       s = Status::InvalidArgument("Unsupported encryption method: " +

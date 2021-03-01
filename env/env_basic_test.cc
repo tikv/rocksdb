@@ -177,6 +177,9 @@ TEST_P(EnvBasicTestWithParam, RenameCurrent) {
   if (!getenv("ENCRYPTED_ENV")) {
     return;
   }
+  Slice result;
+  char scratch[100];
+  std::unique_ptr<SequentialFile> seq_file;
   std::unique_ptr<WritableFile> writable_file;
   std::vector<std::string> children;
 
@@ -195,6 +198,11 @@ TEST_P(EnvBasicTestWithParam, RenameCurrent) {
   ASSERT_OK(writable_file->Close());
   writable_file.reset();
 
+  ASSERT_OK(
+      env_->NewSequentialFile(test_dir_ + "/CURRENT", &seq_file, soptions_));
+  ASSERT_OK(seq_file->Read(100, &result, scratch));
+  ASSERT_EQ(0, result.compare("MANIFEST-0"));
+
   // Create a plaintext `CURRENT` temp file.
   ASSERT_OK(env_->NewWritableFile(test_dir_ + "/current.dbtmp.plain",
                                   &writable_file, soptions_));
@@ -205,9 +213,6 @@ TEST_P(EnvBasicTestWithParam, RenameCurrent) {
   ASSERT_OK(env_->RenameFile(test_dir_ + "/current.dbtmp.plain",
                              test_dir_ + "/CURRENT"));
 
-  Slice result;
-  char scratch[100];
-  std::unique_ptr<SequentialFile> seq_file;
   ASSERT_OK(
       env_->NewSequentialFile(test_dir_ + "/CURRENT", &seq_file, soptions_));
   ASSERT_OK(seq_file->Read(100, &result, scratch));

@@ -44,6 +44,14 @@ bool ShouldSkipEncryption(const std::string& fname) {
   return false;
 }
 
+bool isValidCurrentFile(std::unique_ptr<rocksdb::SequentialFile>* seq_file) {
+  Slice result;
+  char scratch[64];
+  (*seq_file)->Read(8, &result, scratch);
+  seq_file->reset();
+  return result.compare("MANIFEST") == 0;
+}
+
 // Given a path, flatten the path name by replacing all chars not in
 // {[0-9,a-z,A-Z,-,_,.]} with _. And append '_LOG\0' at the end.
 // Return the number of chars stored in dest not including the trailing '\0'.
