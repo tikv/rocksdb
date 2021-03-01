@@ -9,9 +9,9 @@
 #include <algorithm>
 #include <limits>
 
-#include "test_util/sync_point.h"
 #include "file/filename.h"
 #include "port/port.h"
+#include "test_util/sync_point.h"
 
 namespace rocksdb {
 namespace encryption {
@@ -304,9 +304,7 @@ Status KeyManagedEncryptedEnv::NewWritableFile(
   FileEncryptionInfo file_info;
   Status s;
   bool skipped = ShouldSkipEncryption(fname);
-#ifndef NDEBUG
-  TEST_SYNC_POINT_CALLBACK("Encryption:new_file", &skipped);
-#endif  // !NDEBUG
+  TEST_SYNC_POINT_CALLBACK("KeyManagedEncryptedEnv::NewWritableFile", &skipped);
   if (!skipped) {
     s = key_manager_->NewFile(fname, &file_info);
     if (!s.ok()) {
