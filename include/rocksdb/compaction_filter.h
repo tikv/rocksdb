@@ -215,9 +215,12 @@ class CompactionFilter {
   virtual const char* Name() const = 0;
 
   // This function will be called after every input key/value pair gets
-  // processed or before the compaction result gets installed. Return false
-  // will cancel the compaction.
+  // processed. Returns false will cancel the compaction.
   virtual bool Valid() const { return true; }
+
+  // This function will be called before the compaction result gets installed.
+  // Returns false will cancel the compaction.
+  virtual bool Finalize() const { return true; }
 };
 
 // Each compaction will create a new CompactionFilter allowing the

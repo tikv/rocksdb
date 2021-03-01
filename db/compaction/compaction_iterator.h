@@ -156,6 +156,12 @@ class CompactionIterator {
   bool Valid() const { return valid_; }
   const Slice& user_key() const { return current_user_key_; }
   const CompactionIterationStats& iter_stats() const { return iter_stats_; }
+  Status& Finalize() {
+    if (!compaction_filter_->Valid() || !compaction_filter_->Finalize()) {
+      status_ = Status::Incomplete();
+    }
+    return status_;
+  }
 
  private:
   // Processes the input stream to find the next output

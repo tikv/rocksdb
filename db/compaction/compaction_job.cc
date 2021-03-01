@@ -1041,7 +1041,7 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
     status = input->status();
   }
   if (status.ok()) {
-    status = c_iter->status();
+    status = c_iter->Finalize();
   }
 
   if (status.ok() && sub_compact->builder == nullptr &&
