@@ -12,6 +12,7 @@
 #include <deque>
 #include <string>
 #include <vector>
+#include <set>
 
 #include "rocksdb/compaction_filter.h"
 #include "rocksdb/env.h"
@@ -40,10 +41,11 @@ class TestKeyManager : public encryption::KeyManager {
 
   static const std::string default_key;
   static const std::string default_iv;
+  std::set<std::string> file_set;
 
   Status GetFile(const std::string& fname,
                  encryption::FileEncryptionInfo* file_info) override {
-    if (ShouldSkipEncryption(fname)) {
+    if (file_set.find(fname) == file_set.end()) {
       file_info->method = encryption::EncryptionMethod::kPlaintext;
     } else {
       file_info->method = encryption::EncryptionMethod::kAES192_CTR;
@@ -53,16 +55,22 @@ class TestKeyManager : public encryption::KeyManager {
     return Status::OK();
   }
 
-  Status NewFile(const std::string& /*fname*/,
+  Status NewFile(const std::string& fname,
                  encryption::FileEncryptionInfo* file_info) override {
     file_info->method = encryption::EncryptionMethod::kAES192_CTR;
     file_info->key = default_key;
     file_info->iv = default_iv;
+    file_set.insert(fname);
     return Status::OK();
   }
 
-  Status DeleteFile(const std::string&) override { return Status::OK(); }
-  Status LinkFile(const std::string&, const std::string&) override {
+  Status DeleteFile(const std::string& fname) override {
+    file_set.erase(fname);
+    return Status::OK();
+  }
+  
+  Status LinkFile(const std::string&, const std::string& dst) override {
+    file_set.insert(dst);
     return Status::OK();
   }
 };
