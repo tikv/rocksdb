@@ -266,8 +266,10 @@ Status KeyManagedEncryptedEnv::NewSequentialFile(
     case EncryptionMethod::kAES192_CTR:
     case EncryptionMethod::kAES256_CTR:
       s = encrypted_env_->NewSequentialFile(fname, result, options);
-      // Hack: sometimes the current file may be read as an encrypted
-      // file by mistakes(when upgrading from TiKV <= v5.0.0-rc).
+      // Hack: when upgrading from TiKV <= v5.0.0-rc, the old current
+      // file is encrypted but it could be replaced with a plaintext
+      // current file. The operation below guarantee that the current
+      // file is read correctly.
       if (s.ok() && IsCurrentFile(fname)) {
         if (!IsValidCurrentFile(std::move(*result))) {
           s = target()->NewSequentialFile(fname, result, options);
