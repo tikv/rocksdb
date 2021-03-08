@@ -237,7 +237,7 @@ TEST_F(CompactFilesTest, MultipleLevel) {
   ASSERT_OK(db->Put(WriteOptions(), ToString(0), ""));
   ASSERT_OK(db->Flush(FlushOptions()));
 
-  ROCKSDB_NAMESPACE::ColumnFamilyMetaData meta;
+  rocksdb::ColumnFamilyMetaData meta;
   db->GetColumnFamilyMetaData(&meta);
   // Compact files except the file in L3
   std::vector<std::string> files;
@@ -248,11 +248,11 @@ TEST_F(CompactFilesTest, MultipleLevel) {
     }
   }
 
-  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->LoadDependency({
+  rocksdb::SyncPoint::GetInstance()->LoadDependency({
       {"CompactionJob::Run():Start", "CompactFilesTest.MultipleLevel:0"},
       {"CompactFilesTest.MultipleLevel:1", "CompactFilesImpl:3"},
   });
-  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->EnableProcessing();
+  rocksdb::SyncPoint::GetInstance()->EnableProcessing();
 
   std::thread thread([&] {
     TEST_SYNC_POINT("CompactFilesTest.MultipleLevel:0");
@@ -262,8 +262,8 @@ TEST_F(CompactFilesTest, MultipleLevel) {
     TEST_SYNC_POINT("CompactFilesTest.MultipleLevel:1");
   });
 
-  ASSERT_OK(db->CompactFiles(ROCKSDB_NAMESPACE::CompactionOptions(), files, 5));
-  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->DisableProcessing();
+  ASSERT_OK(db->CompactFiles(rocksdb::CompactionOptions(), files, 5));
+  rocksdb::SyncPoint::GetInstance()->DisableProcessing();
   thread.join();
 
   delete db;
