@@ -156,6 +156,36 @@ struct FileMetaData {
   }
 };
 
+struct RegionMetaData {
+  Slice smallest_user_key;
+  Slice largest_user_key;
+  uint64_t region_size;
+  double size_ratio_violation;
+
+  RegionMetaData()
+      : smallest_user_key(),
+        largest_user_key(),
+        region_size(0),
+        size_ratio_violation(0) {}
+
+  RegionMetaData(Slice _smallest_user_key, Slice _largest_user_key,
+                 uint64_t _region_size, double _size_ratio_violation)
+      : smallest_user_key(_smallest_user_key),
+        largest_user_key(_largest_user_key),
+        region_size(_region_size),
+        size_ratio_violation(_size_ratio_violation) {}
+};
+
+struct LevelRegionsBrief {
+  size_t num_regions;
+  RegionMetaData* regions;
+  LevelRegionsBrief() {
+    num_regions = 0;
+    regions = nullptr;
+  }
+};
+
+
 // A compressed copy of file meta data that just contain minimum data needed
 // to server read operations, while still keeping the pointer to full metadata
 // of the file in case it is needed.

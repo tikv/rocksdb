@@ -124,6 +124,8 @@ struct ImmutableCFOptions {
   std::shared_ptr<ConcurrentTaskLimiter> compaction_thread_limiter;
 
   std::shared_ptr<SstPartitionerFactory> sst_partitioner_factory;
+
+  std::shared_ptr<LevelRegionAccessor> level_region_accessor;
 };
 
 struct MutableCFOptions {

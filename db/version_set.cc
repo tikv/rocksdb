@@ -792,6 +792,41 @@ void DoGenerateLevelFilesBrief(LevelFilesBrief* file_level,
   }
 }
 
+void DoGenerateLevelRegionsBrief(LevelRegionsBrief* region_level, int level,
+                               AccessorResult* results, Version* v,
+                               VersionSet* vset, const MutableCFOptions& options,
+                                 Arena* arena) {
+  assert(region_level);
+  assert(arena);
+
+  size_t num = results->region_count;
+  region_level->num_regions = num;
+  char* mem = arena->AllocateAligned(num * sizeof(RegionMetaData));
+  region_level->regions = new (mem)RegionMetaData[num];
+
+  for (size_t i = 0; i < num; i++) {
+    Slice smallest_user_key(*results[i].regions->smallest_user_key);
+    Slice largest_user_key(*results[i].regions->largest_user_key);
+
+    // Copy key slice to sequential memory
+    size_t smallest_size = smallest_user_key.size();
+    size_t largest_size = largest_user_key.size();
+    mem = arena->AllocateAligned(smallest_size + largest_size);
+    memcpy(mem, smallest_user_key.data(), smallest_size);
+    memcpy(mem + smallest_size, largest_user_key.data(), largest_size);
+
+    RegionMetaData& r = region_level->regions[i];
+    r.smallest_user_key = Slice(mem, smallest_size);
+    r.largest_user_key = Slice(mem + smallest_size, largest_size);
+    // TODO(): ApproximateSize uses InternalKey to compare, but level region accessor return user key.
+    r.region_size = vset->ApproximateSize(v, r.smallest_user_key, r.largest_user_key,
+                                          level, level, TableReaderCaller::kUserApproximateSize);
+    uint64_t next_level_region_size = vset->ApproximateSize(v, r.smallest_user_key,
+      r.largest_user_key, level+1, level+1, TableReaderCaller::kUserApproximateSize);
+    r.size_ratio_violation = options.max_bytes_for_level_multiplier - next_level_region_size / r.region_size;
+  }
+}
+
 static bool AfterFile(const Comparator* ucmp,
                       const Slice* user_key, const FdWithKeyRange* f) {
   // nullptr user_key occurs before all keys and is therefore never after *f
@@ -1990,12 +2025,49 @@ void VersionStorageInfo::GenerateLevelFilesBrief() {
   }
 }
 
+Slice VersionStorageInfo::GetSmallestUserKey() {
+  Slice smallest_key(LevelFiles(0).front()->smallest.user_key());
+  for (int level = 1; level < num_levels(); level++) {
+    if (user_comparator_->Compare(LevelFiles(level).front()->smallest.user_key(), smallest_key) < 0) {
+      smallest_key = LevelFiles(level).front()->smallest.user_key();
+    }
+  }
+  return smallest_key;
+}
+
+Slice VersionStorageInfo::GetLargestUserKey() {
+  Slice largest_key(LevelFiles(0).back()->largest.user_key());
+  for (int level = 1; level < num_levels(); level++) {
+    if (user_comparator_->Compare(LevelFiles(level).back()->largest.user_key(), largest_key) > 0) {
+      largest_key = LevelFiles(level).back()->largest.user_key();
+    }
+  }
+  return largest_key;
+}
+
+void VersionStorageInfo::GenerateLevelRegionsBrief(
+    const ImmutableCFOptions& ioptions, const MutableCFOptions& options,
+    Version* v, VersionSet* vset) {
+  if (!ioptions.level_region_accessor) {
+    return;
+  }
+
+  level_regions_brief_.resize(num_non_empty_levels_);
+  for (int level = 0; level < num_non_empty_levels_; ++level) {
+    AccessorResult results = ioptions.level_region_accessor->LevelRegions(AccessorRequest(
+        LevelFiles(level).front()->smallest.user_key(),
+        LevelFiles(level).back()->largest.user_key(), level));
+      DoGenerateLevelRegionsBrief(&level_regions_brief_[level], level, &results, v, vset, options, &arena_);
+  }
+}
+
 void Version::PrepareApply(
     const MutableCFOptions& mutable_cf_options,
     bool update_stats) {
   UpdateAccumulatedStats(update_stats);
   storage_info_.UpdateNumNonEmptyLevels();
   storage_info_.CalculateBaseBytes(*cfd_->ioptions(), mutable_cf_options);
+  storage_info_.GenerateLevelRegionsBrief(*cfd_->ioptions(), mutable_cf_options, this, vset_);
   storage_info_.UpdateFilesByCompactionPri(cfd_->ioptions()->compaction_pri);
   storage_info_.GenerateFileIndexer();
   storage_info_.GenerateLevelFilesBrief();
@@ -2610,6 +2682,44 @@ void SortFileByOverlappingRatio(
                      file_to_order[f2.file->fd.GetNumber()];
             });
 }
+
+// Sort `temp` based on violating size ratio of regions between two adjacent levels.
+void SortFileByViolatingSizeRatio(
+    const Comparator& ucmp,
+    const std::vector<FileMetaData*>& files,
+    const rocksdb::LevelRegionsBrief& level_regions,
+    std::vector<Fsize>* temp) {
+  std::unordered_map<uint64_t, double> file_to_order;
+
+  for (auto& file : files) {
+    double violation = 0;
+    Slice lower_bound(file->smallest.user_key());
+    // TODO(): calculate sst file size ratio
+    for (size_t i = 0; i < level_regions.num_regions; ++i) {
+      // Skip regions that are smaller than current file
+      if (ucmp.Compare(level_regions.regions[i].largest_user_key, file->smallest.user_key()) < 0) {
+        continue;
+      }
+      // find upper bound
+      if (ucmp.Compare(file->largest.user_key(), level_regions.regions[i].largest_user_key) < 0 ||
+          ucmp.Compare(file->largest.user_key(), level_regions.regions[i].largest_user_key) == 0) {
+        // TODO(): need to compute a key range size in a sst file.
+        violation += RangeSizeInSst(file, lower_bound, file->largest.user_key()) / file->compensated_file_size * level_regions.regions[i].size_ratio_violation;
+        break;
+      }
+      violation += RangeSizeInSst(file, lower_bound, level_regions.regions[i].largest_user_key) / file->compensated_file_size * level_regions.regions[i].size_ratio_violation;
+      lower_bound = level_regions.regions[i].largest_user_key;
+      assert(level_regions.regions[i].largest_user_key == level_regions.regions[i].smallest_user_key);
+    }
+    file_to_order[file->fd.GetNumber()] = violation;
+  }
+
+  std::sort(temp->begin(), temp->end(),
+            [&](const Fsize& f1, const Fsize& f2) -> bool {
+              return file_to_order[f1.file->fd.GetNumber()] >
+                     file_to_order[f2.file->fd.GetNumber()];
+            });
+}
 }  // namespace
 
 void VersionStorageInfo::UpdateFilesByCompactionPri(
@@ -2660,6 +2770,10 @@ void VersionStorageInfo::UpdateFilesByCompactionPri(
       case kMinOverlappingRatio:
         SortFileByOverlappingRatio(*internal_comparator_, files_[level],
                                    files_[level + 1], &temp);
+        break;
+      case kMaxViolatingSizeRatio:
+        SortFileByViolatingSizeRatio(*user_comparator_,files_[level],
+                                     level_regions_brief_[level], &temp);
         break;
       default:
         assert(false);

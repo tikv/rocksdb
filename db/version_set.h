@@ -44,6 +44,7 @@
 #include "options/db_options.h"
 #include "port/port.h"
 #include "rocksdb/env.h"
+#include "rocksdb/level_region_accessor.h"
 #include "table/get_context.h"
 #include "table/multiget_context.h"
 #include "trace_replay/block_cache_tracer.h"
@@ -165,6 +166,10 @@ class VersionStorageInfo {
 
   // Generate level_files_brief_ from files_
   void GenerateLevelFilesBrief();
+  // Generate level_regions_brief_
+  void GenerateLevelRegionsBrief(
+      const ImmutableCFOptions& ioptions, const MutableCFOptions& options,
+      Version* v, VersionSet* vset);
   // Sort all files for this version based on their file size and
   // record results in files_by_compaction_pri_. The largest files are listed
   // first.
@@ -429,6 +434,7 @@ class VersionStorageInfo {
 
   // A short brief metadata of files per level
   autovector<rocksdb::LevelFilesBrief> level_files_brief_;
+  autovector<rocksdb::LevelRegionsBrief> level_regions_brief_;
   FileIndexer file_indexer_;
   Arena arena_;  // Used to allocate space for file_levels_
 

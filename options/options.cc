@@ -19,6 +19,7 @@
 #include "rocksdb/compaction_filter.h"
 #include "rocksdb/comparator.h"
 #include "rocksdb/env.h"
+#include "rocksdb/level_region_accessor.h"
 #include "rocksdb/memtablerep.h"
 #include "rocksdb/merge_operator.h"
 #include "rocksdb/slice.h"
@@ -124,6 +125,9 @@ void ColumnFamilyOptions::Dump(Logger* log) const {
   ROCKS_LOG_HEADER(
       log, " Options.sst_partitioner_factory: %s",
       sst_partitioner_factory ? sst_partitioner_factory->Name() : "None");
+  ROCKS_LOG_HEADER(
+      log, " Options.sst_region_info_accessor_factory: %s",
+      sst_region_info_accessor_factory ? sst_region_info_accessor_factory->Name() : "None");
   ROCKS_LOG_HEADER(log, "        Options.memtable_factory: %s",
                    memtable_factory->Name());
   ROCKS_LOG_HEADER(log, "           Options.table_factory: %s",

@@ -20,6 +20,7 @@
 #include "rocksdb/advanced_options.h"
 #include "rocksdb/comparator.h"
 #include "rocksdb/env.h"
+#include "rocksdb/level_region_accessor.h"
 #include "rocksdb/listener.h"
 #include "rocksdb/sst_partitioner.h"
 #include "rocksdb/universal_compaction.h"
@@ -326,6 +327,14 @@ struct ColumnFamilyOptions : public AdvancedColumnFamilyOptions {
   //
   // Default: nullptr
   std::shared_ptr<SstPartitionerFactory> sst_partitioner_factory = nullptr;
+
+  // If non-nullptr, use the specified factory for a function to get the region
+  // information of sst files. This help compaction to choose sst files based on
+  // region size ratio.
+  // THE FEATURE IS STILL EXPERIMENTAL
+  //
+  // Default: nullptr
+  std::shared_ptr<LevelRegionAccessor> level_region_accessor = nullptr;
 
   // Create ColumnFamilyOptions with default values for all fields
   ColumnFamilyOptions();
