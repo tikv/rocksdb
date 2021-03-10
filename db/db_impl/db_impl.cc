@@ -3056,58 +3056,6 @@ Status DBImpl::DeleteFilesInRanges(ColumnFamilyHandle* column_family,
   return status;
 }
 
-Status DBImpl::FindFilesInRanges(ColumnFamilyHandle* column_family,
-                                   const RangePtr* ranges, std::set<uint64_t>* files,
-                                   size_t n, bool include_end) {
-  Status status;
-  auto cfh = reinterpret_cast<ColumnFamilyHandleImpl*>(column_family);
-  ColumnFamilyData* cfd = cfh->cfd();
-  std::set<FileMetaData*> finded_files;
-  Version* input_version = cfd->current();
-  auto* vstorage = input_version->storage_info();
-  for (size_t r = 0; r < n; r++) {
-    auto begin = ranges[r].start, end = ranges[r].limit;
-    for (int i = 1; i < cfd->NumberLevels(); i++) {
-      if (vstorage->LevelFiles(i).empty() ||
-          !vstorage->OverlapInLevel(i, begin, end)) {
-        continue;
-      }
-      std::vector<FileMetaData*> level_files;
-      InternalKey begin_storage, end_storage, *begin_key, *end_key;
-      if (begin == nullptr) {
-        begin_key = nullptr;
-      } else {
-        begin_storage.SetMinPossibleForUserKey(*begin);
-        begin_key = &begin_storage;
-      }
-      if (end == nullptr) {
-        end_key = nullptr;
-      } else {
-        end_storage.SetMaxPossibleForUserKey(*end);
-        end_key = &end_storage;
-      }
-
-      vstorage->GetCleanInputsWithinInterval(
-          i, begin_key, end_key, &level_files, -1 /* hint_index */,
-          nullptr /* file_index */);
-      FileMetaData* level_file;
-      for (uint32_t j = 0; j < level_files.size(); j++) {
-        level_file = level_files[j];
-        if (files->find(level_file->fd.GetNumber()) != files->end()) {
-          continue;
-        }
-        if (!include_end && end != nullptr &&
-            cfd->user_comparator()->Compare(level_file->largest.user_key(),
-                                            *end) == 0) {
-          continue;
-        }
-        files->insert(level_file->fd.GetNumber());
-      }
-    }
-  }
-  return Status::OK();
-}
-
 void DBImpl::GetLiveFilesMetaData(std::vector<LiveFileMetaData>* metadata) {
   InstrumentedMutexLock l(&mutex_);
   versions_->GetLiveFilesMetaData(metadata);
