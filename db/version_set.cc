@@ -2072,7 +2072,7 @@ void VersionStorageInfo::GenerateLevelRegionsBrief(
   for (int level = 0; level < num_non_empty_levels_; ++level) {
     AccessorResult* results = ioptions.level_region_accessor->LevelRegions(AccessorRequest(
         LevelFiles(level).front()->smallest.user_key(),
-        LevelFiles(level).back()->largest.user_key(), level));
+        LevelFiles(level).back()->largest.user_key()));
       DoGenerateLevelRegionsBrief(&level_regions_brief_[level], level, results, v, vset, options, &arena_);
   }
 }
