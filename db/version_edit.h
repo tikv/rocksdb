@@ -110,6 +110,8 @@ struct FileMetaData {
 
   int refs;  // Reference count
 
+  double size_ratio_violation; // the size ratio violation of this file
+
   bool being_compacted;        // Is this file undergoing compaction?
   bool init_stats_from_file;   // true if the data-entry stats of this file
                                // has initialized from file.
@@ -125,6 +127,7 @@ struct FileMetaData {
         raw_key_size(0),
         raw_value_size(0),
         refs(0),
+        size_ratio_violation(0),
         being_compacted(false),
         init_stats_from_file(false),
         marked_for_compaction(false) {}

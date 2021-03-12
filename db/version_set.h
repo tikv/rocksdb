@@ -170,6 +170,8 @@ class VersionStorageInfo {
   void GenerateLevelRegionsBrief(
       const ImmutableCFOptions& ioptions, const MutableCFOptions& options,
       Version* v, VersionSet* vset);
+  // Calculate Sst file size ratio violation
+  void CalculateFileSizeRatioViolation(Version* v, VersionSet* vset);
   // Sort all files for this version based on their file size and
   // record results in files_by_compaction_pri_. The largest files are listed
   // first.
