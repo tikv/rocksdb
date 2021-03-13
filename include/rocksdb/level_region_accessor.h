@@ -43,7 +43,7 @@ class LevelRegionAccessor {
   virtual const char* Name() const = 0;
 
   // Return the next region information in this level.
-  virtual AccessorResult* LevelRegions(const AccessorRequest& request) = 0;
+  virtual AccessorResult* LevelRegions(const AccessorRequest& request) const = 0;
 };
 
 }
