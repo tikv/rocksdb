@@ -33,7 +33,7 @@ struct PerfLevelByBitField {
   uint8_t enable_bloom_sst_miss_count_bit : 1;               // 2
   uint8_t enable_key_lock_wait_count_bit : 1;                // 2
 
-  // 这个仅仅是一个简单的flag
+  //  flag enable for using cpu time
   uint8_t enable_measure_cpu_time_bit : 1;  // 3 -> with CPU time flag
 
   uint8_t enable_block_read_time_bit : 1;                            // 3
@@ -86,7 +86,6 @@ struct PerfLevelByBitField {
   uint8_t enable_encrypt_data_nanos_bit : 1;                         // 3
   uint8_t enable_decrypt_data_nanos_bit : 1;                         // 3
 
-  // TODO: 只有开了 4 才能用
   uint8_t enable_get_cpu_nanos_bit : 1;        // 4
   uint8_t enable_iter_next_cpu_nanos_bit : 1;  // 4
   uint8_t enable_iter_prev_cpu_nanos_bit : 1;  // 4
