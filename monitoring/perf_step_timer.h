@@ -12,11 +12,12 @@ namespace rocksdb {
 
 class PerfStepTimer {
  public:
-  explicit PerfStepTimer(
-      uint64_t* metric, Env* env = nullptr, bool use_cpu_time = false,
-      PerfLevel enable_level = PerfLevel::kEnableTimeExceptForMutex,
-      Statistics* statistics = nullptr, uint32_t ticker_type = 0)
-      : perf_counter_enabled_(perf_level >= enable_level),
+  explicit PerfStepTimer(uint64_t* metric, Env* env = nullptr,
+                         bool use_cpu_time = false,
+                         bool perf_counter_enabled_ = false,
+                         Statistics* statistics = nullptr,
+                         uint32_t ticker_type = 0)
+      : perf_counter_enabled_(perf_counter_enabled_),
         use_cpu_time_(use_cpu_time),
         env_((perf_counter_enabled_ || statistics != nullptr)
                  ? ((env != nullptr) ? env : Env::Default())
