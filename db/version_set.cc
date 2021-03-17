@@ -805,8 +805,8 @@ void DoGenerateLevelRegionsBrief(LevelRegionsBrief* region_level, int level,
   region_level->regions = new (mem)RegionMetaData[num];
 
   for (size_t i = 0; i < num; i++) {
-    Slice smallest_user_key(*results[i].regions->smallest_user_key);
-    Slice largest_user_key(*results[i].regions->largest_user_key);
+    Slice smallest_user_key(results[i].regions->smallest_user_key, results[i].regions->smallest_user_key_len);
+    Slice largest_user_key(results[i].regions->largest_user_key, results[i].regions->largest_user_key_len);
 
     // Copy key slice to sequential memory
     size_t smallest_size = smallest_user_key.size();
@@ -814,6 +814,10 @@ void DoGenerateLevelRegionsBrief(LevelRegionsBrief* region_level, int level,
     mem = arena->AllocateAligned(smallest_size + largest_size);
     memcpy(mem, smallest_user_key.data(), smallest_size);
     memcpy(mem + smallest_size, largest_user_key.data(), largest_size);
+
+    // free results memory
+    free((void *)results[i].regions->smallest_user_key);
+    free((void *)results[i].regions->largest_user_key);
 
     RegionMetaData& r = region_level->regions[i];
     r.smallest_user_key = Slice(mem, smallest_size);
@@ -2073,7 +2077,10 @@ void VersionStorageInfo::GenerateLevelRegionsBrief(
     AccessorResult* results = ioptions.level_region_accessor->LevelRegions(AccessorRequest(
         LevelFiles(level).front()->smallest.user_key(),
         LevelFiles(level).back()->largest.user_key()));
-      DoGenerateLevelRegionsBrief(&level_regions_brief_[level], level, results, v, vset, options, &arena_);
+    DoGenerateLevelRegionsBrief(&level_regions_brief_[level], level, results, v, vset, options, &arena_);
+    // free results
+    free((void *)results->regions);
+    free((void *)results);
   }
 }
 

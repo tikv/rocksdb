@@ -17,8 +17,10 @@ namespace rocksdb {
 class Slice;
 
 struct RegionBoundaries {
-  const Slice* smallest_user_key;
-  const Slice* largest_user_key;
+  const char* smallest_user_key;
+  int smallest_user_key_len;
+  const char* largest_user_key;
+  int largest_user_key_len;
 };
 
 struct AccessorResult {
