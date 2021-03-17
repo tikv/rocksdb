@@ -7,6 +7,7 @@
 #define UTIL_CRC32C_ARM64_H
 
 #include <cinttypes>
+#include <cstddef>
 
 #if defined(__aarch64__) || defined(__AARCH64__)
 
@@ -18,7 +19,7 @@
 #define crc32c_u32(crc, v) __crc32cw(crc, v)
 #define crc32c_u64(crc, v) __crc32cd(crc, v)
 
-extern uint32_t crc32c_arm64(uint32_t crc, unsigned char const *data, unsigned len);
+extern uint32_t crc32c_arm64(uint32_t crc, unsigned char const *data, size_t len);
 extern uint32_t crc32c_runtime_check(void);
 
 #ifdef __ARM_FEATURE_CRYPTO
