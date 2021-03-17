@@ -17,15 +17,17 @@ namespace rocksdb {
 class Slice;
 
 struct RegionBoundaries {
-  const char* smallest_user_key;
-  int smallest_user_key_len;
-  const char* largest_user_key;
-  int largest_user_key_len;
+  const Slice& smallest_user_key;
+  const Slice& largest_user_key;
 };
 
 struct AccessorResult {
-  const RegionBoundaries* regions;
-  int region_count;
+  std::vector<RegionBoundaries> regions;
+
+  void append(const Slice& smallest_user_key_,
+              const Slice& largest_user_key_) {
+    regions.push_back(RegionBoundaries{smallest_user_key_, largest_user_key_});
+  }
 };
 
 struct AccessorRequest {
