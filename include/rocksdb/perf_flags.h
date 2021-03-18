@@ -3,7 +3,7 @@
 
 namespace rocksdb {
 
-struct PerfLevelByBitField {
+struct PerfFlags {
   uint8_t perf_level;
 
   uint8_t enable_user_key_comparison_count_bit : 1;          // 2
@@ -33,7 +33,7 @@ struct PerfLevelByBitField {
   uint8_t enable_bloom_sst_miss_count_bit : 1;               // 2
   uint8_t enable_key_lock_wait_count_bit : 1;                // 2
 
-  //  flag enable for using cpu time
+  //  flag enable for using cpu time prob useless in TiKV port
   uint8_t enable_measure_cpu_time_bit : 1;  // 3 -> with CPU time flag
 
   uint8_t enable_block_read_time_bit : 1;                            // 3
@@ -96,8 +96,9 @@ struct PerfLevelByBitField {
 };
 
 // set the perf stats bitfield for current thread
-void SetPerfBitField(PerfLevelByBitField pbf);
+void SetPerfPerfFlags(PerfFlags pbf);
 
 // get current perf stats bitfield for current thread
-PerfLevelByBitField* GetPerfBitField();
+PerfFlags* GetPerfPerfFlags();
+
 }  // namespace rocksdb

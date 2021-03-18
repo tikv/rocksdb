@@ -8,7 +8,7 @@
 
 #include <assert.h>
 
-#include "monitoring/perf_level_by_bitfield_imp.h"
+#include "monitoring/perf_flags_imp.h"
 
 namespace rocksdb {
 
@@ -18,24 +18,24 @@ void SetPerfLevel(PerfLevel level) {
   assert(level < kOutOfBounds);
   switch (level) {
     case kEnableCount:
-      perf_bit_field = BitFieldEnableCount;
+      perf_flags = PerfFlagsEnableCount;
       break;
     case kEnableTimeExceptForMutex:
-      perf_bit_field = BitFieldEnableTimeExceptForMutex;
+      perf_flags = PerfFlagsEnableTimeExceptForMutex;
       break;
     case kEnableTimeAndCPUTimeExceptForMutex:
-      perf_bit_field = BitFieldEnableTimeAndCPUTimeExceptForMutex;
+      perf_flags = PerfFlagsEnableTimeAndCPUTimeExceptForMutex;
       break;
     case kEnableTime:
-      perf_bit_field = BitFieldEnableTime;
+      perf_flags = PerfFlagsEnableTime;
       break;
     default:
-      perf_bit_field = {};
+      perf_flags = {};
       break;
   }
-  perf_bit_field.perf_level = level;
+  perf_flags.perf_level = level;
 }
 
-PerfLevel GetPerfLevel() { return (PerfLevel)perf_bit_field.perf_level; }
+PerfLevel GetPerfLevel() { return (PerfLevel)perf_flags.perf_level; }
 
 }  // namespace rocksdb

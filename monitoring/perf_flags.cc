@@ -1,6 +1,6 @@
-#include "monitoring/perf_level_by_bitfield_imp.h"
+#include "monitoring/perf_flags_imp.h"
 namespace rocksdb {
-const PerfLevelByBitField BitFieldEnableCount = {
+const PerfFlags PerfFlagsEnableCount = {
     .perf_level = 2,
     .enable_user_key_comparison_count_bit = 1,
     .enable_block_cache_hit_count_bit = 1,
@@ -30,7 +30,7 @@ const PerfLevelByBitField BitFieldEnableCount = {
     .enable_key_lock_wait_count_bit = 1,
 };
 
-const PerfLevelByBitField BitFieldEnableTimeExceptForMutex = {
+const PerfFlags PerfFlagsEnableTimeExceptForMutex = {
     .perf_level = 3,
     .enable_user_key_comparison_count_bit = 1,
     .enable_block_cache_hit_count_bit = 1,
@@ -109,7 +109,7 @@ const PerfLevelByBitField BitFieldEnableTimeExceptForMutex = {
     .enable_encrypt_data_nanos_bit = 1,
     .enable_decrypt_data_nanos_bit = 1,
 };
-const PerfLevelByBitField BitFieldEnableTimeAndCPUTimeExceptForMutex = {
+const PerfFlags PerfFlagsEnableTimeAndCPUTimeExceptForMutex = {
     .perf_level = 4,
     .enable_user_key_comparison_count_bit = 1,
     .enable_block_cache_hit_count_bit = 1,
@@ -138,8 +138,6 @@ const PerfLevelByBitField BitFieldEnableTimeAndCPUTimeExceptForMutex = {
     .enable_bloom_sst_miss_count_bit = 1,
     .enable_key_lock_wait_count_bit = 1,
 
-    // 4
-    .enable_measure_cpu_time_bit = 1,
 
     .enable_block_read_time_bit = 1,
     .enable_block_checksum_time_bit = 1,
@@ -197,7 +195,7 @@ const PerfLevelByBitField BitFieldEnableTimeAndCPUTimeExceptForMutex = {
     .enable_iter_seek_cpu_nanos_bit = 1,
 };
 
-const PerfLevelByBitField BitFieldEnableTime = {
+const PerfFlags PerfFlagsEnableTime = {
     .perf_level = 5,
     .enable_user_key_comparison_count_bit = 1,
     .enable_block_cache_hit_count_bit = 1,
@@ -225,9 +223,6 @@ const PerfLevelByBitField BitFieldEnableTime = {
     .enable_bloom_sst_hit_count_bit = 1,
     .enable_bloom_sst_miss_count_bit = 1,
     .enable_key_lock_wait_count_bit = 1,
-
-    // 4
-    .enable_measure_cpu_time_bit = 1,
 
     .enable_block_read_time_bit = 1,
     .enable_block_checksum_time_bit = 1,
@@ -288,18 +283,18 @@ const PerfLevelByBitField BitFieldEnableTime = {
     .enable_db_condition_wait_nanos_bit = 1,
 };
 
-// set default value of perf_bit_field
+// set default value of perf_flags
 
 #ifdef ROCKSDB_SUPPORT_THREAD_LOCAL
 // TODO: support original Perf Level
-__thread PerfLevelByBitField perf_bit_field = BitFieldEnableCount;
+__thread PerfFlags perf_flags = PerfFlagsEnableCount;
 #else
-PerfLevelByBitField perf_bit_field = BitFieldEnableCount;
+PerfFlags perf_flags = PerfFlagsEnableCount;
 #endif
 
 // set the perf stats bitfield for current thread
-void SetPerfBitField(PerfLevelByBitField pbf) { perf_bit_field = pbf; }
+void SetPerfPerfFlags(PerfFlags pbf) { perf_flags = pbf; }
 
 // get current perf stats bitfield for current thread
-PerfLevelByBitField* GetPerfBitField() { return &perf_bit_field; }
+PerfFlags* GetPerfPerfFlags() { return &perf_flags; }
 }  // namespace rocksdb
