@@ -4226,6 +4226,8 @@ class CompactionPriorityJni {
         return 0x2;
       case rocksdb::CompactionPri::kMinOverlappingRatio:
         return 0x3;
+      case rocksdb::CompactionPri::kMaxViolatingSizeRatio:
+        return 0x4;
       default:
         return 0x0;  // undefined
     }
@@ -4244,6 +4246,8 @@ class CompactionPriorityJni {
         return rocksdb::CompactionPri::kOldestSmallestSeqFirst;
       case 0x3:
         return rocksdb::CompactionPri::kMinOverlappingRatio;
+      case 0x4:
+        return rocksdb::CompactionPri::kMaxViolatingSizeRatio;
       default:
         // undefined/default
         return rocksdb::CompactionPri::kByCompensatedSize;
