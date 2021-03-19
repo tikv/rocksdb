@@ -126,7 +126,7 @@ void ColumnFamilyOptions::Dump(Logger* log) const {
       log, " Options.sst_partitioner_factory: %s",
       sst_partitioner_factory ? sst_partitioner_factory->Name() : "None");
   ROCKS_LOG_HEADER(
-      log, " Options.sst_region_info_accessor_factory: %s",
+      log, " Options.sst_level_region_accessor: %s",
       level_region_accessor ? level_region_accessor->Name() : "None");
   ROCKS_LOG_HEADER(log, "        Options.memtable_factory: %s",
                    memtable_factory->Name());

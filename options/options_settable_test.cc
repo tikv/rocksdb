@@ -360,8 +360,8 @@ TEST_F(OptionsSettableTest, ColumnFamilyOptionsAllFieldsSettable) {
        sizeof(std::shared_ptr<ConcurrentTaskLimiter>)},
       {offset_of(&ColumnFamilyOptions::sst_partitioner_factory),
        sizeof(std::shared_ptr<SstPartitionerFactory>)},
-      {offset_of(&ColumnFamilyOptions::sst_region_info_accessor_factory),
-          sizeof(std::shared_ptr<SstRegionInfoAccessorFactory>)},
+      {offset_of(&ColumnFamilyOptions::level_region_accessor),
+          sizeof(std::shared_ptr<LevelRegionAccessor>)},
   };
 
   char* options_ptr = new char[sizeof(ColumnFamilyOptions)];
