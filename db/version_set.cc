@@ -797,6 +797,7 @@ void DoGenerateLevelRegionsBrief(LevelRegionsBrief* region_level, int level,
                                VersionSet* vset, const MutableCFOptions& options,
                                  Arena* arena) {
   assert(region_level);
+  assert(results);
   assert(arena);
 
   size_t num = results->regions.size();
@@ -2068,11 +2069,14 @@ void VersionStorageInfo::GenerateLevelRegionsBrief(
     return;
   }
 
+  assert(ioptions.level_region_accessor != nullptr);
+
   level_regions_brief_.resize(num_non_empty_levels_);
   for (int level = 0; level < num_non_empty_levels_; ++level) {
     AccessorResult* results = ioptions.level_region_accessor->LevelRegions(AccessorRequest(
         LevelFiles(level).front()->smallest.user_key(),
         LevelFiles(level).back()->largest.user_key()));
+    ROCKS_LOG_INFO(ioptions.info_log, "results: %d\n", results->regions.size());
     DoGenerateLevelRegionsBrief(&level_regions_brief_[level], level, results, v, vset, options, &arena_);
     // delete results
     delete results;
