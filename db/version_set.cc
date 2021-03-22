@@ -2028,6 +2028,27 @@ void VersionStorageInfo::GenerateLevelFilesBrief() {
   }
 }
 
+void Print_Results(Logger* log, int level, const AccessorResult* results) {
+  ROCKS_LOG_INFO(log, "level: %d, region count: %lu\n", level, results->regions.size());
+  for (size_t i = 0; i < results->regions.size(); ++i) {
+    ROCKS_LOG_INFO(log, "smallest_user_key: %s \t\t largest_user_key: %s\n",
+                     results->regions[i].smallest_user_key.data(),
+                     results->regions[i].largest_user_key.data());
+  }
+}
+
+void Print_LevelRegionBrief(Logger* log, int level, const LevelRegionsBrief* region_level) {
+  ROCKS_LOG_INFO(log, "level: %d, region count:%lu\n", level, region_level->num_regions);
+  for (size_t i = 0; i < region_level->num_regions; ++i) {
+    ROCKS_LOG_INFO(log, "smallest_user_key: %s \t\t largest_user_key: %s \t\t"
+                   "region_size: %lu \t\t size_ratio_violation: %f\n",
+                   region_level->regions[i].smallest_user_key.data(),
+                   region_level->regions[i].largest_user_key.data(),
+                   region_level->regions[i].region_size,
+                   region_level->regions[i].size_ratio_violation);
+  }
+}
+
 void VersionStorageInfo::CalculateFileSizeRatioViolation(const ImmutableCFOptions& ioptions,
                                                          Version* v, VersionSet* vset) {
   ROCKS_LOG_INFO(ioptions.info_log, "num levels: %d\n", num_levels());
@@ -2035,6 +2056,7 @@ void VersionStorageInfo::CalculateFileSizeRatioViolation(const ImmutableCFOption
   for (int level = 0; level < num_levels()-1; ++level) {
     const std::vector<FileMetaData*>& files = files_[level];
     const rocksdb::LevelRegionsBrief& level_regions = level_regions_brief_[level];
+    Print_LevelRegionBrief(ioptions.info_log, level, &level_regions);
     for (auto& file : files) {
       double violation = 0;
       Slice lower_bound(file->smallest.user_key());
@@ -2080,8 +2102,9 @@ void VersionStorageInfo::GenerateLevelRegionsBrief(
     AccessorResult* results = ioptions.level_region_accessor->LevelRegions(AccessorRequest(
         LevelFiles(level).front()->smallest.user_key(),
         LevelFiles(level).back()->largest.user_key()));
-    ROCKS_LOG_INFO(ioptions.info_log, "results: %lu\n", results->regions.size());
+    Print_Results(ioptions.info_log, level, results);
     DoGenerateLevelRegionsBrief(&level_regions_brief_[level], level, results, v, vset, options, &arena_);
+    Print_LevelRegionBrief(ioptions.info_log, level, &level_regions_brief_[level]);
     // delete results
     delete results;
   }
