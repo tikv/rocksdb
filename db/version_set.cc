@@ -2051,8 +2051,6 @@ void Print_LevelRegionBrief(Logger* log, int level, const LevelRegionsBrief* reg
 
 void VersionStorageInfo::CalculateFileSizeRatioViolation(const ImmutableCFOptions& ioptions,
                                                          Version* v, VersionSet* vset) {
-  ROCKS_LOG_INFO(ioptions.info_log, "num levels: %d\n", num_levels());
-  ROCKS_LOG_INFO(ioptions.info_log, "num_non_empty_levels: %d\n", num_non_empty_levels_);
   for (int level = 0; level < num_non_empty_levels_; ++level) {
     const std::vector<FileMetaData*>& files = files_[level];
     const rocksdb::LevelRegionsBrief& level_regions = level_regions_brief_[level];
@@ -2060,9 +2058,7 @@ void VersionStorageInfo::CalculateFileSizeRatioViolation(const ImmutableCFOption
     for (auto& file : files) {
       double violation = 0;
       Slice lower_bound(file->smallest.user_key());
-      ROCKS_LOG_INFO(ioptions.info_log, "level %d num regions %lu\n", level, level_regions.num_regions);
       for (size_t i = 0; i < level_regions.num_regions; ++i) {
-        assert(level_regions.regions != nullptr);
         // Skip regions that are smaller than current file
         if (user_comparator_->Compare(level_regions.regions[i].largest_user_key, file->smallest.user_key()) < 0) {
           continue;
@@ -2108,6 +2104,7 @@ void VersionStorageInfo::GenerateLevelRegionsBrief(
     Print_LevelRegionBrief(ioptions.info_log, level, &level_regions_brief_[level]);
     delete results;
   }
+  CalculateFileSizeRatioViolation(ioptions, v, vset);
 }
 
 void Version::PrepareApply(
@@ -2117,7 +2114,6 @@ void Version::PrepareApply(
   storage_info_.UpdateNumNonEmptyLevels();
   storage_info_.CalculateBaseBytes(*cfd_->ioptions(), mutable_cf_options);
   storage_info_.GenerateLevelRegionsBrief(*cfd_->ioptions(), mutable_cf_options, this, vset_);
-  storage_info_.CalculateFileSizeRatioViolation(*cfd_->ioptions(), this, vset_);
   storage_info_.UpdateFilesByCompactionPri(cfd_->ioptions()->compaction_pri);
   storage_info_.GenerateFileIndexer();
   storage_info_.GenerateLevelFilesBrief();
