@@ -2062,6 +2062,7 @@ void VersionStorageInfo::CalculateFileSizeRatioViolation(const ImmutableCFOption
       Slice lower_bound(file->smallest.user_key());
       ROCKS_LOG_INFO(ioptions.info_log, "level %d num regions %lu\n", level, level_regions.num_regions);
       for (size_t i = 0; i < level_regions.num_regions; ++i) {
+        assert(level_regions.regions != nullptr);
         // Skip regions that are smaller than current file
         if (user_comparator_->Compare(level_regions.regions[i].largest_user_key, file->smallest.user_key()) < 0) {
           continue;
@@ -2105,8 +2106,7 @@ void VersionStorageInfo::GenerateLevelRegionsBrief(
     Print_Results(ioptions.info_log, level, results);
     DoGenerateLevelRegionsBrief(&level_regions_brief_[level], level, results, v, vset, options, &arena_);
     Print_LevelRegionBrief(ioptions.info_log, level, &level_regions_brief_[level]);
-    // delete results
-    delete results;
+    // delete results;
   }
 }
 
