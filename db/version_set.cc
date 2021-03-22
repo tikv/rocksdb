@@ -2053,7 +2053,7 @@ void VersionStorageInfo::CalculateFileSizeRatioViolation(const ImmutableCFOption
                                                          Version* v, VersionSet* vset) {
   ROCKS_LOG_INFO(ioptions.info_log, "num levels: %d\n", num_levels());
   ROCKS_LOG_INFO(ioptions.info_log, "num_non_empty_levels: %d\n", num_non_empty_levels_);
-  for (int level = 0; level < num_levels()-1; ++level) {
+  for (int level = 0; level < num_non_empty_levels_; ++level) {
     const std::vector<FileMetaData*>& files = files_[level];
     const rocksdb::LevelRegionsBrief& level_regions = level_regions_brief_[level];
     Print_LevelRegionBrief(ioptions.info_log, level, &level_regions);
@@ -2106,7 +2106,7 @@ void VersionStorageInfo::GenerateLevelRegionsBrief(
     Print_Results(ioptions.info_log, level, results);
     DoGenerateLevelRegionsBrief(&level_regions_brief_[level], level, results, v, vset, options, &arena_);
     Print_LevelRegionBrief(ioptions.info_log, level, &level_regions_brief_[level]);
-    // delete results;
+    delete results;
   }
 }
 
