@@ -824,9 +824,10 @@ void DoGenerateLevelRegionsBrief(LevelRegionsBrief* region_level, int level,
     InternalKey largest_key(r.largest_user_key, kMaxSequenceNumber, kValueTypeForSeek);
     r.region_size = vset->ApproximateSize(v, smallest_key.Encode(), largest_key.Encode(),
                                           level, level, TableReaderCaller::kUserApproximateSize);
+    assert(r.region_size > 0);
     uint64_t next_level_region_size = vset->ApproximateSize(v, smallest_key.Encode(),
       largest_key.Encode(), level+1, level+1, TableReaderCaller::kUserApproximateSize);
-    r.size_ratio_violation = options.max_bytes_for_level_multiplier - next_level_region_size / r.region_size;
+    r.size_ratio_violation = options.max_bytes_for_level_multiplier - double(next_level_region_size) / double(r.region_size);
   }
 }
 
