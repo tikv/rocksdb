@@ -33,9 +33,9 @@ void SetPerfLevel(PerfLevel level) {
       perf_flags = {};
       break;
   }
-  perf_flags.perf_level = level;
+  //  perf_flags.perf_level = level;
 }
 
-PerfLevel GetPerfLevel() { return (PerfLevel)perf_flags.perf_level; }
+// PerfLevel GetPerfLevel() { return (PerfLevel)perf_flags.perf_level; }
 
 }  // namespace rocksdb

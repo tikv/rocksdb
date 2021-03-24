@@ -1697,7 +1697,7 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
     }
 
     bool timer_enabled =
-        GetPerfLevel() >= PerfLevel::kEnableTimeExceptForMutex &&
+        // GetPerfLevel() >= PerfLevel::kEnableTimeExceptForMutex &&
         get_perf_context()->per_level_perf_context_enabled;
     StopWatchNano timer(env_, timer_enabled /* auto_start */);
     *status = table_cache_->Get(
@@ -1843,7 +1843,7 @@ void Version::MultiGet(const ReadOptions& read_options, MultiGetRange* range,
   while (f != nullptr) {
     MultiGetRange file_range = fp.CurrentFileRange();
     bool timer_enabled =
-        GetPerfLevel() >= PerfLevel::kEnableTimeExceptForMutex &&
+        // GetPerfLevel() >= PerfLevel::kEnableTimeExceptForMutex &&
         get_perf_context()->per_level_perf_context_enabled;
     StopWatchNano timer(env_, timer_enabled /* auto_start */);
     Status s = table_cache_->MultiGet(

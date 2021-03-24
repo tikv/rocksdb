@@ -4,8 +4,6 @@
 namespace rocksdb {
 
 struct PerfFlags {
-  uint8_t perf_level;
-
   uint8_t enable_user_key_comparison_count_bit : 1;          // 2
   uint8_t enable_block_cache_hit_count_bit : 1;              // 2
   uint8_t enable_block_read_count_bit : 1;                   // 2
@@ -96,9 +94,9 @@ struct PerfFlags {
 };
 
 // set the perf stats bitfield for current thread
-void SetPerfPerfFlags(PerfFlags pbf);
+void SetPerfFlags(PerfFlags pbf);
 
 // get current perf stats bitfield for current thread
-PerfFlags* GetPerfPerfFlags();
+PerfFlags GetPerfFlags();
 
 }  // namespace rocksdb

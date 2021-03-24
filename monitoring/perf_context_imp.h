@@ -97,7 +97,6 @@ extern thread_local PerfContext perf_context;
       (*(perf_context.level_to_perf_context))[level].metric += value; \
     }                                                                 \
   }
-
 #endif
 
 }  // namespace rocksdb

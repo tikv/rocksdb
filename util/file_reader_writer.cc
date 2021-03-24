@@ -14,6 +14,7 @@
 
 #include "monitoring/histogram.h"
 #include "monitoring/iostats_context_imp.h"
+#include "monitoring/perf_flags_imp.h"
 #include "port/port.h"
 #include "test_util/sync_point.h"
 #include "util/random.h"
@@ -76,8 +77,8 @@ Status RandomAccessFileReader::Read(uint64_t offset, size_t n, Slice* result,
   {
     StopWatch sw(env_, stats_, hist_type_,
                  (stats_ != nullptr) ? &elapsed : nullptr, true /*overwrite*/,
-                true /*delay_enabled*/);
-    auto prev_perf_level = GetPerfLevel();
+                 true /*delay_enabled*/);
+    auto prev_perf_flags = GetPerfFlags();
     IOSTATS_TIMER_GUARD(read_nanos);
     if (use_direct_io()) {
 #ifndef ROCKSDB_LITE
@@ -183,7 +184,7 @@ Status RandomAccessFileReader::Read(uint64_t offset, size_t n, Slice* result,
       *result = Slice(res_scratch, s.ok() ? pos : 0);
     }
     IOSTATS_ADD_IF_POSITIVE(bytes_read, result->size());
-    SetPerfLevel(prev_perf_level);
+    SetPerfFlags(prev_perf_flags);
   }
   if (stats_ != nullptr && file_read_hist_ != nullptr) {
     file_read_hist_->Add(elapsed);
@@ -200,19 +201,20 @@ Status RandomAccessFileReader::MultiRead(ReadRequest* read_reqs,
   {
     StopWatch sw(env_, stats_, hist_type_,
                  (stats_ != nullptr) ? &elapsed : nullptr, true /*overwrite*/,
-                true /*delay_enabled*/);
-    auto prev_perf_level = GetPerfLevel();
+                 true /*delay_enabled*/);
+    //    auto prev_perf_level = GetPerfLevel();
+    auto prev_perf_flags = GetPerfFlags();
     IOSTATS_TIMER_GUARD(read_nanos);
 
 #ifndef ROCKSDB_LITE
-      FileOperationInfo::TimePoint start_ts;
-      if (ShouldNotifyListeners()) {
-        start_ts = std::chrono::system_clock::now();
-      }
-#endif // ROCKSDB_LITE
-      {
-        IOSTATS_CPU_TIMER_GUARD(cpu_read_nanos, env_);
-        s = file_->MultiRead(read_reqs, num_reqs);
+    FileOperationInfo::TimePoint start_ts;
+    if (ShouldNotifyListeners()) {
+      start_ts = std::chrono::system_clock::now();
+    }
+#endif  // ROCKSDB_LITE
+    {
+      IOSTATS_CPU_TIMER_GUARD(cpu_read_nanos, env_);
+      s = file_->MultiRead(read_reqs, num_reqs);
       }
       for (size_t i = 0; i < num_reqs; ++i) {
 #ifndef ROCKSDB_LITE
@@ -225,7 +227,7 @@ Status RandomAccessFileReader::MultiRead(ReadRequest* read_reqs,
 #endif // ROCKSDB_LITE
         IOSTATS_ADD_IF_POSITIVE(bytes_read, read_reqs[i].result.size());
       }
-    SetPerfLevel(prev_perf_level);
+      SetPerfFlags(prev_perf_flags);
   }
   if (stats_ != nullptr && file_read_hist_ != nullptr) {
     file_read_hist_->Add(elapsed);
@@ -460,14 +462,16 @@ Status WritableFileWriter::SyncInternal(bool use_fsync) {
   Status s;
   IOSTATS_TIMER_GUARD(fsync_nanos);
   TEST_SYNC_POINT("WritableFileWriter::SyncInternal:0");
-  auto prev_perf_level = GetPerfLevel();
+  //  auto prev_perf_level = GetPerfLevel();
+  auto prev_perf_flags = GetPerfFlags();
   IOSTATS_CPU_TIMER_GUARD(cpu_write_nanos, env_);
   if (use_fsync) {
     s = writable_file_->Fsync();
   } else {
     s = writable_file_->Sync();
   }
-  SetPerfLevel(prev_perf_level);
+  //  SetPerfLevel(prev_perf_level);
+  SetPerfFlags(prev_perf_flags);
   return s;
 }
 
@@ -508,10 +512,11 @@ Status WritableFileWriter::WriteBuffered(const char* data, size_t size) {
       }
 #endif
       {
-        auto prev_perf_level = GetPerfLevel();
+        //        auto prev_perf_level = GetPerfLevel();
+        auto prev_perf_flags = GetPerfFlags();
         IOSTATS_CPU_TIMER_GUARD(cpu_write_nanos, env_);
         s = writable_file_->Append(Slice(src, allowed));
-        SetPerfLevel(prev_perf_level);
+        SetPerfFlags(prev_perf_flags);
       }
 #ifndef ROCKSDB_LITE
       if (ShouldNotifyListeners()) {
