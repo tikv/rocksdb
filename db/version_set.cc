@@ -2122,9 +2122,9 @@ void VersionStorageInfo::GenerateLevelRegionsBrief(
     AccessorResult* results = ioptions.level_region_accessor->LevelRegions(AccessorRequest(
         LevelFiles(level).front()->smallest.user_key(),
         LevelFiles(level).back()->largest.user_key()));
-    Print_Results(ioptions.info_log, level, results);
+    //Print_Results(ioptions.info_log, level, results);
     DoGenerateLevelRegionsBrief(ioptions.info_log, &level_regions_brief_[level], level, results, v, vset, options, &arena_);
-    Print_LevelRegionBrief(ioptions.info_log, level, &level_regions_brief_[level]);
+    //Print_LevelRegionBrief(ioptions.info_log, level, &level_regions_brief_[level]);
     delete results;
   }
   CalculateFileSizeRatioViolation(ioptions, v, vset);
