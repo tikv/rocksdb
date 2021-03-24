@@ -800,7 +800,7 @@ void PrintKey(const char* s, size_t len) {
   printf("]\n");
 }
 
-void DoGenerateLevelRegionsBrief(Logger* log, LevelRegionsBrief* region_level, int level,
+void DoGenerateLevelRegionsBrief(LevelRegionsBrief* region_level, int level,
                                AccessorResult* results, Version* v,
                                VersionSet* vset, const MutableCFOptions& options,
                                  Arena* arena) {
@@ -2123,7 +2123,7 @@ void VersionStorageInfo::GenerateLevelRegionsBrief(
         LevelFiles(level).front()->smallest.user_key(),
         LevelFiles(level).back()->largest.user_key()));
     //Print_Results(ioptions.info_log, level, results);
-    DoGenerateLevelRegionsBrief(ioptions.info_log, &level_regions_brief_[level], level, results, v, vset, options, &arena_);
+    DoGenerateLevelRegionsBrief(&level_regions_brief_[level], level, results, v, vset, options, &arena_);
     //Print_LevelRegionBrief(ioptions.info_log, level, &level_regions_brief_[level]);
     delete results;
   }
