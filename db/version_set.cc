@@ -828,20 +828,20 @@ void DoGenerateLevelRegionsBrief(Logger* log, LevelRegionsBrief* region_level, i
     r.smallest_user_key = Slice(mem, smallest_size);
     r.largest_user_key = Slice(mem + smallest_size, largest_size);
 
-    ROCKS_LOG_INFO(log, "level: %d\n", level);
-    PrintKey(r.smallest_user_key.data(), r.smallest_user_key.size());
-    PrintKey(r.largest_user_key.data(), r.largest_user_key.size());
+    //ROCKS_LOG_INFO(log, "level: %d\n", level);
+    //PrintKey(r.smallest_user_key.data(), r.smallest_user_key.size());
+    //PrintKey(r.largest_user_key.data(), r.largest_user_key.size());
     // TODO(): ApproximateSize uses InternalKey to compare, but level region accessor return user key.
     InternalKey smallest_key(r.smallest_user_key, kMaxSequenceNumber, kValueTypeForSeek);
     InternalKey largest_key(r.largest_user_key, kMaxSequenceNumber, kValueTypeForSeek);
-    ROCKS_LOG_INFO(log, "level: %d\n",level);
-    PrintKey(smallest_key.rep()->c_str(), smallest_key.size());
-    PrintKey(largest_key.rep()->c_str(), largest_key.size());
+    //ROCKS_LOG_INFO(log, "level: %d\n",level);
+    //PrintKey(smallest_key.rep()->c_str(), smallest_key.size());
+    //PrintKey(largest_key.rep()->c_str(), largest_key.size());
     r.region_size = vset->ApproximateSize(v, smallest_key.Encode(), largest_key.Encode(),
-                                          level, level, TableReaderCaller::kUserApproximateSize);
+                                          level, level+1, TableReaderCaller::kUserApproximateSize);
     assert(r.region_size > 0);
     uint64_t next_level_region_size = vset->ApproximateSize(v, smallest_key.Encode(),
-      largest_key.Encode(), level+1, level+1, TableReaderCaller::kUserApproximateSize);
+      largest_key.Encode(), level+1, level+2, TableReaderCaller::kUserApproximateSize);
     r.size_ratio_violation = options.max_bytes_for_level_multiplier - double(next_level_region_size) / double(r.region_size);
   }
 }
