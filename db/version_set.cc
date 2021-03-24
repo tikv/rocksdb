@@ -2067,12 +2067,12 @@ void Print_LevelRegionBrief(Logger* log, int level, const LevelRegionsBrief* reg
   }
 }
 
-void VersionStorageInfo::CalculateFileSizeRatioViolation(const ImmutableCFOptions& ioptions,
+void VersionStorageInfo::CalculateFileSizeRatioViolation(
                                                          Version* v, VersionSet* vset) {
   for (int level = 0; level < num_non_empty_levels_; ++level) {
     const std::vector<FileMetaData*>& files = files_[level];
     const rocksdb::LevelRegionsBrief& level_regions = level_regions_brief_[level];
-    Print_LevelRegionBrief(ioptions.info_log, level, &level_regions);
+    //Print_LevelRegionBrief(ioptions.info_log, level, &level_regions);
     for (auto& file : files) {
       double violation = 0;
       Slice lower_bound(file->smallest.user_key());
@@ -2124,10 +2124,10 @@ void VersionStorageInfo::GenerateLevelRegionsBrief(
         LevelFiles(level).back()->largest.user_key()));
     //Print_Results(ioptions.info_log, level, results);
     DoGenerateLevelRegionsBrief(&level_regions_brief_[level], level, results, v, vset, options, &arena_);
-    //Print_LevelRegionBrief(ioptions.info_log, level, &level_regions_brief_[level]);
+    Print_LevelRegionBrief(ioptions.info_log, level, &level_regions_brief_[level]);
     delete results;
   }
-  CalculateFileSizeRatioViolation(ioptions, v, vset);
+  CalculateFileSizeRatioViolation(v, vset);
 }
 
 void Version::PrepareApply(
