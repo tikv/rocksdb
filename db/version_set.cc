@@ -792,6 +792,14 @@ void DoGenerateLevelFilesBrief(LevelFilesBrief* file_level,
   }
 }
 
+void PrintKey(const char* s, size_t len) {
+  printf("key: [");
+  for (size_t i = 0; i < len; ++i) {
+    printf(" %d", s[i]);
+  }
+  printf("]\n");
+}
+
 void DoGenerateLevelRegionsBrief(Logger* log, LevelRegionsBrief* region_level, int level,
                                AccessorResult* results, Version* v,
                                VersionSet* vset, const MutableCFOptions& options,
@@ -820,15 +828,15 @@ void DoGenerateLevelRegionsBrief(Logger* log, LevelRegionsBrief* region_level, i
     r.smallest_user_key = Slice(mem, smallest_size);
     r.largest_user_key = Slice(mem + smallest_size, largest_size);
 
-    ROCKS_LOG_INFO(log, "level: %d smallest_key: %04x largest_key:%04x\n",
-                   level, r.smallest_user_key.data(),
-                   r.largest_user_key.data());
+    ROCKS_LOG_INFO(log, "level: %d\n", level);
+    PrintKey(r.smallest_user_key.data(), r.smallest_user_key.size());
+    PrintKey(r.largest_user_key.data(), r.largest_user_key.size());
     // TODO(): ApproximateSize uses InternalKey to compare, but level region accessor return user key.
     InternalKey smallest_key(r.smallest_user_key, kMaxSequenceNumber, kValueTypeForSeek);
     InternalKey largest_key(r.largest_user_key, kMaxSequenceNumber, kValueTypeForSeek);
-    ROCKS_LOG_INFO(log, "level: %d smallest_key: %04x largest_key:%04x\n",
-                   level, smallest_key.rep()->c_str(),
-                   largest_key.rep()->c_str());
+    ROCKS_LOG_INFO(log, "level: %d\n",level);
+    PrintKey(smallest_key.rep()->c_str(), smallest_key.size());
+    PrintKey(largest_key.rep()->c_str(), largest_key.size());
     r.region_size = vset->ApproximateSize(v, smallest_key.Encode(), largest_key.Encode(),
                                           level, level, TableReaderCaller::kUserApproximateSize);
     assert(r.region_size > 0);
@@ -2039,19 +2047,21 @@ void VersionStorageInfo::GenerateLevelFilesBrief() {
 void Print_Results(Logger* log, int level, const AccessorResult* results) {
   ROCKS_LOG_INFO(log, "level: %d, region count: %lu\n", level, results->regions.size());
   for (size_t i = 0; i < results->regions.size(); ++i) {
-    ROCKS_LOG_INFO(log, "smallest_user_key: %04x largest_user_key: %04x\n",
-                     results->regions[i].smallest_user_key.data(),
-                     results->regions[i].largest_user_key.data());
+    PrintKey(results->regions[i].smallest_user_key.data(),
+             results->regions[i].smallest_user_key.size());
+    PrintKey(results->regions[i].largest_user_key.data(),
+             results->regions[i].largest_user_key.size());
   }
 }
 
 void Print_LevelRegionBrief(Logger* log, int level, const LevelRegionsBrief* region_level) {
   ROCKS_LOG_INFO(log, "level: %d, region count:%lu\n", level, region_level->num_regions);
   for (size_t i = 0; i < region_level->num_regions; ++i) {
-    ROCKS_LOG_INFO(log, "smallest_user_key: %04x largest_user_key: %04x"
-                   "region_size: %lu \t\t size_ratio_violation: %f\n",
-                   region_level->regions[i].smallest_user_key.data(),
-                   region_level->regions[i].largest_user_key.data(),
+    PrintKey(region_level->regions[i].smallest_user_key.data(),
+             region_level->regions[i].smallest_user_key.size());
+    PrintKey(region_level->regions[i].largest_user_key.data(),
+             region_level->regions[i].largest_user_key.size());
+    ROCKS_LOG_INFO(log, "region_size: %lu size_ratio_violation: %f\n",
                    region_level->regions[i].region_size,
                    region_level->regions[i].size_ratio_violation);
   }
@@ -2104,9 +2114,11 @@ void VersionStorageInfo::GenerateLevelRegionsBrief(
 
   level_regions_brief_.resize(num_non_empty_levels_);
   for (int level = 0; level < num_non_empty_levels_; ++level) {
-    ROCKS_LOG_INFO(ioptions.info_log, "level: %d smallest_key: %04x largest_key:%04x\n",
-                   level, LevelFiles(level).front()->smallest.user_key().data(),
-                   LevelFiles(level).back()->largest.user_key().data());
+    ROCKS_LOG_INFO(ioptions.info_log, "level: %d\n",level);
+    PrintKey(LevelFiles(level).front()->smallest.user_key().data(),
+             LevelFiles(level).front()->smallest.user_key().size());
+    PrintKey(LevelFiles(level).back()->largest.user_key().data(),
+             LevelFiles(level).back()->largest.user_key().size());
     AccessorResult* results = ioptions.level_region_accessor->LevelRegions(AccessorRequest(
         LevelFiles(level).front()->smallest.user_key(),
         LevelFiles(level).back()->largest.user_key()));
