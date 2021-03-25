@@ -36,10 +36,10 @@ struct AccessorResult {
 };
 
 struct AccessorRequest {
-  AccessorRequest(const Slice& smallest_user_key_,
-                  const Slice& largest_user_key_)
-      : smallest_user_key(&smallest_user_key_),
-        largest_user_key(&largest_user_key_) {}
+  AccessorRequest(const Slice* smallest_user_key_,
+                  const Slice* largest_user_key_)
+      : smallest_user_key(smallest_user_key_),
+        largest_user_key(largest_user_key_) {}
   const Slice* smallest_user_key;
   const Slice* largest_user_key;
 };

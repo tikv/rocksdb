@@ -800,7 +800,7 @@ void PrintKey(const char* s, size_t len) {
   printf("]\n");
 }
 
-void DoGenerateLevelRegionsBrief(LevelRegionsBrief* region_level, int level,
+void DoGenerateLevelRegionsBrief(Logger* log, LevelRegionsBrief* region_level, int level,
                                AccessorResult* results, Version* v,
                                VersionSet* vset, const MutableCFOptions& options,
                                  Arena* arena) {
@@ -813,9 +813,15 @@ void DoGenerateLevelRegionsBrief(LevelRegionsBrief* region_level, int level,
   char* mem = arena->AllocateAligned(num * sizeof(RegionMetaData));
   region_level->regions = new (mem)RegionMetaData[num];
 
+  ROCKS_LOG_INFO(log, "level: %d, num_regions: %lu\n", level, num);
+
   for (size_t i = 0; i < num; i++) {
     Slice smallest_user_key(results->regions[i].smallest_user_key);
     Slice largest_user_key(results->regions[i].largest_user_key);
+
+    ROCKS_LOG_INFO(log, "region --- smallest_key: [%lu, %s], largest_key: [%lu, %s]\n",
+                   smallest_user_key.size(), smallest_user_key.data(),
+                   largest_user_key.size(), largest_user_key.data());
 
     // Copy key slice to sequential memory
     size_t smallest_size = smallest_user_key.size();
@@ -828,21 +834,16 @@ void DoGenerateLevelRegionsBrief(LevelRegionsBrief* region_level, int level,
     r.smallest_user_key = Slice(mem, smallest_size);
     r.largest_user_key = Slice(mem + smallest_size, largest_size);
 
-    //ROCKS_LOG_INFO(log, "level: %d\n", level);
-    //PrintKey(r.smallest_user_key.data(), r.smallest_user_key.size());
-    //PrintKey(r.largest_user_key.data(), r.largest_user_key.size());
     // TODO(): ApproximateSize uses InternalKey to compare, but level region accessor return user key.
     InternalKey smallest_key(r.smallest_user_key, kMaxSequenceNumber, kValueTypeForSeek);
     InternalKey largest_key(r.largest_user_key, kMaxSequenceNumber, kValueTypeForSeek);
-    //ROCKS_LOG_INFO(log, "level: %d\n",level);
-    //PrintKey(smallest_key.rep()->c_str(), smallest_key.size());
-    //PrintKey(largest_key.rep()->c_str(), largest_key.size());
     r.region_size = vset->ApproximateSize(v, smallest_key.Encode(), largest_key.Encode(),
                                           level, level+1, TableReaderCaller::kUserApproximateSize);
-    assert(r.region_size > 0);
     uint64_t next_level_region_size = vset->ApproximateSize(v, smallest_key.Encode(),
       largest_key.Encode(), level+1, level+2, TableReaderCaller::kUserApproximateSize);
     r.size_ratio_violation = options.max_bytes_for_level_multiplier - double(next_level_region_size) / double(r.region_size);
+    ROCKS_LOG_INFO(log, "region size: %lu, next level region size: %lu, region size ratio violation: %f\n",
+                   r.region_size, next_level_region_size, r.size_ratio_violation);
   }
 }
 
@@ -2109,21 +2110,16 @@ void VersionStorageInfo::GenerateLevelRegionsBrief(
     return;
   }
 
-  assert(ioptions.level_region_accessor != nullptr);
-
   level_regions_brief_.resize(num_non_empty_levels_);
   for (int level = 0; level < num_non_empty_levels_; ++level) {
-    //ROCKS_LOG_INFO(ioptions.info_log, "level: %d\n",level);
-    //PrintKey(LevelFiles(level).front()->smallest.user_key().data(),
-    //         LevelFiles(level).front()->smallest.user_key().size());
-    //PrintKey(LevelFiles(level).back()->largest.user_key().data(),
-    //         LevelFiles(level).back()->largest.user_key().size());
+    Slice level_smallest_user_key(LevelFiles(level).front()->smallest.user_key());
+    Slice level_largest_user_key(LevelFiles(level).back()->largest.user_key());
+    ROCKS_LOG_INFO(ioptions.info_log, "level --- smallest user key: [%lu, %s], largest user key: [%lu, %s]\n",
+                   level_smallest_user_key.size(), level_smallest_user_key.data(),
+                   level_largest_user_key.size(), level_largest_user_key.data());
     AccessorResult* results = ioptions.level_region_accessor->LevelRegions(AccessorRequest(
-        LevelFiles(level).front()->smallest.user_key(),
-        LevelFiles(level).back()->largest.user_key()));
-    //Print_Results(ioptions.info_log, level, results);
-    DoGenerateLevelRegionsBrief(&level_regions_brief_[level], level, results, v, vset, options, &arena_);
-    Print_LevelRegionBrief(ioptions.info_log, level, &level_regions_brief_[level]);
+        &level_smallest_user_key, &level_largest_user_key));
+    DoGenerateLevelRegionsBrief(ioptions.info_log, &level_regions_brief_[level], level, results, v, vset, options, &arena_);
     delete results;
   }
   CalculateFileSizeRatioViolation(v, vset);
@@ -5086,14 +5082,12 @@ uint64_t VersionSet::ApproximateSize(Version* v, const Slice& start,
     const LevelFilesBrief& files_brief = vstorage->LevelFilesBrief(level);
     if (!files_brief.num_files) {
       // empty level, skip exploration
-      ROCKS_LOG_INFO(v->info_log_, "empty level. num files:%lu\n", files_brief.num_files);
       continue;
     }
 
     if (!level) {
       // level 0 data is sorted order, handle the use case explicitly
       size += ApproximateSizeLevel0(v, files_brief, start, end, caller);
-      ROCKS_LOG_INFO(v->info_log_, "level 0. size:%lu\n", size);
       continue;
     }
 
@@ -5144,7 +5138,6 @@ uint64_t VersionSet::ApproximateSizeLevel0(Version* v,
         ApproximateSize(v, files_brief.files[i], key_start, caller);
     const uint64_t end =
         ApproximateSize(v, files_brief.files[i], key_end, caller);
-    ROCKS_LOG_INFO(v->info_log_, "start:%lu end:%lu", start, end);
     assert(end >= start);
     size += end - start;
   }
@@ -5161,11 +5154,9 @@ uint64_t VersionSet::ApproximateSize(Version* v, const FdWithKeyRange& f,
   if (v->cfd_->internal_comparator().Compare(f.largest_key, key) <= 0) {
     // Entire file is before "key", so just add the file size
     result = f.fd.GetFileSize();
-    ROCKS_LOG_INFO(v->info_log_, "Entire file is before key. Result:%lu\n", result);
   } else if (v->cfd_->internal_comparator().Compare(f.smallest_key, key) > 0) {
     // Entire file is after "key", so ignore
     result = 0;
-    ROCKS_LOG_INFO(v->info_log_, "Entire file is after key. Result:%lu\n", result);
   } else {
     // "key" falls in the range for this table.  Add the
     // approximate offset of "key" within the table.
@@ -5175,7 +5166,6 @@ uint64_t VersionSet::ApproximateSize(Version* v, const FdWithKeyRange& f,
           key, f.file_metadata->fd, caller, v->cfd()->internal_comparator(),
           v->GetMutableCFOptions().prefix_extractor.get());
     }
-    ROCKS_LOG_INFO(v->info_log_, "Key fall in the range for this table. Result:%lu\n", result);
   }
   return result;
 }
