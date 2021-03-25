@@ -2135,10 +2135,10 @@ void Version::PrepareApply(
   UpdateAccumulatedStats(update_stats);
   storage_info_.UpdateNumNonEmptyLevels();
   storage_info_.CalculateBaseBytes(*cfd_->ioptions(), mutable_cf_options);
+  storage_info_.GenerateLevelFilesBrief();
   storage_info_.GenerateLevelRegionsBrief(*cfd_->ioptions(), mutable_cf_options, this, vset_);
   storage_info_.UpdateFilesByCompactionPri(cfd_->ioptions()->compaction_pri);
   storage_info_.GenerateFileIndexer();
-  storage_info_.GenerateLevelFilesBrief();
   storage_info_.GenerateLevel0NonOverlapping();
   storage_info_.GenerateBottommostFiles();
 }
@@ -5086,12 +5086,14 @@ uint64_t VersionSet::ApproximateSize(Version* v, const Slice& start,
     const LevelFilesBrief& files_brief = vstorage->LevelFilesBrief(level);
     if (!files_brief.num_files) {
       // empty level, skip exploration
+      ROCKS_LOG_INFO(v->info_log_, "empty level. num files:%lu\n", files_brief.num_files);
       continue;
     }
 
     if (!level) {
       // level 0 data is sorted order, handle the use case explicitly
       size += ApproximateSizeLevel0(v, files_brief, start, end, caller);
+      ROCKS_LOG_INFO(v->info_log_, "level 0. size:%lu\n", size);
       continue;
     }
 
@@ -5142,6 +5144,7 @@ uint64_t VersionSet::ApproximateSizeLevel0(Version* v,
         ApproximateSize(v, files_brief.files[i], key_start, caller);
     const uint64_t end =
         ApproximateSize(v, files_brief.files[i], key_end, caller);
+    ROCKS_LOG_INFO(v->info_log_, "start:%lu end:%lu", start, end);
     assert(end >= start);
     size += end - start;
   }
@@ -5154,17 +5157,15 @@ uint64_t VersionSet::ApproximateSize(Version* v, const FdWithKeyRange& f,
   // pre-condition
   assert(v);
 
-  PrintKey(f.smallest_key.data(), f.smallest_key.size());
-  PrintKey(f.largest_key.data(), f.largest_key.size());
-  PrintKey(key.data(), key.size());
-
   uint64_t result = 0;
   if (v->cfd_->internal_comparator().Compare(f.largest_key, key) <= 0) {
     // Entire file is before "key", so just add the file size
     result = f.fd.GetFileSize();
+    ROCKS_LOG_INFO(v->info_log_, "Entire file is before key. Result:%lu\n", result);
   } else if (v->cfd_->internal_comparator().Compare(f.smallest_key, key) > 0) {
     // Entire file is after "key", so ignore
     result = 0;
+    ROCKS_LOG_INFO(v->info_log_, "Entire file is after key. Result:%lu\n", result);
   } else {
     // "key" falls in the range for this table.  Add the
     // approximate offset of "key" within the table.
@@ -5174,6 +5175,7 @@ uint64_t VersionSet::ApproximateSize(Version* v, const FdWithKeyRange& f,
           key, f.file_metadata->fd, caller, v->cfd()->internal_comparator(),
           v->GetMutableCFOptions().prefix_extractor.get());
     }
+    ROCKS_LOG_INFO(v->info_log_, "Key fall in the range for this table. Result:%lu\n", result);
   }
   return result;
 }
