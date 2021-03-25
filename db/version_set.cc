@@ -2123,7 +2123,7 @@ void VersionStorageInfo::GenerateLevelRegionsBrief(
         LevelFiles(level).back()->largest.user_key()));
     //Print_Results(ioptions.info_log, level, results);
     DoGenerateLevelRegionsBrief(&level_regions_brief_[level], level, results, v, vset, options, &arena_);
-    //Print_LevelRegionBrief(ioptions.info_log, level, &level_regions_brief_[level]);
+    Print_LevelRegionBrief(ioptions.info_log, level, &level_regions_brief_[level]);
     delete results;
   }
   CalculateFileSizeRatioViolation(v, vset);
