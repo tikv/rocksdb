@@ -2067,8 +2067,7 @@ void Print_LevelRegionBrief(Logger* log, int level, const LevelRegionsBrief* reg
   }
 }
 
-void VersionStorageInfo::CalculateFileSizeRatioViolation(
-                                                         Version* v, VersionSet* vset) {
+void VersionStorageInfo::CalculateFileSizeRatioViolation(Version* v, VersionSet* vset) {
   for (int level = 0; level < num_non_empty_levels_; ++level) {
     const std::vector<FileMetaData*>& files = files_[level];
     const rocksdb::LevelRegionsBrief& level_regions = level_regions_brief_[level];
@@ -2087,13 +2086,13 @@ void VersionStorageInfo::CalculateFileSizeRatioViolation(
           // TODO(): need to compute a key range size in a sst file.
           InternalKey k1(lower_bound, kMaxSequenceNumber, kValueTypeForSeek);
           InternalKey k2(file->largest.user_key(), kMaxSequenceNumber, kValueTypeForSeek);
-          violation += vset->ApproximateSize(v, k1.Encode(), k2.Encode(), level, level, TableReaderCaller::kUserApproximateSize)
+          violation += vset->ApproximateSize(v, k1.Encode(), k2.Encode(), level, level + 1, TableReaderCaller::kUserApproximateSize)
                        / file->compensated_file_size * level_regions.regions[i].size_ratio_violation;
           break;
         }
         InternalKey k1(lower_bound, kMaxSequenceNumber, kValueTypeForSeek);
         InternalKey k2(level_regions.regions[i].largest_user_key, kMaxSequenceNumber, kValueTypeForSeek);
-        violation += vset->ApproximateSize(v, k1.Encode(), k2.Encode(), level, level, TableReaderCaller::kUserApproximateSize)
+        violation += vset->ApproximateSize(v, k1.Encode(), k2.Encode(), level, level + 1, TableReaderCaller::kUserApproximateSize)
                      / file->compensated_file_size * level_regions.regions[i].size_ratio_violation;
         lower_bound = level_regions.regions[i].largest_user_key;
         assert(level_regions.regions[i].largest_user_key == level_regions.regions[i].smallest_user_key);
@@ -2124,7 +2123,7 @@ void VersionStorageInfo::GenerateLevelRegionsBrief(
         LevelFiles(level).back()->largest.user_key()));
     //Print_Results(ioptions.info_log, level, results);
     DoGenerateLevelRegionsBrief(&level_regions_brief_[level], level, results, v, vset, options, &arena_);
-    Print_LevelRegionBrief(ioptions.info_log, level, &level_regions_brief_[level]);
+    //Print_LevelRegionBrief(ioptions.info_log, level, &level_regions_brief_[level]);
     delete results;
   }
   CalculateFileSizeRatioViolation(v, vset);
@@ -5154,6 +5153,10 @@ uint64_t VersionSet::ApproximateSize(Version* v, const FdWithKeyRange& f,
                                      TableReaderCaller caller) {
   // pre-condition
   assert(v);
+
+  PrintKey(f.smallest_key.data(), f.smallest_key.size());
+  PrintKey(f.largest_key.data(), f.largest_key.size());
+  PrintKey(key.data(), key.size());
 
   uint64_t result = 0;
   if (v->cfd_->internal_comparator().Compare(f.largest_key, key) <= 0) {
