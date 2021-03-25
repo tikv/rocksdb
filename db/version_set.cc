@@ -2113,11 +2113,11 @@ void VersionStorageInfo::GenerateLevelRegionsBrief(
 
   level_regions_brief_.resize(num_non_empty_levels_);
   for (int level = 0; level < num_non_empty_levels_; ++level) {
-    ROCKS_LOG_INFO(ioptions.info_log, "level: %d\n",level);
-    PrintKey(LevelFiles(level).front()->smallest.user_key().data(),
-             LevelFiles(level).front()->smallest.user_key().size());
-    PrintKey(LevelFiles(level).back()->largest.user_key().data(),
-             LevelFiles(level).back()->largest.user_key().size());
+    //ROCKS_LOG_INFO(ioptions.info_log, "level: %d\n",level);
+    //PrintKey(LevelFiles(level).front()->smallest.user_key().data(),
+    //         LevelFiles(level).front()->smallest.user_key().size());
+    //PrintKey(LevelFiles(level).back()->largest.user_key().data(),
+    //         LevelFiles(level).back()->largest.user_key().size());
     AccessorResult* results = ioptions.level_region_accessor->LevelRegions(AccessorRequest(
         LevelFiles(level).front()->smallest.user_key(),
         LevelFiles(level).back()->largest.user_key()));
@@ -5919,4 +5919,4 @@ Status ReactiveVersionSet::MaybeSwitchManifest(
   return s;
 }
 
-}  // namespace rocksdb
+}  // namespaca rocksdb
