@@ -31,66 +31,79 @@ struct PerfFlags {
   uint8_t enable_bloom_sst_miss_count_bit : 1;               // 2
   uint8_t enable_key_lock_wait_count_bit : 1;                // 2
 
-  //  flag enable for using cpu time prob useless in TiKV port
-  uint8_t enable_measure_cpu_time_bit : 1;  // 3 -> with CPU time flag
+  union {
+    struct {
+      uint8_t enable_measure_cpu_time_bit : 1;                           // 3
+      uint8_t enable_block_read_time_bit : 1;                            // 3
+      uint8_t enable_block_checksum_time_bit : 1;                        // 3
+      uint8_t enable_block_decompress_time_bit : 1;                      // 3
+      uint8_t enable_get_snapshot_time_bit : 1;                          // 3
+      uint8_t enable_get_from_memtable_time_bit : 1;                     // 3
+      uint8_t enable_get_post_process_time_bit : 1;                      // 3
+      uint8_t enable_get_from_output_files_time_bit : 1;                 // 3
+      uint8_t enable_seek_on_memtable_time_bit : 1;                      // 3
+      uint8_t enable_seek_child_seek_time_bit : 1;                       // 3
+      uint8_t enable_seek_min_heap_time_bit : 1;                         // 3
+      uint8_t enable_seek_max_heap_time_bit : 1;                         // 3
+      uint8_t enable_seek_internal_seek_time_bit : 1;                    // 3
+      uint8_t enable_find_next_user_entry_time_bit : 1;                  // 3
+      uint8_t enable_write_wal_time_bit : 1;                             // 3
+      uint8_t enable_write_memtable_time_bit : 1;                        // 3
+      uint8_t enable_write_delay_time_bit : 1;                           // 3
+      uint8_t enable_write_scheduling_flushes_compactions_time_bit : 1;  // 3
+      uint8_t enable_write_pre_and_post_process_time_bit : 1;            // 3
+      uint8_t enable_write_thread_wait_nanos_bit : 1;                    // 3
+      uint8_t enable_merge_operator_time_nanos_bit : 1;                  // 3
+      uint8_t enable_read_index_block_nanos_bit : 1;                     // 3
+      uint8_t enable_read_filter_block_nanos_bit : 1;                    // 3
+      uint8_t enable_new_table_block_iter_nanos_bit : 1;                 // 3
+      uint8_t enable_new_table_iterator_nanos_bit : 1;                   // 3
+      uint8_t enable_block_seek_nanos_bit : 1;                           // 3
+      uint8_t enable_find_table_nanos_bit : 1;                           // 3
+      uint8_t enable_key_lock_wait_time_bit : 1;                         // 3
+      uint8_t enable_env_new_sequential_file_nanos_bit : 1;              // 3
+      uint8_t enable_env_new_random_access_file_nanos_bit : 1;           // 3
+      uint8_t enable_env_new_writable_file_nanos_bit : 1;                // 3
+      uint8_t enable_env_reuse_writable_file_nanos_bit : 1;              // 3
+      uint8_t enable_env_new_random_rw_file_nanos_bit : 1;               // 3
+      uint8_t enable_env_new_directory_nanos_bit : 1;                    // 3
+      uint8_t enable_env_file_exists_nanos_bit : 1;                      // 3
+      uint8_t enable_env_get_children_nanos_bit : 1;                     // 3
+      uint8_t enable_env_get_children_file_attributes_nanos_bit : 1;     // 3
+      uint8_t enable_env_delete_file_nanos_bit : 1;                      // 3
+      uint8_t enable_env_create_dir_nanos_bit : 1;                       // 3
+      uint8_t enable_env_create_dir_if_missing_nanos_bit : 1;            // 3
+      uint8_t enable_env_delete_dir_nanos_bit : 1;                       // 3
+      uint8_t enable_env_get_file_size_nanos_bit : 1;                    // 3
+      uint8_t enable_env_get_file_modification_time_nanos_bit : 1;       // 3
+      uint8_t enable_env_rename_file_nanos_bit : 1;                      // 3
+      uint8_t enable_env_link_file_nanos_bit : 1;                        // 3
+      uint8_t enable_env_lock_file_nanos_bit : 1;                        // 3
+      uint8_t enable_env_unlock_file_nanos_bit : 1;                      // 3
+      uint8_t enable_env_new_logger_nanos_bit : 1;                       // 3
+      uint8_t enable_encrypt_data_nanos_bit : 1;                         // 3
+      uint8_t enable_decrypt_data_nanos_bit : 1;                         // 3
+    };
+    uint64_t level3_by_mask;
+  };
 
-  uint8_t enable_block_read_time_bit : 1;                            // 3
-  uint8_t enable_block_checksum_time_bit : 1;                        // 3
-  uint8_t enable_block_decompress_time_bit : 1;                      // 3
-  uint8_t enable_get_snapshot_time_bit : 1;                          // 3
-  uint8_t enable_get_from_memtable_time_bit : 1;                     // 3
-  uint8_t enable_get_post_process_time_bit : 1;                      // 3
-  uint8_t enable_get_from_output_files_time_bit : 1;                 // 3
-  uint8_t enable_seek_on_memtable_time_bit : 1;                      // 3
-  uint8_t enable_seek_child_seek_time_bit : 1;                       // 3
-  uint8_t enable_seek_min_heap_time_bit : 1;                         // 3
-  uint8_t enable_seek_max_heap_time_bit : 1;                         // 3
-  uint8_t enable_seek_internal_seek_time_bit : 1;                    // 3
-  uint8_t enable_find_next_user_entry_time_bit : 1;                  // 3
-  uint8_t enable_write_wal_time_bit : 1;                             // 3
-  uint8_t enable_write_memtable_time_bit : 1;                        // 3
-  uint8_t enable_write_delay_time_bit : 1;                           // 3
-  uint8_t enable_write_scheduling_flushes_compactions_time_bit : 1;  // 3
-  uint8_t enable_write_pre_and_post_process_time_bit : 1;            // 3
-  uint8_t enable_write_thread_wait_nanos_bit : 1;                    // 3
-  uint8_t enable_merge_operator_time_nanos_bit : 1;                  // 3
-  uint8_t enable_read_index_block_nanos_bit : 1;                     // 3
-  uint8_t enable_read_filter_block_nanos_bit : 1;                    // 3
-  uint8_t enable_new_table_block_iter_nanos_bit : 1;                 // 3
-  uint8_t enable_new_table_iterator_nanos_bit : 1;                   // 3
-  uint8_t enable_block_seek_nanos_bit : 1;                           // 3
-  uint8_t enable_find_table_nanos_bit : 1;                           // 3
-  uint8_t enable_key_lock_wait_time_bit : 1;                         // 3
-  uint8_t enable_env_new_sequential_file_nanos_bit : 1;              // 3
-  uint8_t enable_env_new_random_access_file_nanos_bit : 1;           // 3
-  uint8_t enable_env_new_writable_file_nanos_bit : 1;                // 3
-  uint8_t enable_env_reuse_writable_file_nanos_bit : 1;              // 3
-  uint8_t enable_env_new_random_rw_file_nanos_bit : 1;               // 3
-  uint8_t enable_env_new_directory_nanos_bit : 1;                    // 3
-  uint8_t enable_env_file_exists_nanos_bit : 1;                      // 3
-  uint8_t enable_env_get_children_nanos_bit : 1;                     // 3
-  uint8_t enable_env_get_children_file_attributes_nanos_bit : 1;     // 3
-  uint8_t enable_env_delete_file_nanos_bit : 1;                      // 3
-  uint8_t enable_env_create_dir_nanos_bit : 1;                       // 3
-  uint8_t enable_env_create_dir_if_missing_nanos_bit : 1;            // 3
-  uint8_t enable_env_delete_dir_nanos_bit : 1;                       // 3
-  uint8_t enable_env_get_file_size_nanos_bit : 1;                    // 3
-  uint8_t enable_env_get_file_modification_time_nanos_bit : 1;       // 3
-  uint8_t enable_env_rename_file_nanos_bit : 1;                      // 3
-  uint8_t enable_env_link_file_nanos_bit : 1;                        // 3
-  uint8_t enable_env_lock_file_nanos_bit : 1;                        // 3
-  uint8_t enable_env_unlock_file_nanos_bit : 1;                      // 3
-  uint8_t enable_env_new_logger_nanos_bit : 1;                       // 3
-  uint8_t enable_encrypt_data_nanos_bit : 1;                         // 3
-  uint8_t enable_decrypt_data_nanos_bit : 1;                         // 3
+  union {
+    struct {
+      uint8_t enable_get_cpu_nanos_bit : 1;        // 4
+      uint8_t enable_iter_next_cpu_nanos_bit : 1;  // 4
+      uint8_t enable_iter_prev_cpu_nanos_bit : 1;  // 4
+      uint8_t enable_iter_seek_cpu_nanos_bit : 1;  // 4
+    };
+    uint16_t level4_by_mask;
+  };
 
-  uint8_t enable_get_cpu_nanos_bit : 1;        // 4
-  uint8_t enable_iter_next_cpu_nanos_bit : 1;  // 4
-  uint8_t enable_iter_prev_cpu_nanos_bit : 1;  // 4
-  uint8_t enable_iter_seek_cpu_nanos_bit : 1;  // 4
-
-  uint8_t enable_db_mutex_lock_nanos_bit : 1;      // 5
-  uint8_t enable_db_condition_wait_nanos_bit : 1;  // 5
+  union {
+    struct {
+      uint8_t enable_db_mutex_lock_nanos_bit : 1;      // 5
+      uint8_t enable_db_condition_wait_nanos_bit : 1;  // 5
+    };
+    uint8_t level5_by_mask;
+  };
 };
 
 // set the perf stats bitfield for current thread

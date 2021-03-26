@@ -25,10 +25,9 @@ enum PerfLevel : unsigned char {
 };
 
 // set the perf stats level for current thread
-//[[deprecated("Please use SetPerfFlags")]]
 void SetPerfLevel(PerfLevel level);
 
-// get current perf stats level for current thread
-[[deprecated("Please use GetPerfFlags")]] PerfLevel GetPerfLevel();
+// get current estimated perf stats level for current thread
+PerfLevel GetPerfLevel();
 
 }  // namespace rocksdb

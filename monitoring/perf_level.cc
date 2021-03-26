@@ -17,25 +17,28 @@ void SetPerfLevel(PerfLevel level) {
   assert(level > kUninitialized);
   assert(level < kOutOfBounds);
   switch (level) {
-    case kEnableCount:
-      perf_flags = PerfFlagsEnableCount;
-      break;
-    case kEnableTimeExceptForMutex:
-      perf_flags = PerfFlagsEnableTimeExceptForMutex;
-      break;
-    case kEnableTimeAndCPUTimeExceptForMutex:
-      perf_flags = PerfFlagsEnableTimeAndCPUTimeExceptForMutex;
-      break;
     case kEnableTime:
-      perf_flags = PerfFlagsEnableTime;
-      break;
+      perf_flags.level5_by_mask = -1;
+    case kEnableTimeAndCPUTimeExceptForMutex:
+      perf_flags.level4_by_mask = -1;
+    case kEnableTimeExceptForMutex:
+      perf_flags.level3_by_mask = -1;
+    case kEnableCount:
+      perf_flags.level2_by_mask = -1;
+      return;
     default:
       perf_flags = {};
       break;
   }
   //  perf_flags.perf_level = level;
 }
-
-// PerfLevel GetPerfLevel() { return (PerfLevel)perf_flags.perf_level; }
+// get the estimated perf level
+PerfLevel GetPerfLevel() {
+  if (perf_flags.level5_by_mask != 0) return (PerfLevel)5;
+  if (perf_flags.level4_by_mask != 0) return (PerfLevel)4;
+  if (perf_flags.level3_by_mask != 0) return (PerfLevel)3;
+  if (perf_flags.level2_by_mask != 0) return (PerfLevel)2;
+  return PerfLevel::kDisable;
+}
 
 }  // namespace rocksdb

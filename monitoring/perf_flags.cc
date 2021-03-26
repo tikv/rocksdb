@@ -99,7 +99,7 @@ const PerfFlags PerfFlagsEnableTime = {
 
 #ifdef ROCKSDB_SUPPORT_THREAD_LOCAL
 // TODO: support original Perf Level
-__thread PerfFlags perf_flags = PerfFlagsEnableCount;
+__thread PerfFlags perf_flags = {.level2_by_mask = (uint64_t)-1};
 #else
 PerfFlags perf_flags = PerfFlagsEnableCount;
 #endif

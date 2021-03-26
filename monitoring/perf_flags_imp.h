@@ -8,10 +8,6 @@ extern __thread PerfFlags perf_flags;
 #else
 extern PerfLevelByPerfFlags perf_flags;
 #endif
-extern const PerfFlags PerfFlagsEnableCount;
-extern const PerfFlags PerfFlagsEnableTimeExceptForMutex;
-extern const PerfFlags PerfFlagsEnableTimeAndCPUTimeExceptForMutex;
-extern const PerfFlags PerfFlagsEnableTime;
 
 }  // namespace rocksdb
 
