@@ -795,7 +795,7 @@ void DoGenerateLevelFilesBrief(LevelFilesBrief* file_level,
 void PrintKey(const char* s, size_t len) {
   printf("key: [");
   for (size_t i = 0; i < len; ++i) {
-    printf(" %d", s[i]);
+    printf(" %u", s[i]);
   }
   printf("]\n");
 }
@@ -2112,9 +2112,17 @@ void VersionStorageInfo::GenerateLevelRegionsBrief(
 
   level_regions_brief_.resize(num_non_empty_levels_);
   for (int level = 0; level < num_non_empty_levels_; ++level) {
-    Slice level_smallest_user_key(LevelFiles(level).front()->smallest.user_key());
-    Slice level_largest_user_key(LevelFiles(level).back()->largest.user_key());
-    ROCKS_LOG_INFO(ioptions.info_log, "level --- smallest user key: [%lu, %s], largest user key: [%lu, %s]\n",
+    std::vector<FileMetaData*> level_files = LevelFiles(level);
+    for (size_t j = 0; j < level_files.size(); ++j) {
+      ROCKS_LOG_INFO(ioptions.info_log, "level %d files %lu --- smallest user key: [%lu, %s], largest uer key: [%lu, %s]\n",
+                     level, j, level_files[j]->smallest.user_key().size(), level_files[j]->smallest.user_key().data(),
+                     level_files[j]->largest.user_key().size(), level_files[j]->largest.user_key().data());
+      PrintKey(level_files[j]->smallest.user_key().data(), level_files[j]->smallest.user_key().size());
+      PrintKey(level_files[j]->largest.user_key().data(), level_files[j]->largest.user_key().size());
+    }
+    Slice level_smallest_user_key(level_files.front()->smallest.user_key());
+    Slice level_largest_user_key(level_files.back()->largest.user_key());
+    ROCKS_LOG_INFO(ioptions.info_log, "level %d --- smallest user key: [%lu, %s], largest user key: [%lu, %s]\n", level,
                    level_smallest_user_key.size(), level_smallest_user_key.data(),
                    level_largest_user_key.size(), level_largest_user_key.data());
     AccessorResult* results = ioptions.level_region_accessor->LevelRegions(AccessorRequest(
