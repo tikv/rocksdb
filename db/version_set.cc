@@ -2112,16 +2112,25 @@ void VersionStorageInfo::GenerateLevelRegionsBrief(
 
   level_regions_brief_.resize(num_non_empty_levels_);
   for (int level = 0; level < num_non_empty_levels_; ++level) {
+    Slice level_smallest_user_key;
+    Slice level_largest_user_key;
     std::vector<FileMetaData*> level_files = LevelFiles(level);
-    for (size_t j = 0; j < level_files.size(); ++j) {
+    for (size_t i = 0; i < level_files.size(); ++i) {
       ROCKS_LOG_INFO(ioptions.info_log, "level %d files %lu --- smallest user key: [%lu, %s], largest uer key: [%lu, %s]\n",
-                     level, j, level_files[j]->smallest.user_key().size(), level_files[j]->smallest.user_key().data(),
-                     level_files[j]->largest.user_key().size(), level_files[j]->largest.user_key().data());
-      PrintKey(level_files[j]->smallest.user_key().data(), level_files[j]->smallest.user_key().size());
-      PrintKey(level_files[j]->largest.user_key().data(), level_files[j]->largest.user_key().size());
+                     level, i, level_files[i]->smallest.user_key().size(), level_files[i]->smallest.user_key().data(),
+                     level_files[i]->largest.user_key().size(), level_files[i]->largest.user_key().data());
+      PrintKey(level_files[i]->smallest.user_key().data(), level_files[i]->smallest.user_key().size());
+      PrintKey(level_files[i]->largest.user_key().data(), level_files[i]->largest.user_key().size());
+      if (i == 0) {
+        level_smallest_user_key = level_files[i]->smallest.user_key();
+        level_largest_user_key = level_files[i]->largest.user_key();
+      } else {
+        if (level_smallest_user_key.compare(level_files[i]->smallest.user_key()) > 0)
+          level_smallest_user_key = level_files[i]->smallest.user_key();
+        if (level_largest_user_key.compare(level_files[i]->largest.user_key()) < 0)
+          level_largest_user_key = level_files[i]->largest.user_key();
+      }
     }
-    Slice level_smallest_user_key(level_files.front()->smallest.user_key());
-    Slice level_largest_user_key(level_files.back()->largest.user_key());
     ROCKS_LOG_INFO(ioptions.info_log, "level %d --- smallest user key: [%lu, %s], largest user key: [%lu, %s]\n", level,
                    level_smallest_user_key.size(), level_smallest_user_key.data(),
                    level_largest_user_key.size(), level_largest_user_key.data());
