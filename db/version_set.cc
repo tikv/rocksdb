@@ -2074,7 +2074,7 @@ void VersionStorageInfo::CalculateFileSizeRatioViolation(Logger* log, Version* v
           InternalKey k2(file->largest.user_key(), kMaxSequenceNumber, kValueTypeForSeek);
           uint64_t size = vset->ApproximateSize(v, k1.Encode(), k2.Encode(), level, level + 1, TableReaderCaller::kUserApproximateSize);
 	  double region_violation = level_regions.regions[i].size_ratio_violation;
-          violation += size / file->compensated_file_size * region_violation;
+          violation += double(size) / double(file->compensated_file_size) * region_violation;
 	  ROCKS_LOG_INFO(log, "Find upper bound (region %lu) --- lower_bound: [%lu, %s], upper_bound: [%lu, %s], size: %lu, file_size: %lu, region violation: %f, delta violation: %f", 
 			i, k1.user_key().size(), k1.user_key().data(), k2.user_key().size(), k2.user_key().data(), size, file->compensated_file_size, 
 			region_violation, violation);
@@ -2084,12 +2084,12 @@ void VersionStorageInfo::CalculateFileSizeRatioViolation(Logger* log, Version* v
         InternalKey k2(level_regions.regions[i].largest_user_key, kMaxSequenceNumber, kValueTypeForSeek);
         uint64_t size = vset->ApproximateSize(v, k1.Encode(), k2.Encode(), level, level + 1, TableReaderCaller::kUserApproximateSize);
 	double region_violation = level_regions.regions[i].size_ratio_violation;
-        violation += size / file->compensated_file_size * region_violation;
+        violation += double(size) / double(file->compensated_file_size) * region_violation;
 	ROCKS_LOG_INFO(log, "Internal (region %lu) --- lower_bound: [%lu, %s], upper_bound: [%lu, %s], size: %lu, file_size: %lu, region violation: %f, delta violation: %f", 
 			i, k1.user_key().size(), k1.user_key().data(), k2.user_key().size(), k2.user_key().data(), size, file->compensated_file_size, 
 			region_violation, violation);
         lower_bound = level_regions.regions[i].largest_user_key;
-        assert(level_regions.regions[i].largest_user_key == level_regions.regions[i].smallest_user_key);
+        assert(level_regions.regions[i].largest_user_key.compare(level_regions.regions[i+1].smallest_user_key) == 0);
       }
       file->size_ratio_violation = violation;
       ROCKS_LOG_INFO(log, "level: %d, file: %lu, size ratio violation: %f\n", level, file->fd.GetNumber(), file->size_ratio_violation);
