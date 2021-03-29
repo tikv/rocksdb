@@ -2056,12 +2056,12 @@ void VersionStorageInfo::CalculateFileSizeRatioViolation(Logger* log, Version* v
     for (auto& file : files) {
       double violation = 0;
       Slice lower_bound(file->smallest.user_key());
+      PrintKey(file->smallest.user_key().data(), file->smallest.user_key().size());
+      PrintKey(file->largest.user_key().data(), file->largest.user_key().size());
       for (size_t i = 0; i < level_regions.num_regions; ++i) {
         // Skip regions that are smaller than current file
         if (user_comparator_->Compare(level_regions.regions[i].largest_user_key, file->smallest.user_key()) < 0) {
           ROCKS_LOG_INFO(log, "Skip region %lu that are smaller that current file", i);
-          PrintKey(level_regions.regions[i].largest_user_key.data(), level_regions.regions[i].largest_user_key.size());
-          PrintKey(file->smallest.user_key().data(), file->smallest.user_key().size());
           continue;
         }
         // find upper bound
@@ -2069,8 +2069,6 @@ void VersionStorageInfo::CalculateFileSizeRatioViolation(Logger* log, Version* v
             user_comparator_->Compare(file->largest.user_key(), level_regions.regions[i].largest_user_key) == 0) {
           // TODO(): need to compute a key range size in a sst file.
           ROCKS_LOG_INFO(log, "Find upper bound of region %lu", i);
-          PrintKey(level_regions.regions[i].largest_user_key.data(), level_regions.regions[i].largest_user_key.size());
-          PrintKey(file->largest.user_key().data(), file->largest.user_key().size());
           InternalKey k1(lower_bound, kMaxSequenceNumber, kValueTypeForSeek);
           InternalKey k2(file->largest.user_key(), kMaxSequenceNumber, kValueTypeForSeek);
           violation += vset->ApproximateSize(v, k1.Encode(), k2.Encode(), level, level + 1, TableReaderCaller::kUserApproximateSize)
@@ -2079,11 +2077,10 @@ void VersionStorageInfo::CalculateFileSizeRatioViolation(Logger* log, Version* v
         }
         InternalKey k1(lower_bound, kMaxSequenceNumber, kValueTypeForSeek);
         InternalKey k2(level_regions.regions[i].largest_user_key, kMaxSequenceNumber, kValueTypeForSeek);
-        violation += vset->ApproximateSize(v, k1.Encode(), k2.Encode(), level, level + 1, TableReaderCaller::kUserApproximateSize)
-                     / file->compensated_file_size * level_regions.regions[i].size_ratio_violation;
-        ROCKS_LOG_INFO(log, "violation: %f", violation);
-        PrintKey(lower_bound.data(), lower_bound.size());
-        PrintKey(level_regions.regions[i].largest_user_key.data(), level_regions.regions[i].largest_user_key.size());
+        uint64_t size = vset->ApproximateSize(v, k1.Encode(), k2.Encode(), level, level + 1, TableReaderCaller::kUserApproximateSize);
+        violation += size / file->compensated_file_size * level_regions.regions[i].size_ratio_violation;
+	ROCKS_LOG_INFO(log, "lower_bound: [%lu, %s], upper_bound: [%lu, %s], size: %lu, violation: %f", 
+			k1.user_key().size(), k1.user_key().data(), k2.user_key().size(), k2.user_key().data(), size, violation);
         lower_bound = level_regions.regions[i].largest_user_key;
         assert(level_regions.regions[i].largest_user_key == level_regions.regions[i].smallest_user_key);
       }
