@@ -4,33 +4,39 @@
 namespace rocksdb {
 
 struct PerfFlags {
-  uint8_t enable_user_key_comparison_count_bit : 1;          // 2
-  uint8_t enable_block_cache_hit_count_bit : 1;              // 2
-  uint8_t enable_block_read_count_bit : 1;                   // 2
-  uint8_t enable_block_read_byte_bit : 1;                    // 2
-  uint8_t enable_block_cache_index_hit_count_bit : 1;        // 2
-  uint8_t enable_index_block_read_count_bit : 1;             // 2
-  uint8_t enable_block_cache_filter_hit_count_bit : 1;       // 2
-  uint8_t enable_filter_block_read_count_bit : 1;            // 2
-  uint8_t enable_compression_dict_block_read_count_bit : 1;  // 2
-  uint8_t enable_get_read_bytes_bit : 1;                     // 2
-  uint8_t enable_multiget_read_bytes_bit : 1;                // 2
-  uint8_t enable_iter_read_bytes_bit : 1;                    // 2
-  uint8_t enable_internal_key_skipped_count_bit : 1;         // 2
-  uint8_t enable_internal_delete_skipped_count_bit : 1;      // 2
-  uint8_t enable_internal_recent_skipped_count_bit : 1;      // 2
-  uint8_t enable_internal_merge_count_bit : 1;               // 2
-  uint8_t enable_get_from_memtable_count_bit : 1;            // 2
-  uint8_t enable_seek_on_memtable_count_bit : 1;             // 2
-  uint8_t enable_next_on_memtable_count_bit : 1;             // 2
-  uint8_t enable_prev_on_memtable_count_bit : 1;             // 2
-  uint8_t enable_seek_child_seek_count_bit : 1;              // 2
-  uint8_t enable_bloom_memtable_hit_count_bit : 1;           // 2
-  uint8_t enable_bloom_memtable_miss_count_bit : 1;          // 2
-  uint8_t enable_bloom_sst_hit_count_bit : 1;                // 2
-  uint8_t enable_bloom_sst_miss_count_bit : 1;               // 2
-  uint8_t enable_key_lock_wait_count_bit : 1;                // 2
-
+  // represent original Level 2
+  union {
+    struct {
+      uint8_t enable_user_key_comparison_count_bit : 1;          // 2
+      uint8_t enable_block_cache_hit_count_bit : 1;              // 2
+      uint8_t enable_block_read_count_bit : 1;                   // 2
+      uint8_t enable_block_read_byte_bit : 1;                    // 2
+      uint8_t enable_block_cache_index_hit_count_bit : 1;        // 2
+      uint8_t enable_index_block_read_count_bit : 1;             // 2
+      uint8_t enable_block_cache_filter_hit_count_bit : 1;       // 2
+      uint8_t enable_filter_block_read_count_bit : 1;            // 2
+      uint8_t enable_compression_dict_block_read_count_bit : 1;  // 2
+      uint8_t enable_get_read_bytes_bit : 1;                     // 2
+      uint8_t enable_multiget_read_bytes_bit : 1;                // 2
+      uint8_t enable_iter_read_bytes_bit : 1;                    // 2
+      uint8_t enable_internal_key_skipped_count_bit : 1;         // 2
+      uint8_t enable_internal_delete_skipped_count_bit : 1;      // 2
+      uint8_t enable_internal_recent_skipped_count_bit : 1;      // 2
+      uint8_t enable_internal_merge_count_bit : 1;               // 2
+      uint8_t enable_get_from_memtable_count_bit : 1;            // 2
+      uint8_t enable_seek_on_memtable_count_bit : 1;             // 2
+      uint8_t enable_next_on_memtable_count_bit : 1;             // 2
+      uint8_t enable_prev_on_memtable_count_bit : 1;             // 2
+      uint8_t enable_seek_child_seek_count_bit : 1;              // 2
+      uint8_t enable_bloom_memtable_hit_count_bit : 1;           // 2
+      uint8_t enable_bloom_memtable_miss_count_bit : 1;          // 2
+      uint8_t enable_bloom_sst_hit_count_bit : 1;                // 2
+      uint8_t enable_bloom_sst_miss_count_bit : 1;               // 2
+      uint8_t enable_key_lock_wait_count_bit : 1;                // 2
+    };
+    uint64_t level2_by_mask;
+  };
+  // represent original Level 3
   union {
     struct {
       uint8_t enable_measure_cpu_time_bit : 1;                           // 3
