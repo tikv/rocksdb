@@ -86,7 +86,7 @@ struct PerfFlags {
     };
     uint64_t level3_by_mask;
   };
-
+  // represent original Level 4
   union {
     struct {
       uint8_t enable_get_cpu_nanos_bit : 1;        // 4
@@ -94,9 +94,9 @@ struct PerfFlags {
       uint8_t enable_iter_prev_cpu_nanos_bit : 1;  // 4
       uint8_t enable_iter_seek_cpu_nanos_bit : 1;  // 4
     };
-    uint16_t level4_by_mask;
+    uint8_t level4_by_mask;
   };
-
+  // represent original Level 5
   union {
     struct {
       uint8_t enable_db_mutex_lock_nanos_bit : 1;      // 5
@@ -106,10 +106,10 @@ struct PerfFlags {
   };
 };
 
-// set the perf stats bitfield for current thread
+// set the perf flags for current thread
 void SetPerfFlags(PerfFlags pbf);
 
-// get current perf stats bitfield for current thread
+// get current perf flags for current thread
 PerfFlags GetPerfFlags();
 
 }  // namespace rocksdb

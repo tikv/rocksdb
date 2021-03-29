@@ -113,8 +113,9 @@ using rocksdb::Transaction;
 using rocksdb::Checkpoint;
 using rocksdb::TransactionLogIterator;
 using rocksdb::BatchResult;
-using rocksdb::PerfLevel;
-using rocksdb::PerfContext;
+using rocksdb::WritableFile;
+using rocksdb::WriteBatch;
+using rocksdb::WriteBatchWithIndex;
 using rocksdb::MemoryUtil;
 
 using std::shared_ptr;
@@ -2740,7 +2741,7 @@ rocksdb_ratelimiter_t* rocksdb_writeampbasedratelimiter_create(
   return rate_limiter;
 }
 
-void rocksdb_ratelimiter_destroy(rocksdb_ratelimiter_t *limiter) {
+void rocksdb_ratelimiter_destroy(rocksdb_ratelimiter_t* limiter) {
   delete limiter;
 }
 
@@ -2749,8 +2750,17 @@ void rocksdb_set_perf_level(int v) {
   SetPerfLevel(level);
 }
 
+void rocksdb_set_perf_flags_by_mask(uint64_t level2, uint64_t level3,
+                                    uint8_t level4, uint8_t level5) {
+  PerfFlags flags = {.level2_by_mask = level2,
+                     .level3_by_mask = level3,
+                     .level4_by_mask = level4,
+                     .level5_by_mask = level5};
+  SetPerfFlags(flags);
+}
+
 rocksdb_perfcontext_t* rocksdb_perfcontext_create() {
-  rocksdb_perfcontext_t* context = new rocksdb_perfcontext_t;
+  auto* context = new rocksdb_perfcontext_t;
   context->rep = rocksdb::get_perf_context();
   return context;
 }

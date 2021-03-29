@@ -6,11 +6,12 @@
 #pragma once
 
 #include <stdint.h>
+
 #include <map>
 #include <string>
 
+#include "rocksdb/perf_flags.h"
 #include "rocksdb/perf_level.h"
-
 namespace rocksdb {
 
 // A thread local context for gathering performance counter efficiently

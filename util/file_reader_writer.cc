@@ -202,7 +202,6 @@ Status RandomAccessFileReader::MultiRead(ReadRequest* read_reqs,
     StopWatch sw(env_, stats_, hist_type_,
                  (stats_ != nullptr) ? &elapsed : nullptr, true /*overwrite*/,
                  true /*delay_enabled*/);
-    //    auto prev_perf_level = GetPerfLevel();
     auto prev_perf_flags = GetPerfFlags();
     IOSTATS_TIMER_GUARD(read_nanos);
 
@@ -462,7 +461,6 @@ Status WritableFileWriter::SyncInternal(bool use_fsync) {
   Status s;
   IOSTATS_TIMER_GUARD(fsync_nanos);
   TEST_SYNC_POINT("WritableFileWriter::SyncInternal:0");
-  //  auto prev_perf_level = GetPerfLevel();
   auto prev_perf_flags = GetPerfFlags();
   IOSTATS_CPU_TIMER_GUARD(cpu_write_nanos, env_);
   if (use_fsync) {
@@ -512,7 +510,6 @@ Status WritableFileWriter::WriteBuffered(const char* data, size_t size) {
       }
 #endif
       {
-        //        auto prev_perf_level = GetPerfLevel();
         auto prev_perf_flags = GetPerfFlags();
         IOSTATS_CPU_TIMER_GUARD(cpu_write_nanos, env_);
         s = writable_file_->Append(Slice(src, allowed));

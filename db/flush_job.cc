@@ -212,8 +212,8 @@ Status FlushJob::Run(LogsWithPrepTracker* prep_tracker,
   uint64_t prev_cpu_write_nanos = 0;
   uint64_t prev_cpu_read_nanos = 0;
   if (measure_io_stats_) {
-    //    prev_perf_level = GetPerfLevel();
-    //    SetPerfLevel(PerfLevel::kEnableTime);
+    prev_perf_level = GetPerfLevel();
+    SetPerfLevel(PerfLevel::kEnableTime);
     prev_write_nanos = IOSTATS(write_nanos);
     prev_fsync_nanos = IOSTATS(fsync_nanos);
     prev_range_sync_nanos = IOSTATS(range_sync_nanos);

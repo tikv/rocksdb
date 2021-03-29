@@ -414,13 +414,14 @@ TEST_F(DBIteratorTest, DBIteratorPrevNext) {
         nullptr /*read_callback*/));
 
     SetPerfLevel(kEnableCount);
-    //    ASSERT_TRUE(GetPerfLevel() == kEnableCount);
+    ASSERT_TRUE(GetPerfLevel() == kEnableCount);
 
     get_perf_context()->Reset();
     db_iter->SeekToLast();
 
     ASSERT_TRUE(db_iter->Valid());
-    ASSERT_EQ(static_cast<int>(get_perf_context()->internal_key_skipped_count), 1);
+    ASSERT_EQ(static_cast<int>(get_perf_context()->internal_key_skipped_count),
+              1);
     ASSERT_EQ(db_iter->key().ToString(), "b");
 
     SetPerfLevel(kDisable);
@@ -537,13 +538,14 @@ TEST_F(DBIteratorTest, DBIteratorPrevNext) {
         nullptr /*read_callback*/));
 
     SetPerfLevel(kEnableCount);
-    //    ASSERT_TRUE(GetPerfLevel() == kEnableCount);
+    ASSERT_TRUE(GetPerfLevel() == kEnableCount);
 
     get_perf_context()->Reset();
     db_iter->SeekToLast();
 
     ASSERT_TRUE(db_iter->Valid());
-    ASSERT_EQ(static_cast<int>(get_perf_context()->internal_delete_skipped_count), 0);
+    ASSERT_EQ(
+        static_cast<int>(get_perf_context()->internal_delete_skipped_count), 0);
     ASSERT_EQ(db_iter->key().ToString(), "b");
 
     SetPerfLevel(kDisable);

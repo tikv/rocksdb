@@ -10,5 +10,3 @@ extern PerfLevelByPerfFlags perf_flags;
 #endif
 
 }  // namespace rocksdb
-
-#define BITFIELD_METRIC(metric) enable_##metric##_bit
