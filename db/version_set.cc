@@ -841,7 +841,11 @@ void DoGenerateLevelRegionsBrief(Logger* log, LevelRegionsBrief* region_level, i
                                           level, level+1, TableReaderCaller::kUserApproximateSize);
     uint64_t next_level_region_size = vset->ApproximateSize(v, smallest_key.Encode(),
       largest_key.Encode(), level+1, level+2, TableReaderCaller::kUserApproximateSize);
-    r.size_ratio_violation = options.max_bytes_for_level_multiplier - double(next_level_region_size) / double(r.region_size);
+    if (r.region_size == 0) {
+    	r.size_ratio_violation = 0;
+    } else {
+    	r.size_ratio_violation = options.max_bytes_for_level_multiplier - double(next_level_region_size) / double(r.region_size);
+    }
     ROCKS_LOG_INFO(log, "region size: %lu, next level region size: %lu, region size ratio violation: %f\n",
                    r.region_size, next_level_region_size, r.size_ratio_violation);
   }
