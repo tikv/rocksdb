@@ -2045,34 +2045,10 @@ void VersionStorageInfo::GenerateLevelFilesBrief() {
   }
 }
 
-void Print_Results(Logger* log, int level, const AccessorResult* results) {
-  ROCKS_LOG_INFO(log, "level: %d, region count: %lu\n", level, results->regions.size());
-  for (size_t i = 0; i < results->regions.size(); ++i) {
-    PrintKey(results->regions[i].smallest_user_key.data(),
-             results->regions[i].smallest_user_key.size());
-    PrintKey(results->regions[i].largest_user_key.data(),
-             results->regions[i].largest_user_key.size());
-  }
-}
-
-void Print_LevelRegionBrief(Logger* log, int level, const LevelRegionsBrief* region_level) {
-  ROCKS_LOG_INFO(log, "level: %d, region count:%lu\n", level, region_level->num_regions);
-  for (size_t i = 0; i < region_level->num_regions; ++i) {
-    PrintKey(region_level->regions[i].smallest_user_key.data(),
-             region_level->regions[i].smallest_user_key.size());
-    PrintKey(region_level->regions[i].largest_user_key.data(),
-             region_level->regions[i].largest_user_key.size());
-    ROCKS_LOG_INFO(log, "region_size: %lu size_ratio_violation: %f\n",
-                   region_level->regions[i].region_size,
-                   region_level->regions[i].size_ratio_violation);
-  }
-}
-
-void VersionStorageInfo::CalculateFileSizeRatioViolation(Version* v, VersionSet* vset) {
+void VersionStorageInfo::CalculateFileSizeRatioViolation(Logger* log, Version* v, VersionSet* vset) {
   for (int level = 0; level < num_non_empty_levels_; ++level) {
     const std::vector<FileMetaData*>& files = files_[level];
     const rocksdb::LevelRegionsBrief& level_regions = level_regions_brief_[level];
-    //Print_LevelRegionBrief(ioptions.info_log, level, &level_regions);
     for (auto& file : files) {
       double violation = 0;
       Slice lower_bound(file->smallest.user_key());
@@ -2099,6 +2075,7 @@ void VersionStorageInfo::CalculateFileSizeRatioViolation(Version* v, VersionSet*
         assert(level_regions.regions[i].largest_user_key == level_regions.regions[i].smallest_user_key);
       }
       file->size_ratio_violation = violation;
+      ROCKS_LOG_INFO(log, "level: %d, file: %lu, size ratio violation: %f\n", level, file->fd.GetNumber(), file->size_ratio_violation);
     }
   }
 }
@@ -2139,7 +2116,7 @@ void VersionStorageInfo::GenerateLevelRegionsBrief(
     DoGenerateLevelRegionsBrief(ioptions.info_log, &level_regions_brief_[level], level, results, v, vset, options, &arena_);
     delete results;
   }
-  CalculateFileSizeRatioViolation(v, vset);
+  CalculateFileSizeRatioViolation(ioptions.info_log, v, vset);
 }
 
 void Version::PrepareApply(
