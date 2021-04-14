@@ -23,16 +23,12 @@ extern thread_local PerfContext perf_context;
 
 #if defined(NPERF_CONTEXT)
 
+#define PERF_TIMER_GUARD(metric)
+#define PERF_CONDITIONAL_TIMER_FOR_MUTEX_GUARD(metric, condition)
+#define PERF_TIMER_MEASURE(metric)
 #define PERF_TIMER_STOP(metric)
 #define PERF_TIMER_START(metric)
-#define PERF_TIMER_GUARD(metric)
-#define PERF_TIMER_GUARD_WITH_ENV(metric, env)
-#define PERF_CPU_TIMER_GUARD(metric, env)
-#define PERF_CONDITIONAL_TIMER_FOR_MUTEX_GUARD(metric, condition, stats, \
-                                               ticker_type)
-#define PERF_TIMER_MEASURE(metric)
 #define PERF_COUNTER_ADD(metric, value)
-#define PERF_COUNTER_BY_LEVEL_ADD(metric, value, level)
 
 #else
 
@@ -42,35 +38,28 @@ extern thread_local PerfContext perf_context;
 #define PERF_TIMER_START(metric) perf_step_timer_##metric.Start();
 
 // Declare and set start time of the timer
-#define PERF_TIMER_GUARD(metric)                    \
-  PerfStepTimer perf_step_timer_##metric(           \
-      &(perf_context.metric), nullptr,              \
-      (bool)perf_flags.enable_measure_cpu_time_bit, \
-      (bool)perf_flags.enable_##metric##_bit);      \
+#define PERF_TIMER_GUARD(metric)                                  \
+  PerfStepTimer perf_step_timer_##metric(&(perf_context.metric),(bool)perf_flags.enable_##metric##_bit); \
   perf_step_timer_##metric.Start();
 
 // Declare and set start time of the timer
-#define PERF_TIMER_GUARD_WITH_ENV(metric, env)      \
-  PerfStepTimer perf_step_timer_##metric(           \
-      &(perf_context.metric), env,                  \
-      (bool)perf_flags.enable_measure_cpu_time_bit, \
-      (bool)perf_flags.enable_##metric##_bit);      \
+#define PERF_TIMER_GUARD_WITH_ENV(metric, env)                         \
+  PerfStepTimer perf_step_timer_##metric(&(perf_context.metric), (bool)perf_flags.enable_##metric##_bit, env); \
   perf_step_timer_##metric.Start();
 
 // Declare and set start time of the timer
-#define PERF_CPU_TIMER_GUARD(metric, env)      \
-  PerfStepTimer perf_step_timer_##metric(      \
-      &(perf_context.metric), env, true,       \
-      (bool)perf_flags.enable_##metric##_bit); \
+#define PERF_CPU_TIMER_GUARD(metric, env)              \
+  PerfStepTimer perf_step_timer_##metric(              \
+      &(perf_context.metric), (bool)perf_flags.enable_##metric##_bit, env, true); \
   perf_step_timer_##metric.Start();
 
-#define PERF_CONDITIONAL_TIMER_FOR_MUTEX_GUARD(metric, condition, stats, \
-                                               ticker_type)              \
-  PerfStepTimer perf_step_timer_##metric(                                \
-      &(perf_context.metric), nullptr, false,                            \
-      (bool)perf_flags.enable_##metric##_bit, stats, ticker_type);       \
-  if (condition) {                                                       \
-    perf_step_timer_##metric.Start();                                    \
+#define PERF_CONDITIONAL_TIMER_FOR_MUTEX_GUARD(metric, condition, stats,       \
+                                               ticker_type)                    \
+  PerfStepTimer perf_step_timer_##metric(&(perf_context.metric),(bool)perf_flags.enable_##metric##_bit , nullptr,      \
+                                         false, stats, \
+                                         ticker_type);                         \
+  if (condition) {                                                             \
+    perf_step_timer_##metric.Start();                                          \
   }
 
 // Update metric with time elapsed since last START. start time is reset
@@ -78,25 +67,27 @@ extern thread_local PerfContext perf_context;
 #define PERF_TIMER_MEASURE(metric) perf_step_timer_##metric.Measure();
 
 // Increase metric value
-#define PERF_COUNTER_ADD(metric, value)   \
-  if (perf_flags.enable_##metric##_bit) { \
-    perf_context.metric += value;         \
+#define PERF_COUNTER_ADD(metric, value)        \
+  if ((bool)perf_flags.enable_##metric##_bit) { \
+    perf_context.metric += value;              \
   }
 
 // Increase metric value
-// TODO: add a flag count
-#define PERF_COUNTER_BY_LEVEL_ADD(metric, value, level)               \
-  if (perf_context.per_level_perf_context_enabled &&                  \
-      perf_context.level_to_perf_context) {                           \
-    if ((*(perf_context.level_to_perf_context)).find(level) !=        \
-        (*(perf_context.level_to_perf_context)).end()) {              \
-      (*(perf_context.level_to_perf_context))[level].metric += value; \
-    } else {                                                          \
-      PerfContextByLevel empty_context;                               \
-      (*(perf_context.level_to_perf_context))[level] = empty_context; \
-      (*(perf_context.level_to_perf_context))[level].metric += value; \
-    }                                                                 \
-  }
+#define PERF_COUNTER_BY_LEVEL_ADD(metric, value, level)                      \
+  if ((bool)perf_flags.enable_perf_context_by_level_count_bit &&                             \
+      perf_context.per_level_perf_context_enabled &&                         \
+      perf_context.level_to_perf_context) {                                  \
+    if ((*(perf_context.level_to_perf_context)).find(level) !=               \
+        (*(perf_context.level_to_perf_context)).end()) {                     \
+      (*(perf_context.level_to_perf_context))[level].metric += value;        \
+    }                                                                        \
+    else {                                                                   \
+      PerfContextByLevel empty_context;                                      \
+      (*(perf_context.level_to_perf_context))[level] = empty_context;        \
+      (*(perf_context.level_to_perf_context))[level].metric += value;       \
+    }                                                                        \
+  }                                                                          \
+
 #endif
 
-}  // namespace rocksdb
+}

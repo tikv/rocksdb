@@ -3,6 +3,8 @@
 //  COPYING file in the root directory) and Apache 2.0 License
 //  (found in the LICENSE.Apache file in the root directory).
 //
+#include "rocksdb/perf_context.h"
+
 #include <algorithm>
 #include <iostream>
 #include <thread>
@@ -15,7 +17,6 @@
 #include "port/port.h"
 #include "rocksdb/db.h"
 #include "rocksdb/memtablerep.h"
-#include "rocksdb/perf_context.h"
 #include "rocksdb/slice_transform.h"
 #include "test_util/testharness.h"
 #include "util/stop_watch.h"

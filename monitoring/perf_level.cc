@@ -8,6 +8,8 @@
 
 #include <assert.h>
 
+#include <cstring>
+
 #include "monitoring/perf_flags_imp.h"
 
 namespace rocksdb {
@@ -18,13 +20,16 @@ void SetPerfLevel(PerfLevel level) {
   assert(level < kOutOfBounds);
   switch (level) {
     case kEnableTime:
-      perf_flags.level5_by_mask = -1;
+      perf_flags = PERF_LEVEL5;
+      break;
     case kEnableTimeAndCPUTimeExceptForMutex:
-      perf_flags.level4_by_mask = -1;
+      perf_flags = PERF_LEVEL4;
+      break;
     case kEnableTimeExceptForMutex:
-      perf_flags.level3_by_mask = -1;
+      perf_flags = PERF_LEVEL3;
+      break;
     case kEnableCount:
-      perf_flags.level2_by_mask = -1;
+      perf_flags = PERF_LEVEL2;
       return;
     default:
       perf_flags = {};
@@ -34,11 +39,43 @@ void SetPerfLevel(PerfLevel level) {
 }
 // get the estimated perf level
 PerfLevel GetPerfLevel() {
-  if (perf_flags.level5_by_mask != 0) return (PerfLevel)5;
-  if (perf_flags.level4_by_mask != 0) return (PerfLevel)4;
-  if (perf_flags.level3_by_mask != 0) return (PerfLevel)3;
-  if (perf_flags.level2_by_mask != 0) return (PerfLevel)2;
-  return PerfLevel::kDisable;
+  int cmp5 = memcmp(&perf_flags, &PERF_LEVEL5, sizeof(PerfFlags));
+  if (cmp5 == 0) {
+    return kEnableTime;
+  } else if (cmp5 < 0) {
+    int cmp4 = memcmp(&perf_flags, &PERF_LEVEL4, sizeof(PerfFlags));
+    if (cmp4 == 0) {
+      return kEnableTimeAndCPUTimeExceptForMutex;
+    } else if (cmp4 < 0) {
+      int cmp3 = memcmp(&perf_flags, &PERF_LEVEL3, sizeof(PerfFlags));
+      if (cmp3 == 0) {
+        return kEnableTimeExceptForMutex;
+      } else if (cmp3 < 0) {
+        int cmp2 = memcmp(&perf_flags, &PERF_LEVEL2, sizeof(PerfFlags));
+        if (cmp2 == 0) {
+          return kEnableCount;
+        } else if (cmp2 < 0) {
+          PerfFlags empt = {};
+          int cmp1 = memcmp(&perf_flags, &empt, sizeof(PerfFlags));
+          if (cmp1 == 0) {
+            return kDisable;
+          } else if (cmp1 < 0) {
+            abort();
+          } else {
+            return kCustomFlags;
+          }
+        } else {
+          return kCustomFlags;
+        }
+      } else {
+        return kCustomFlags;
+      }
+    } else {
+      return kCustomFlags;
+    }
+  } else {
+    abort();
+  }
 }
 
 }  // namespace rocksdb

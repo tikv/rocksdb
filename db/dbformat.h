@@ -9,9 +9,11 @@
 
 #pragma once
 #include <stdio.h>
+
 #include <memory>
 #include <string>
 #include <utility>
+
 #include "db/lookup_key.h"
 #include "db/merge_context.h"
 #include "logging/logging.h"

@@ -47,6 +47,9 @@
 #include <unordered_set>
 #include <map>
 
+using rocksdb::PerfContext;
+using rocksdb::PerfLevel;
+using rocksdb::PerfFlags;
 using rocksdb::BytewiseComparator;
 using rocksdb::Cache;
 using rocksdb::ColumnFamilyDescriptor;
@@ -2750,12 +2753,9 @@ void rocksdb_set_perf_level(int v) {
   SetPerfLevel(level);
 }
 
-void rocksdb_set_perf_flags_by_mask(uint64_t level2, uint64_t level3,
-                                    uint8_t level4, uint8_t level5) {
-  PerfFlags flags = {.level2_by_mask = level2,
-                     .level3_by_mask = level3,
-                     .level4_by_mask = level4,
-                     .level5_by_mask = level5};
+void rocksdb_set_perf_flags_by_mask(uint8_t* flags_bytes) {
+  PerfFlags flags;
+  memmove(&flags,flags_bytes,sizeof(PerfFlags));
   SetPerfFlags(flags);
 }
 

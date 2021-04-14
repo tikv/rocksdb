@@ -5,6 +5,7 @@
 //
 
 #include <sstream>
+
 #include "monitoring/perf_context_imp.h"
 
 namespace rocksdb {
@@ -30,8 +31,9 @@ PerfContext* get_perf_context() {
 #endif
 #endif
 }
-
 PerfContext::~PerfContext() {
+  auto str = this->ToString(true);
+  printf("%s\n",str.c_str());
 #if !defined(NPERF_CONTEXT) && defined(ROCKSDB_SUPPORT_THREAD_LOCAL) && !defined(OS_SOLARIS)
   ClearPerLevelPerfContext();
 #endif

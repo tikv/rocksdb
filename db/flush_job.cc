@@ -9,9 +9,8 @@
 
 #include "db/flush_job.h"
 
-#include <cinttypes>
-
 #include <algorithm>
+#include <cinttypes>
 #include <vector>
 
 #include "db/builder.h"

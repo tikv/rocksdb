@@ -1120,10 +1120,7 @@ enum {
 };
 
 extern ROCKSDB_LIBRARY_API void rocksdb_set_perf_level(int);
-extern ROCKSDB_LIBRARY_API void rocksdb_set_perf_flags_by_mask(uint64_t level2,
-                                                               uint64_t level3,
-                                                               uint8_t level4,
-                                                               uint8_t level5);
+extern ROCKSDB_LIBRARY_API void rocksdb_set_perf_flags_by_mask(uint8_t* flags_bytes);
 extern ROCKSDB_LIBRARY_API rocksdb_perfcontext_t* rocksdb_perfcontext_create();
 extern ROCKSDB_LIBRARY_API void rocksdb_perfcontext_reset(
     rocksdb_perfcontext_t* context);

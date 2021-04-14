@@ -7,9 +7,8 @@
 
 #include "utilities/transactions/transaction_lock_mgr.h"
 
-#include <cinttypes>
-
 #include <algorithm>
+#include <cinttypes>
 #include <condition_variable>
 #include <functional>
 #include <mutex>

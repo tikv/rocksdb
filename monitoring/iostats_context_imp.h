@@ -4,6 +4,7 @@
 //  (found in the LICENSE.Apache file in the root directory).
 //
 #pragma once
+#include "monitoring/perf_flags_imp.h"
 #include "monitoring/perf_step_timer.h"
 #include "rocksdb/iostats_context.h"
 
@@ -34,14 +35,13 @@ extern __thread IOStatsContext iostats_context;
 
 // Declare and set start time of the timer
 #define IOSTATS_TIMER_GUARD(metric)                                     \
-  PerfStepTimer iostats_step_timer_##metric(&(iostats_context.metric)); \
+  PerfStepTimer iostats_step_timer_##metric(&(iostats_context.metric),(bool)perf_flags.enable_iostats_cpu_timer_bit); \
   iostats_step_timer_##metric.Start();
 
 // Declare and set start time of the timer
 #define IOSTATS_CPU_TIMER_GUARD(metric, env)           \
   PerfStepTimer iostats_step_timer_##metric(           \
-      &(iostats_context.metric), env, true,            \
-      PerfLevel::kEnableTimeAndCPUTimeExceptForMutex); \
+      &(iostats_context.metric),(bool)perf_flags.enable_iostats_cpu_timer_bit, env, true); \
   iostats_step_timer_##metric.Start();
 
 #else  // ROCKSDB_SUPPORT_THREAD_LOCAL

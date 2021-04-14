@@ -10,6 +10,7 @@
 #include "db/version_set.h"
 
 #include <stdio.h>
+
 #include <algorithm>
 #include <array>
 #include <cinttypes>
@@ -19,6 +20,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+
 #include "compaction/compaction.h"
 #include "db/internal_stats.h"
 #include "db/log_reader.h"

@@ -11,14 +11,15 @@
 #include <vector>
 
 #include "db/dbformat.h"
-
+#include "memory/arena.h"
+#include "monitoring/histogram.h"
+#include "monitoring/perf_context_imp.h"
 #include "rocksdb/cache.h"
 #include "rocksdb/comparator.h"
 #include "rocksdb/env.h"
 #include "rocksdb/filter_policy.h"
 #include "rocksdb/options.h"
 #include "rocksdb/statistics.h"
-
 #include "table/block_based/block.h"
 #include "table/block_based/filter_block.h"
 #include "table/bloom_block.h"
@@ -29,10 +30,6 @@
 #include "table/plain/plain_table_factory.h"
 #include "table/plain/plain_table_key_coding.h"
 #include "table/two_level_iterator.h"
-
-#include "memory/arena.h"
-#include "monitoring/histogram.h"
-#include "monitoring/perf_context_imp.h"
 #include "util/coding.h"
 #include "util/dynamic_bloom.h"
 #include "util/hash.h"

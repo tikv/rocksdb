@@ -12,9 +12,10 @@ namespace rocksdb {
 
 class PerfStepTimer {
  public:
-  explicit PerfStepTimer(uint64_t* metric, Env* env = nullptr,
-                         bool use_cpu_time = false,
+  explicit PerfStepTimer(uint64_t* metric,
                          bool perf_counter_enabled_ = false,
+                         Env* env = nullptr,
+                         bool use_cpu_time = false,
                          Statistics* statistics = nullptr,
                          uint32_t ticker_type = 0)
       : perf_counter_enabled_(perf_counter_enabled_),

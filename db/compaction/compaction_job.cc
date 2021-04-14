@@ -7,8 +7,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
-#include <cinttypes>
+#include "db/compaction/compaction_job.h"
+
 #include <algorithm>
+#include <cinttypes>
 #include <functional>
 #include <list>
 #include <memory>
@@ -19,7 +21,6 @@
 #include <vector>
 
 #include "db/builder.h"
-#include "db/compaction/compaction_job.h"
 #include "db/db_impl/db_impl.h"
 #include "db/db_iter.h"
 #include "db/dbformat.h"

@@ -21,7 +21,8 @@ enum PerfLevel : unsigned char {
   // time (neither wall time nor CPU time) for mutexes.
   kEnableTimeAndCPUTimeExceptForMutex = 4,
   kEnableTime = 5,  // enable count and time stats
-  kOutOfBounds = 6  // N.B. Must always be the last value!
+  kCustomFlags = 6, // could not measured by level because is a custom bit flags configuration
+  kOutOfBounds = 7,  // N.B. Must always be the last value!
 };
 
 // set the perf stats level for current thread
