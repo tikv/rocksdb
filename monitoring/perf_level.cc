@@ -6,8 +6,7 @@
 
 #include "rocksdb/perf_level.h"
 
-#include <assert.h>
-
+#include <cassert>
 #include <cstring>
 
 #include "monitoring/perf_flags_imp.h"
@@ -37,44 +36,16 @@ void SetPerfLevel(PerfLevel level) {
   }
   //  perf_flags.perf_level = level;
 }
-// get the estimated perf level
 PerfLevel GetPerfLevel() {
-  int cmp5 = memcmp(&perf_flags, &PERF_LEVEL5, sizeof(PerfFlags));
-  if (cmp5 == 0) {
-    return kEnableTime;
-  } else if (cmp5 < 0) {
-    int cmp4 = memcmp(&perf_flags, &PERF_LEVEL4, sizeof(PerfFlags));
-    if (cmp4 == 0) {
-      return kEnableTimeAndCPUTimeExceptForMutex;
-    } else if (cmp4 < 0) {
-      int cmp3 = memcmp(&perf_flags, &PERF_LEVEL3, sizeof(PerfFlags));
-      if (cmp3 == 0) {
-        return kEnableTimeExceptForMutex;
-      } else if (cmp3 < 0) {
-        int cmp2 = memcmp(&perf_flags, &PERF_LEVEL2, sizeof(PerfFlags));
-        if (cmp2 == 0) {
-          return kEnableCount;
-        } else if (cmp2 < 0) {
-          PerfFlags empt = {};
-          int cmp1 = memcmp(&perf_flags, &empt, sizeof(PerfFlags));
-          if (cmp1 == 0) {
-            return kDisable;
-          } else if (cmp1 < 0) {
-            abort();
-          } else {
-            return kCustomFlags;
-          }
-        } else {
-          return kCustomFlags;
-        }
-      } else {
-        return kCustomFlags;
-      }
-    } else {
-      return kCustomFlags;
-    }
-  } else {
-    abort();
+  void* levels[5] = {(void*)&PERF_LEVEL1, (void*)&PERF_LEVEL2,
+                     (void*)&PERF_LEVEL3, (void*)&PERF_LEVEL4,
+                     (void*)&PERF_LEVEL5};
+  for (int i = 0; i < 5; ++i) {
+    int cmp = memcmp(&perf_flags, levels[i], sizeof(PerfFlags));
+    if (cmp == 0) return (PerfLevel)(i + 1);
+    if (cmp < 0 && i == 0) return kOutOfBounds;
+    if (cmp < 0) return kCustomFlags;
+    if (cmp > 0 && i == 4) return kOutOfBounds;
   }
 }
 

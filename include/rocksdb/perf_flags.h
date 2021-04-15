@@ -1,5 +1,5 @@
 #pragma once
-#include <stdint.h>
+#include <cstdint>
 
 namespace rocksdb {
 struct PerfFlags {
@@ -97,10 +97,11 @@ struct PerfFlags {
   uint8_t enable_db_mutex_lock_nanos_bit : 1;      // 5
   uint8_t enable_db_condition_wait_nanos_bit : 1;  // 5
 };
-extern const  PerfFlags PERF_LEVEL2;
-extern const  PerfFlags PERF_LEVEL3;
-extern const  PerfFlags PERF_LEVEL4;
-extern const  PerfFlags PERF_LEVEL5;
+extern const PerfFlags PERF_LEVEL1;
+extern const PerfFlags PERF_LEVEL2;
+extern const PerfFlags PERF_LEVEL3;
+extern const PerfFlags PERF_LEVEL4;
+extern const PerfFlags PERF_LEVEL5;
 // set the perf flags for current thread
 void SetPerfFlags(PerfFlags pbf);
 

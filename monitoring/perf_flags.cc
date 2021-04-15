@@ -16,42 +16,39 @@
 .enable_iter_read_bytes_bit = 1,                    \
 .enable_internal_key_skipped_count_bit = 1,         \
 .enable_internal_delete_skipped_count_bit = 1,      \
-.enable_internal_recent_skipped_count_bit = 1,      \
-.enable_internal_merge_count_bit = 1,               \
-.enable_get_from_memtable_count_bit = 1,            \
-.enable_seek_on_memtable_count_bit = 1,             \
-.enable_next_on_memtable_count_bit = 1,             \
-.enable_prev_on_memtable_count_bit = 1,             \
-.enable_seek_child_seek_count_bit = 1,              \
-.enable_bloom_memtable_hit_count_bit = 1,           \
-.enable_bloom_memtable_miss_count_bit = 1,          \
-.enable_bloom_sst_hit_count_bit = 1,                \
-.enable_bloom_sst_miss_count_bit = 1,               \
-.enable_key_lock_wait_count_bit = 1                
+.enable_internal_recent_skipped_count_bit = 1,                               \
+  .enable_internal_merge_count_bit = 1,                                        \
+  .enable_get_from_memtable_count_bit = 1,                                     \
+  .enable_seek_on_memtable_count_bit = 1,                                      \
+  .enable_next_on_memtable_count_bit = 1,                                      \
+  .enable_prev_on_memtable_count_bit = 1,                                      \
+  .enable_seek_child_seek_count_bit = 1,                                       \
+  .enable_bloom_memtable_hit_count_bit = 1,                                    \
+  .enable_bloom_memtable_miss_count_bit = 1,                                   \
+  .enable_bloom_sst_hit_count_bit = 1, .enable_bloom_sst_miss_count_bit = 1,   \
+  .enable_key_lock_wait_count_bit = 1
 
-#define PERF_FLAGS_INIT_LEVEL3 \
-.enable_measure_cpu_time_bit = 1,                           \
-.enable_block_read_time_bit = 1,                            \
-.enable_block_checksum_time_bit = 1,                        \
-.enable_block_decompress_time_bit = 1,                      \
-.enable_get_snapshot_time_bit = 1,                          \
-.enable_get_from_memtable_time_bit = 1,                     \
-.enable_get_post_process_time_bit = 1,                      \
-.enable_get_from_output_files_time_bit = 1,                 \
-.enable_seek_on_memtable_time_bit = 1,                      \
-.enable_seek_child_seek_time_bit = 1,                       \
-.enable_seek_min_heap_time_bit = 1,                         \
-.enable_seek_max_heap_time_bit = 1,                         \
-.enable_seek_internal_seek_time_bit = 1,                    \
-.enable_find_next_user_entry_time_bit = 1,                  \
-.enable_write_wal_time_bit = 1,                             \
-.enable_write_memtable_time_bit = 1,                        \
-.enable_write_delay_time_bit = 1,                           \
-.enable_write_scheduling_flushes_compactions_time_bit = 1,  \
-.enable_write_pre_and_post_process_time_bit = 1,            \
-.enable_write_thread_wait_nanos_bit = 1,                    \
-.enable_merge_operator_time_nanos_bit = 1,                  \
-.enable_read_index_block_nanos_bit = 1,                     \
+#define PERF_FLAGS_INIT_LEVEL3                                                \
+  PERF_FLAGS_INIT_LEVEL2,                                                     \
+      .enable_measure_cpu_time_bit = 1, .enable_block_read_time_bit = 1,      \
+      .enable_block_checksum_time_bit = 1,                                    \
+      .enable_block_decompress_time_bit = 1,                                  \
+      .enable_get_snapshot_time_bit = 1,                                      \
+      .enable_get_from_memtable_time_bit = 1,                                 \
+      .enable_get_post_process_time_bit = 1,                                  \
+      .enable_get_from_output_files_time_bit = 1,                             \
+      .enable_seek_on_memtable_time_bit = 1,                                  \
+      .enable_seek_child_seek_time_bit = 1,                                   \
+      .enable_seek_min_heap_time_bit = 1, .enable_seek_max_heap_time_bit = 1, \
+      .enable_seek_internal_seek_time_bit = 1,                                \
+      .enable_find_next_user_entry_time_bit = 1,                              \
+      .enable_write_wal_time_bit = 1, .enable_write_memtable_time_bit = 1,    \
+      .enable_write_delay_time_bit = 1,                                       \
+      .enable_write_scheduling_flushes_compactions_time_bit = 1,              \
+      .enable_write_pre_and_post_process_time_bit = 1,                        \
+      .enable_write_thread_wait_nanos_bit = 1,                                \
+      .enable_merge_operator_time_nanos_bit = 1,                              \
+      .enable_read_index_block_nanos_bit = 1,                     \
 .enable_read_filter_block_nanos_bit = 1,                    \
 .enable_new_table_block_iter_nanos_bit = 1,                 \
 .enable_new_table_iterator_nanos_bit = 1,                   \
@@ -81,37 +78,22 @@
 .enable_encrypt_data_nanos_bit = 1,                         \
 .enable_decrypt_data_nanos_bit = 1
 
-#define PERF_FLAGS_INIT_LEVEL4 \
-.enable_iostats_cpu_timer_bit = 1,    \
-.enable_get_cpu_nanos_bit = 1,        \
-.enable_iter_next_cpu_nanos_bit = 1,  \
-.enable_iter_prev_cpu_nanos_bit = 1,  \
-.enable_iter_seek_cpu_nanos_bit = 1
+#define PERF_FLAGS_INIT_LEVEL4                                          \
+  PERF_FLAGS_INIT_LEVEL3,                                               \
+      .enable_iostats_cpu_timer_bit = 1, .enable_get_cpu_nanos_bit = 1, \
+      .enable_iter_next_cpu_nanos_bit = 1,                              \
+      .enable_iter_prev_cpu_nanos_bit = 1, .enable_iter_seek_cpu_nanos_bit = 1
 
-#define PERF_FLAGS_INIT_LEVEL5 \
-.enable_db_mutex_lock_nanos_bit = 1,      \
-.enable_db_condition_wait_nanos_bit = 1 \
+#define PERF_FLAGS_INIT_LEVEL5                                 \
+  PERF_FLAGS_INIT_LEVEL4, .enable_db_mutex_lock_nanos_bit = 1, \
+                          .enable_db_condition_wait_nanos_bit = 1
 
 namespace rocksdb {
-
-const PerfFlags PERF_LEVEL2 = {
-    PERF_FLAGS_INIT_LEVEL2
-};
-const PerfFlags PERF_LEVEL3 = {
-    PERF_FLAGS_INIT_LEVEL2,
-    PERF_FLAGS_INIT_LEVEL3
-};
-const PerfFlags PERF_LEVEL4 = {
-    PERF_FLAGS_INIT_LEVEL2,
-    PERF_FLAGS_INIT_LEVEL3,
-    PERF_FLAGS_INIT_LEVEL4
-};
-const PerfFlags PERF_LEVEL5 = {
-    PERF_FLAGS_INIT_LEVEL2,
-    PERF_FLAGS_INIT_LEVEL3,
-    PERF_FLAGS_INIT_LEVEL4,
-    PERF_FLAGS_INIT_LEVEL5
-};
+const PerfFlags PERF_LEVEL1 = {};
+const PerfFlags PERF_LEVEL2 = {PERF_FLAGS_INIT_LEVEL2};
+const PerfFlags PERF_LEVEL3 = {PERF_FLAGS_INIT_LEVEL3};
+const PerfFlags PERF_LEVEL4 = {PERF_FLAGS_INIT_LEVEL4};
+const PerfFlags PERF_LEVEL5 = {PERF_FLAGS_INIT_LEVEL5};
 
 // set default value of perf_flags
 #ifdef ROCKSDB_SUPPORT_THREAD_LOCAL
