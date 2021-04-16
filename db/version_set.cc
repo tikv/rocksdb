@@ -813,15 +813,15 @@ void DoGenerateLevelRegionsBrief(Logger* log, LevelRegionsBrief* region_level, i
   char* mem = arena->AllocateAligned(num * sizeof(RegionMetaData));
   region_level->regions = new (mem)RegionMetaData[num];
 
-  ROCKS_LOG_INFO(log, "level: %d, num_regions: %lu\n", level, num);
+  //ROCKS_LOG_INFO(log, "level: %d, num_regions: %lu\n", level, num);
 
   for (size_t i = 0; i < num; i++) {
     Slice smallest_user_key(results->regions[i].smallest_user_key);
     Slice largest_user_key(results->regions[i].largest_user_key);
 
-    ROCKS_LOG_INFO(log, "region --- smallest_key: [%lu, %s], largest_key: [%lu, %s]\n",
-                   smallest_user_key.size(), smallest_user_key.data(),
-                   largest_user_key.size(), largest_user_key.data());
+    //ROCKS_LOG_INFO(log, "region --- smallest_key: [%lu, %s], largest_key: [%lu, %s]\n",
+    //               smallest_user_key.size(), smallest_user_key.data(),
+    //               largest_user_key.size(), largest_user_key.data());
 
     // Copy key slice to sequential memory
     size_t smallest_size = smallest_user_key.size();
@@ -846,8 +846,8 @@ void DoGenerateLevelRegionsBrief(Logger* log, LevelRegionsBrief* region_level, i
     } else {
     	r.size_ratio_violation = options.max_bytes_for_level_multiplier - double(next_level_region_size) / double(r.region_size);
     }
-    ROCKS_LOG_INFO(log, "region size: %lu, next level region size: %lu, region size ratio violation: %f\n",
-                   r.region_size, next_level_region_size, r.size_ratio_violation);
+    //ROCKS_LOG_INFO(log, "region size: %lu, next level region size: %lu, region size ratio violation: %f\n",
+    //               r.region_size, next_level_region_size, r.size_ratio_violation);
   }
 }
 
@@ -2061,9 +2061,9 @@ void VersionStorageInfo::CalculateFileSizeRatioViolation(Logger* log, Version* v
       for (size_t i = 0; i < level_regions.num_regions; ++i) {
         // Skip regions that are smaller than current file
         if (user_comparator_->Compare(level_regions.regions[i].largest_user_key, file->smallest.user_key()) < 0) {
-          ROCKS_LOG_INFO(log, "Skip region %lu that are smaller that current file. File smallest key: [%lu, %s], region_largest_key: [%lu, %s]", 
-			  i, file->smallest.user_key().size(), file->smallest.user_key().data(), 
-			  level_regions.regions[i].largest_user_key.size(), level_regions.regions[i].largest_user_key.data());
+          //ROCKS_LOG_INFO(log, "Skip region %lu that are smaller that current file. File smallest key: [%lu, %s], region_largest_key: [%lu, %s]",
+	  // 		  i, file->smallest.user_key().size(), file->smallest.user_key().data(),
+	  //	          level_regions.regions[i].largest_user_key.size(), level_regions.regions[i].largest_user_key.data());
           continue;
         }
         // find upper bound
@@ -2075,9 +2075,9 @@ void VersionStorageInfo::CalculateFileSizeRatioViolation(Logger* log, Version* v
           uint64_t size = vset->ApproximateSize(v, k1.Encode(), k2.Encode(), level, level + 1, TableReaderCaller::kUserApproximateSize);
 	  double region_violation = level_regions.regions[i].size_ratio_violation;
           violation += double(size) / double(file->compensated_file_size) * region_violation;
-	  ROCKS_LOG_INFO(log, "Find upper bound (region %lu) --- lower_bound: [%lu, %s], upper_bound: [%lu, %s], size: %lu, file_size: %lu, region violation: %f, delta violation: %f", 
-			i, k1.user_key().size(), k1.user_key().data(), k2.user_key().size(), k2.user_key().data(), size, file->compensated_file_size, 
-			region_violation, violation);
+	  //ROCKS_LOG_INFO(log, "Find upper bound (region %lu) --- lower_bound: [%lu, %s], upper_bound: [%lu, %s], size: %lu, file_size: %lu, region violation: %f, delta violation: %f",
+	  //		i, k1.user_key().size(), k1.user_key().data(), k2.user_key().size(), k2.user_key().data(), size, file->compensated_file_size,
+	  //		region_violation, violation);
           break;
         }
         InternalKey k1(lower_bound, kMaxSequenceNumber, kValueTypeForSeek);
@@ -2085,14 +2085,14 @@ void VersionStorageInfo::CalculateFileSizeRatioViolation(Logger* log, Version* v
         uint64_t size = vset->ApproximateSize(v, k1.Encode(), k2.Encode(), level, level + 1, TableReaderCaller::kUserApproximateSize);
 	double region_violation = level_regions.regions[i].size_ratio_violation;
         violation += double(size) / double(file->compensated_file_size) * region_violation;
-	ROCKS_LOG_INFO(log, "Internal (region %lu) --- lower_bound: [%lu, %s], upper_bound: [%lu, %s], size: %lu, file_size: %lu, region violation: %f, delta violation: %f", 
-			i, k1.user_key().size(), k1.user_key().data(), k2.user_key().size(), k2.user_key().data(), size, file->compensated_file_size, 
-			region_violation, violation);
+	//ROCKS_LOG_INFO(log, "Internal (region %lu) --- lower_bound: [%lu, %s], upper_bound: [%lu, %s], size: %lu, file_size: %lu, region violation: %f, delta violation: %f",
+	//		i, k1.user_key().size(), k1.user_key().data(), k2.user_key().size(), k2.user_key().data(), size, file->compensated_file_size,
+	//		region_violation, violation);
         lower_bound = level_regions.regions[i].largest_user_key;
         assert(level_regions.regions[i].largest_user_key.compare(level_regions.regions[i+1].smallest_user_key) == 0);
       }
       file->size_ratio_violation = violation;
-      ROCKS_LOG_INFO(log, "level: %d, file: %lu, size ratio violation: %f\n", level, file->fd.GetNumber(), file->size_ratio_violation);
+      //ROCKS_LOG_INFO(log, "level: %d, file: %lu, size ratio violation: %f\n", level, file->fd.GetNumber(), file->size_ratio_violation);
     }
   }
 }
@@ -2110,11 +2110,11 @@ void VersionStorageInfo::GenerateLevelRegionsBrief(
     Slice level_largest_user_key;
     std::vector<FileMetaData*> level_files = LevelFiles(level);
     for (size_t i = 0; i < level_files.size(); ++i) {
-      ROCKS_LOG_INFO(ioptions.info_log, "level %d files %lu --- smallest user key: [%lu, %s], largest uer key: [%lu, %s]\n",
-                     level, i, level_files[i]->smallest.user_key().size(), level_files[i]->smallest.user_key().data(),
-                     level_files[i]->largest.user_key().size(), level_files[i]->largest.user_key().data());
-      PrintKey(level_files[i]->smallest.user_key().data(), level_files[i]->smallest.user_key().size());
-      PrintKey(level_files[i]->largest.user_key().data(), level_files[i]->largest.user_key().size());
+      //ROCKS_LOG_INFO(ioptions.info_log, "level %d files %lu --- smallest user key: [%lu, %s], largest uer key: [%lu, %s]\n",
+      //               level, i, level_files[i]->smallest.user_key().size(), level_files[i]->smallest.user_key().data(),
+      //               level_files[i]->largest.user_key().size(), level_files[i]->largest.user_key().data());
+      //PrintKey(level_files[i]->smallest.user_key().data(), level_files[i]->smallest.user_key().size());
+      //PrintKey(level_files[i]->largest.user_key().data(), level_files[i]->largest.user_key().size());
       if (i == 0) {
         level_smallest_user_key = level_files[i]->smallest.user_key();
         level_largest_user_key = level_files[i]->largest.user_key();
@@ -2125,9 +2125,9 @@ void VersionStorageInfo::GenerateLevelRegionsBrief(
           level_largest_user_key = level_files[i]->largest.user_key();
       }
     }
-    ROCKS_LOG_INFO(ioptions.info_log, "level %d --- smallest user key: [%lu, %s], largest user key: [%lu, %s]\n", level,
-                   level_smallest_user_key.size(), level_smallest_user_key.data(),
-                   level_largest_user_key.size(), level_largest_user_key.data());
+    //ROCKS_LOG_INFO(ioptions.info_log, "level %d --- smallest user key: [%lu, %s], largest user key: [%lu, %s]\n", level,
+    //               level_smallest_user_key.size(), level_smallest_user_key.data(),
+    //               level_largest_user_key.size(), level_largest_user_key.data());
     AccessorResult* results = ioptions.level_region_accessor->LevelRegions(AccessorRequest(
         &level_smallest_user_key, &level_largest_user_key));
     DoGenerateLevelRegionsBrief(ioptions.info_log, &level_regions_brief_[level], level, results, v, vset, options, &arena_);
