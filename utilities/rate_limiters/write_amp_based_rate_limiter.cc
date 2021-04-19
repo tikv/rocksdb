@@ -339,21 +339,32 @@ Status WriteAmpBasedRateLimiter::Tune() {
 
   int64_t prev_bytes_per_sec = GetBytesPerSecond();
 
-  // Loop through the actual time slice to make sure bytes flow from long period
-  // of time is properly estimated when the compaction rate is low.
+  // This function can be called less frequent than we anticipate when
+  // compaction rate is low. Loop through the actual time slice to correct
+  // the estimation.
   for (uint32_t i = 0; i < duration_ms / kMillisPerTune; i++) {
     bytes_sampler_.AddSample(duration_bytes_through_ * 1000 / duration_ms);
     highpri_bytes_sampler_.AddSample(duration_highpri_bytes_through_ * 1000 /
                                      duration_ms);
     limit_bytes_sampler_.AddSample(prev_bytes_per_sec);
   }
+  int64_t new_bytes_per_sec = bytes_sampler_.GetFullValue();
   int32_t ratio = std::max(
       kRatioLower,
       static_cast<int32_t>(
           bytes_sampler_.GetFullValue() * 10 /
           std::max(highpri_bytes_sampler_.GetFullValue(), kHighBytesLower)));
-
-  // in case there are compaction bursts even when online writes are stable
+  // Only adjust threshold when foreground writes (flush flow) increases rather
+  // than decreases.
+  new_bytes_per_sec = std::max(
+      new_bytes_per_sec,
+      ratio *
+          std::max(highpri_bytes_sampler_.GetRecentValue(), kHighBytesLower) /
+          10);
+  // Set the threshold higher to avoid write stalls caused by pending
+  // compactions.
+  int64_t padding = CalculatePadding(new_bytes_per_sec);
+  // Adjustment based on utilization.
   int64_t util = bytes_sampler_.GetRecentValue() * 1000 /
                  limit_bytes_sampler_.GetRecentValue();
   if (util >= 995) {
@@ -363,11 +374,7 @@ Status WriteAmpBasedRateLimiter::Tune() {
   } else if (percent_delta_ > 0) {
     percent_delta_ -= 1;
   }
-
-  int64_t new_bytes_per_sec =
-      ratio *
-      std::max(highpri_bytes_sampler_.GetRecentValue(), kHighBytesLower) / 10;
-  int64_t padding = CalculatePadding(new_bytes_per_sec);
+  // React to pace-up requests when LSM is out of shape.
   if (critical_pace_up_.load(std::memory_order_relaxed)) {
     percent_delta_ = 150;
     critical_pace_up_.store(false, std::memory_order_relaxed);
