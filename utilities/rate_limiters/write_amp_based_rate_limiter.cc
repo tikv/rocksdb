@@ -31,10 +31,11 @@ constexpr int kSecondsPerTune = 1;
 constexpr int kMillisPerTune = 1000 * kSecondsPerTune;
 constexpr int kMicrosPerTune = 1000 * 1000 * kSecondsPerTune;
 
-// Two reasons for adding padding to baseline limit:
-// 1. compaction cannot fully utilize the IO quota we set.
-// 2. make it faster to digest unexpected burst of pending compaction bytes,
-// generally this will help flatten IO waves.
+// Due to the execution model of compaction, large waves of pending compactions
+// could possibly be hidden behind a constant rate of I/O requests. It's then
+// wise to raise the threshold slightly above estimation to ensure those
+// pending compactions can contribute to the convergence of a new alternative
+// threshold.
 // Padding is calculated through hyperbola based on empirical percentage of 10%
 // and special care for low-pressure domain. E.g. coordinates (5M, 18M) and
 // (10M, 16M) are on this curve.
@@ -314,6 +315,13 @@ int64_t WriteAmpBasedRateLimiter::CalculateRefillBytesPerPeriod(
   }
 }
 
+// The core function used to dynamically adjust the compaction rate limit,
+// called **at most** once every `kSecondsPerTune`.
+// A write amplification ratio is calculated based on history samples of
+// compaction and flush flow, then it is used to deduce the appropriate
+// threshold before next tune. This algorithm excels by taking into account
+// the limiter's inability to estimate the pressure of pending compactions,
+// and the possibility of foreground write fluctuation.
 Status WriteAmpBasedRateLimiter::Tune() {
   // computed rate limit will be larger than 10MB/s
   const int64_t kMinBytesPerSec = 10 << 20;
