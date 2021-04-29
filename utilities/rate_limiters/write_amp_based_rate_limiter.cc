@@ -317,11 +317,10 @@ int64_t WriteAmpBasedRateLimiter::CalculateRefillBytesPerPeriod(
 
 // The core function used to dynamically adjust the compaction rate limit,
 // called **at most** once every `kSecondsPerTune`.
-// A write amplification ratio is calculated based on history samples of
-// compaction and flush flow, then it is used to deduce the appropriate
-// threshold before next tune. This algorithm excels by taking into account
-// the limiter's inability to estimate the pressure of pending compactions,
-// and the possibility of foreground write fluctuation.
+// I/O throughput threshold is automatically tuned based on history samples of
+// compaction and flush flow. This algorithm excels by taking into account the
+// limiter's inability to estimate the pressure of pending compactions, and the
+// possibility of foreground write fluctuation.
 Status WriteAmpBasedRateLimiter::Tune() {
   // computed rate limit will be larger than 10MB/s
   const int64_t kMinBytesPerSec = 10 << 20;
