@@ -28,23 +28,6 @@ struct Options;
 // of the serialization (e.g. delimiter), and how to compare
 // options (sanity_level).
 struct ConfigOptions {
-  // This enum defines the RocksDB options sanity level.
-  enum SanityLevel : unsigned char {
-    kSanityLevelNone = 0x01,  // Performs no sanity check at all.
-    // Performs minimum check to ensure the RocksDB instance can be
-    // opened without corrupting / mis-interpreting the data.
-    kSanityLevelLooselyCompatible = 0x02,
-    // Perform exact match sanity check.
-    kSanityLevelExactMatch = 0xFF,
-  };
-
-  enum Depth {
-    kDepthDefault,  // Traverse nested options that are not flagged as "shallow"
-    kDepthShallow,  // Do not traverse into any nested options
-    kDepthDetailed,  // Traverse nested options, overriding the options shallow
-                     // setting
-  };
-
   // When true, any unused options will be ignored and OK will be returned
   bool ignore_unknown_options = false;
 
@@ -54,28 +37,11 @@ struct ConfigOptions {
   // The separator between options when converting to a string
   std::string delimiter = ";";
 
-  // Controls how to traverse options during print/match stages
-  Depth depth = Depth::kDepthDefault;
-
-  // Controls how options are serialized
-  // Controls how pedantic the comparison must be for equivalency
-  SanityLevel sanity_level = SanityLevel::kSanityLevelExactMatch;
   // `file_readahead_size` is used for readahead for the option file.
   size_t file_readahead_size = 512 * 1024;
 
   // The environment to use for this option
   Env* env = Env::Default();
-
-  bool IsShallow() const { return depth == Depth::kDepthShallow; }
-  bool IsDetailed() const { return depth == Depth::kDepthDetailed; }
-
-  bool IsCheckDisabled() const {
-    return sanity_level == SanityLevel::kSanityLevelNone;
-  }
-
-  bool IsCheckEnabled(SanityLevel level) const {
-    return (level > SanityLevel::kSanityLevelNone && level <= sanity_level);
-  }
 };
 
 #ifndef ROCKSDB_LITE
