@@ -3345,7 +3345,7 @@ void UnsafeRemoveSstFileCommand::DoCommand() {
       NewLRUCache(1 << 20 /* capacity */, options_.table_cache_numshardbits));
   EnvOptions sopt;
   VersionSet versions(db_path_, &immutable_db_options, sopt, tc.get(), &wb, &wc,
-                      /*block_cache_tracer=*/nullptr, /*io_tracer=*/nullptr);
+                      /*block_cache_tracer=*/nullptr);
   Status s = versions.Recover(column_families_);
 
   ColumnFamilyData* cfd = nullptr;
