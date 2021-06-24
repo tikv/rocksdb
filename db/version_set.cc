@@ -5028,9 +5028,11 @@ uint64_t VersionSet::ApproximateSize(Version* v, const FdWithKeyRange& f,
   return result;
 }
 
-void VersionSet::AddLiveFiles(std::unordered_map<uint64_t, FileDescriptor>* live_map, InstrumentedMutex& db_mutex) {
+void VersionSet::AddLiveFiles(
+    std::unordered_map<uint64_t, FileDescriptor>* live_map,
+    InstrumentedMutex& db_mutex) {
   db_mutex.AssertHeld();
-  autovector<Version *> versions;
+  autovector<Version*> versions;
   for (auto cfd : *column_family_set_) {
     if (!cfd->initialized()) {
       continue;
@@ -5056,7 +5058,7 @@ void VersionSet::AddLiveFiles(std::unordered_map<uint64_t, FileDescriptor>* live
 
   db_mutex.Unlock();
 
-  for (auto *v : versions) {
+  for (auto* v : versions) {
     auto& vstorage = v->storage_info_;
     for (int level = 0; level < vstorage.num_levels(); level++) {
       const std::vector<FileMetaData*>& files = vstorage.LevelFiles(level);
