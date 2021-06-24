@@ -107,7 +107,7 @@ Status OverlapWithIterator(const Comparator* ucmp,
 // are MergeInProgress).
 class FilePicker {
  public:
-  FilePicker(std::vector<FileMetaData*>* files, const Slice& user_key,
+  FilePicker(const std::vector<FileMetaData*>* files, const Slice& user_key,
              const Slice& ikey, autovector<LevelFilesBrief>* file_levels,
              unsigned int num_levels, FileIndexer* file_indexer,
              const Comparator* user_comparator,
@@ -250,7 +250,7 @@ class FilePicker {
   int32_t search_left_bound_;
   int32_t search_right_bound_;
 #ifndef NDEBUG
-  std::vector<FileMetaData*>* files_;
+  const std::vector<FileMetaData*>* files_;
 #endif
   autovector<LevelFilesBrief>* level_files_brief_;
   bool search_ended_;
@@ -2488,6 +2488,7 @@ bool CompareCompensatedSizeDescending(const Fsize& first, const Fsize& second) {
 } // anonymous namespace
 
 void VersionStorageInfo::AddFile(int level, FileMetaData* f, Logger* info_log) {
+  assert(!finalized_);
   auto* level_files = &files_[level];
   // Must not overlap
 #ifndef NDEBUG
@@ -5027,36 +5028,20 @@ uint64_t VersionSet::ApproximateSize(Version* v, const FdWithKeyRange& f,
   return result;
 }
 
-void VersionSet::AddLiveFiles(std::vector<FileDescriptor>* live_list) {
-  // pre-calculate space requirement
-  int64_t total_files = 0;
+void VersionSet::AddLiveFiles(std::unordered_map<uint64_t, FileDescriptor>* live_map, InstrumentedMutex& db_mutex) {
+  db_mutex.AssertHeld();
+  autovector<Version *> versions;
   for (auto cfd : *column_family_set_) {
     if (!cfd->initialized()) {
       continue;
     }
-    Version* dummy_versions = cfd->dummy_versions();
-    for (Version* v = dummy_versions->next_; v != dummy_versions;
-         v = v->next_) {
-      const auto* vstorage = v->storage_info();
-      for (int level = 0; level < vstorage->num_levels(); level++) {
-        total_files += vstorage->LevelFiles(level).size();
-      }
-    }
-  }
-
-  // just one time extension to the right size
-  live_list->reserve(live_list->size() + static_cast<size_t>(total_files));
-
-  for (auto cfd : *column_family_set_) {
-    if (!cfd->initialized()) {
-      continue;
-    }
-    auto* current = cfd->current();
     bool found_current = false;
+    auto* current = cfd->current();
     Version* dummy_versions = cfd->dummy_versions();
     for (Version* v = dummy_versions->next_; v != dummy_versions;
          v = v->next_) {
-      v->AddLiveFiles(live_list);
+      v->Ref();
+      versions.push_back(v);
       if (v == current) {
         found_current = true;
       }
@@ -5064,9 +5049,25 @@ void VersionSet::AddLiveFiles(std::vector<FileDescriptor>* live_list) {
     if (!found_current && current != nullptr) {
       // Should never happen unless it is a bug.
       assert(false);
-      current->AddLiveFiles(live_list);
+      current->Ref();
+      versions.push_back(current);
     }
   }
+
+  db_mutex.Unlock();
+
+  for (auto *v : versions) {
+    auto& vstorage = v->storage_info_;
+    for (int level = 0; level < vstorage.num_levels(); level++) {
+      const std::vector<FileMetaData*>& files = vstorage.LevelFiles(level);
+      for (auto* file : files) {
+        (*live_map)[file->fd.GetNumber()] = file->fd;
+      }
+    }
+    v->Unref();
+  }
+
+  db_mutex.Lock();
 }
 
 InternalIterator* VersionSet::MakeInputIterator(

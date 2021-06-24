@@ -73,7 +73,7 @@ void FileIndexer::GetNextLevelIndex(const size_t level, const size_t file_index,
 }
 
 void FileIndexer::UpdateIndex(Arena* arena, const size_t num_levels,
-                              std::vector<FileMetaData*>* const files) {
+                              const std::vector<FileMetaData*>* const files) {
   if (files == nullptr) {
     return;
   }

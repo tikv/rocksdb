@@ -56,7 +56,7 @@ class FileIndexer {
                          int32_t* left_bound, int32_t* right_bound) const;
 
   void UpdateIndex(Arena* arena, const size_t num_levels,
-                   std::vector<FileMetaData*>* const files);
+                   const std::vector<FileMetaData*>* const files);
 
   enum {
     // MSVC version 1800 still does not have constexpr for ::max()
