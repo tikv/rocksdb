@@ -406,9 +406,10 @@ class VersionBuilder::Rep {
       while (added_iter != added_end || base_iter != base_end) {
         if (base_iter == base_end ||
                 (added_iter != added_end && cmp(*added_iter, *base_iter))) {
-          MaybeAddFile(vstorage, level, *added_iter++, false /*from_base*/);
+          MaybeAddFile(vstorage, level, *added_iter++,
+                       base_vstorage_->max_file_number());
         } else {
-          MaybeAddFile(vstorage, level, *base_iter++, true /*from_base*/);
+          MaybeInheritFile(vstorage, level, *base_iter++);
         }
       }
     }
@@ -514,21 +515,26 @@ class VersionBuilder::Rep {
     return Status::OK();
   }
 
-  void MaybeAddFile(VersionStorageInfo* vstorage, int level, FileMetaData* f,
-                    bool from_base) {
-    if (!from_base) {
-      auto it = deleted_base_files_.find(f->fd.GetNumber());
-      if (it != deleted_base_files_.end()) {
-        vstorage->AddFile(level, it->second, info_log_);
-        return;
-      }
-    }
+  void MaybeInheritFile(VersionStorageInfo* vstorage, int level,
+                        FileMetaData* f) {
     if (levels_[level].deleted_files.count(f->fd.GetNumber()) > 0) {
       // f is to-be-deleted table file
       vstorage->RemoveCurrentStats(f);
-      if (from_base) {
-        deleted_base_files_[f->fd.GetNumber()] = f;
-      }
+      deleted_base_files_[f->fd.GetNumber()] = f;
+    } else {
+      vstorage->AddFile(level, f, info_log_);
+    }
+  }
+
+  void MaybeAddFile(VersionStorageInfo* vstorage, int level, FileMetaData* f,
+                    uint64_t base_max_file_number) {
+    if (f->fd.GetNumber() <= base_max_file_number) {
+      auto it = deleted_base_files_.find(f->fd.GetNumber());
+      assert(it != deleted_base_files_.end());
+      vstorage->AddFile(level, it->second, info_log_);
+    } else if (levels_[level].deleted_files.count(f->fd.GetNumber()) > 0) {
+      // f is to-be-deleted table file
+      vstorage->RemoveCurrentStats(f);
     } else {
       vstorage->AddFile(level, f, info_log_);
     }

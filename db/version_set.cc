@@ -1581,6 +1581,7 @@ VersionStorageInfo::VersionStorageInfo(
       file_indexer_(user_comparator),
       compaction_style_(compaction_style),
       files_(new std::vector<FileMetaData*>[num_levels_]),
+      max_file_number_(0),
       base_level_(num_levels_ == 1 ? -1 : 1),
       level_multiplier_(0.0),
       files_by_compaction_pri_(num_levels_),
@@ -2486,6 +2487,7 @@ bool CompareCompensatedSizeDescending(const Fsize& first, const Fsize& second) {
 } // anonymous namespace
 
 void VersionStorageInfo::AddFile(int level, FileMetaData* f, Logger* info_log) {
+  assert(!finalized_);
   auto* level_files = &files_[level];
   // Must not overlap
 #ifndef NDEBUG
@@ -2510,6 +2512,7 @@ void VersionStorageInfo::AddFile(int level, FileMetaData* f, Logger* info_log) {
 #endif
   f->Ref();
   level_files->push_back(f);
+  max_file_number_ = std::max(max_file_number_, f->fd.GetNumber());
 }
 
 // Version::PrepareApply() need to be called before calling the function, or

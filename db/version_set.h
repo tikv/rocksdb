@@ -313,6 +313,8 @@ class VersionStorageInfo {
   int base_level() const { return base_level_; }
   double level_multiplier() const { return level_multiplier_; }
 
+  uint64_t max_file_number() const { return max_file_number_; }
+
   // REQUIRES: lock is held
   // Set the index that is used to offset into files_by_compaction_pri_ to find
   // the next compaction candidate file.
@@ -437,6 +439,8 @@ class VersionStorageInfo {
   // List of files per level, files in each level are arranged
   // in increasing order of keys
   std::vector<FileMetaData*>* files_;
+
+  uint64_t max_file_number_;
 
   // Level that L0 data should be compacted to. All levels < base_level_ should
   // be empty. -1 if it is not level-compaction so it's not applicable.
