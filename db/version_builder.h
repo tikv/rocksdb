@@ -38,7 +38,6 @@ class VersionBuilder {
                            bool prefetch_index_and_filter_in_cache,
                            bool is_initial_load,
                            const SliceTransform* prefix_extractor);
-  void MaybeAddFile(VersionStorageInfo* vstorage, int level, FileMetaData* f);
 
  private:
   class Rep;

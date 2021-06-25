@@ -742,9 +742,7 @@ Version::~Version() {
   for (int level = 0; level < storage_info_.num_levels_; level++) {
     for (size_t i = 0; i < storage_info_.files_[level].size(); i++) {
       FileMetaData* f = storage_info_.files_[level][i];
-      assert(f->refs > 0);
-      f->refs--;
-      if (f->refs <= 0) {
+      if (f->Unref()) {
         assert(cfd_ != nullptr);
         uint32_t path_id = f->fd.GetPathId();
         assert(path_id < cfd_->ioptions()->cf_paths.size());
@@ -2510,7 +2508,7 @@ void VersionStorageInfo::AddFile(int level, FileMetaData* f, Logger* info_log) {
 #else
   (void)info_log;
 #endif
-  f->refs++;
+  f->Ref();
   level_files->push_back(f);
 }
 

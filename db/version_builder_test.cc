@@ -40,7 +40,7 @@ class VersionBuilderTest : public testing::Test {
   ~VersionBuilderTest() override {
     for (int i = 0; i < vstorage_.num_levels(); i++) {
       for (auto* f : vstorage_.LevelFiles(i)) {
-        if (--f->refs == 0) {
+        if (f->Unref()) {
           delete f;
         }
       }
@@ -90,7 +90,7 @@ class VersionBuilderTest : public testing::Test {
 void UnrefFilesInVersion(VersionStorageInfo* new_vstorage) {
   for (int i = 0; i < new_vstorage->num_levels(); i++) {
     for (auto* f : new_vstorage->LevelFiles(i)) {
-      if (--f->refs == 0) {
+      if (f->Unref()) {
         delete f;
       }
     }

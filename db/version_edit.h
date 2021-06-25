@@ -129,6 +129,13 @@ struct FileMetaData {
         init_stats_from_file(false),
         marked_for_compaction(false) {}
 
+  void Ref() { ++refs; }
+
+  bool Unref() {
+    --refs;
+    assert(refs >= 0);
+    return refs <= 0;
+  }
   // REQUIRED: Keys must be given to the function in sorted order (it expects
   // the last key to be the largest).
   void UpdateBoundaries(const Slice& key, SequenceNumber seqno) {

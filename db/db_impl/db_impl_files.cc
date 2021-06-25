@@ -103,7 +103,6 @@ void DBImpl::FindObsoleteFiles(JobContext* job_context, bool force,
   job_context->log_number = MinLogNumberToKeep();
   job_context->prev_log_number = versions_->prev_log_number();
 
-  versions_->AddLiveFiles(&job_context->sst_live);
   if (doing_the_full_scan) {
     InfoLogPrefix info_log_prefix(!immutable_db_options_.db_log_dir.empty(),
                                   dbname_);
@@ -234,6 +233,9 @@ void DBImpl::FindObsoleteFiles(JobContext* job_context, bool force,
   job_context->log_recycle_files.assign(log_recycle_files_.begin(),
                                         log_recycle_files_.end());
   if (job_context->HaveSomethingToDelete()) {
+    if (doing_the_full_scan) {
+      versions_->AddLiveFiles(&job_context->sst_live);
+    }
     ++pending_purge_obsolete_files_;
   }
   logs_to_free_.clear();
