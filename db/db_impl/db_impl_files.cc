@@ -233,7 +233,7 @@ void DBImpl::FindObsoleteFiles(JobContext* job_context, bool force,
   job_context->log_recycle_files.assign(log_recycle_files_.begin(),
                                         log_recycle_files_.end());
   if (job_context->HaveSomethingToDelete()) {
-    versions_->AddLiveFiles(&job_context->sst_live_map, mutex_);
+    versions_->ListLiveVersions(&job_context->version_live);
     ++pending_purge_obsolete_files_;
   }
   logs_to_free_.clear();
@@ -302,6 +302,24 @@ void DBImpl::PurgeObsoleteFiles(JobContext& state, bool schedule_only) {
 
   // FindObsoleteFiles() should've populated this so nonzero
   assert(state.manifest_file_number != 0);
+
+  // Read live files from versions.
+  std::unordered_map<uint64_t, FileDescriptor> sst_live_map;
+  for (Version* v : state.version_live) {
+    auto vstorage = v->storage_info();
+    for (int level = 0; level < vstorage->num_levels(); level++) {
+      const std::vector<FileMetaData*>& files = vstorage->LevelFiles(level);
+      for (auto* file : files) {
+        sst_live_map[file->fd.GetNumber()] = file->fd;
+      }
+    }
+  }
+  {
+    InstrumentedMutexLock guard_lock(&mutex_);
+    for (Version* v : state.version_live) {
+      v->Unref();
+    }
+  }
 
   std::unordered_set<uint64_t> log_recycle_files_set(
       state.log_recycle_files.begin(), state.log_recycle_files.end());
@@ -401,7 +419,7 @@ void DBImpl::PurgeObsoleteFiles(JobContext& state, bool schedule_only) {
       case kTableFile:
         // If the second condition is not there, this makes
         // DontDeletePendingOutputs fail
-        keep = (state.sst_live_map.find(number) != state.sst_live_map.end()) ||
+        keep = (sst_live_map.find(number) != sst_live_map.end()) ||
                number >= state.min_pending_output;
         if (!keep) {
           files_to_del.insert(number);
@@ -416,7 +434,7 @@ void DBImpl::PurgeObsoleteFiles(JobContext& state, bool schedule_only) {
         //
         // TODO(yhchiang): carefully modify the third condition to safely
         //                 remove the temp options files.
-        keep = (state.sst_live_map.find(number) != state.sst_live_map.end()) ||
+        keep = (sst_live_map.find(number) != sst_live_map.end()) ||
                (number == state.pending_manifest_file_number) ||
                (to_delete.find(kOptionsFileNamePrefix) != std::string::npos);
         break;

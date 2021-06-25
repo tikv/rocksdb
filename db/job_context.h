@@ -139,8 +139,8 @@ struct JobContext {
   // (filled only if we're doing full scan)
   std::vector<CandidateFileInfo> full_scan_candidate_files;
 
-  // the list of all live sst files that cannot be deleted
-  std::unordered_map<uint64_t, FileDescriptor> sst_live_map;
+  // a list of all versions that are holding live files
+  std::vector<Version*> version_live;
 
   // a list of sst files that we need to delete
   std::vector<ObsoleteFileInfo> sst_delete_files;

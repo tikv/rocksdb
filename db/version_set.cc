@@ -5028,11 +5028,7 @@ uint64_t VersionSet::ApproximateSize(Version* v, const FdWithKeyRange& f,
   return result;
 }
 
-void VersionSet::AddLiveFiles(
-    std::unordered_map<uint64_t, FileDescriptor>* live_map,
-    InstrumentedMutex& db_mutex) {
-  db_mutex.AssertHeld();
-  autovector<Version*> versions;
+void VersionSet::ListLiveVersions(std::vector<Version*>* live) {
   for (auto cfd : *column_family_set_) {
     if (!cfd->initialized()) {
       continue;
@@ -5043,7 +5039,7 @@ void VersionSet::AddLiveFiles(
     for (Version* v = dummy_versions->next_; v != dummy_versions;
          v = v->next_) {
       v->Ref();
-      versions.push_back(v);
+      live->push_back(v);
       if (v == current) {
         found_current = true;
       }
@@ -5052,24 +5048,9 @@ void VersionSet::AddLiveFiles(
       // Should never happen unless it is a bug.
       assert(false);
       current->Ref();
-      versions.push_back(current);
+      live->push_back(current);
     }
   }
-
-  db_mutex.Unlock();
-
-  for (auto* v : versions) {
-    auto& vstorage = v->storage_info_;
-    for (int level = 0; level < vstorage.num_levels(); level++) {
-      const std::vector<FileMetaData*>& files = vstorage.LevelFiles(level);
-      for (auto* file : files) {
-        (*live_map)[file->fd.GetNumber()] = file->fd;
-      }
-    }
-    v->Unref();
-  }
-
-  db_mutex.Lock();
 }
 
 InternalIterator* VersionSet::MakeInputIterator(

@@ -439,7 +439,7 @@ class VersionStorageInfo {
 
   // List of files per level, files in each level are arranged
   // in increasing order of keys
-  // Only mutatable when !finalized_
+  // This container is only mutatable when !finalized_
   std::vector<FileMetaData*>* files_;
 
   // Level that L0 data should be compacted to. All levels < base_level_ should
@@ -982,9 +982,8 @@ class VersionSet {
       const Compaction* c, RangeDelAggregator* range_del_agg,
       const EnvOptions& env_options_compactions);
 
-  // Add all files listed in any live version to *live.
-  void AddLiveFiles(std::unordered_map<uint64_t, FileDescriptor>* live_map,
-                    InstrumentedMutex& db_mutex);
+  // Ref and list all versions to *live.
+  void ListLiveVersions(std::vector<Version*>* live);
 
   // Return the approximate size of data to be scanned for range [start, end)
   // in levels [start_level, end_level). If end_level == -1 it will search
