@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 
+#include "rocksdb/convenience.h"
 #include "rocksdb/db.h"
 #include "rocksdb/env.h"
 #include "rocksdb/options.h"
@@ -67,6 +68,10 @@ Status LoadLatestOptions(const std::string& dbpath, Env* env,
                          std::vector<ColumnFamilyDescriptor>* cf_descs,
                          bool ignore_unknown_options = false,
                          std::shared_ptr<Cache>* cache = {});
+Status LoadLatestOptions(const ConfigOptions& config_options,
+                         const std::string& dbpath, DBOptions* db_options,
+                         std::vector<ColumnFamilyDescriptor>* cf_descs,
+                         std::shared_ptr<Cache>* cache = {});
 
 // Similar to LoadLatestOptions, this function constructs the DBOptions
 // and ColumnFamilyDescriptors based on the specified RocksDB Options file.
@@ -76,6 +81,11 @@ Status LoadOptionsFromFile(const std::string& options_file_name, Env* env,
                            DBOptions* db_options,
                            std::vector<ColumnFamilyDescriptor>* cf_descs,
                            bool ignore_unknown_options = false,
+                           std::shared_ptr<Cache>* cache = {});
+Status LoadOptionsFromFile(const ConfigOptions& config_options,
+                           const std::string& options_file_name,
+                           DBOptions* db_options,
+                           std::vector<ColumnFamilyDescriptor>* cf_descs,
                            std::shared_ptr<Cache>* cache = {});
 
 // Returns the latest options file name under the specified db path.

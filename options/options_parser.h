@@ -17,6 +17,7 @@
 namespace rocksdb {
 
 #ifndef ROCKSDB_LITE
+struct ConfigOptions;
 
 #define ROCKSDB_OPTION_FILE_MAJOR 1
 #define ROCKSDB_OPTION_FILE_MINOR 1
@@ -50,6 +51,10 @@ class RocksDBOptionsParser {
 
   Status Parse(const std::string& file_name, Env* env,
                bool ignore_unknown_options = false);
+
+  Status Parse(const ConfigOptions& config_options,
+               const std::string& file_name);
+
   static std::string TrimAndRemoveComment(const std::string& line,
                                           const bool trim_only = false);
 

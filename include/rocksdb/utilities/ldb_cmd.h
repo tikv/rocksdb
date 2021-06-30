@@ -16,6 +16,7 @@
 #include <string>
 #include <vector>
 
+#include "rocksdb/convenience.h"
 #include "rocksdb/env.h"
 #include "rocksdb/iterator.h"
 #include "rocksdb/ldb_tool.h"
@@ -56,6 +57,7 @@ class LDBCommand {
   static const std::string ARG_FILE_SIZE;
   static const std::string ARG_CREATE_IF_MISSING;
   static const std::string ARG_NO_VALUE;
+  static const std::string ARG_DISABLE_CONSISTENCY_CHECKS;
 
   struct ParsedParams {
     std::string cmd;
@@ -80,7 +82,9 @@ class LDBCommand {
 
   bool ValidateCmdLineOptions();
 
-  virtual Options PrepareOptionsForOpenDB();
+  virtual void PrepareOptions();
+
+  virtual void OverrideBaseOptions();
 
   virtual void SetDBOptions(Options options) { options_ = options; }
 
@@ -160,6 +164,8 @@ class LDBCommand {
   bool try_load_options_;
 
   bool ignore_unknown_options_;
+  // The value passed to options.force_consistency_checks.
+  bool force_consistency_checks_;
 
   bool create_if_missing_;
 
@@ -232,6 +238,7 @@ class LDBCommand {
 
   Options options_;
   std::vector<ColumnFamilyDescriptor> column_families_;
+  ConfigOptions config_options_;
   LDBOptions ldb_options_;
 
  private:
@@ -261,7 +268,8 @@ class LDBCommandRunner {
  public:
   static void PrintHelp(const LDBOptions& ldb_options, const char* exec_name);
 
-  static void RunCommand(
+  // Returns the status code to return. 0 is no error.
+  static int RunCommand(
       int argc, char** argv, Options options, const LDBOptions& ldb_options,
       const std::vector<ColumnFamilyDescriptor>* column_families);
 };

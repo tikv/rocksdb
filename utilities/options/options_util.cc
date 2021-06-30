@@ -17,8 +17,22 @@ Status LoadOptionsFromFile(const std::string& file_name, Env* env,
                            std::vector<ColumnFamilyDescriptor>* cf_descs,
                            bool ignore_unknown_options,
                            std::shared_ptr<Cache>* cache) {
+  ConfigOptions config_options;
+  config_options.ignore_unknown_options = ignore_unknown_options;
+  config_options.input_strings_escaped = true;
+  config_options.env = env;
+
+  return LoadOptionsFromFile(config_options, file_name, db_options, cf_descs,
+                             cache);
+}
+
+Status LoadOptionsFromFile(const ConfigOptions& config_options,
+                           const std::string& file_name, DBOptions* db_options,
+                           std::vector<ColumnFamilyDescriptor>* cf_descs,
+                           std::shared_ptr<Cache>* cache) {
   RocksDBOptionsParser parser;
-  Status s = parser.Parse(file_name, env, ignore_unknown_options);
+  Status s = parser.Parse(file_name, config_options.env,
+                          config_options.ignore_unknown_options);
   if (!s.ok()) {
     return s;
   }
@@ -41,8 +55,8 @@ Status LoadOptionsFromFile(const std::string& file_name, Env* env,
   return Status::OK();
 }
 
-Status GetLatestOptionsFileName(const std::string& dbpath,
-                                Env* env, std::string* options_file_name) {
+Status GetLatestOptionsFileName(const std::string& dbpath, Env* env,
+                                std::string* options_file_name) {
   Status s;
   std::string latest_file_name;
   uint64_t latest_time_stamp = 0;
@@ -73,13 +87,26 @@ Status LoadLatestOptions(const std::string& dbpath, Env* env,
                          std::vector<ColumnFamilyDescriptor>* cf_descs,
                          bool ignore_unknown_options,
                          std::shared_ptr<Cache>* cache) {
+  ConfigOptions config_options;
+  config_options.ignore_unknown_options = ignore_unknown_options;
+  config_options.input_strings_escaped = true;
+  config_options.env = env;
+
+  return LoadLatestOptions(config_options, dbpath, db_options, cf_descs, cache);
+}
+
+Status LoadLatestOptions(const ConfigOptions& config_options,
+                         const std::string& dbpath, DBOptions* db_options,
+                         std::vector<ColumnFamilyDescriptor>* cf_descs,
+                         std::shared_ptr<Cache>* cache) {
   std::string options_file_name;
-  Status s = GetLatestOptionsFileName(dbpath, env, &options_file_name);
+  Status s =
+      GetLatestOptionsFileName(dbpath, config_options.env, &options_file_name);
   if (!s.ok()) {
     return s;
   }
-  return LoadOptionsFromFile(dbpath + "/" + options_file_name, env, db_options,
-                             cf_descs, ignore_unknown_options, cache);
+  return LoadOptionsFromFile(config_options, dbpath + "/" + options_file_name,
+                             db_options, cf_descs, cache);
 }
 
 Status CheckOptionsCompatibility(
