@@ -79,9 +79,9 @@ CompactionIterator::CompactionIterator(
       current_user_key_snapshot_(0),
       merge_out_iter_(merge_helper_),
       current_key_committed_(false),
+      snap_list_callback_(snap_list_callback),
       level_(compaction_ == nullptr ? 0 : compaction_->level()) {
   assert(snapshots_ != nullptr);
-  assert(snap_list_callback == nullptr);  // to make compiler happy
   bottommost_level_ =
       compaction_ == nullptr ? false : compaction_->bottommost_level();
   if (compaction_ != nullptr) {
@@ -528,20 +528,20 @@ void CompactionIterator::NextFromInput() {
     } else if ((ikey_.type == kTypeDeletion) && bottommost_level_ &&
                ikeyNotNeededForIncrementalSnapshot()) {
       // Handle the case where we have a delete key at the bottom most level
-      // We can skip outputting the key iff there are no subsequent puts for
-      // this key
+      // We can skip outputting the key iff there are no subsequent puts for this
+      // key
       ParsedInternalKey next_ikey;
       input_->Next();
-      // Skip over all versions of this key that happen to occur in the same
-      // snapshot range as the delete
+      // Skip over all versions of this key that happen to occur in the same snapshot
+      // range as the delete
       while (input_->Valid() && ParseInternalKey(input_->key(), &next_ikey) &&
              cmp_->Equal(ikey_.user_key, next_ikey.user_key) &&
              (prev_snapshot == 0 ||
               DEFINITELY_NOT_IN_SNAPSHOT(next_ikey.sequence, prev_snapshot))) {
         input_->Next();
       }
-      // If you find you still need to output a row with this key, we need to
-      // output the delete too
+      // If you find you still need to output a row with this key, we need to output the
+      // delete too
       if (input_->Valid() && ParseInternalKey(input_->key(), &next_ikey) &&
           cmp_->Equal(ikey_.user_key, next_ikey.user_key)) {
         valid_ = true;
@@ -640,8 +640,8 @@ void CompactionIterator::PrepareOutput() {
 inline SequenceNumber CompactionIterator::findEarliestVisibleSnapshot(
     SequenceNumber in, SequenceNumber* prev_snapshot) {
   assert(snapshots_->size());
-  auto snapshots_iter =
-      std::lower_bound(snapshots_->begin(), snapshots_->end(), in);
+  auto snapshots_iter = std::lower_bound(
+      snapshots_->begin(), snapshots_->end(), in);
   if (snapshots_iter == snapshots_->begin()) {
     *prev_snapshot = 0;
   } else {
@@ -649,8 +649,8 @@ inline SequenceNumber CompactionIterator::findEarliestVisibleSnapshot(
     assert(*prev_snapshot < in);
   }
   if (snapshot_checker_ == nullptr) {
-    return snapshots_iter != snapshots_->end() ? *snapshots_iter
-                                               : kMaxSequenceNumber;
+    return snapshots_iter != snapshots_->end()
+      ? *snapshots_iter : kMaxSequenceNumber;
   }
   bool has_released_snapshot = !released_snapshots_.empty();
   for (; snapshots_iter != snapshots_->end(); ++snapshots_iter) {
