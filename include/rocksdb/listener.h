@@ -14,6 +14,7 @@
 #include "rocksdb/compaction_job_stats.h"
 #include "rocksdb/status.h"
 #include "rocksdb/table_properties.h"
+#include "rocksdb/types.h"
 
 namespace rocksdb {
 
@@ -25,13 +26,6 @@ class ColumnFamilyHandle;
 class Status;
 struct CompactionJobStats;
 enum CompressionType : unsigned char;
-
-enum class TableFileCreationReason {
-  kFlush,
-  kCompaction,
-  kRecovery,
-  kMisc,
-};
 
 struct TableFileCreationBriefInfo {
   // the name of the database where the file was created
