@@ -177,7 +177,7 @@ void CompactionIterator::InvokeFilterIfNeeded(bool* need_skip,
     {
       StopWatchNano timer(env_, report_detailed_time_);
       filter = compaction_filter_->FilterV3(
-          compaction_->level(), filter_key, seqno, value_type, value_,
+          level_, filter_key, seqno, value_type, value_,
           &compaction_filter_value_, compaction_filter_skip_until_.rep());
       iter_stats_.total_filter_time +=
           env_ != nullptr && report_detailed_time_ ? timer.ElapsedNanos() : 0;
