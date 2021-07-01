@@ -9,6 +9,7 @@
 * Added experimental ColumnFamilyOptions::sst_partitioner_factory to define determine the partitioning of sst files. This helps compaction to split the files on interesting boundaries (key prefixes) to make propagation of sst files less write amplifying (covering the whole key space).
 * Option `max_background_flushes` can be set dynamically using DB::SetDBOptions().
 * Allowing compaction filter on flushing, picked from [facebook/rocksdb#pr8243](https://github.com/facebook/rocksdb/pull/8243).
+* Remove unused struct `CompactionFilterContext`.
 
 ### Bug Fixes
 * Fixed issue #6316 that can cause a corruption of the MANIFEST file in the middle when writing to it fails due to no disk space.
