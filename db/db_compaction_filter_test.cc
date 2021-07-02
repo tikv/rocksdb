@@ -990,7 +990,7 @@ TEST_F(DBTestCompactionFilter, IgnoreSnapshotsFalseRecovery) {
   ASSERT_TRUE(TryReopen(options).IsNotSupported());
 }
 
-}  // namespace ROCKSDB_NAMESPACE
+}  // namespace rocksdb
 
 int main(int argc, char** argv) {
   rocksdb::port::InstallStackTraceHandler();
