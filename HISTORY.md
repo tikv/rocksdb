@@ -3,13 +3,13 @@
 ### Public API Change
 * DeleteRange now returns `Status::InvalidArgument` if the range's end key comes before its start key according to the user comparator. Previously the behavior was undefined.
 * ldb now uses options.force_consistency_checks = true by default and "--disable_consistency_checks" is added to disable it.
+* Allowing compaction filter on flushing, picked from [facebook/rocksdb#pr8243](https://github.com/facebook/rocksdb/pull/8243).
+* Remove unused struct `CompactionFilterContext`.
 
 ### New Features
 * When user uses options.force_consistency_check in RocksDb, instead of crashing the process, we now pass the error back to the users without killing the process.
 * Added experimental ColumnFamilyOptions::sst_partitioner_factory to define determine the partitioning of sst files. This helps compaction to split the files on interesting boundaries (key prefixes) to make propagation of sst files less write amplifying (covering the whole key space).
 * Option `max_background_flushes` can be set dynamically using DB::SetDBOptions().
-* Allowing compaction filter on flushing, picked from [facebook/rocksdb#pr8243](https://github.com/facebook/rocksdb/pull/8243).
-* Remove unused struct `CompactionFilterContext`.
 
 ### Bug Fixes
 * Fixed issue #6316 that can cause a corruption of the MANIFEST file in the middle when writing to it fails due to no disk space.
