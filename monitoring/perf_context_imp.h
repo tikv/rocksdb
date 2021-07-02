@@ -38,24 +38,24 @@ extern thread_local PerfContext perf_context;
 
 // Declare and set start time of the timer
 #define PERF_TIMER_GUARD(metric)                                  \
-  PerfStepTimer perf_step_timer_##metric(&(perf_context.metric)); \
+  PerfStepTimer perf_step_timer_##metric(&(perf_context.metric),CheckPerfFlag(flag_##metric)); \
   perf_step_timer_##metric.Start();
 
 // Declare and set start time of the timer
 #define PERF_TIMER_GUARD_WITH_ENV(metric, env)                         \
-  PerfStepTimer perf_step_timer_##metric(&(perf_context.metric), env); \
+  PerfStepTimer perf_step_timer_##metric(&(perf_context.metric),CheckPerfFlag(flag_##metric),env); \
   perf_step_timer_##metric.Start();
 
 // Declare and set start time of the timer
 #define PERF_CPU_TIMER_GUARD(metric, env)              \
   PerfStepTimer perf_step_timer_##metric(              \
-      &(perf_context.metric), env, true,               \
+      &(perf_context.metric),CheckPerfFlag(flag_##metric), env, true,               \
       PerfLevel::kEnableTimeAndCPUTimeExceptForMutex); \
   perf_step_timer_##metric.Start();
 
 #define PERF_CONDITIONAL_TIMER_FOR_MUTEX_GUARD(metric, condition, stats,       \
                                                ticker_type)                    \
-  PerfStepTimer perf_step_timer_##metric(&(perf_context.metric), nullptr,      \
+  PerfStepTimer perf_step_timer_##metric(&(perf_context.metric),CheckPerfFlag(flag_##metric), nullptr,      \
                                          false, PerfLevel::kEnableTime, stats, \
                                          ticker_type);                         \
   if (condition) {                                                             \
@@ -68,26 +68,25 @@ extern thread_local PerfContext perf_context;
 
 // Increase metric value
 #define PERF_COUNTER_ADD(metric, value)        \
-  if (perf_level >= PerfLevel::kEnableCount) { \
+  if (perf_level >= PerfLevel::kEnableCount || CheckPerfFlag(flag_##metric)) { \
     perf_context.metric += value;              \
   }
 
 // Increase metric value
-#define PERF_COUNTER_BY_LEVEL_ADD(metric, value, level)                      \
-  if (perf_level >= PerfLevel::kEnableCount &&                               \
-      perf_context.per_level_perf_context_enabled &&                         \
-      perf_context.level_to_perf_context) {                                  \
-    if ((*(perf_context.level_to_perf_context)).find(level) !=               \
-        (*(perf_context.level_to_perf_context)).end()) {                     \
-      (*(perf_context.level_to_perf_context))[level].metric += value;        \
-    }                                                                        \
-    else {                                                                   \
-      PerfContextByLevel empty_context;                                      \
-      (*(perf_context.level_to_perf_context))[level] = empty_context;        \
-      (*(perf_context.level_to_perf_context))[level].metric += value;       \
-    }                                                                        \
-  }                                                                          \
+#define PERF_COUNTER_BY_LEVEL_ADD(metric, value, level)               \
+  if ((perf_level >= PerfLevel::kEnableCount || CheckPerfFlag(flag_##metric)) &&                        \
+      perf_context.per_level_perf_context_enabled &&                  \
+      perf_context.level_to_perf_context) {                           \
+    if ((*(perf_context.level_to_perf_context)).find(level) !=        \
+        (*(perf_context.level_to_perf_context)).end()) {              \
+      (*(perf_context.level_to_perf_context))[level].metric += value; \
+    } else {                                                          \
+      PerfContextByLevel empty_context;                               \
+      (*(perf_context.level_to_perf_context))[level] = empty_context; \
+      (*(perf_context.level_to_perf_context))[level].metric += value; \
+    }                                                                 \
+  }
 
 #endif
 
-}
+}  // namespace rocksdb

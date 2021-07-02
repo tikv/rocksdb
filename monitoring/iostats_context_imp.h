@@ -34,13 +34,13 @@ extern __thread IOStatsContext iostats_context;
 
 // Declare and set start time of the timer
 #define IOSTATS_TIMER_GUARD(metric)                                     \
-  PerfStepTimer iostats_step_timer_##metric(&(iostats_context.metric)); \
+  PerfStepTimer iostats_step_timer_##metric(&(iostats_context.metric), CheckPerfFlag(flag_##metric)); \
   iostats_step_timer_##metric.Start();
 
 // Declare and set start time of the timer
 #define IOSTATS_CPU_TIMER_GUARD(metric, env)           \
   PerfStepTimer iostats_step_timer_##metric(           \
-      &(iostats_context.metric), env, true,            \
+      &(iostats_context.metric), CheckPerfFlag(flag_##metric), env, true,            \
       PerfLevel::kEnableTimeAndCPUTimeExceptForMutex); \
   iostats_step_timer_##metric.Start();
 
