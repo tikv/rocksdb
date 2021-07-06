@@ -333,6 +333,40 @@ TEST_F(VersionBuilderTest, ApplyMoveAndSaveTo) {
   UnrefFilesInVersion(&new_vstorage2);
 }
 
+TEST_F(VersionBuilderTest, ApplySmallFileNumberAndSaveTo) {
+  UpdateVersionStorageInfo();
+
+  VersionEdit version_edit;
+  version_edit.AddFile(0, 666, 0, 100U, GetInternalKey("301"),
+                       GetInternalKey("350"), 200, 200, false);
+  VersionEdit version_edit2;
+  version_edit2.DeleteFile(0, 666);
+  version_edit2.AddFile(0, 500, 0, 100U, GetInternalKey("301"),
+                        GetInternalKey("350"), 200, 200, false);
+
+  VersionStorageInfo new_vstorage(&icmp_, ucmp_, options_.num_levels,
+                                  kCompactionStyleLevel, nullptr, false);
+  {
+    EnvOptions env_options;
+    VersionBuilder version_builder(env_options, nullptr, &vstorage_);
+    version_builder.Apply(&version_edit);
+    version_builder.SaveTo(&new_vstorage);
+    ASSERT_EQ(100U, new_vstorage.NumLevelBytes(0));
+  }
+
+  VersionStorageInfo new_vstorage2(&icmp_, ucmp_, options_.num_levels,
+                                   kCompactionStyleLevel, nullptr, false);
+  {
+    EnvOptions env_options;
+    VersionBuilder version_builder(env_options, nullptr, &new_vstorage);
+    version_builder.Apply(&version_edit2);
+    ASSERT_TRUE(version_builder.SaveTo(&new_vstorage2).IsCorruption());
+  }
+
+  UnrefFilesInVersion(&new_vstorage);
+  UnrefFilesInVersion(&new_vstorage2);
+}
+
 TEST_F(VersionBuilderTest, EstimatedActiveKeys) {
   const uint32_t kTotalSamples = 20;
   const uint32_t kNumLevels = 5;

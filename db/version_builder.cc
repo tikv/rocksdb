@@ -406,8 +406,11 @@ class VersionBuilder::Rep {
       while (added_iter != added_end || base_iter != base_end) {
         if (base_iter == base_end ||
                 (added_iter != added_end && cmp(*added_iter, *base_iter))) {
-          MaybeAddFile(vstorage, level, *added_iter++,
-                       base_vstorage_->max_file_number());
+          s = MaybeAddFile(vstorage, level, *added_iter++,
+                           base_vstorage_->max_file_number());
+          if (!s.ok()) {
+            return s;
+          }
         } else {
           MaybeInheritFile(vstorage, level, *base_iter++);
         }
@@ -526,11 +529,16 @@ class VersionBuilder::Rep {
     }
   }
 
-  void MaybeAddFile(VersionStorageInfo* vstorage, int level, FileMetaData* f,
-                    uint64_t base_max_file_number) {
+  Status MaybeAddFile(VersionStorageInfo* vstorage, int level, FileMetaData* f,
+                      uint64_t base_max_file_number) {
     if (f->fd.GetNumber() <= base_max_file_number) {
       auto it = deleted_base_files_.find(f->fd.GetNumber());
-      assert(it != deleted_base_files_.end());
+      if (it == deleted_base_files_.end()) {
+        return Status::Corruption("Attemp to add file number (" +
+                                  std::to_string(f->fd.GetNumber()) +
+                                  ") smaller than newest one (" +
+                                  std::to_string(base_max_file_number) + ")");
+      }
       vstorage->AddFile(level, it->second, info_log_);
     } else if (levels_[level].deleted_files.count(f->fd.GetNumber()) > 0) {
       // f is to-be-deleted table file
@@ -538,6 +546,7 @@ class VersionBuilder::Rep {
     } else {
       vstorage->AddFile(level, f, info_log_);
     }
+    return Status::OK();
   }
 };
 
