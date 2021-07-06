@@ -2758,7 +2758,7 @@ void rocksdb_enable_perf_flag(uint64_t flag){
 }
 
 void rocksdb_disable_perf_flag(uint64_t flag){
-    DisablePerfFlag(flag);
+  DisablePerfFlag(flag);
 }
 
 int rocksdb_check_perf_flag(uint64_t flag){

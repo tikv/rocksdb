@@ -103,5 +103,6 @@ enum {
   flag_logger_nanos,
   flag_cpu_read_nanos,
   flag_cpu_write_nanos,
+  // Should always be the last
   FLAG_END
 };

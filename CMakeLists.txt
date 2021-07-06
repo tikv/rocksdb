@@ -975,7 +975,8 @@ if(WITH_TESTS)
         memtable/skiplist_test.cc
         memtable/write_buffer_manager_test.cc
         monitoring/histogram_test.cc
-        monitoring/iostats_context_test.cc
+          monitoring/perf_flag_test.cc
+          monitoring/iostats_context_test.cc
         monitoring/statistics_test.cc
         monitoring/stats_history_test.cc
         options/options_settable_test.cc
