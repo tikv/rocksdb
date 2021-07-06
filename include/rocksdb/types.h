@@ -17,6 +17,13 @@ typedef uint64_t SequenceNumber;
 
 const SequenceNumber kMinUnCommittedSeq = 1;  // 0 is always committed
 
+enum class TableFileCreationReason {
+  kFlush,
+  kCompaction,
+  kRecovery,
+  kMisc,
+};
+
 // User-oriented representation of internal key types.
 enum EntryType {
   kEntryPut,

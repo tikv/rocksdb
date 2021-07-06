@@ -4,6 +4,7 @@
 //  (found in the LICENSE.Apache file in the root directory).
 
 #include "db/compaction/compaction_iterator.h"
+
 #include "db/snapshot_checker.h"
 #include "port/likely.h"
 #include "rocksdb/listener.h"
@@ -78,8 +79,8 @@ CompactionIterator::CompactionIterator(
       current_user_key_snapshot_(0),
       merge_out_iter_(merge_helper_),
       current_key_committed_(false),
-      snap_list_callback_(snap_list_callback) {
-  assert(compaction_filter_ == nullptr || compaction_ != nullptr);
+      snap_list_callback_(snap_list_callback),
+      level_(compaction_ == nullptr ? 0 : compaction_->level()) {
   assert(snapshots_ != nullptr);
   bottommost_level_ =
       compaction_ == nullptr ? false : compaction_->bottommost_level();
@@ -121,7 +122,7 @@ void CompactionIterator::Next() {
       key_ = merge_out_iter_.key();
       value_ = merge_out_iter_.value();
       bool valid_key __attribute__((__unused__));
-      valid_key =  ParseInternalKey(key_, &ikey_);
+      valid_key = ParseInternalKey(key_, &ikey_);
       // MergeUntil stops when it encounters a corrupt key and does not
       // include them in the result, so we expect the keys here to be valid.
       assert(valid_key);
@@ -176,7 +177,7 @@ void CompactionIterator::InvokeFilterIfNeeded(bool* need_skip,
     {
       StopWatchNano timer(env_, report_detailed_time_);
       filter = compaction_filter_->FilterV3(
-          compaction_->level(), filter_key, seqno, value_type, value_,
+          level_, filter_key, seqno, value_type, value_,
           &compaction_filter_value_, compaction_filter_skip_until_.rep());
       iter_stats_.total_filter_time +=
           env_ != nullptr && report_detailed_time_ ? timer.ElapsedNanos() : 0;

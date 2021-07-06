@@ -11,9 +11,38 @@
 
 #include "rocksdb/db.h"
 #include "rocksdb/options.h"
+#include "rocksdb/status.h"
 #include "rocksdb/table.h"
 
 namespace rocksdb {
+
+class Env;
+struct ColumnFamilyOptions;
+struct DBOptions;
+struct Options;
+
+// ConfigOptions containing the parameters/controls for
+// comparing objects and converting to/from strings.
+// These settings control how the methods
+// treat errors (e.g. ignore_unknown_objects), the format
+// of the serialization (e.g. delimiter), and how to compare
+// options (sanity_level).
+struct ConfigOptions {
+  // When true, any unused options will be ignored and OK will be returned
+  bool ignore_unknown_options = false;
+
+  // If the strings are escaped (old-style?)
+  bool input_strings_escaped = true;
+
+  // The separator between options when converting to a string
+  std::string delimiter = ";";
+
+  // `file_readahead_size` is used for readahead for the option file.
+  size_t file_readahead_size = 512 * 1024;
+
+  // The environment to use for this option
+  Env* env = Env::Default();
+};
 
 #ifndef ROCKSDB_LITE
 // The following set of functions provide a way to construct RocksDB Options
