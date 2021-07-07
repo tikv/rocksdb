@@ -3387,19 +3387,7 @@ std::string Version::DebugString(bool hex, bool print_stats) const {
     const std::vector<FileMetaData*>& files = storage_info_.files_[level];
     for (size_t i = 0; i < files.size(); i++) {
       r.push_back(' ');
-      AppendNumberTo(&r, files[i]->fd.GetNumber());
-      r.push_back(':');
-      AppendNumberTo(&r, files[i]->fd.GetFileSize());
-      r.append("[");
-      AppendNumberTo(&r, files[i]->fd.smallest_seqno);
-      r.append(" .. ");
-      AppendNumberTo(&r, files[i]->fd.largest_seqno);
-      r.append("]");
-      r.append("[");
-      r.append(files[i]->smallest.DebugString(hex));
-      r.append(" .. ");
-      r.append(files[i]->largest.DebugString(hex));
-      r.append("]");
+      r.append(files[i]->DebugString(hex));
       if (print_stats) {
         r.append("(");
         r.append(ToString(
@@ -4684,7 +4672,8 @@ Status VersionSet::ReduceNumberOfLevels(const std::string& dbname,
 }
 
 Status VersionSet::DumpManifest(Options& options, std::string& dscname,
-                                bool verbose, bool hex, bool json) {
+                                bool verbose, bool hex, bool json,
+                                uint64_t sst_file_number) {
   // Open the specified manifest file.
   std::unique_ptr<SequentialFileReader> file_reader;
   Status s;
@@ -4844,10 +4833,12 @@ Status VersionSet::DumpManifest(Options& options, std::string& dscname,
   }
 
   if (s.ok()) {
+    bool found = false;
     for (auto cfd : *column_family_set_) {
       if (cfd->IsDropped()) {
         continue;
       }
+      if (found) break;
       auto builders_iter = builders.find(cfd->GetID());
       assert(builders_iter != builders.end());
       auto builder = builders_iter->second->version_builder();
@@ -4858,18 +4849,42 @@ Status VersionSet::DumpManifest(Options& options, std::string& dscname,
       builder->SaveTo(v->storage_info());
       v->PrepareApply(*cfd->GetLatestMutableCFOptions(), false);
 
-      printf("--------------- Column family \"%s\"  (ID %" PRIu32
-             ") --------------\n",
-             cfd->GetName().c_str(), cfd->GetID());
-      printf("log number: %" PRIu64 "\n", cfd->GetLogNumber());
-      auto comparator = comparators.find(cfd->GetID());
-      if (comparator != comparators.end()) {
-        printf("comparator: %s\n", comparator->second.c_str());
+      if (sst_file_number != 0) {
+        for (int level = 0; level < v->storage_info_.num_levels_; level++) {
+          const std::vector<FileMetaData*>& files =
+              v->storage_info_.files_[level];
+          for (size_t i = 0; i < files.size(); i++) {
+            if (files[i]->fd.GetNumber() == sst_file_number) {
+              found = true;
+              printf("--------------- Column family \"%s\"  (ID %" PRIu32
+                     ") --------------\n",
+                     cfd->GetName().c_str(), cfd->GetID());
+              printf("%s at level %d\n", files[i]->DebugString(hex).c_str(),
+                     level);
+              break;
+            }
+          }
+          if (found) break;
+        }
       } else {
-        printf("comparator: <NO COMPARATOR>\n");
+        printf("--------------- Column family \"%s\"  (ID %" PRIu32
+               ") --------------\n",
+               cfd->GetName().c_str(), cfd->GetID());
+        printf("log number: %" PRIu64 "\n", cfd->GetLogNumber());
+        auto comparator = comparators.find(cfd->GetID());
+        if (comparator != comparators.end()) {
+          printf("comparator: %s\n", comparator->second.c_str());
+        } else {
+          printf("comparator: <NO COMPARATOR>\n");
+        }
+        printf("%s \n", v->DebugString(hex).c_str());
       }
-      printf("%s \n", v->DebugString(hex).c_str());
       delete v;
+    }
+
+    if (sst_file_number != 0 && !found) {
+      s = Status::NotFound("sst " + ToString(sst_file_number) +
+                           " is not in the live files set of the manifest");
     }
 
     next_file_number_.store(next_file + 1);
@@ -4878,13 +4893,15 @@ Status VersionSet::DumpManifest(Options& options, std::string& dscname,
     last_sequence_ = last_sequence;
     prev_log_number_ = previous_log_number;
 
-    printf("next_file_number %" PRIu64 " last_sequence %" PRIu64
-           "  prev_log_number %" PRIu64 " max_column_family %" PRIu32
-           " min_log_number_to_keep "
-           "%" PRIu64 "\n",
-           next_file_number_.load(), last_sequence, previous_log_number,
-           column_family_set_->GetMaxColumnFamily(),
-           min_log_number_to_keep_2pc());
+    if (sst_file_number == 0) {
+      printf("next_file_number %" PRIu64 " last_sequence %" PRIu64
+             "  prev_log_number %" PRIu64 " max_column_family %" PRIu32
+             " min_log_number_to_keep "
+             "%" PRIu64 "\n",
+             next_file_number_.load(), last_sequence, previous_log_number,
+             column_family_set_->GetMaxColumnFamily(),
+             min_log_number_to_keep_2pc());
+    }
   }
 
   return s;
