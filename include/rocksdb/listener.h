@@ -11,9 +11,11 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+
 #include "rocksdb/compaction_job_stats.h"
 #include "rocksdb/status.h"
 #include "rocksdb/table_properties.h"
+#include "rocksdb/types.h"
 
 namespace rocksdb {
 
@@ -25,13 +27,6 @@ class ColumnFamilyHandle;
 class Status;
 struct CompactionJobStats;
 enum CompressionType : unsigned char;
-
-enum class TableFileCreationReason {
-  kFlush,
-  kCompaction,
-  kRecovery,
-  kMisc,
-};
 
 struct TableFileCreationBriefInfo {
   // the name of the database where the file was created
@@ -278,6 +273,8 @@ struct ExternalFileIngestionInfo {
   SequenceNumber global_seqno;
   // Table properties of the table being flushed
   TableProperties table_properties;
+  // Level inside the DB we picked for the external file.
+  int picked_level;
 };
 
 // EventListener class contains a set of callback functions that will
