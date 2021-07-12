@@ -189,6 +189,9 @@ class Compaction {
   // Requirement: DB mutex held
   void ReleaseCompactionFiles(Status status);
 
+  // mark (or clear) all files that are being compacted
+  void MarkFilesBeingCompacted(bool mark_as_compacted);
+
   // Returns the summary of the compaction in "output" with maximum "len"
   // in bytes.  The caller is responsible for the memory management of
   // "output".
@@ -299,9 +302,6 @@ class Compaction {
   uint64_t MaxInputFileCreationTime() const;
 
  private:
-  // mark (or clear) all files that are being compacted
-  void MarkFilesBeingCompacted(bool mark_as_compacted);
-
   // get the smallest and largest key present in files to be compacted
   static void GetBoundaryKeys(VersionStorageInfo* vstorage,
                               const std::vector<CompactionInputFiles>& inputs,

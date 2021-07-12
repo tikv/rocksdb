@@ -35,11 +35,13 @@ uint64_t DBImpl::MinObsoleteSstNumberToKeep() {
   return std::numeric_limits<uint64_t>::max();
 }
 
-// * Returns the list of live files in 'sst_live'
 // If it's doing full scan:
 // * Returns the list of all files in the filesystem in
 // 'full_scan_candidate_files'.
-// Otherwise, gets obsolete files from VersionSet.
+// * Returns the list of live files in 'sst_skip'.
+// Otherwise:
+// * Gets obsolete files from VersionSet.
+//
 // no_full_scan = true -- never do the full scan using GetChildren()
 // force = false -- don't force the full scan, except every
 //  mutable_db_options_.delete_obsolete_files_period_micros
@@ -103,7 +105,6 @@ void DBImpl::FindObsoleteFiles(JobContext* job_context, bool force,
   job_context->log_number = MinLogNumberToKeep();
   job_context->prev_log_number = versions_->prev_log_number();
 
-  versions_->AddLiveFiles(&job_context->sst_live);
   if (doing_the_full_scan) {
     InfoLogPrefix info_log_prefix(!immutable_db_options_.db_log_dir.empty(),
                                   dbname_);
@@ -235,6 +236,9 @@ void DBImpl::FindObsoleteFiles(JobContext* job_context, bool force,
                                         log_recycle_files_.end());
   if (job_context->HaveSomethingToDelete()) {
     ++pending_purge_obsolete_files_;
+    if (doing_the_full_scan) {
+      versions_->AddLiveFiles(&job_context->sst_skip);
+    }
   }
   logs_to_free_.clear();
 }
@@ -303,12 +307,9 @@ void DBImpl::PurgeObsoleteFiles(JobContext& state, bool schedule_only) {
   // FindObsoleteFiles() should've populated this so nonzero
   assert(state.manifest_file_number != 0);
 
-  // Now, convert live list to an unordered map, WITHOUT mutex held;
-  // set is slow.
-  std::unordered_map<uint64_t, const FileDescriptor*> sst_live_map;
-  for (const FileDescriptor& fd : state.sst_live) {
-    sst_live_map[fd.GetNumber()] = &fd;
-  }
+  // Now, convert lists to unordered sets, WITHOUT mutex held; set is slow.
+  std::unordered_set<uint64_t> sst_skip_set(state.sst_skip.begin(),
+                                            state.sst_skip.end());
   std::unordered_set<uint64_t> log_recycle_files_set(
       state.log_recycle_files.begin(), state.log_recycle_files.end());
 
@@ -407,7 +408,7 @@ void DBImpl::PurgeObsoleteFiles(JobContext& state, bool schedule_only) {
       case kTableFile:
         // If the second condition is not there, this makes
         // DontDeletePendingOutputs fail
-        keep = (sst_live_map.find(number) != sst_live_map.end()) ||
+        keep = (sst_skip_set.find(number) != sst_skip_set.end()) ||
                number >= state.min_pending_output;
         if (!keep) {
           files_to_del.insert(number);
@@ -422,7 +423,7 @@ void DBImpl::PurgeObsoleteFiles(JobContext& state, bool schedule_only) {
         //
         // TODO(yhchiang): carefully modify the third condition to safely
         //                 remove the temp options files.
-        keep = (sst_live_map.find(number) != sst_live_map.end()) ||
+        keep = (sst_skip_set.find(number) != sst_skip_set.end()) ||
                (number == state.pending_manifest_file_number) ||
                (to_delete.find(kOptionsFileNamePrefix) != std::string::npos);
         break;

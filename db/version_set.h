@@ -309,6 +309,17 @@ class VersionStorageInfo {
     return it->second;
   }
 
+  // REQUIRES: This version has been saved (see VersionSet::SaveTo)
+  FileMetaData* GetFileMetaDataByNumber(uint64_t file_number) const {
+    auto location = GetFileLocation(file_number);
+
+    if (!location.IsValid()) {
+      return nullptr;
+    }
+
+    return files_[location.GetLevel()][location.GetPosition()];
+  }
+
   const rocksdb::LevelFilesBrief& LevelFilesBrief(int level) const {
     assert(level < static_cast<int>(level_files_brief_.size()));
     return level_files_brief_[level];
@@ -646,7 +657,7 @@ class Version {
   bool Unref();
 
   // Add all files listed in the current version to *live.
-  void AddLiveFiles(std::vector<FileDescriptor>* live);
+  void AddLiveFiles(std::vector<uint64_t>* live) const;
 
   // Return a human readable string that describes this version's contents.
   std::string DebugString(bool hex = false, bool print_stats = false) const;
@@ -1031,7 +1042,7 @@ Status DumpManifest(Options& options, std::string& dscname,
       const EnvOptions& env_options_compactions);
 
   // Add all files listed in any live version to *live.
-  void AddLiveFiles(std::vector<FileDescriptor>* live_list);
+  void AddLiveFiles(std::vector<uint64_t>* live_list) const;
 
   // Return the approximate size of data to be scanned for range [start, end)
   // in levels [start_level, end_level). If end_level == -1 it will search
