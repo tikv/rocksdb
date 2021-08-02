@@ -965,28 +965,28 @@ if(WITH_TESTS)
         encryption/encryption_test.cc
         env/env_basic_test.cc
         env/env_test.cc
-        env/mock_env_test.cc
-        file/delete_scheduler_test.cc
-        logging/auto_roll_logger_test.cc
-        logging/env_logger_test.cc
-        logging/event_logger_test.cc
-        memory/arena_test.cc
-        memtable/inlineskiplist_test.cc
-        memtable/skiplist_test.cc
-        memtable/write_buffer_manager_test.cc
-        monitoring/histogram_test.cc
+          env/mock_env_test.cc
+          file/delete_scheduler_test.cc
+          logging/auto_roll_logger_test.cc
+          logging/env_logger_test.cc
+          logging/event_logger_test.cc
+          memory/arena_test.cc
+          memtable/inlineskiplist_test.cc
+          memtable/skiplist_test.cc
+          memtable/write_buffer_manager_test.cc
+          monitoring/histogram_test.cc
           monitoring/perf_flag_test.cc
           monitoring/iostats_context_test.cc
-        monitoring/statistics_test.cc
-        monitoring/stats_history_test.cc
-        options/options_settable_test.cc
-        options/options_test.cc
-        table/block_based/block_based_filter_block_test.cc
-        table/block_based/block_test.cc
-        table/block_based/data_block_hash_index_test.cc
-        table/block_based/full_filter_block_test.cc
-        table/block_based/partitioned_filter_block_test.cc
-        table/cleanable_test.cc
+          monitoring/statistics_test.cc
+          monitoring/stats_history_test.cc
+          options/options_settable_test.cc
+          options/options_test.cc
+          table/block_based/block_based_filter_block_test.cc
+          table/block_based/block_test.cc
+          table/block_based/data_block_hash_index_test.cc
+          table/block_based/full_filter_block_test.cc
+          table/block_based/partitioned_filter_block_test.cc
+          table/cleanable_test.cc
         table/cuckoo/cuckoo_table_builder_test.cc
         table/cuckoo/cuckoo_table_reader_test.cc
         table/merger_test.cc

@@ -23,9 +23,6 @@ void DisablePerfFlag(uint64_t flag) {
 }
 
 bool CheckPerfFlag(uint64_t flag) {
-  auto _1 = (uint64_t)0b1 << (flag & (uint64_t)0b111);
-  auto _2 = GET_FLAG(flag);
-  auto _3 = _2 & _1;
   return ((uint64_t)GET_FLAG(flag) & (uint64_t)0b1
                                          << (flag & (uint64_t)0b111)) != 0;
 }

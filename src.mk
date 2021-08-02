@@ -94,6 +94,7 @@ LIB_SOURCES =                                                   \
   monitoring/iostats_context.cc                                 \
   monitoring/perf_context.cc                                    \
   monitoring/perf_level.cc                                      \
+  monitoring/perf_flag.cc										\
   monitoring/persistent_stats_history.cc                        \
   monitoring/statistics.cc                                      \
   monitoring/thread_status_impl.cc                              \
@@ -364,6 +365,7 @@ MAIN_SOURCES =                                                          \
   monitoring/iostats_context_test.cc                                    \
   monitoring/statistics_test.cc                                         \
   monitoring/stats_history_test.cc                                      \
+  monitoring/perf_flag_test.cc										    \
   options/options_test.cc                                               \
   table/block_based/block_based_filter_block_test.cc                    \
   table/block_based/block_test.cc                                       \
