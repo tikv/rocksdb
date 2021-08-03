@@ -148,7 +148,7 @@ void MutableCFOptions::Dump(Logger* log) const {
       prefix_extractor == nullptr ? "nullptr" : prefix_extractor->Name());
   ROCKS_LOG_INFO(log, "                 disable_auto_compactions: %d",
                  disable_auto_compactions);
-  ROCKS_LOG_INFO(log, "                 disable_write_stall: %d",
+  ROCKS_LOG_INFO(log, "                      disable_write_stall: %d",
                  disable_write_stall);
   ROCKS_LOG_INFO(log, "      soft_pending_compaction_bytes_limit: %" PRIu64,
                  soft_pending_compaction_bytes_limit);

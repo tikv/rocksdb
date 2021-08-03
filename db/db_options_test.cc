@@ -444,6 +444,20 @@ TEST_F(DBOptionsTest, EnableAutoCompactionButDisableStall) {
   ASSERT_FALSE(dbfull()->TEST_write_controler().NeedSpeedupCompaction());
 }
 
+TEST_F(DBOptionsTest, SetOptionsDisableWriteStall) {
+  Options options;
+  options.create_if_missing = true;
+  options.disable_write_stall = false;
+  options.env = env_;
+  Reopen(options);
+  ASSERT_EQ(false, dbfull()->GetOptions().disable_write_stall);
+
+  ASSERT_OK(dbfull()->SetOptions({{"disable_write_stall", "true"}}));
+  ASSERT_EQ(true, dbfull()->GetOptions().disable_write_stall);
+  ASSERT_OK(dbfull()->SetOptions({{"disable_write_stall", "false"}}));
+  ASSERT_EQ(false, dbfull()->GetOptions().disable_write_stall);
+}
+
 TEST_F(DBOptionsTest, SetOptionsMayTriggerCompaction) {
   Options options;
   options.create_if_missing = true;
@@ -472,8 +486,21 @@ TEST_F(DBOptionsTest, SetBackgroundCompactionThreads) {
   ASSERT_EQ(1, dbfull()->TEST_BGCompactionsAllowed());
   ASSERT_OK(dbfull()->SetDBOptions({{"max_background_compactions", "3"}}));
   ASSERT_EQ(1, dbfull()->TEST_BGCompactionsAllowed());
-  auto stop_token = dbfull()->TEST_write_controler().GetStopToken();
+  {
+    auto stop_token = dbfull()->TEST_write_controler().GetStopToken();
+    ASSERT_EQ(3, dbfull()->TEST_BGCompactionsAllowed());
+  }
+
+  ASSERT_OK(dbfull()->SetDBOptions({{"base_background_compactions", "2"}}));
+  ASSERT_EQ(2, dbfull()->TEST_BGCompactionsAllowed());
+  ASSERT_OK(dbfull()->SetDBOptions({{"base_background_compactions", "5"}}));
   ASSERT_EQ(3, dbfull()->TEST_BGCompactionsAllowed());
+  ASSERT_OK(dbfull()->SetDBOptions({{"base_background_compactions", "1"}}));
+  ASSERT_EQ(1, dbfull()->TEST_BGCompactionsAllowed());
+  {
+    auto stop_token = dbfull()->TEST_write_controler().GetStopToken();
+    ASSERT_EQ(3, dbfull()->TEST_BGCompactionsAllowed());
+  }
 }
 
 TEST_F(DBOptionsTest, SetBackgroundFlushThreads) {
