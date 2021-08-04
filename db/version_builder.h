@@ -18,7 +18,7 @@ namespace rocksdb {
 class TableCache;
 class VersionStorageInfo;
 class VersionEdit;
-struct FileMetaData;
+class FileMetaData;
 class InternalStats;
 
 // A helper class so we can efficiently apply a whole sequence
@@ -38,7 +38,6 @@ class VersionBuilder {
                            bool prefetch_index_and_filter_in_cache,
                            bool is_initial_load,
                            const SliceTransform* prefix_extractor);
-  void MaybeAddFile(VersionStorageInfo* vstorage, int level, FileMetaData* f);
 
  private:
   class Rep;

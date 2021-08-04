@@ -38,7 +38,7 @@ uint64_t DBImpl::MinObsoleteSstNumberToKeep() {
 // If it's doing full scan:
 // * Returns the list of all files in the filesystem in
 // 'full_scan_candidate_files'.
-// * Returns the list of live files in 'sst_skip'.
+// * Returns the list of live files in 'sst_live'.
 // Otherwise:
 // * Gets obsolete files from VersionSet.
 //
@@ -237,7 +237,7 @@ void DBImpl::FindObsoleteFiles(JobContext* job_context, bool force,
   if (job_context->HaveSomethingToDelete()) {
     ++pending_purge_obsolete_files_;
     if (doing_the_full_scan) {
-      versions_->AddLiveFiles(&job_context->sst_skip);
+      versions_->AddLiveFiles(&job_context->sst_live);
     }
   }
   logs_to_free_.clear();
@@ -308,8 +308,8 @@ void DBImpl::PurgeObsoleteFiles(JobContext& state, bool schedule_only) {
   assert(state.manifest_file_number != 0);
 
   // Now, convert lists to unordered sets, WITHOUT mutex held; set is slow.
-  std::unordered_set<uint64_t> sst_skip_set(state.sst_skip.begin(),
-                                            state.sst_skip.end());
+  std::unordered_set<uint64_t> sst_live_set(state.sst_live.begin(),
+                                            state.sst_live.end());
   std::unordered_set<uint64_t> log_recycle_files_set(
       state.log_recycle_files.begin(), state.log_recycle_files.end());
 
@@ -408,7 +408,7 @@ void DBImpl::PurgeObsoleteFiles(JobContext& state, bool schedule_only) {
       case kTableFile:
         // If the second condition is not there, this makes
         // DontDeletePendingOutputs fail
-        keep = (sst_skip_set.find(number) != sst_skip_set.end()) ||
+        keep = (sst_live_set.find(number) != sst_live_set.end()) ||
                number >= state.min_pending_output;
         if (!keep) {
           files_to_del.insert(number);
@@ -423,7 +423,7 @@ void DBImpl::PurgeObsoleteFiles(JobContext& state, bool schedule_only) {
         //
         // TODO(yhchiang): carefully modify the third condition to safely
         //                 remove the temp options files.
-        keep = (sst_skip_set.find(number) != sst_skip_set.end()) ||
+        keep = (sst_live_set.find(number) != sst_live_set.end()) ||
                (number == state.pending_manifest_file_number) ||
                (to_delete.find(kOptionsFileNamePrefix) != std::string::npos);
         break;

@@ -22,6 +22,8 @@
 * Fix a bug in which a snapshot read could be affected by a DeleteRange after the snapshot (#6062).
 * `WriteBatchWithIndex::DeleteRange` returns `Status::NotSupported`. Previously it returned success even though reads on the batch did not account for range tombstones. The corresponding language bindings now cannot be used. In C, that includes `rocksdb_writebatch_wi_delete_range`, `rocksdb_writebatch_wi_delete_range_cf`, `rocksdb_writebatch_wi_delete_rangev`, and `rocksdb_writebatch_wi_delete_rangev_cf`. In Java, that includes `WriteBatchWithIndex::deleteRange`.
 
+### Performance Improvements
+* When gathering unreferenced obsolete files for purging, file metas associated with active versions will no longer be copied for double-check. Updated VersionBuilder to make sure each physical file is reference counted by at most one FileMetaData.
 
 ## 6.4.6 (10/16/2019)
 * Fix a bug when partitioned filters and prefix search are used in conjunction, ::SeekForPrev could return invalid for an existing prefix. ::SeekForPrev might be called by the user, or internally on ::Prev, or within ::Seek if the return value involves Delete or a Merge operand.

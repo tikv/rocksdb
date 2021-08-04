@@ -86,12 +86,13 @@ struct FileSampledStats {
   mutable std::atomic<uint64_t> num_reads_sampled;
 };
 
-struct FileMetaData {
+class FileMetaData {
+ public:
   FileDescriptor fd;
   InternalKey smallest;            // Smallest internal key served by table
   InternalKey largest;             // Largest internal key served by table
 
-  // Needs to be disposed when refs becomes 0.
+  // Needs to be disposed when refs_ becomes 0.
   Cache::Handle* table_reader_handle;
 
   FileSampledStats stats;
@@ -109,9 +110,8 @@ struct FileMetaData {
   uint64_t raw_key_size;           // total uncompressed key size.
   uint64_t raw_value_size;         // total uncompressed value size.
 
-  int refs;  // Reference count
-
   bool being_compacted;        // Is this file undergoing compaction?
+  int being_moved_to;          // Is this file undergoing trivial move?
   bool init_stats_from_file;   // true if the data-entry stats of this file
                                // has initialized from file.
 
@@ -125,18 +125,19 @@ struct FileMetaData {
         num_deletions(0),
         raw_key_size(0),
         raw_value_size(0),
-        refs(0),
         being_compacted(false),
+        being_moved_to(-1),
         init_stats_from_file(false),
-        marked_for_compaction(false) {}
+        marked_for_compaction(false),
+        refs_(0) {}
 
-  void Ref() { ++refs; }
+  void Ref() { ++refs_; }
 
   bool Unref() {
-    --refs;
-    assert(refs >= 0);
-    return refs <= 0;
+    assert(refs_ >= 1);
+    return --refs_ <= 0;
   }
+
   // REQUIRED: Keys must be given to the function in sorted order (it expects
   // the last key to be the largest).
   void UpdateBoundaries(const Slice& key, SequenceNumber seqno) {
@@ -180,6 +181,9 @@ struct FileMetaData {
     r.append("]");
     return r;
   }
+
+ private:
+  int refs_;  // Reference count
 };
 
 // A compressed copy of file meta data that just contain minimum data needed

@@ -2295,6 +2295,7 @@ void VersionStorageInfo::EstimateCompactionBytesNeeded(
 namespace {
 uint32_t GetExpiredTtlFilesCount(const ImmutableCFOptions& ioptions,
                                  const MutableCFOptions& mutable_cf_options,
+                                 int level,
                                  const std::vector<FileMetaData*>& files) {
   uint32_t ttl_expired_files_count = 0;
 
@@ -2303,7 +2304,8 @@ uint32_t GetExpiredTtlFilesCount(const ImmutableCFOptions& ioptions,
   if (status.ok()) {
     const uint64_t current_time = static_cast<uint64_t>(_current_time);
     for (auto f : files) {
-      if (!f->being_compacted && f->fd.table_reader != nullptr &&
+      if ((!f->being_compacted || f->being_moved_to == level) &&
+          f->fd.table_reader != nullptr &&
           f->fd.table_reader->GetTableProperties() != nullptr) {
         auto creation_time =
             f->fd.table_reader->GetTableProperties()->creation_time;
@@ -2338,7 +2340,7 @@ void VersionStorageInfo::ComputeCompactionScore(
       int num_sorted_runs = 0;
       uint64_t total_size = 0;
       for (auto* f : files_[level]) {
-        if (!f->being_compacted) {
+        if (!f->being_compacted || f->being_moved_to == level) {
           total_size += f->compensated_file_size;
           num_sorted_runs++;
         }
@@ -2348,7 +2350,8 @@ void VersionStorageInfo::ComputeCompactionScore(
         // compaction score for the whole DB. Adding other levels as if
         // they are L0 files.
         for (int i = 1; i < num_levels(); i++) {
-          if (!files_[i].empty() && !files_[i][0]->being_compacted) {
+          if (!files_[i].empty() && (!files_[i][0]->being_compacted ||
+                                     files_[i][0]->being_moved_to == i)) {
             num_sorted_runs++;
           }
         }
@@ -2364,10 +2367,10 @@ void VersionStorageInfo::ComputeCompactionScore(
               score);
         }
         if (mutable_cf_options.ttl > 0) {
-          score = std::max(
-              static_cast<double>(GetExpiredTtlFilesCount(
-                  immutable_cf_options, mutable_cf_options, files_[level])),
-              score);
+          score = std::max(static_cast<double>(GetExpiredTtlFilesCount(
+                               immutable_cf_options, mutable_cf_options, level,
+                               files_[level])),
+                           score);
         }
 
       } else {
@@ -2386,7 +2389,7 @@ void VersionStorageInfo::ComputeCompactionScore(
       // Compute the ratio of current size to size limit.
       uint64_t level_bytes_no_compacting = 0;
       for (auto f : files_[level]) {
-        if (!f->being_compacted) {
+        if (!f->being_compacted || f->being_moved_to == level) {
           level_bytes_no_compacting += f->compensated_file_size;
         }
       }
@@ -2439,7 +2442,8 @@ void VersionStorageInfo::ComputeFilesMarkedForCompaction() {
 
   for (int level = 0; level <= last_qualify_level; level++) {
     for (auto* f : files_[level]) {
-      if (!f->being_compacted && f->marked_for_compaction) {
+      if ((!f->being_compacted || f->being_moved_to == level) &&
+          f->marked_for_compaction) {
         files_marked_for_compaction_.emplace_back(level, f);
       }
     }
@@ -2461,7 +2465,8 @@ void VersionStorageInfo::ComputeExpiredTtlFiles(
 
   for (int level = 0; level < num_levels() - 1; level++) {
     for (auto f : files_[level]) {
-      if (!f->being_compacted && f->fd.table_reader != nullptr &&
+      if ((!f->being_compacted || f->being_moved_to == level) &&
+          f->fd.table_reader != nullptr &&
           f->fd.table_reader->GetTableProperties() != nullptr) {
         auto creation_time =
             f->fd.table_reader->GetTableProperties()->creation_time;
@@ -2491,7 +2496,8 @@ void VersionStorageInfo::ComputeFilesMarkedForPeriodicCompaction(
 
   for (int level = 0; level < num_levels(); level++) {
     for (auto f : files_[level]) {
-      if (!f->being_compacted && f->fd.table_reader != nullptr &&
+      if ((!f->being_compacted || f->being_moved_to == level) &&
+          f->fd.table_reader != nullptr &&
           f->fd.table_reader->GetTableProperties() != nullptr) {
         // Compute a file's modification time in the following order:
         // 1. Use file_creation_time table property if it is > 0.
@@ -2615,6 +2621,11 @@ void VersionStorageInfo::SetFinalized() {
     }
     if (LevelFiles(level).size() > 0) {
       assert(level < num_non_empty_levels());
+    }
+    for (auto* f : LevelFiles(level)) {
+      if (f->being_moved_to == level) {
+        f->being_moved_to = -1;
+      }
     }
   }
   assert(compaction_level_.size() > 0);
@@ -3371,7 +3382,6 @@ void Version::AddLiveFiles(std::vector<uint64_t>* live_table_files) const {
     const auto& level_files = storage_info_.LevelFiles(level);
     for (const auto& meta : level_files) {
       assert(meta);
-
       live_table_files->emplace_back(meta->fd.GetNumber());
     }
   }
