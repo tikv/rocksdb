@@ -358,8 +358,8 @@ TEST_F(VersionBuilderTest, ApplyFileDeletionAndAddition) {
   constexpr bool marked_for_compaction = false;
   constexpr bool force_consistency_checks = false;
 
-  Add(level, file_number, smallest, largest, file_size, path_id, smallest_seqno,
-      largest_seqno, num_entries, num_deletions, sampled, smallest_seqno,
+  Add(level, file_number, smallest, largest, file_size, path_id, smallest_seq,
+      largest_seq, num_entries, num_deletions, sampled, smallest_seqno,
       largest_seqno);
 
   EnvOptions env_options;
@@ -373,8 +373,9 @@ TEST_F(VersionBuilderTest, ApplyFileDeletionAndAddition) {
     ASSERT_OK(builder.Apply(&deletion));
     VersionEdit addition;
     addition.AddFile(level, file_number, path_id, file_size,
-                     GetInternalKey("181"), GetInternalKey("798"),
-                     smallest_seqno, largest_seqno, marked_for_compaction);
+                     GetInternalKey("181", smallest_seq),
+                     GetInternalKey("798", largest_seq), smallest_seqno,
+                     largest_seqno, marked_for_compaction);
     ASSERT_OK(builder.Apply(&addition));
     VersionStorageInfo new_vstorage(&icmp_, ucmp_, options_.num_levels,
                                     kCompactionStyleLevel, &vstorage_,
@@ -392,8 +393,9 @@ TEST_F(VersionBuilderTest, ApplyFileDeletionAndAddition) {
     ASSERT_OK(builder.Apply(&deletion));
     VersionEdit addition;
     addition.AddFile(level + 1, file_number, path_id, file_size,
-                     GetInternalKey("181"), GetInternalKey("798"),
-                     smallest_seqno, largest_seqno, marked_for_compaction);
+                     GetInternalKey("181", smallest_seq),
+                     GetInternalKey("798", largest_seq), smallest_seqno,
+                     largest_seqno, marked_for_compaction);
     ASSERT_OK(builder.Apply(&addition));
     VersionStorageInfo new_vstorage(&icmp_, ucmp_, options_.num_levels,
                                     kCompactionStyleLevel, &vstorage_,
@@ -414,8 +416,9 @@ TEST_F(VersionBuilderTest, ApplyFileDeletionAndAddition) {
     ASSERT_OK(builder.Apply(&deletion));
     VersionEdit addition;
     addition.AddFile(level, file_number, path_id + 1, file_size,
-                     GetInternalKey("181"), GetInternalKey("798"),
-                     smallest_seqno, largest_seqno, marked_for_compaction);
+                     GetInternalKey("181", smallest_seq),
+                     GetInternalKey("798", largest_seq), smallest_seqno,
+                     largest_seqno, marked_for_compaction);
     const Status s = builder.Apply(&addition);
     ASSERT_TRUE(s.IsCorruption());
     ASSERT_TRUE(
@@ -430,14 +433,16 @@ TEST_F(VersionBuilderTest, ApplyFileDeletionAndAddition) {
     ASSERT_OK(builder.Apply(&deletion));
     VersionEdit addition_1;
     addition_1.AddFile(level + 1, file_number, path_id, file_size,
-                       GetInternalKey("181"), GetInternalKey("798"),
-                       smallest_seqno, largest_seqno, marked_for_compaction);
+                       GetInternalKey("181", smallest_seq),
+                       GetInternalKey("798", largest_seq), smallest_seqno,
+                       largest_seqno, marked_for_compaction);
     VersionEdit deletion_1;
     deletion_1.DeleteFile(level + 1, file_number);
     VersionEdit addition_2;
     addition_2.AddFile(level + 2, file_number, path_id, file_size,
-                       GetInternalKey("181"), GetInternalKey("798"),
-                       smallest_seqno, largest_seqno, marked_for_compaction);
+                       GetInternalKey("181", smallest_seq),
+                       GetInternalKey("798", largest_seq), smallest_seqno,
+                       largest_seqno, marked_for_compaction);
     ASSERT_OK(builder.Apply(&addition_1));
     ASSERT_OK(builder.Apply(&deletion_1));
     ASSERT_OK(builder.Apply(&addition_2));
