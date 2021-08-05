@@ -478,7 +478,7 @@ class VersionBuilder::Rep {
             assert(unordered_added_files.find(file_number) ==
                    unordered_added_files.end());
 #endif
-            vstorage->AddFile(level, f);
+            vstorage->AddFile(level, f, info_log_);
           }
         } else {
           FileMetaData* f = *delta_iter++;
@@ -487,7 +487,7 @@ class VersionBuilder::Rep {
             // deleted from it.
             vstorage->UpdateAccumulatedStats(f);
           }
-          vstorage->AddFile(level, f);
+          vstorage->AddFile(level, f, info_log_);
         }
       }
     }
