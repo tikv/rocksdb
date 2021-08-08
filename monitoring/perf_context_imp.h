@@ -38,7 +38,7 @@ extern thread_local PerfContext perf_context;
 
 // Declare and set start time of the timer
 #define PERF_TIMER_GUARD(metric)                                  \
-  PerfStepTimer perf_step_timer_##metric(&(perf_context.metric),CheckPerfFlag(flag_##metric)); \
+  PerfStepTimer perf_step_timer_##metric(&(perf_context.metric), CheckPerfFlag(flag_##metric)); \
   perf_step_timer_##metric.Start();
 
 // Declare and set start time of the timer

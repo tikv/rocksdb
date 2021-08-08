@@ -2753,16 +2753,16 @@ void rocksdb_set_perf_level(int v) {
   SetPerfLevel(level);
 }
 
-void rocksdb_enable_perf_flag(uint64_t flag){
+void rocksdb_enable_perf_flag(uint64_t flag) {
   EnablePerfFlag(flag);
 }
 
-void rocksdb_disable_perf_flag(uint64_t flag){
+void rocksdb_disable_perf_flag(uint64_t flag) {
   DisablePerfFlag(flag);
 }
 
-int rocksdb_check_perf_flag(uint64_t flag){
-  return (int)CheckPerfFlag(flag);
+int rocksdb_check_perf_flag(uint64_t flag) {
+  return static_cast<int>(CheckPerfFlag(flag));
 }
 
 rocksdb_perfcontext_t* rocksdb_perfcontext_create() {

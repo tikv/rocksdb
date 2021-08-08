@@ -10,7 +10,8 @@ uint8_t perf_flags[FLAGS_LEN] = {0};
 void EnablePerfFlag(uint64_t flag) {
   if (CheckPerfFlag(flag)) {
   } else {
-    // & 0b111 means find the flag location is a alternative way to do mod operation
+    // & 0b111 means find the flag location is a alternative way to do mod
+    // operation
     GET_FLAG(flag) ^= (uint64_t)0b1 << ((uint64_t)flag & (uint64_t)0b111);
   }
 }
@@ -18,7 +19,6 @@ void EnablePerfFlag(uint64_t flag) {
 void DisablePerfFlag(uint64_t flag) {
   if (CheckPerfFlag(flag)) {
     GET_FLAG(flag) ^= (uint64_t)0b1 << ((uint64_t)flag & (uint64_t)0b111);
-  } else {
   }
 }
 
