@@ -121,7 +121,7 @@ void CompactionIterator::Next() {
       key_ = merge_out_iter_.key();
       value_ = merge_out_iter_.value();
       bool valid_key __attribute__((__unused__));
-      valid_key =  ParseInternalKey(key_, &ikey_);
+      valid_key = ParseInternalKey(key_, &ikey_);
       // MergeUntil stops when it encounters a corrupt key and does not
       // include them in the result, so we expect the keys here to be valid.
       assert(valid_key);

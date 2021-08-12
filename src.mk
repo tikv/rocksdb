@@ -365,7 +365,6 @@ MAIN_SOURCES =                                                          \
   monitoring/iostats_context_test.cc                                    \
   monitoring/statistics_test.cc                                         \
   monitoring/stats_history_test.cc                                      \
-  monitoring/perf_flag_test.cc										    \
   options/options_test.cc                                               \
   table/block_based/block_based_filter_block_test.cc                    \
   table/block_based/block_test.cc                                       \

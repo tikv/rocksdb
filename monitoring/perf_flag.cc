@@ -8,8 +8,7 @@ uint8_t perf_flags[FLAGS_LEN] = {0};
 #endif
 
 void EnablePerfFlag(uint64_t flag) {
-  if (CheckPerfFlag(flag)) {
-  } else {
+  if (!CheckPerfFlag(flag)) {
     // & 0b111 means find the flag location is a alternative way to do mod
     // operation
     GET_FLAG(flag) ^= (uint64_t)0b1 << ((uint64_t)flag & (uint64_t)0b111);
@@ -23,8 +22,8 @@ void DisablePerfFlag(uint64_t flag) {
 }
 
 bool CheckPerfFlag(uint64_t flag) {
-  return ((uint64_t)GET_FLAG(flag) & (uint64_t)0b1
-                                         << (flag & (uint64_t)0b111)) != 0;
+  return ((uint64_t)GET_FLAG(flag) &
+          (uint64_t)0b1 << (flag & (uint64_t)0b111)) != 0;
 }
 
 }  // namespace rocksdb

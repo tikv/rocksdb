@@ -418,7 +418,6 @@ ANALYZETOOLOBJECTS = $(ANALYZER_LIB_SOURCES:.cc=.o)
 EXPOBJECTS = $(LIBOBJECTS) $(TESTUTIL)
 
 TESTS = \
-	perf_flag_test \
 	db_basic_test \
 	db_encryption_test \
 	db_test2 \
@@ -439,6 +438,7 @@ TESTS = \
 	thread_local_test \
 	rate_limiter_test \
 	perf_context_test \
+	 \
 	iostats_context_test \
 	db_wal_test \
 	db_block_cache_test \
@@ -1579,9 +1579,6 @@ ldb: tools/ldb.o $(LIBOBJECTS)
 
 iostats_context_test: monitoring/iostats_context_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_V_CCLD)$(CXX) $^ $(EXEC_LDFLAGS) -o $@ $(LDFLAGS)
-
-perf_flag_test: monitoring/perf_flag_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(AM_LINK)
 
 persistent_cache_test: utilities/persistent_cache/persistent_cache_test.o  db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
