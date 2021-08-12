@@ -5,12 +5,13 @@
 
 #include "perf_flag_defs.h"
 
-#define GET_FLAG(flag) perf_flags[(uint64_t)(flag) >> (uint64_t)0b11]
+#define GET_FLAG(flag) perf_flags[(uint64_t)(flag) >> 3]
 
-#define FLAGS_LEN                               \
-  (((uint64_t)FLAG_END & (uint64_t)0b111) == 0  \
-       ? ((uint64_t)FLAG_END >> (uint64_t)0b11) \
-       : ((uint64_t)FLAG_END >> (uint64_t)0b11) + (uint64_t)1)
+// FLAGS_LEN = ceiling(FLAG_END / bits(uint8_t))
+#define FLAGS_LEN                              \
+  (((uint64_t)FLAG_END & (uint64_t)0b111) == 0 \
+       ? ((uint64_t)FLAG_END >> 3)             \
+       : ((uint64_t)FLAG_END >> 3) + 1)
 
 namespace rocksdb {
 void EnablePerfFlag(uint64_t flag);
