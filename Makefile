@@ -438,7 +438,6 @@ TESTS = \
 	thread_local_test \
 	rate_limiter_test \
 	perf_context_test \
-	 \
 	iostats_context_test \
 	db_wal_test \
 	db_block_cache_test \
