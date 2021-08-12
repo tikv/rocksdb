@@ -353,8 +353,9 @@ Status WriteAmpBasedRateLimiter::Tune() {
       static_cast<int32_t>(
           bytes_sampler_.GetFullValue() * 10 /
           std::max(highpri_bytes_sampler_.GetFullValue(), kHighBytesLower)));
-  // Only adjust threshold when foreground writes (flush flow) increases rather
-  // than decreases.
+  // Only adjust threshold when foreground write (flush) flow increases,
+  // because decreasement could also be caused by manual flow control at
+  // application level to alleviate background pressure.
   new_bytes_per_sec = std::max(
       new_bytes_per_sec,
       ratio *
