@@ -134,7 +134,7 @@ class FileMetaData {
   void Ref() { ++refs_; }
 
   bool Unref() {
-    assert(refs_ >= 1);
+    assert(refs_ > 0);
     return --refs_ <= 0;
   }
 
