@@ -81,7 +81,7 @@ class VersionBuilder::Rep {
     // Files in base version that should be deleted.
     std::unordered_set<uint64_t> deleted_base_files;
     // Files moved from base version.
-    // Those files will no be referenced by VersionBuilder.
+    // Those files will not be referenced by VersionBuilder.
     std::unordered_map<uint64_t, FileMetaData*> moved_files;
     // Files added, must not intersect with moved_files.
     // Those files will be referenced during the lifetime of VersionBuilder.
