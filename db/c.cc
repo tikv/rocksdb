@@ -537,6 +537,10 @@ rocksdb_t* rocksdb_open_as_secondary(const rocksdb_options_t* options,
   return result;
 }
 
+void rocksdb_resume(rocksdb_t* db, char** errptr) {
+  SaveError(errptr, db->rep->Resume());
+}
+
 rocksdb_backup_engine_t* rocksdb_backup_engine_open(
     const rocksdb_options_t* options, const char* path, char** errptr) {
   BackupEngine* be;
