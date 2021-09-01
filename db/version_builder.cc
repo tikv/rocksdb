@@ -172,7 +172,9 @@ class VersionBuilder::Rep {
           if (f2->fd.smallest_seqno == f2->fd.largest_seqno) {
             // This is an external file that we ingested
             SequenceNumber external_file_seqno = f2->fd.smallest_seqno;
-            if (!(external_file_seqno < f1->fd.largest_seqno ||
+            if (!((f1->fd.smallest_seqno == f1->fd.largest_seqno &&
+                   f1->fd.smallest_seqno == external_file_seqno) ||
+                  external_file_seqno < f1->fd.largest_seqno ||
                   external_file_seqno == 0)) {
               fprintf(stderr,
                       "L0 file with seqno %" PRIu64 " %" PRIu64
