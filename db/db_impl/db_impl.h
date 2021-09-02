@@ -528,7 +528,6 @@ class DBImpl : public DB {
   static BGJobLimits GetBGJobLimits(int max_background_flushes,
                                     int max_background_compactions,
                                     int max_background_jobs,
-                                    int base_background_compactions,
                                     bool parallelize_compactions);
 
   // move logs pending closing from job_context to the DB queue and
