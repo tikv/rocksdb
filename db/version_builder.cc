@@ -168,7 +168,12 @@ class VersionBuilder::Rep {
           if (f2->fd.smallest_seqno == f2->fd.largest_seqno) {
             // This is an external file that we ingested
             SequenceNumber external_file_seqno = f2->fd.smallest_seqno;
-            if (!(external_file_seqno < f1->fd.largest_seqno ||
+            // If f1 and f2 are both ingested files, their seqno may be same.
+            // Because RocksDB will assign only one seqno for all files ingested
+            // in once call by `IngestExternalFile`.
+            if (!((f1->fd.smallest_seqno == f1->fd.largest_seqno &&
+                   f1->fd.smallest_seqno == external_file_seqno) ||
+                  external_file_seqno < f1->fd.largest_seqno ||
                   external_file_seqno == 0)) {
               fprintf(stderr,
                       "L0 file with seqno %" PRIu64 " %" PRIu64
