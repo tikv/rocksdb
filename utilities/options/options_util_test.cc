@@ -525,7 +525,8 @@ static void WriteOptionsFile(Env* env, const std::string& path,
   ASSERT_EQ(latest_options_file, options_file);
 }
 
-TEST_F(OptionsUtilTest, BadLatestOptions) {
+// Disabled due to tikv/rocksdb#256
+TEST_F(OptionsUtilTest, DISABLED_BadLatestOptions) {
   Status s;
   ConfigOptions config_opts;
   DBOptions db_opts;
