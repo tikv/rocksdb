@@ -301,7 +301,6 @@ class WriteThread {
   // it will block.
   //
   // Writer* w:        Writer to be executed as part of a batch group
-  void JoinBatchGroup(Writer* w);
   void JoinBatchGroupNoBlocking(Writer* w);
   void AwaitStateForGroupLeader(Writer* w);
 

@@ -389,19 +389,18 @@ void WriteThread::EndWriteStall() {
 }
 
 static WriteThread::AdaptationContext jbg_ctx("JoinBatchGroup");
-void WriteThread::JoinBatchGroup(Writer* w) {
+void WriteThread::JoinBatchGroupNoBlocking(Writer* w) {
   TEST_SYNC_POINT_CALLBACK("WriteThread::JoinBatchGroup:Start", w);
   assert(!w->batches.empty());
-
   bool linked_as_leader = LinkOne(w, &newest_writer_);
-
   if (linked_as_leader) {
     SetState(w, STATE_GROUP_LEADER);
   }
-
   TEST_SYNC_POINT_CALLBACK("WriteThread::JoinBatchGroup:Wait", w);
+}
 
-  if (!linked_as_leader) {
+void WriteThread::AwaitStateForGroupLeader(Writer* w) {
+  if (w->state.load(std::memory_order_acquire) != STATE_GROUP_LEADER) {
     /**
      * Wait util:
      * 1) An existing leader pick us as the new leader when it finishes
@@ -415,27 +414,11 @@ void WriteThread::JoinBatchGroup(Writer* w) {
      * 3.2) an existing memtable writer group leader tell us to finish memtable
      *      writes in parallel.
      */
-    TEST_SYNC_POINT_CALLBACK("WriteThread::JoinBatchGroup:BeganWaiting", w);
-    AwaitState(w, STATE_GROUP_LEADER | STATE_MEMTABLE_WRITER_LEADER |
-                      STATE_PARALLEL_MEMTABLE_WRITER | STATE_COMPLETED,
-               &jbg_ctx);
-    TEST_SYNC_POINT_CALLBACK("WriteThread::JoinBatchGroup:DoneWaiting", w);
-  }
-}
-void WriteThread::JoinBatchGroupNoBlocking(Writer* w) {
-  assert(!w->batches.empty());
-  bool linked_as_leader = LinkOne(w, &newest_writer_);
-  if (linked_as_leader) {
-    SetState(w, STATE_GROUP_LEADER);
-  }
-}
-
-void WriteThread::AwaitStateForGroupLeader(Writer* w) {
-  if (w->state.load(std::memory_order_relaxed) != STATE_GROUP_LEADER) {
     AwaitState(w,
                STATE_GROUP_LEADER | STATE_MEMTABLE_WRITER_LEADER |
                    STATE_PARALLEL_MEMTABLE_WRITER | STATE_COMPLETED,
                &jbg_ctx);
+    TEST_SYNC_POINT_CALLBACK("WriteThread::JoinBatchGroup:DoneWaiting", w);
   }
 }
 
