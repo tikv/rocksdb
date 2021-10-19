@@ -110,6 +110,12 @@ class Directories {
   std::unique_ptr<Directory> wal_dir_;
 };
 
+struct DBWriter {
+  DBWriter(const WriteOptions& options, std::vector<WriteBatch*>&& updates)
+      : w(options, std::move(updates), nullptr, 0) {}
+  WriteThread::Writer w;
+};
+
 // While DB is the public interface of RocksDB, and DBImpl is the actual
 // class implementing it. It's the entrance of the core RocksdB engine.
 // All other DB implementations, e.g. TransactionDB, BlobDB, etc, wrap a
@@ -153,6 +159,10 @@ class DBImpl : public DB {
   using DB::Write;
   virtual Status Write(const WriteOptions& options,
                        WriteBatch* updates) override;
+  using DB::Prepare;
+  virtual void Prepare(const WriteOptions& options, DBWriter* writer) override;
+  using DB::Submit;
+  virtual Status Submit(const WriteOptions& options, DBWriter* writer) override;
 
   using DB::MultiBatchWrite;
   virtual Status MultiBatchWrite(const WriteOptions& options,
@@ -1029,16 +1039,10 @@ class DBImpl : public DB {
                    PreReleaseCallback* pre_release_callback = nullptr);
 
   Status MultiBatchWriteImpl(const WriteOptions& write_options,
-                             std::vector<WriteBatch*>&& my_batch,
-                             WriteCallback* callback,
-                             uint64_t* log_used = nullptr, uint64_t log_ref = 0,
-                             uint64_t* seq_used = nullptr);
+                             WriteThread::Writer* w, uint64_t* log_used);
 
-  Status PipelinedWriteImpl(const WriteOptions& options, WriteBatch* updates,
-                            WriteCallback* callback = nullptr,
-                            uint64_t* log_used = nullptr, uint64_t log_ref = 0,
-                            bool disable_memtable = false,
-                            uint64_t* seq_used = nullptr);
+  Status PipelinedWriteImpl(const WriteOptions& write_options,
+                            WriteThread::Writer* w, uint64_t* log_used);
 
   // Write only to memtables without joining any write queue
   Status UnorderedWriteMemtable(const WriteOptions& write_options,
@@ -1060,12 +1064,11 @@ class DBImpl : public DB {
   // of the write batch that does not have duplicate keys. When seq_per_batch is
   // not set, each key is a separate sub_batch. Otherwise each duplicate key
   // marks start of a new sub-batch.
-  Status WriteImplWALOnly(
-      WriteThread* write_thread, const WriteOptions& options,
-      WriteBatch* updates, WriteCallback* callback, uint64_t* log_used,
-      const uint64_t log_ref, uint64_t* seq_used, const size_t sub_batch_cnt,
-      PreReleaseCallback* pre_release_callback, const AssignOrder assign_order,
-      const PublishLastSeq publish_last_seq, const bool disable_memtable);
+  Status WriteImplWALOnly(WriteThread* write_thread,
+                          const WriteOptions& options, WriteThread::Writer* w,
+                          uint64_t* log_used, uint64_t* seq_used,
+                          const AssignOrder assign_order,
+                          const PublishLastSeq publish_last_seq);
 
   // write cached_recoverable_state_ to memtable if it is not empty
   // The writer must be the leader in write_thread_ and holding mutex_

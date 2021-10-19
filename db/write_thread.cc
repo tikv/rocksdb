@@ -422,6 +422,22 @@ void WriteThread::JoinBatchGroup(Writer* w) {
     TEST_SYNC_POINT_CALLBACK("WriteThread::JoinBatchGroup:DoneWaiting", w);
   }
 }
+void WriteThread::JoinBatchGroupNoBlocking(Writer* w) {
+  assert(!w->batches.empty());
+  bool linked_as_leader = LinkOne(w, &newest_writer_);
+  if (linked_as_leader) {
+    SetState(w, STATE_GROUP_LEADER);
+  }
+}
+
+void WriteThread::AwaitStateForGroupLeader(Writer* w) {
+  if (w->state.load(std::memory_order_relaxed) != STATE_GROUP_LEADER) {
+    AwaitState(w,
+               STATE_GROUP_LEADER | STATE_MEMTABLE_WRITER_LEADER |
+                   STATE_PARALLEL_MEMTABLE_WRITER | STATE_COMPLETED,
+               &jbg_ctx);
+  }
+}
 
 size_t WriteThread::EnterAsBatchGroupLeader(Writer* leader,
                                             WriteGroup* write_group) {

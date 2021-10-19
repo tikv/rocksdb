@@ -37,6 +37,7 @@
 namespace rocksdb {
 
 class DBImpl;
+struct DBWriter;
 class ColumnFamilyHandle;
 class ColumnFamilyData;
 struct FlushJobInfo;
@@ -137,6 +138,12 @@ class BlobDBImpl : public BlobDB {
       std::vector<std::string>* values) override;
 
   virtual Status Write(const WriteOptions& opts, WriteBatch* updates) override;
+  virtual void Prepare(const WriteOptions& options, DBWriter* writer) override {
+  }
+  virtual Status Submit(const WriteOptions& options,
+                        DBWriter* writer) override {
+    return Status::NotSupported("Not implemented");
+  }
 
   virtual Status Close() override;
 
