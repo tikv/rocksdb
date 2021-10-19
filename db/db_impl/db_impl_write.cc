@@ -59,17 +59,17 @@ Status DBImpl::Write(const WriteOptions& write_options, WriteBatch* my_batch) {
 }
 
 void DBImpl::Prepare(const WriteOptions& write_options, DBWriter* writer) {
-  write_thread_.JoinBatchGroupNoBlocking(&writer->w);
+  write_thread_.JoinBatchGroupNoBlocking(&writer->writer);
 }
 
 Status DBImpl::Submit(const WriteOptions& write_options, DBWriter* writer) {
-  if (writer == nullptr || writer->w.batches.empty()) {
+  if (writer == nullptr || writer->writer.batches.empty()) {
     return Status::Corruption("Batch is nullptr!");
   }
   if (tracer_) {
     InstrumentedMutexLock lock(&trace_mutex_);
     if (tracer_) {
-      tracer_->Write(writer->w.batches[0]);
+      tracer_->Write(writer->writer.batches[0]);
     }
   }
   if (write_options.sync && write_options.disableWAL) {
@@ -92,7 +92,8 @@ Status DBImpl::Submit(const WriteOptions& write_options, DBWriter* writer) {
 
   Status status;
   if (write_options.low_pri) {
-    status = ThrottleLowPriWritesIfNeeded(write_options, writer->w.batches[0]);
+    status =
+        ThrottleLowPriWritesIfNeeded(write_options, writer->writer.batches[0]);
     if (!status.ok()) {
       return status;
     }
@@ -105,30 +106,30 @@ Status DBImpl::Submit(const WriteOptions& write_options, DBWriter* writer) {
 
   if (immutable_db_options_.unordered_write) {
     const size_t sub_batch_cnt =
-        WriteBatchInternal::Count(writer->w.batches[0]);
+        WriteBatchInternal::Count(writer->writer.batches[0]);
     uint64_t seq;
-    write_thread_.AwaitStateForGroupLeader(&writer->w);
-    status = WriteImplWALOnly(&write_thread_, write_options, &writer->w,
+    write_thread_.AwaitStateForGroupLeader(&writer->writer);
+    status = WriteImplWALOnly(&write_thread_, write_options, &writer->writer,
                               nullptr, &seq, kDoAssignOrder, kDoPublishLastSeq);
     TEST_SYNC_POINT("DBImpl::WriteImpl:UnorderedWriteAfterWriteWAL");
     if (!status.ok()) {
       return status;
     }
     TEST_SYNC_POINT("DBImpl::WriteImpl:BeforeUnorderedWriteMemtable");
-    status = UnorderedWriteMemtable(write_options, writer->w.batches[0],
+    status = UnorderedWriteMemtable(write_options, writer->writer.batches[0],
                                     nullptr, 0, seq, sub_batch_cnt);
     return status;
   }
 
   if (immutable_db_options_.enable_multi_thread_write) {
-    return MultiBatchWriteImpl(write_options, &writer->w, nullptr);
+    return MultiBatchWriteImpl(write_options, &writer->writer, nullptr);
   }
 
   if (immutable_db_options_.enable_pipelined_write) {
-    return PipelinedWriteImpl(write_options, &writer->w, nullptr);
+    return PipelinedWriteImpl(write_options, &writer->writer, nullptr);
   }
-
-  return Status::OK();
+  return Status::NotSupported(
+      "Do not support submit without pipelined_write or unordered_write");
 }
 
 #ifndef ROCKSDB_LITE

@@ -112,8 +112,8 @@ class Directories {
 
 struct DBWriter {
   DBWriter(const WriteOptions& options, std::vector<WriteBatch*>&& updates)
-      : w(options, std::move(updates), nullptr, 0) {}
-  WriteThread::Writer w;
+      : writer(options, std::move(updates), nullptr, 0) {}
+  WriteThread::Writer writer;
 };
 
 // While DB is the public interface of RocksDB, and DBImpl is the actual
