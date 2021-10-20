@@ -160,7 +160,7 @@ class DBImpl : public DB {
   virtual Status Write(const WriteOptions& options,
                        WriteBatch* updates) override;
   using DB::Prepare;
-  virtual void Prepare(const WriteOptions& options, DBWriter* writer) override;
+  virtual void Prepare(DBWriter* writer) override;
   using DB::Submit;
   virtual Status Submit(const WriteOptions& options, DBWriter* writer) override;
 

@@ -2584,7 +2584,7 @@ class ModelDB : public DB {
     return batch->Iterate(&handler);
   }
   using DB::Prepare;
-  void Prepare(const WriteOptions& options, DBWriter* writer) override {}
+  void Prepare(DBWriter* writer) override {}
   using DB::Submit;
   Status Submit(const WriteOptions& options, DBWriter* writer) override {
     return Status::NotSupported("Not implemented");

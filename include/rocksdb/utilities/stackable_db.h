@@ -165,8 +165,7 @@ class StackableDB : public DB {
   virtual Status Write(const WriteOptions& opts, WriteBatch* updates) override {
     return db_->Write(opts, updates);
   }
-  virtual void Prepare(const WriteOptions& options, DBWriter* writer) override {
-  }
+  virtual void Prepare(DBWriter* writer) override {}
   virtual Status Submit(const WriteOptions& options,
                         DBWriter* writer) override {
     return Status::NotSupported("Not implemented");

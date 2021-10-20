@@ -58,7 +58,7 @@ Status DBImpl::Write(const WriteOptions& write_options, WriteBatch* my_batch) {
   return WriteImpl(write_options, my_batch, nullptr, nullptr);
 }
 
-void DBImpl::Prepare(const WriteOptions& write_options, DBWriter* writer) {
+void DBImpl::Prepare(DBWriter* writer) {
   write_thread_.JoinBatchGroupNoBlocking(&writer->writer);
 }
 
