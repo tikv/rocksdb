@@ -258,6 +258,12 @@ class WriteThread {
       return status.ok() && !CallbackFailed() && !disable_wal;
     }
 
+    bool IsReady() const {
+      static uint8_t goal = STATE_GROUP_LEADER | STATE_MEMTABLE_WRITER_LEADER |
+                            STATE_PARALLEL_MEMTABLE_WRITER | STATE_COMPLETED;
+      return (state.load(std::memory_order_acquire) | goal) != 0;
+    }
+
     // No other mutexes may be acquired while holding StateMutex(), it is
     // always last in the order
     std::mutex& StateMutex() {
