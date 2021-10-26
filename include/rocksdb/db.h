@@ -54,6 +54,7 @@ class Env;
 class EventListener;
 class StatsHistoryIterator;
 class TraceWriter;
+struct DBWriter;
 #ifdef ROCKSDB_LITE
 class CompactionJobInfo;
 #endif
@@ -378,6 +379,8 @@ class DB {
   // Returns OK on success, non-OK on failure.
   // Note: consider setting options.sync = true.
   virtual Status Write(const WriteOptions& options, WriteBatch* updates) = 0;
+  virtual void Prepare(DBWriter* writer) = 0;
+  virtual Status Submit(const WriteOptions& options, DBWriter* writer) = 0;
 
   virtual Status MultiBatchWrite(const WriteOptions& /*options*/,
                                  std::vector<WriteBatch*>&& /*updates*/) {

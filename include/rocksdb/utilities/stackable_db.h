@@ -15,6 +15,7 @@
 #endif
 
 namespace rocksdb {
+struct DBWriter;
 
 // This class contains APIs to stack rocksdb wrappers.Eg. Stack TTL over base d
 class StackableDB : public DB {
@@ -163,6 +164,11 @@ class StackableDB : public DB {
 
   virtual Status Write(const WriteOptions& opts, WriteBatch* updates) override {
     return db_->Write(opts, updates);
+  }
+  virtual void Prepare(DBWriter* writer) override {}
+  virtual Status Submit(const WriteOptions& options,
+                        DBWriter* writer) override {
+    return Status::NotSupported("Not implemented");
   }
 
   using DB::NewIterator;

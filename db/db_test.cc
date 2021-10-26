@@ -2422,6 +2422,8 @@ namespace {
 typedef std::map<std::string, std::string> KVMap;
 }
 
+struct DBWriter;
+
 class ModelDB : public DB {
  public:
   class ModelSnapshot : public Snapshot {
@@ -2580,6 +2582,12 @@ class ModelDB : public DB {
     Handler handler;
     handler.map_ = &map_;
     return batch->Iterate(&handler);
+  }
+  using DB::Prepare;
+  void Prepare(DBWriter* writer) override {}
+  using DB::Submit;
+  Status Submit(const WriteOptions& options, DBWriter* writer) override {
+    return Status::NotSupported("Not implemented");
   }
 
   using DB::GetProperty;

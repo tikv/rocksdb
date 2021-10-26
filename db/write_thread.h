@@ -258,6 +258,12 @@ class WriteThread {
       return status.ok() && !CallbackFailed() && !disable_wal;
     }
 
+    bool IsReady() const {
+      static uint8_t goal = STATE_GROUP_LEADER | STATE_MEMTABLE_WRITER_LEADER |
+                            STATE_PARALLEL_MEMTABLE_WRITER | STATE_COMPLETED;
+      return (state.load(std::memory_order_acquire) | goal) != 0;
+    }
+
     // No other mutexes may be acquired while holding StateMutex(), it is
     // always last in the order
     std::mutex& StateMutex() {
@@ -301,7 +307,8 @@ class WriteThread {
   // it will block.
   //
   // Writer* w:        Writer to be executed as part of a batch group
-  void JoinBatchGroup(Writer* w);
+  void JoinBatchGroupNoBlocking(Writer* w);
+  void AwaitStateForGroupLeader(Writer* w);
 
   // Constructs a write batch group led by leader, which should be a
   // Writer passed to JoinBatchGroup on the current thread.
