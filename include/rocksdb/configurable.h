@@ -280,7 +280,6 @@ class Configurable {
       const std::string& opt_value, const std::string& default_id,
       std::string* id, std::unordered_map<std::string, std::string>* options);
 
- protected:
   // Returns the raw pointer for the associated named option.
   // The name is typically the name of an option registered via the
   // Classes may override this method to provide further specialization (such as
@@ -293,6 +292,7 @@ class Configurable {
   // "my_ptr"
   virtual const void* GetOptionsPtr(const std::string& name) const;
 
+ protected:
   // Method for allowing options to be configured outside of the normal
   // registered options framework.  Classes may override this method if they
   // wish to support non-standard options implementations (such as configuring
