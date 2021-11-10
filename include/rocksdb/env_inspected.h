@@ -8,7 +8,7 @@
 
 #include "rocksdb/env.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 // Interface to inspect storage requests. FileSystemInspectedEnv will consult
 // FileSystemInspector before issuing actual disk IO.
