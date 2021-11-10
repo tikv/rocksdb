@@ -401,6 +401,47 @@ class WriteBatch : public WriteBatchBase {
 
  protected:
   std::string rep_;  // See comment in write_batch.cc for the format of rep_
+
+  // Intentionally copyable
+ public:
+  class Iterator {
+   private:
+    Slice rep_;
+    Slice input_;
+    Slice key_;
+    Slice value_;
+    uint32_t column_family_;
+    char tag_;
+    bool valid_;
+
+   public:
+    explicit Iterator(const Slice& rep) : rep_(rep), valid_(false) {}
+
+    bool Valid() const { return valid_; }
+
+    Slice Key() const { return key_; }
+
+    Slice Value() const { return value_; }
+
+    uint32_t GetColumnFamilyId() const { return column_family_; }
+
+    char GetValueType() const { return tag_; };
+
+    void SeekToFirst();
+
+    void Next();
+  };
+
+  class WriteBatchRef {
+   public:
+    explicit WriteBatchRef(const Slice& rep) : rep_(rep) {}
+    Iterator* NewIterator() const { return new Iterator(rep_); }
+
+    int Count() const;
+
+   private:
+    const Slice& rep_;
+  };
 };
 
 }  // namespace ROCKSDB_NAMESPACE
