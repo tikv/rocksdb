@@ -356,6 +356,31 @@ class SkipListFactory : public MemTableRepFactory {
   size_t lookahead_;
 };
 
+// This uses a doubly skip list to store keys, which is similar to skip list,
+// but optimize for prev seek.
+class DoublySkipListFactory : public MemTableRepFactory {
+ public:
+  explicit DoublySkipListFactory(size_t lookahead = 0);
+  // Methods for Configurable/Customizable class overrides
+  static const char* kClassName() { return "DoublySkipListFactory"; }
+  static const char* kNickName() { return "doubly_skip_list"; }
+  virtual const char* Name() const override { return kClassName(); }
+  virtual const char* NickName() const override { return kNickName(); }
+  std::string GetId() const override;
+
+  using MemTableRepFactory::CreateMemTableRep;
+  virtual MemTableRep* CreateMemTableRep(const MemTableRep::KeyComparator&,
+                                         Allocator*, const SliceTransform*,
+                                         Logger* logger) override;
+
+  bool IsInsertConcurrentlySupported() const override { return true; }
+
+  bool CanHandleDuplicatedKey() const override { return true; }
+
+ private:
+  size_t lookahead_;
+};
+
 #ifndef ROCKSDB_LITE
 // This creates MemTableReps that are backed by an std::vector. On iteration,
 // the vector is sorted. This is useful for workloads where iteration is very

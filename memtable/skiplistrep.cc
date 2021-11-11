@@ -7,6 +7,7 @@
 
 #include "db/memtable.h"
 #include "memory/arena.h"
+#include "memtable/doubly_skiplist.h"
 #include "memtable/inlineskiplist.h"
 #include "rocksdb/memtablerep.h"
 #include "rocksdb/utilities/options_type.h"
@@ -14,8 +15,10 @@
 
 namespace ROCKSDB_NAMESPACE {
 namespace {
+
+template <template <typename U> class SkipList>
 class SkipListRep : public MemTableRep {
-  InlineSkipList<const MemTableRep::KeyComparator&> skip_list_;
+  SkipList<const MemTableRep::KeyComparator&> skip_list_;
   const MemTableRep::KeyComparator& cmp_;
   const SliceTransform* transform_;
   const size_t lookahead_;
@@ -163,13 +166,12 @@ public:
 
   // Iteration over the contents of a skip list
   class Iterator : public MemTableRep::Iterator {
-    InlineSkipList<const MemTableRep::KeyComparator&>::Iterator iter_;
+    typename SkipList<const MemTableRep::KeyComparator&>::Iterator iter_;
 
    public:
     // Initialize an iterator over the specified list.
     // The returned iterator is not valid.
-    explicit Iterator(
-        const InlineSkipList<const MemTableRep::KeyComparator&>* list)
+    explicit Iterator(const SkipList<const MemTableRep::KeyComparator&>* list)
         : iter_(list) {}
 
     ~Iterator() override {}
@@ -207,8 +209,6 @@ public:
       }
     }
 
-    void RandomSeek() override { iter_.RandomSeek(); }
-
     // Position at the first entry in list.
     // Final state of iterator is Valid() iff list is not empty.
     void SeekToFirst() override { iter_.SeekToFirst(); }
@@ -227,8 +227,8 @@ public:
   // the target key hasn't been found.
   class LookaheadIterator : public MemTableRep::Iterator {
    public:
-    explicit LookaheadIterator(const SkipListRep& rep) :
-        rep_(rep), iter_(&rep_.skip_list_), prev_(iter_) {}
+    explicit LookaheadIterator(const SkipListRep<SkipList>& rep)
+        : rep_(rep), iter_(&rep_.skip_list_), prev_(iter_) {}
 
     ~LookaheadIterator() override {}
 
@@ -316,9 +316,9 @@ public:
     std::string tmp_;       // For passing to EncodeKey
 
    private:
-    const SkipListRep& rep_;
-    InlineSkipList<const MemTableRep::KeyComparator&>::Iterator iter_;
-    InlineSkipList<const MemTableRep::KeyComparator&>::Iterator prev_;
+    const SkipListRep<SkipList>& rep_;
+    typename SkipList<const MemTableRep::KeyComparator&>::Iterator iter_;
+    typename SkipList<const MemTableRep::KeyComparator&>::Iterator prev_;
   };
 
   MemTableRep::Iterator* GetIterator(Arena* arena = nullptr) override {
@@ -361,7 +361,29 @@ std::string SkipListFactory::GetId() const {
 MemTableRep* SkipListFactory::CreateMemTableRep(
     const MemTableRep::KeyComparator& compare, Allocator* allocator,
     const SliceTransform* transform, Logger* /*logger*/) {
-  return new SkipListRep(compare, allocator, transform, lookahead_);
+  return new SkipListRep<InlineSkipList>(compare, allocator, transform,
+                                         lookahead_);
+}
+
+DoublySkipListFactory::DoublySkipListFactory(size_t lookahead)
+    : lookahead_(lookahead) {
+  RegisterOptions("DoublySkipListFactoryOptions", &lookahead_,
+                  &skiplist_factory_info);
+}
+
+std::string DoublySkipListFactory::GetId() const {
+  std::string id = Name();
+  if (lookahead_ > 0) {
+    id.append(":").append(ROCKSDB_NAMESPACE::ToString(lookahead_));
+  }
+  return id;
+}
+
+MemTableRep* DoublySkipListFactory::CreateMemTableRep(
+    const MemTableRep::KeyComparator& compare, Allocator* allocator,
+    const SliceTransform* transform, Logger* /*logger*/) {
+  return new SkipListRep<DoublySkipList>(compare, allocator, transform,
+                                         lookahead_);
 }
 
 }  // namespace ROCKSDB_NAMESPACE
