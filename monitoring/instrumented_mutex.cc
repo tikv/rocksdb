@@ -25,9 +25,9 @@ Statistics* stats_for_report(SystemClock* clock, Statistics* stats) {
 }  // namespace
 
 void InstrumentedMutex::Lock() {
-  PERF_CONDITIONAL_TIMER_FOR_MUTEX_GUARD(
-      db_mutex_lock_nanos, stats_code_ == DB_MUTEX_WAIT_MICROS,
-      stats_for_report(clock_, stats_), stats_code_);
+//  PERF_CONDITIONAL_TIMER_FOR_MUTEX_GUARD(
+//      db_mutex_lock_nanos, stats_code_ == DB_MUTEX_WAIT_MICROS,
+//      stats_for_report(clock_, stats_), stats_code_);
   LockInternal();
 }
 
