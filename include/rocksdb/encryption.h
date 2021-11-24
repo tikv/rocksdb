@@ -13,7 +13,7 @@
 namespace ROCKSDB_NAMESPACE {
 namespace encryption {
 
-class AESEncryptionProvider;
+class EncryptionProvider;
 
 enum class EncryptionMethod : int {
   kUnknown = 0,
@@ -64,7 +64,7 @@ class KeyManagedEncryptedEnv : public EnvWrapper {
  public:
   KeyManagedEncryptedEnv(Env* base_env,
                          std::shared_ptr<KeyManager>& key_manager,
-                         std::unique_ptr<AESEncryptionProvider>&& provider,
+                         const std::shared_ptr<EncryptionProvider>& provider,
                          std::unique_ptr<Env>&& encrypted_env);
 
   virtual ~KeyManagedEncryptedEnv();
@@ -97,7 +97,7 @@ class KeyManagedEncryptedEnv : public EnvWrapper {
 
  private:
   const std::shared_ptr<KeyManager> key_manager_;
-  const std::unique_ptr<AESEncryptionProvider> provider_;
+  const std::shared_ptr<EncryptionProvider> provider_;
   const std::unique_ptr<Env> encrypted_env_;
 };
 

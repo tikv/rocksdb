@@ -242,11 +242,11 @@ Status AESEncryptionProvider::CreateCipherStream(
 
 KeyManagedEncryptedEnv::KeyManagedEncryptedEnv(
     Env* base_env, std::shared_ptr<KeyManager>& key_manager,
-    std::unique_ptr<AESEncryptionProvider>&& provider,
+    const std::shared_ptr<EncryptionProvider>& provider,
     std::unique_ptr<Env>&& encrypted_env)
     : EnvWrapper(base_env),
       key_manager_(key_manager),
-      provider_(std::move(provider)),
+      provider_(provider),
       encrypted_env_(std::move(encrypted_env)) {}
 
 KeyManagedEncryptedEnv::~KeyManagedEncryptedEnv() = default;
@@ -500,10 +500,10 @@ Status KeyManagedEncryptedEnv::RenameFile(const std::string& src_fname,
 
 Env* NewKeyManagedEncryptedEnv(Env* base_env,
                                std::shared_ptr<KeyManager>& key_manager) {
-  std::unique_ptr<AESEncryptionProvider> provider(
+  std::shared_ptr<EncryptionProvider> provider(
       new AESEncryptionProvider(key_manager.get()));
-  std::unique_ptr<Env> encrypted_env(NewEncryptedEnv(base_env, provider.get()));
-  return new KeyManagedEncryptedEnv(base_env, key_manager, std::move(provider),
+  std::unique_ptr<Env> encrypted_env(NewEncryptedEnv(base_env, provider));
+  return new KeyManagedEncryptedEnv(base_env, key_manager, provider,
                                     std::move(encrypted_env));
 }
 

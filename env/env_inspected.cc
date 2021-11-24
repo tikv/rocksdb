@@ -148,6 +148,7 @@ class InspectedWritableFile : public WritableFileWrapper {
         owner_(std::move(target)),
         inspector_(inspector) {}
 
+  using WritableFileWrapper::Append;
   Status Append(const Slice& data) override {
     assert(inspector_);
     Status s;
@@ -171,6 +172,7 @@ class InspectedWritableFile : public WritableFileWrapper {
     return s;
   }
 
+  using WritableFileWrapper::PositionedAppend;
   Status PositionedAppend(const Slice& data, uint64_t offset) override {
     assert(inspector_);
     Status s;
