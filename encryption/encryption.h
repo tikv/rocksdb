@@ -10,9 +10,10 @@
 
 #include "rocksdb/encryption.h"
 #include "rocksdb/env_encryption.h"
+#include "rocksdb/rocksdb_namespace.h"
 #include "util/string_util.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 namespace encryption {
 
 #if OPENSSL_VERSION_NUMBER < 0x01010000f
@@ -94,16 +95,24 @@ extern Status NewAESCTRCipherStream(
     EncryptionMethod method, const std::string& key, const std::string& iv,
     std::unique_ptr<AESCTRCipherStream>* result);
 
-class AESEncryptionProvider : public EncryptionProvider {
+class AESEncryptionProvider : public ROCKSDB_NAMESPACE::EncryptionProvider {
  public:
   AESEncryptionProvider(KeyManager* key_manager) : key_manager_(key_manager) {}
   virtual ~AESEncryptionProvider() = default;
 
-  size_t GetPrefixLength() override { return 0; }
+  size_t GetPrefixLength() const override { return 0; }
 
   Status CreateNewPrefix(const std::string& /*fname*/, char* /*prefix*/,
-                         size_t /*prefix_length*/) override {
+                         size_t /*prefix_length*/) const override {
     return Status::OK();
+  }
+
+  static const char* kClassName() { return "AES"; }
+  const char* Name() const override { return kClassName(); }
+
+  Status AddCipher(const std::string& descriptor, const char* /*cipher*/,
+                   size_t /*len*/, bool /*for_write*/) override {
+    return Status::NotSupported("Cannot add keys to AESEncryptionProvider");
   }
 
   Status CreateCipherStream(
@@ -115,7 +124,7 @@ class AESEncryptionProvider : public EncryptionProvider {
 };
 
 }  // namespace encryption
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE
 
 #endif  // OPENSSL
 #endif  // !ROCKSDB_LITE

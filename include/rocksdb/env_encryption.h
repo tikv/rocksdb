@@ -16,14 +16,7 @@
 
 namespace ROCKSDB_NAMESPACE {
 
-class EncryptionProvider;
-
 struct ConfigOptions;
-
-// Returns an Env that encrypts data when stored on disk and decrypts data when
-// read from disk.
-Env* NewEncryptedEnv(Env* base_env,
-                     const std::shared_ptr<EncryptionProvider>& provider);
 
 // BlockAccessCipherStream is the base class for any cipher stream that
 // supports random access at block level (without requiring data from other
@@ -437,6 +430,11 @@ class EncryptedFileSystem : public FileSystemWrapper {
   virtual Status AddCipher(const std::string& descriptor, const char* cipher,
                            size_t len, bool for_write) = 0;
 };
+// Returns an Env that encrypts data when stored on disk and decrypts data when
+// read from disk.
+Env* NewEncryptedEnv(Env* base_env,
+                     const std::shared_ptr<EncryptionProvider>& provider);
+
 }  // namespace ROCKSDB_NAMESPACE
 
 #endif  // !defined(ROCKSDB_LITE)

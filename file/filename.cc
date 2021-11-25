@@ -23,6 +23,32 @@ namespace ROCKSDB_NAMESPACE {
 static const std::string kRocksDbTFileExt = "sst";
 static const std::string kLevelDbTFileExt = "ldb";
 static const std::string kRocksDBBlobFileExt = "blob";
+static const std::string kUnencryptedTempFileNameSuffix = "dbtmp.plain";
+
+bool IsCurrentFile(const std::string& fname) {
+  // skip CURRENT file.
+  size_t current_length = strlen("CURRENT");
+  if (fname.length() >= current_length &&
+      !fname.compare(fname.length() - current_length, current_length,
+                     "CURRENT")) {
+    return true;
+  }
+  // skip temporary file for CURRENT file.
+  size_t temp_length = kUnencryptedTempFileNameSuffix.length();
+  if (fname.length() >= temp_length &&
+      !fname.compare(fname.length() - temp_length, temp_length,
+                     kUnencryptedTempFileNameSuffix)) {
+    return true;
+  }
+  return false;
+}
+
+bool IsValidCurrentFile(std::unique_ptr<rocksdb::SequentialFile> seq_file) {
+  Slice result;
+  char scratch[64];
+  seq_file->Read(8, &result, scratch);
+  return result.compare("MANIFEST") == 0;
+}
 
 // Given a path, flatten the path name by replacing all chars not in
 // {[0-9,a-z,A-Z,-,_,.]} with _. And append '_LOG\0' at the end.

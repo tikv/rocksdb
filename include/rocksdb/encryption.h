@@ -11,9 +11,10 @@
 #include "rocksdb/rocksdb_namespace.h"
 
 namespace ROCKSDB_NAMESPACE {
-namespace encryption {
 
 class EncryptionProvider;
+
+namespace encryption {
 
 enum class EncryptionMethod : int {
   kUnknown = 0,
