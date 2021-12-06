@@ -71,6 +71,7 @@ Status GetLatestOptionsFileName(const std::string& dbpath,
   } else if (!s.ok()) {
     return s;
   }
+  FileType invalid_type;
   for (auto& file_name : file_names) {
     uint64_t time_stamp;
     FileType type;
@@ -79,12 +80,17 @@ Status GetLatestOptionsFileName(const std::string& dbpath,
         latest_time_stamp = time_stamp;
         latest_file_name = file_name;
       }
+    } else {
+      invalid_type = type;
     }
   }
   if (latest_file_name.size() == 0) {
-    return Status::NotFound(Status::kPathNotFound,
-                            "No options files found in the DB directory.",
-                            dbpath);
+    char buf[200];
+    sprintf(buf,
+            "No options files found in the DB directory. files: %d, "
+            "invalid_type: %d",
+            (int)file_names.size(), (int)invalid_type);
+    return Status::NotFound(Status::kPathNotFound, buf, dbpath);
   }
   *options_file_name = latest_file_name;
   return Status::OK();
