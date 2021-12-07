@@ -7,7 +7,6 @@
 
 #include <cassert>
 #include <cinttypes>
-#include <iostream>
 #include <limits>
 #include <string>
 
@@ -580,10 +579,8 @@ static std::unordered_map<std::string, OptionTypeInfo>
          {offset_of(&ImmutableCFOptions::memtable_factory),
           OptionType::kCustomizable, OptionVerificationType::kByName,
           OptionTypeFlags::kShared,
-          [](const ConfigOptions& opts, const std::string& factory_name,
+          [](const ConfigOptions& opts, const std::string&,
              const std::string& value, void* addr) {
-            std::cout << "parse memtable_factory: " << factory_name
-                      << std::endl;
             std::unique_ptr<MemTableRepFactory> factory;
             auto* shared =
                 static_cast<std::shared_ptr<MemTableRepFactory>*>(addr);

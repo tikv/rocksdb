@@ -5,8 +5,6 @@
 
 #include "rocksdb/configurable.h"
 
-#include <iostream>
-
 #include "logging/logging.h"
 #include "options/configurable_helper.h"
 #include "options/options_helper.h"
@@ -182,11 +180,9 @@ Status Configurable::ConfigureOptions(
 
     s = ConfigurableHelper::ConfigureOptions(copy, *this, opts_map, unused);
   }
-  std::cout << "Before PrepareOptions " << std::endl;
   if (config_options.invoke_prepare_options && s.ok()) {
     s = PrepareOptions(config_options);
   }
-  std::cout << "After PrepareOptions " << std::endl;
 #ifndef ROCKSDB_LITE
   if (!s.ok() && !curr_opts.empty()) {
     ConfigOptions reset = config_options;
@@ -257,8 +253,6 @@ Status Configurable::ParseOption(const ConfigOptions& config_options,
                                  const OptionTypeInfo& opt_info,
                                  const std::string& opt_name,
                                  const std::string& opt_value, void* opt_ptr) {
-  std::cout << "ParseOption: " << opt_name << ", value: " << opt_value
-            << std::endl;
   if (opt_info.IsMutable()) {
     if (config_options.mutable_options_only) {
       // This option is mutable. Treat all of its children as mutable as well
@@ -285,7 +279,6 @@ Status ConfigurableHelper::ConfigureOptions(
   Status s = Status::OK();
   if (!opts_map.empty()) {
 #ifndef ROCKSDB_LITE
-    std::cout << "ConfigureOptions" << std::endl;
     for (const auto& iter : configurable.options_) {
       s = ConfigureSomeOptions(config_options, configurable, *(iter.type_map),
                                &remaining, iter.opt_ptr);
@@ -337,7 +330,6 @@ Status ConfigurableHelper::ConfigureSomeOptions(
   std::unordered_set<std::string> unsupported;
   // While there are unused properties and we processed at least one,
   // go through the remaining unused properties and attempt to configure them.
-  std::cout << "ConfigureSomeOptions: " << std::endl;
   while (found > 0 && !options->empty()) {
     found = 0;
     notsup = Status::OK();
