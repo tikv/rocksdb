@@ -194,6 +194,20 @@ static int RegisterBuiltinMemTableRepFactory(ObjectLibrary& library,
         return guard->get();
       });
   library.Register<MemTableRepFactory>(
+      AsRegex(DoublySkipListFactory::kClassName(),
+              DoublySkipListFactory::kNickName()),
+      [](const std::string& uri, std::unique_ptr<MemTableRepFactory>* guard,
+         std::string* /*errmsg*/) {
+        auto colon = uri.find(":");
+        if (colon != std::string::npos) {
+          size_t lookahead = ParseSizeT(uri.substr(colon + 1));
+          guard->reset(new DoublySkipListFactory(lookahead));
+        } else {
+          guard->reset(new DoublySkipListFactory());
+        }
+        return guard->get();
+      });
+  library.Register<MemTableRepFactory>(
       AsRegex("HashLinkListRepFactory", "hash_linkedlist"),
       [](const std::string& uri, std::unique_ptr<MemTableRepFactory>* guard,
          std::string* /*errmsg*/) {
