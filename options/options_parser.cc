@@ -8,6 +8,7 @@
 #include "options/options_parser.h"
 
 #include <cmath>
+#include <iostream>
 #include <map>
 #include <string>
 #include <utility>
@@ -436,6 +437,9 @@ Status RocksDBOptionsParser::EndSection(
     assert(GetCFOptions(section_arg) == nullptr);
     cf_names_.emplace_back(section_arg);
     cf_opts_.emplace_back();
+    std::cout
+        << "RocksDBOptionsParser::EndSection GetColumnFamilyOptionsFromMap"
+        << std::endl;
     s = GetColumnFamilyOptionsFromMap(config_options, ColumnFamilyOptions(),
                                       opt_map, &cf_opts_.back());
     if (!s.ok()) {
