@@ -71,7 +71,6 @@ Status GetLatestOptionsFileName(const std::string& dbpath,
   } else if (!s.ok()) {
     return s;
   }
-  FileType invalid_type = kOptionsFile;
   std::string invalid_file;
   for (auto& file_name : file_names) {
     uint64_t time_stamp;
@@ -82,18 +81,51 @@ Status GetLatestOptionsFileName(const std::string& dbpath,
         latest_file_name = file_name;
       }
     } else {
-      invalid_type = type;
-      invalid_file = file_name;
+      std::string tp;
+      switch (type) {
+        case kWalFile:
+          tp = "wal";
+          break;
+        case kDBLockFile:
+          tp = "lock";
+          break;
+        case kTableFile:
+          tp = "table";
+          break;
+        case kDescriptorFile:
+          tp = "desc";
+          break;
+        case kCurrentFile:
+          tp = "CURRENT";
+          break;
+        case kTempFile:
+          tp = "tmp";
+          break;
+        case kInfoLogFile:
+          tp = "log";
+          break;
+        case kMetaDatabase:
+          tp = "meta";
+          break;
+        case kIdentityFile:
+          tp = "identity";
+          break;
+        case kOptionsFile:
+          tp = "options";
+          break;
+        case kBlobFile:
+          tp = "blob";
+          break;
+      };
+      invalid_file += file_name + ": " + tp + ",";
     }
   }
   if (latest_file_name.size() == 0) {
     char buf[200];
-    sprintf(buf,
-            "No options files found in the DB directory. files: %d, "
-            "invalid_type: %d",
-            (int)file_names.size(), (int)invalid_type);
+    sprintf(buf, "No options files found in the DB directory. files: %d",
+            (int)file_names.size());
     return Status::NotFound(Status::kPathNotFound, buf,
-                            dbpath + "/" + invalid_file);
+                            dbpath + ":[" + invalid_file + "]");
   }
   *options_file_name = latest_file_name;
   return Status::OK();
