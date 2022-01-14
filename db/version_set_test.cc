@@ -148,7 +148,7 @@ class VersionStorageInfoTest : public testing::Test {
     f->compensated_file_size = file_size;
     f->num_entries = 0;
     f->num_deletions = 0;
-    vstorage_.AddFile(level, f, trie /*new_file*/);
+    vstorage_.AddFile(level, f, true /*new_file*/);
   }
 
   std::string GetOverlappingFiles(int level, const InternalKey& begin,

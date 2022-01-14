@@ -96,7 +96,7 @@ class CompactionPickerTest : public testing::Test {
     f->fd.largest_seqno = largest_seq;
     f->compensated_file_size =
         (compensated_file_size != 0) ? compensated_file_size : file_size;
-    vstorage_->AddFile(level, f);
+    vstorage_->AddFile(level, f, true /*new_file*/);
     files_.emplace_back(f);
     file_map_.insert({file_number, {f, level}});
   }
