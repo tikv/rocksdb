@@ -492,7 +492,8 @@ class VersionBuilder::Rep {
             // deleted from it.
             vstorage->UpdateAccumulatedStats(f);
           }
-          vstorage->AddFile(level, f, f->being_moved_to != level /*new_file*/, info_log_);
+          vstorage->AddFile(level, f, f->being_moved_to != level /*new_file*/,
+                            info_log_);
         }
       }
     }

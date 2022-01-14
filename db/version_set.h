@@ -106,7 +106,8 @@ class VersionStorageInfo {
 
   void Reserve(int level, size_t size) { files_[level].reserve(size); }
 
-  void AddFile(int level, FileMetaData* f, bool new_file, Logger* info_log = nullptr);
+  void AddFile(int level, FileMetaData* f, bool new_file,
+               Logger* info_log = nullptr);
 
   void SetFinalized();
 

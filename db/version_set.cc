@@ -2550,7 +2550,8 @@ bool CompareCompensatedSizeDescending(const Fsize& first, const Fsize& second) {
 }
 } // anonymous namespace
 
-void VersionStorageInfo::AddFile(int level, FileMetaData* f, bool new_file, Logger* info_log) {
+void VersionStorageInfo::AddFile(int level, FileMetaData* f, bool new_file,
+                                 Logger* info_log) {
   auto& level_files = files_[level];
   // Must not overlap
 #ifndef NDEBUG
@@ -2582,7 +2583,7 @@ void VersionStorageInfo::AddFile(int level, FileMetaData* f, bool new_file, Logg
   assert(file_locations_.find(file_number) == file_locations_.end());
   file_locations_.emplace(file_number,
                           FileLocation(level, level_files.size() - 1));
-  
+
   auto file_size = f->fd.GetFileSize();
   total_file_size_ += file_size;
   if (new_file) {
@@ -5395,9 +5396,9 @@ uint64_t VersionSet::GetTotalSstFilesSize(Version* dummy_versions) {
   for (Version* v = dummy_versions->next_; v != dummy_versions; v = v->next_) {
     VersionStorageInfo* storage_info = v->storage_info();
     if (total_size == 0) {
-      total_size = storage_info.total_file_size_;
+      total_size = storage_info->total_file_size_;
     } else {
-      total_size += storage_info.new_file_size_;
+      total_size += storage_info->new_file_size_;
     }
   }
 #ifndef NDEBUG
@@ -5415,7 +5416,7 @@ uint64_t VersionSet::GetTotalSstFilesSize(Version* dummy_versions) {
       }
     }
   }
-  assert!(total_size == total_size2);
+  assert(total_size == total_size2);
 #endif
   return total_size;
 }
