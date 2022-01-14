@@ -1652,6 +1652,8 @@ VersionStorageInfo::VersionStorageInfo(
       current_num_deletions_(0),
       current_num_samples_(0),
       estimated_compaction_needed_bytes_(0),
+      total_file_size_(0),
+      new_file_size_(0),
       finalized_(false),
       force_consistency_checks_(_force_consistency_checks) {
   if (ref_vstorage != nullptr) {
@@ -2548,7 +2550,7 @@ bool CompareCompensatedSizeDescending(const Fsize& first, const Fsize& second) {
 }
 } // anonymous namespace
 
-void VersionStorageInfo::AddFile(int level, FileMetaData* f, Logger* info_log) {
+void VersionStorageInfo::AddFile(int level, FileMetaData* f, bool new_file, Logger* info_log) {
   auto& level_files = files_[level];
   // Must not overlap
 #ifndef NDEBUG
@@ -2580,6 +2582,12 @@ void VersionStorageInfo::AddFile(int level, FileMetaData* f, Logger* info_log) {
   assert(file_locations_.find(file_number) == file_locations_.end());
   file_locations_.emplace(file_number,
                           FileLocation(level, level_files.size() - 1));
+  
+  auto file_size = f->fd.GetFileSize();
+  total_file_size_ += file_size;
+  if (new_file) {
+    new_file_size_ += file_size;
+  }
 }
 
 // Version::PrepareApply() need to be called before calling the function, or
@@ -5383,8 +5391,18 @@ uint64_t VersionSet::GetNumLiveVersions(Version* dummy_versions) {
 }
 
 uint64_t VersionSet::GetTotalSstFilesSize(Version* dummy_versions) {
+  uint64_t total_size = 0;
+  for (Version* v = dummy_versions->next_; v != dummy_versions; v = v->next_) {
+    VersionStorageInfo* storage_info = v->storage_info();
+    if (total_size == 0) {
+      total_size = storage_info.total_file_size_;
+    } else {
+      total_size += storage_info.new_file_size_;
+    }
+  }
+#ifndef NDEBUG
   std::unordered_set<uint64_t> unique_files;
-  uint64_t total_files_size = 0;
+  uint64_t total_size2 = 0;
   for (Version* v = dummy_versions->next_; v != dummy_versions; v = v->next_) {
     VersionStorageInfo* storage_info = v->storage_info();
     for (int level = 0; level < storage_info->num_levels_; level++) {
@@ -5392,12 +5410,14 @@ uint64_t VersionSet::GetTotalSstFilesSize(Version* dummy_versions) {
         if (unique_files.find(file_meta->fd.packed_number_and_path_id) ==
             unique_files.end()) {
           unique_files.insert(file_meta->fd.packed_number_and_path_id);
-          total_files_size += file_meta->fd.GetFileSize();
+          total_size2 += file_meta->fd.GetFileSize();
         }
       }
     }
   }
-  return total_files_size;
+  assert!(total_size == total_size2);
+#endif
+  return total_size;
 }
 
 ReactiveVersionSet::ReactiveVersionSet(const std::string& dbname,

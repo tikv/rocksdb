@@ -106,7 +106,7 @@ class VersionStorageInfo {
 
   void Reserve(int level, size_t size) { files_[level].reserve(size); }
 
-  void AddFile(int level, FileMetaData* f, Logger* info_log = nullptr);
+  void AddFile(int level, FileMetaData* f, bool new_file, Logger* info_log = nullptr);
 
   void SetFinalized();
 
@@ -583,6 +583,11 @@ class VersionStorageInfo {
   // Estimated bytes needed to be compacted until all levels' size is down to
   // target sizes.
   uint64_t estimated_compaction_needed_bytes_;
+
+  // total size of all files
+  uint64_t total_file_size_;
+  // total size of newly created files
+  uint64_t new_file_size_;
 
   bool finalized_;
 

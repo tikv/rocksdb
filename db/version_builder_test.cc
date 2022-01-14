@@ -459,6 +459,29 @@ TEST_F(VersionBuilderTest, ApplyFileDeletionAndAddition) {
     ASSERT_TRUE(checker.Check(&new_vstorage));
     UnrefFilesInVersion(&new_vstorage);
   }
+
+  {  // Move to the same level.
+    VersionBuilder builder(env_options, table_cache, &vstorage_);
+    ASSERT_OK(builder.Apply(&deletion));
+    VersionEdit addition;
+    addition.AddFile(level, file_number, path_id, file_size,
+                     GetInternalKey("181", smallest_seq),
+                     GetInternalKey("798", largest_seq), smallest_seqno,
+                     largest_seqno, marked_for_compaction);
+    ASSERT_OK(builder.Apply(&addition));
+    VersionStorageInfo new_vstorage(&icmp_, ucmp_, options_.num_levels,
+                                    kCompactionStyleLevel, &vstorage_,
+                                    force_consistency_checks);
+    ASSERT_OK(builder.SaveTo(&new_vstorage));
+    ASSERT_EQ(new_vstorage.GetFileLocation(file_number).GetLevel(), level);
+    // File movement should not change key estimation.
+    ASSERT_EQ(vstorage_.GetEstimatedActiveKeys(),
+              new_vstorage.GetEstimatedActiveKeys());
+    FileReferenceChecker checker;
+    ASSERT_TRUE(checker.Check(&vstorage_));
+    ASSERT_TRUE(checker.Check(&new_vstorage));
+    UnrefFilesInVersion(&new_vstorage);
+  }
 }
 
 TEST_F(VersionBuilderTest, ApplyFileAdditionAlreadyInBase) {

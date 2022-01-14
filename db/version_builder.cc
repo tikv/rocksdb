@@ -424,6 +424,8 @@ class VersionBuilder::Rep {
       return s;
     }
 
+    uint64_t total_file_size = 0;
+    int64_t delta_file_size = 0;
     for (int level = 0; level < num_levels_; level++) {
       const auto& cmp = (level == 0) ? level_zero_cmp_ : level_nonzero_cmp_;
       // Merge the set of added files with the set of pre-existing files.
@@ -483,7 +485,7 @@ class VersionBuilder::Rep {
             assert(unordered_added_files.find(file_number) ==
                    unordered_added_files.end());
 #endif
-            vstorage->AddFile(level, f, info_log_);
+            vstorage->AddFile(level, f, false /*new_file*/, info_log_);
           }
         } else {
           FileMetaData* f = *delta_iter++;
@@ -492,7 +494,7 @@ class VersionBuilder::Rep {
             // deleted from it.
             vstorage->UpdateAccumulatedStats(f);
           }
-          vstorage->AddFile(level, f, info_log_);
+          vstorage->AddFile(level, f, f->being_moved_to != level /*new_file*/, info_log_);
         }
       }
     }
