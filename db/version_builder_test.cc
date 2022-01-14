@@ -69,7 +69,7 @@ class VersionBuilderTest : public testing::Test {
     f->compensated_file_size = file_size;
     f->num_entries = num_entries;
     f->num_deletions = num_deletions;
-    vstorage_.AddFile(level, f);
+    vstorage_.AddFile(level, f, true /*new_file*/);
     if (sampled) {
       f->init_stats_from_file = true;
       vstorage_.UpdateAccumulatedStats(f);
