@@ -93,6 +93,10 @@ class Status {
   Status(const Status& s, Severity sev);
   Severity severity() const { return sev_; }
 
+  void set_severity(Severity sev) {
+    sev_ = sev;
+  }
+
   // Returns a C style string indicating the message of the Status
   const char* getState() const { return state_; }
 
