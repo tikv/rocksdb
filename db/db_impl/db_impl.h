@@ -528,6 +528,7 @@ class DBImpl : public DB {
   static BGJobLimits GetBGJobLimits(int max_background_flushes,
                                     int max_background_compactions,
                                     int max_background_jobs,
+                                    int base_background_compactions,
                                     bool parallelize_compactions);
 
   // move logs pending closing from job_context to the DB queue and
@@ -798,6 +799,12 @@ class DBImpl : public DB {
       const autovector<ColumnFamilyData*>& cfds,
       const autovector<const uint64_t*>& flush_memtable_ids,
       bool resuming_from_bg_err);
+  // Print information of all tombstones of all iterators to the std::string
+  // This is only used by ldb. The output might be capped. Tombstones
+  // printed out are not guaranteed to be in any order.
+  Status TablesRangeTombstoneSummary(ColumnFamilyHandle* column_family,
+                                     int max_entries_to_print,
+                                     std::string* out_str);
 
 #ifndef NDEBUG
   // Compact any files in the named level that overlap [*begin, *end]
@@ -899,7 +906,6 @@ class DBImpl : public DB {
   void TEST_WaitForPersistStatsRun(std::function<void()> callback) const;
   bool TEST_IsPersistentStatsEnabled() const;
   size_t TEST_EstimateInMemoryStatsHistorySize() const;
-
 #endif  // NDEBUG
 
  protected:

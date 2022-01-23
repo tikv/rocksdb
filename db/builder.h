@@ -25,7 +25,7 @@
 namespace rocksdb {
 
 struct Options;
-struct FileMetaData;
+class FileMetaData;
 
 class Env;
 struct EnvOptions;

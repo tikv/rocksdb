@@ -106,6 +106,25 @@ Status BuildTable(
   TableProperties tp;
 
   if (iter->Valid() || !range_del_agg->IsEmpty()) {
+    std::unique_ptr<CompactionFilter> compaction_filter;
+    if (ioptions.compaction_filter_factory != nullptr &&
+        ioptions.compaction_filter_factory->ShouldFilterTableFileCreation(
+            reason)) {
+      CompactionFilter::Context context;
+      context.is_full_compaction = false;
+      context.is_manual_compaction = false;
+      context.column_family_id = column_family_id;
+      context.reason = reason;
+      compaction_filter =
+          ioptions.compaction_filter_factory->CreateCompactionFilter(context);
+      if (compaction_filter != nullptr &&
+          !compaction_filter->IgnoreSnapshots()) {
+        return Status::NotSupported(
+            "CompactionFilter::IgnoreSnapshots() = false is not supported "
+            "anymore.");
+      }
+    }
+
     TableBuilder* builder;
     std::unique_ptr<WritableFileWriter> file_writer;
     // Currently we only enable dictionary compression during compaction to the
@@ -141,17 +160,21 @@ Status BuildTable(
           0 /*target_file_size*/, file_creation_time);
     }
 
-    MergeHelper merge(env, internal_comparator.user_comparator(),
-                      ioptions.merge_operator, nullptr, ioptions.info_log,
-                      true /* internal key corruption is not ok */,
-                      snapshots.empty() ? 0 : snapshots.back(),
-                      snapshot_checker);
+    MergeHelper merge(
+        env, internal_comparator.user_comparator(), ioptions.merge_operator,
+        compaction_filter.get(), ioptions.info_log,
+        true /* internal key corruption is not ok */,
+        snapshots.empty() ? 0 : snapshots.back(), snapshot_checker);
 
     CompactionIterator c_iter(
         iter, internal_comparator.user_comparator(), &merge, kMaxSequenceNumber,
         &snapshots, earliest_write_conflict_snapshot, snapshot_checker, env,
         ShouldReportDetailedTime(env, ioptions.statistics),
-        true /* internal key corruption is not ok */, range_del_agg.get());
+        true /* internal key corruption is not ok */, range_del_agg.get(),
+        /*compaction=*/nullptr, compaction_filter.get(),
+        /*shutting_down=*/nullptr,
+        /*preserve_deletes_seqnum=*/0, /*manual_compaction_paused=*/nullptr);
+
     c_iter.SeekToFirst();
     for (; c_iter.Valid(); c_iter.Next()) {
       const Slice& key = c_iter.key();
@@ -192,7 +215,8 @@ Status BuildTable(
       meta->fd.file_size = file_size;
       meta->marked_for_compaction = builder->NeedCompact();
       assert(meta->fd.GetFileSize() > 0);
-      tp = builder->GetTableProperties(); // refresh now that builder is finished
+      tp = builder
+               ->GetTableProperties();  // refresh now that builder is finished
       if (table_properties) {
         *table_properties = tp;
       }

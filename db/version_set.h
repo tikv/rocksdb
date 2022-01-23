@@ -268,6 +268,58 @@ class VersionStorageInfo {
     return files_[level];
   }
 
+  class FileLocation {
+   public:
+    FileLocation() = default;
+    FileLocation(int level, size_t position)
+        : level_(level), position_(position) {}
+
+    int GetLevel() const { return level_; }
+    size_t GetPosition() const { return position_; }
+
+    bool IsValid() const { return level_ >= 0; }
+
+    bool operator==(const FileLocation& rhs) const {
+      return level_ == rhs.level_ && position_ == rhs.position_;
+    }
+
+    bool operator!=(const FileLocation& rhs) const { return !(*this == rhs); }
+
+    static FileLocation Invalid() { return FileLocation(); }
+
+   private:
+    int level_ = -1;
+    size_t position_ = 0;
+  };
+
+  // REQUIRES: This version has been saved (see VersionSet::SaveTo)
+  FileLocation GetFileLocation(uint64_t file_number) const {
+    const auto it = file_locations_.find(file_number);
+
+    if (it == file_locations_.end()) {
+      return FileLocation::Invalid();
+    }
+
+    assert(it->second.GetLevel() < num_levels_);
+    assert(it->second.GetPosition() < files_[it->second.GetLevel()].size());
+    assert(files_[it->second.GetLevel()][it->second.GetPosition()]);
+    assert(files_[it->second.GetLevel()][it->second.GetPosition()]
+               ->fd.GetNumber() == file_number);
+
+    return it->second;
+  }
+
+  // REQUIRES: This version has been saved (see VersionSet::SaveTo)
+  FileMetaData* GetFileMetaDataByNumber(uint64_t file_number) const {
+    auto location = GetFileLocation(file_number);
+
+    if (!location.IsValid()) {
+      return nullptr;
+    }
+
+    return files_[location.GetLevel()][location.GetPosition()];
+  }
+
   const rocksdb::LevelFilesBrief& LevelFilesBrief(int level) const {
     assert(level < static_cast<int>(level_files_brief_.size()));
     return level_files_brief_[level];
@@ -438,6 +490,11 @@ class VersionStorageInfo {
   // in increasing order of keys
   std::vector<FileMetaData*>* files_;
 
+  // Map of all table files in version. Maps file number to (level, position on
+  // level).
+  using FileLocations = std::unordered_map<uint64_t, FileLocation>;
+  FileLocations file_locations_;
+
   // Level that L0 data should be compacted to. All levels < base_level_ should
   // be empty. -1 if it is not level-compaction so it's not applicable.
   int base_level_;
@@ -600,7 +657,7 @@ class Version {
   bool Unref();
 
   // Add all files listed in the current version to *live.
-  void AddLiveFiles(std::vector<FileDescriptor>* live);
+  void AddLiveFiles(std::vector<uint64_t>* live) const;
 
   // Return a human readable string that describes this version's contents.
   std::string DebugString(bool hex = false, bool print_stats = false) const;
@@ -626,6 +683,11 @@ class Version {
   Status GetPropertiesOfAllTables(TablePropertiesCollection* props, int level);
   Status GetPropertiesOfTablesInRange(const Range* range, std::size_t n,
                                       TablePropertiesCollection* props) const;
+
+  // Print summary of range delete tombstones in SST files into out_str,
+  // with maximum max_entries_to_print entries printed out.
+  Status TablesRangeTombstoneSummary(int max_entries_to_print,
+                                     std::string* out_str);
 
   // REQUIRES: lock is held
   // On success, "tp" will contains the aggregated table property among
@@ -865,9 +927,10 @@ class VersionSet {
                                      const EnvOptions& env_options,
                                      int new_levels);
 
-  // printf contents (for debugging)
-  Status DumpManifest(Options& options, std::string& manifestFileName,
-                      bool verbose, bool hex = false, bool json = false);
+  // If sst_file_number is > 0, only prints manifest info for specified SST file number
+Status DumpManifest(Options& options, std::string& dscname,
+                                bool verbose, bool hex, bool json,
+                                uint64_t sst_file_number);
 
 #endif  // ROCKSDB_LITE
 
@@ -979,7 +1042,7 @@ class VersionSet {
       const EnvOptions& env_options_compactions);
 
   // Add all files listed in any live version to *live.
-  void AddLiveFiles(std::vector<FileDescriptor>* live_list);
+  void AddLiveFiles(std::vector<uint64_t>* live_list) const;
 
   // Return the approximate size of data to be scanned for range [start, end)
   // in levels [start_level, end_level). If end_level == -1 it will search

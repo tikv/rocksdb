@@ -142,6 +142,8 @@ extern ROCKSDB_LIBRARY_API rocksdb_t* rocksdb_open_as_secondary(
     const rocksdb_options_t* options, const char* name,
     const char* secondary_path, char** errptr);
 
+extern ROCKSDB_LIBRARY_API void rocksdb_resume(rocksdb_t* db, char** errptr);
+
 extern ROCKSDB_LIBRARY_API rocksdb_backup_engine_t* rocksdb_backup_engine_open(
     const rocksdb_options_t* options, const char* path, char** errptr);
 
@@ -1120,6 +1122,9 @@ enum {
 };
 
 extern ROCKSDB_LIBRARY_API void rocksdb_set_perf_level(int);
+extern ROCKSDB_LIBRARY_API void rocksdb_enable_perf_flag(uint64_t);
+extern ROCKSDB_LIBRARY_API void rocksdb_disable_perf_flag(uint64_t);
+extern ROCKSDB_LIBRARY_API int rocksdb_check_perf_flag(uint64_t);
 extern ROCKSDB_LIBRARY_API rocksdb_perfcontext_t* rocksdb_perfcontext_create();
 extern ROCKSDB_LIBRARY_API void rocksdb_perfcontext_reset(
     rocksdb_perfcontext_t* context);

@@ -33,9 +33,9 @@
 #include "db/error_handler.h"
 #include "db/event_helpers.h"
 #include "db/external_sst_file_ingestion_job.h"
-#include "db/import_column_family_job.h"
 #include "db/flush_job.h"
 #include "db/forward_iterator.h"
+#include "db/import_column_family_job.h"
 #include "db/job_context.h"
 #include "db/log_reader.h"
 #include "db/log_writer.h"
@@ -91,6 +91,7 @@
 #include "tools/sst_dump_tool_imp.h"
 #include "util/autovector.h"
 #include "util/build_version.h"
+#include "util/cast_util.h"
 #include "util/coding.h"
 #include "util/compression.h"
 #include "util/crc32c.h"
@@ -869,6 +870,24 @@ void DBImpl::DumpStats() {
   PrintStatistics();
 }
 
+Status DBImpl::TablesRangeTombstoneSummary(ColumnFamilyHandle* column_family,
+                                           int max_entries_to_print,
+                                           std::string* out_str) {
+  auto* cfh =
+      static_cast_with_check<ColumnFamilyHandleImpl, ColumnFamilyHandle>(
+          column_family);
+  ColumnFamilyData* cfd = cfh->cfd();
+
+  SuperVersion* super_version = cfd->GetReferencedSuperVersion(&mutex_);
+  Version* version = super_version->current;
+
+  Status s =
+      version->TablesRangeTombstoneSummary(max_entries_to_print, out_str);
+
+  CleanupSuperVersion(super_version);
+  return s;
+}
+
 void DBImpl::ScheduleBgLogWriterClose(JobContext* job_context) {
   if (!job_context->logs_to_free.empty()) {
     for (auto l : job_context->logs_to_free) {
@@ -998,11 +1017,13 @@ Status DBImpl::SetDBOptions(
           GetBGJobLimits(mutable_db_options_.max_background_flushes,
                          mutable_db_options_.max_background_compactions,
                          mutable_db_options_.max_background_jobs,
+                         mutable_db_options_.base_background_compactions,
                          /* parallelize_compactions */ true);
       const BGJobLimits new_bg_job_limits = GetBGJobLimits(
           new_options.max_background_flushes,
           new_options.max_background_compactions,
-          new_options.max_background_jobs, /* parallelize_compactions */ true);
+          new_options.max_background_jobs,
+          new_options.base_background_compactions, /* parallelize_compactions */ true);
 
       const bool max_flushes_increased =
           new_bg_job_limits.max_flushes > current_bg_job_limits.max_flushes;
@@ -4144,6 +4165,7 @@ void DBImpl::NotifyOnExternalFileIngested(
     info.internal_file_path = f.internal_file_path;
     info.global_seqno = f.assigned_seqno;
     info.table_properties = f.table_properties;
+    info.picked_level = f.picked_level;
     for (auto listener : immutable_db_options_.listeners) {
       listener->OnExternalFileIngested(this, info);
     }

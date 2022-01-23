@@ -126,20 +126,22 @@ Status SstFileDumper::NewTableReader(
     const ImmutableCFOptions& /*ioptions*/, const EnvOptions& /*soptions*/,
     const InternalKeyComparator& /*internal_comparator*/, uint64_t file_size,
     std::unique_ptr<TableReader>* /*table_reader*/) {
+  auto t_opt = TableReaderOptions(ioptions_, moptions_.prefix_extractor.get(),
+                                  soptions_, internal_comparator_);
+  // Allow open file with global sequence number for backward compatibility.
+  t_opt.largest_seqno = kMaxSequenceNumber;
+
   // We need to turn off pre-fetching of index and filter nodes for
   // BlockBasedTable
   if (BlockBasedTableFactory::kName == options_.table_factory->Name()) {
-    return options_.table_factory->NewTableReader(
-        TableReaderOptions(ioptions_, moptions_.prefix_extractor.get(),
-                           soptions_, internal_comparator_),
-        std::move(file_), file_size, &table_reader_, /*enable_prefetch=*/false);
+    return options_.table_factory->NewTableReader(t_opt, std::move(file_),
+                                                  file_size, &table_reader_,
+                                                  /*enable_prefetch=*/false);
   }
 
   // For all other factory implementation
-  return options_.table_factory->NewTableReader(
-      TableReaderOptions(ioptions_, moptions_.prefix_extractor.get(), soptions_,
-                         internal_comparator_),
-      std::move(file_), file_size, &table_reader_);
+  return options_.table_factory->NewTableReader(t_opt, std::move(file_),
+                                                file_size, &table_reader_);
 }
 
 Status SstFileDumper::VerifyChecksum() {
@@ -310,6 +312,7 @@ Status SstFileDumper::ReadSequential(bool print_kv, uint64_t read_num,
   } else {
     iter->SeekToFirst();
   }
+  std::string prev_key = "";
   for (; iter->Valid(); iter->Next()) {
     Slice key = iter->key();
     Slice value = iter->value();
@@ -340,6 +343,17 @@ Status SstFileDumper::ReadSequential(bool print_kv, uint64_t read_num,
           ikey.DebugString(output_hex_).c_str(),
           value.ToString(output_hex_).c_str());
     }
+
+    if (prev_key.size() != 0 &&
+        internal_comparator_.Compare(key, Slice(prev_key)) <= 0) {
+      InternalKey current, last;
+      current.DecodeFrom(key);
+      last.DecodeFrom(Slice(prev_key));
+      return Status::Corruption("current key " + current.DebugString(true) +
+                                " is not greater than last key " +
+                                last.DebugString(true));
+    }
+    prev_key = key.ToString(false);
   }
 
   read_num_ += i;

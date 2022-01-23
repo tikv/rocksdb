@@ -275,6 +275,8 @@ class CompactionIterator {
   // number of distinct keys processed
   size_t num_keys_ = 0;
 
+  const int level_;
+
   bool IsShuttingDown() {
     // This is a best-effort facility, so memory_order_relaxed is sufficient.
     return shutting_down_ && shutting_down_->load(std::memory_order_relaxed);

@@ -742,9 +742,7 @@ Version::~Version() {
   for (int level = 0; level < storage_info_.num_levels_; level++) {
     for (size_t i = 0; i < storage_info_.files_[level].size(); i++) {
       FileMetaData* f = storage_info_.files_[level][i];
-      assert(f->refs > 0);
-      f->refs--;
-      if (f->refs <= 0) {
+      if (f->Unref()) {
         assert(cfd_ != nullptr);
         uint32_t path_id = f->fd.GetPathId();
         assert(path_id < cfd_->ioptions()->cf_paths.size());
@@ -1254,6 +1252,60 @@ Status Version::GetPropertiesOfAllTables(TablePropertiesCollection* props) {
     }
   }
 
+  return Status::OK();
+}
+
+Status Version::TablesRangeTombstoneSummary(int max_entries_to_print,
+                                            std::string* out_str) {
+  if (max_entries_to_print <= 0) {
+    return Status::OK();
+  }
+  int num_entries_left = max_entries_to_print;
+
+  std::stringstream ss;
+
+  for (int level = 0; level < storage_info_.num_levels_; level++) {
+    for (const auto& file_meta : storage_info_.files_[level]) {
+      auto fname =
+          TableFileName(cfd_->ioptions()->cf_paths, file_meta->fd.GetNumber(),
+                        file_meta->fd.GetPathId());
+
+      ss << "=== file : " << fname << " ===\n";
+
+      TableCache* table_cache = cfd_->table_cache();
+      std::unique_ptr<FragmentedRangeTombstoneIterator> tombstone_iter;
+
+      Status s = table_cache->GetRangeTombstoneIterator(
+          ReadOptions(), cfd_->internal_comparator(), *file_meta,
+          &tombstone_iter);
+      if (!s.ok()) {
+        return s;
+      }
+      if (tombstone_iter) {
+        tombstone_iter->SeekToFirst();
+
+        while (tombstone_iter->Valid() && num_entries_left > 0) {
+          ss << "start: " << tombstone_iter->start_key().ToString(true)
+             << " end: " << tombstone_iter->end_key().ToString(true)
+             << " seq: " << tombstone_iter->seq() << '\n';
+          tombstone_iter->Next();
+          num_entries_left--;
+        }
+        if (num_entries_left <= 0) {
+          break;
+        }
+      }
+    }
+    if (num_entries_left <= 0) {
+      break;
+    }
+  }
+  assert(num_entries_left >= 0);
+  if (num_entries_left <= 0) {
+    ss << "(results may not be complete)\n";
+  }
+
+  *out_str = ss.str();
   return Status::OK();
 }
 
@@ -1993,6 +2045,9 @@ void VersionStorageInfo::GenerateLevelFilesBrief() {
 void Version::PrepareApply(
     const MutableCFOptions& mutable_cf_options,
     bool update_stats) {
+  TEST_SYNC_POINT_CALLBACK(
+      "Version::PrepareApply:forced_check",
+      reinterpret_cast<void*>(&storage_info_.force_consistency_checks_));
   UpdateAccumulatedStats(update_stats);
   storage_info_.UpdateNumNonEmptyLevels();
   storage_info_.CalculateBaseBytes(*cfd_->ioptions(), mutable_cf_options);
@@ -2240,6 +2295,7 @@ void VersionStorageInfo::EstimateCompactionBytesNeeded(
 namespace {
 uint32_t GetExpiredTtlFilesCount(const ImmutableCFOptions& ioptions,
                                  const MutableCFOptions& mutable_cf_options,
+                                 int level,
                                  const std::vector<FileMetaData*>& files) {
   uint32_t ttl_expired_files_count = 0;
 
@@ -2248,7 +2304,8 @@ uint32_t GetExpiredTtlFilesCount(const ImmutableCFOptions& ioptions,
   if (status.ok()) {
     const uint64_t current_time = static_cast<uint64_t>(_current_time);
     for (auto f : files) {
-      if (!f->being_compacted && f->fd.table_reader != nullptr &&
+      if ((!f->being_compacted || f->being_moved_to == level) &&
+          f->fd.table_reader != nullptr &&
           f->fd.table_reader->GetTableProperties() != nullptr) {
         auto creation_time =
             f->fd.table_reader->GetTableProperties()->creation_time;
@@ -2283,7 +2340,7 @@ void VersionStorageInfo::ComputeCompactionScore(
       int num_sorted_runs = 0;
       uint64_t total_size = 0;
       for (auto* f : files_[level]) {
-        if (!f->being_compacted) {
+        if (!f->being_compacted || f->being_moved_to == level) {
           total_size += f->compensated_file_size;
           num_sorted_runs++;
         }
@@ -2293,7 +2350,8 @@ void VersionStorageInfo::ComputeCompactionScore(
         // compaction score for the whole DB. Adding other levels as if
         // they are L0 files.
         for (int i = 1; i < num_levels(); i++) {
-          if (!files_[i].empty() && !files_[i][0]->being_compacted) {
+          if (!files_[i].empty() && (!files_[i][0]->being_compacted ||
+                                     files_[i][0]->being_moved_to == i)) {
             num_sorted_runs++;
           }
         }
@@ -2309,10 +2367,10 @@ void VersionStorageInfo::ComputeCompactionScore(
               score);
         }
         if (mutable_cf_options.ttl > 0) {
-          score = std::max(
-              static_cast<double>(GetExpiredTtlFilesCount(
-                  immutable_cf_options, mutable_cf_options, files_[level])),
-              score);
+          score = std::max(static_cast<double>(GetExpiredTtlFilesCount(
+                               immutable_cf_options, mutable_cf_options, level,
+                               files_[level])),
+                           score);
         }
 
       } else {
@@ -2331,7 +2389,7 @@ void VersionStorageInfo::ComputeCompactionScore(
       // Compute the ratio of current size to size limit.
       uint64_t level_bytes_no_compacting = 0;
       for (auto f : files_[level]) {
-        if (!f->being_compacted) {
+        if (!f->being_compacted || f->being_moved_to == level) {
           level_bytes_no_compacting += f->compensated_file_size;
         }
       }
@@ -2384,7 +2442,8 @@ void VersionStorageInfo::ComputeFilesMarkedForCompaction() {
 
   for (int level = 0; level <= last_qualify_level; level++) {
     for (auto* f : files_[level]) {
-      if (!f->being_compacted && f->marked_for_compaction) {
+      if ((!f->being_compacted || f->being_moved_to == level) &&
+          f->marked_for_compaction) {
         files_marked_for_compaction_.emplace_back(level, f);
       }
     }
@@ -2406,7 +2465,8 @@ void VersionStorageInfo::ComputeExpiredTtlFiles(
 
   for (int level = 0; level < num_levels() - 1; level++) {
     for (auto f : files_[level]) {
-      if (!f->being_compacted && f->fd.table_reader != nullptr &&
+      if ((!f->being_compacted || f->being_moved_to == level) &&
+          f->fd.table_reader != nullptr &&
           f->fd.table_reader->GetTableProperties() != nullptr) {
         auto creation_time =
             f->fd.table_reader->GetTableProperties()->creation_time;
@@ -2436,7 +2496,8 @@ void VersionStorageInfo::ComputeFilesMarkedForPeriodicCompaction(
 
   for (int level = 0; level < num_levels(); level++) {
     for (auto f : files_[level]) {
-      if (!f->being_compacted && f->fd.table_reader != nullptr &&
+      if ((!f->being_compacted || f->being_moved_to == level) &&
+          f->fd.table_reader != nullptr &&
           f->fd.table_reader->GetTableProperties() != nullptr) {
         // Compute a file's modification time in the following order:
         // 1. Use file_creation_time table property if it is > 0.
@@ -2488,13 +2549,13 @@ bool CompareCompensatedSizeDescending(const Fsize& first, const Fsize& second) {
 } // anonymous namespace
 
 void VersionStorageInfo::AddFile(int level, FileMetaData* f, Logger* info_log) {
-  auto* level_files = &files_[level];
+  auto& level_files = files_[level];
   // Must not overlap
 #ifndef NDEBUG
-  if (level > 0 && !level_files->empty() &&
+  if (level > 0 && !level_files.empty() &&
       internal_comparator_->Compare(
-          (*level_files)[level_files->size() - 1]->largest, f->smallest) >= 0) {
-    auto* f2 = (*level_files)[level_files->size() - 1];
+          level_files[level_files.size() - 1]->largest, f->smallest) >= 0) {
+    auto* f2 = level_files[level_files.size() - 1];
     if (info_log != nullptr) {
       Error(info_log, "Adding new file %" PRIu64
                       " range (%s, %s) to level %d but overlapping "
@@ -2510,8 +2571,15 @@ void VersionStorageInfo::AddFile(int level, FileMetaData* f, Logger* info_log) {
 #else
   (void)info_log;
 #endif
-  f->refs++;
-  level_files->push_back(f);
+  level_files.push_back(f);
+
+  f->Ref();
+
+  const uint64_t file_number = f->fd.GetNumber();
+
+  assert(file_locations_.find(file_number) == file_locations_.end());
+  file_locations_.emplace(file_number,
+                          FileLocation(level, level_files.size() - 1));
 }
 
 // Version::PrepareApply() need to be called before calling the function, or
@@ -2553,6 +2621,11 @@ void VersionStorageInfo::SetFinalized() {
     }
     if (LevelFiles(level).size() > 0) {
       assert(level < num_non_empty_levels());
+    }
+    for (auto* f : LevelFiles(level)) {
+      if (f->being_moved_to == level) {
+        f->being_moved_to = -1;
+      }
     }
   }
   assert(compaction_level_.size() > 0);
@@ -3303,11 +3376,13 @@ bool VersionStorageInfo::RangeMightExistAfterSortedRun(
   return false;
 }
 
-void Version::AddLiveFiles(std::vector<FileDescriptor>* live) {
-  for (int level = 0; level < storage_info_.num_levels(); level++) {
-    const std::vector<FileMetaData*>& files = storage_info_.files_[level];
-    for (const auto& file : files) {
-      live->push_back(file->fd);
+void Version::AddLiveFiles(std::vector<uint64_t>* live_table_files) const {
+  assert(live_table_files);
+  for (int level = 0; level < storage_info_.num_levels(); ++level) {
+    const auto& level_files = storage_info_.LevelFiles(level);
+    for (const auto& meta : level_files) {
+      assert(meta);
+      live_table_files->emplace_back(meta->fd.GetNumber());
     }
   }
 }
@@ -3330,19 +3405,7 @@ std::string Version::DebugString(bool hex, bool print_stats) const {
     const std::vector<FileMetaData*>& files = storage_info_.files_[level];
     for (size_t i = 0; i < files.size(); i++) {
       r.push_back(' ');
-      AppendNumberTo(&r, files[i]->fd.GetNumber());
-      r.push_back(':');
-      AppendNumberTo(&r, files[i]->fd.GetFileSize());
-      r.append("[");
-      AppendNumberTo(&r, files[i]->fd.smallest_seqno);
-      r.append(" .. ");
-      AppendNumberTo(&r, files[i]->fd.largest_seqno);
-      r.append("]");
-      r.append("[");
-      r.append(files[i]->smallest.DebugString(hex));
-      r.append(" .. ");
-      r.append(files[i]->largest.DebugString(hex));
-      r.append("]");
+      r.append(files[i]->DebugString(hex));
       if (print_stats) {
         r.append("(");
         r.append(ToString(
@@ -4610,7 +4673,19 @@ Status VersionSet::ReduceNumberOfLevels(const std::string& dbname,
   }
 
   if (first_nonempty_level > 0) {
-    new_files_list[new_levels - 1] = vstorage->LevelFiles(first_nonempty_level);
+    auto& new_last_level = new_files_list[new_levels - 1];
+
+    new_last_level = vstorage->LevelFiles(first_nonempty_level);
+
+    for (size_t i = 0; i < new_last_level.size(); ++i) {
+      const FileMetaData* const meta = new_last_level[i];
+      assert(meta);
+
+      const uint64_t file_number = meta->fd.GetNumber();
+
+      vstorage->file_locations_[file_number] =
+          VersionStorageInfo::FileLocation(new_levels - 1, i);
+    }
   }
 
   delete[] vstorage -> files_;
@@ -4627,7 +4702,8 @@ Status VersionSet::ReduceNumberOfLevels(const std::string& dbname,
 }
 
 Status VersionSet::DumpManifest(Options& options, std::string& dscname,
-                                bool verbose, bool hex, bool json) {
+                                bool verbose, bool hex, bool json,
+                                uint64_t sst_file_number) {
   // Open the specified manifest file.
   std::unique_ptr<SequentialFileReader> file_reader;
   Status s;
@@ -4787,10 +4863,12 @@ Status VersionSet::DumpManifest(Options& options, std::string& dscname,
   }
 
   if (s.ok()) {
+    bool found = false;
     for (auto cfd : *column_family_set_) {
       if (cfd->IsDropped()) {
         continue;
       }
+      if (found) break;
       auto builders_iter = builders.find(cfd->GetID());
       assert(builders_iter != builders.end());
       auto builder = builders_iter->second->version_builder();
@@ -4801,18 +4879,42 @@ Status VersionSet::DumpManifest(Options& options, std::string& dscname,
       builder->SaveTo(v->storage_info());
       v->PrepareApply(*cfd->GetLatestMutableCFOptions(), false);
 
-      printf("--------------- Column family \"%s\"  (ID %" PRIu32
-             ") --------------\n",
-             cfd->GetName().c_str(), cfd->GetID());
-      printf("log number: %" PRIu64 "\n", cfd->GetLogNumber());
-      auto comparator = comparators.find(cfd->GetID());
-      if (comparator != comparators.end()) {
-        printf("comparator: %s\n", comparator->second.c_str());
+      if (sst_file_number != 0) {
+        for (int level = 0; level < v->storage_info_.num_levels_; level++) {
+          const std::vector<FileMetaData*>& files =
+              v->storage_info_.files_[level];
+          for (size_t i = 0; i < files.size(); i++) {
+            if (files[i]->fd.GetNumber() == sst_file_number) {
+              found = true;
+              printf("--------------- Column family \"%s\"  (ID %" PRIu32
+                     ") --------------\n",
+                     cfd->GetName().c_str(), cfd->GetID());
+              printf("%s at level %d\n", files[i]->DebugString(hex).c_str(),
+                     level);
+              break;
+            }
+          }
+          if (found) break;
+        }
       } else {
-        printf("comparator: <NO COMPARATOR>\n");
+        printf("--------------- Column family \"%s\"  (ID %" PRIu32
+               ") --------------\n",
+               cfd->GetName().c_str(), cfd->GetID());
+        printf("log number: %" PRIu64 "\n", cfd->GetLogNumber());
+        auto comparator = comparators.find(cfd->GetID());
+        if (comparator != comparators.end()) {
+          printf("comparator: %s\n", comparator->second.c_str());
+        } else {
+          printf("comparator: <NO COMPARATOR>\n");
+        }
+        printf("%s \n", v->DebugString(hex).c_str());
       }
-      printf("%s \n", v->DebugString(hex).c_str());
       delete v;
+    }
+
+    if (sst_file_number != 0 && !found) {
+      s = Status::NotFound("sst " + ToString(sst_file_number) +
+                           " is not in the live files set of the manifest");
     }
 
     next_file_number_.store(next_file + 1);
@@ -4821,13 +4923,15 @@ Status VersionSet::DumpManifest(Options& options, std::string& dscname,
     last_sequence_ = last_sequence;
     prev_log_number_ = previous_log_number;
 
-    printf("next_file_number %" PRIu64 " last_sequence %" PRIu64
-           "  prev_log_number %" PRIu64 " max_column_family %" PRIu32
-           " min_log_number_to_keep "
-           "%" PRIu64 "\n",
-           next_file_number_.load(), last_sequence, previous_log_number,
-           column_family_set_->GetMaxColumnFamily(),
-           min_log_number_to_keep_2pc());
+    if (sst_file_number == 0) {
+      printf("next_file_number %" PRIu64 " last_sequence %" PRIu64
+             "  prev_log_number %" PRIu64 " max_column_family %" PRIu32
+             " min_log_number_to_keep "
+             "%" PRIu64 "\n",
+             next_file_number_.load(), last_sequence, previous_log_number,
+             column_family_set_->GetMaxColumnFamily(),
+             min_log_number_to_keep_2pc());
+    }
   }
 
   return s;
@@ -5027,9 +5131,10 @@ uint64_t VersionSet::ApproximateSize(Version* v, const FdWithKeyRange& f,
   return result;
 }
 
-void VersionSet::AddLiveFiles(std::vector<FileDescriptor>* live_list) {
+void VersionSet::AddLiveFiles(std::vector<uint64_t>* live_table_files) const {
+  assert(live_table_files);
   // pre-calculate space requirement
-  int64_t total_files = 0;
+  int64_t total_table_files = 0;
   for (auto cfd : *column_family_set_) {
     if (!cfd->initialized()) {
       continue;
@@ -5039,13 +5144,13 @@ void VersionSet::AddLiveFiles(std::vector<FileDescriptor>* live_list) {
          v = v->next_) {
       const auto* vstorage = v->storage_info();
       for (int level = 0; level < vstorage->num_levels(); level++) {
-        total_files += vstorage->LevelFiles(level).size();
+        total_table_files += vstorage->LevelFiles(level).size();
       }
     }
   }
 
   // just one time extension to the right size
-  live_list->reserve(live_list->size() + static_cast<size_t>(total_files));
+  live_table_files->reserve(live_table_files->size() + total_table_files);
 
   for (auto cfd : *column_family_set_) {
     if (!cfd->initialized()) {
@@ -5056,7 +5161,7 @@ void VersionSet::AddLiveFiles(std::vector<FileDescriptor>* live_list) {
     Version* dummy_versions = cfd->dummy_versions();
     for (Version* v = dummy_versions->next_; v != dummy_versions;
          v = v->next_) {
-      v->AddLiveFiles(live_list);
+      v->AddLiveFiles(live_table_files);
       if (v == current) {
         found_current = true;
       }
@@ -5064,7 +5169,7 @@ void VersionSet::AddLiveFiles(std::vector<FileDescriptor>* live_list) {
     if (!found_current && current != nullptr) {
       // Should never happen unless it is a bug.
       assert(false);
-      current->AddLiveFiles(live_list);
+      current->AddLiveFiles(live_table_files);
     }
   }
 }

@@ -25,6 +25,7 @@
 #include "rocksdb/merge_operator.h"
 #include "rocksdb/options.h"
 #include "rocksdb/perf_context.h"
+#include "rocksdb/perf_flag.h"
 #include "rocksdb/rate_limiter.h"
 #include "rocksdb/slice_transform.h"
 #include "rocksdb/statistics.h"
@@ -54,7 +55,6 @@ using rocksdb::ColumnFamilyHandle;
 using rocksdb::ColumnFamilyOptions;
 using rocksdb::CompactionFilter;
 using rocksdb::CompactionFilterFactory;
-using rocksdb::CompactionFilterContext;
 using rocksdb::CompactionOptionsFIFO;
 using rocksdb::Comparator;
 using rocksdb::CompressionType;
@@ -114,6 +114,9 @@ using rocksdb::Checkpoint;
 using rocksdb::TransactionLogIterator;
 using rocksdb::BatchResult;
 using rocksdb::PerfLevel;
+using rocksdb::EnablePerfFlag;
+using rocksdb::DisablePerfFlag;
+using rocksdb::CheckPerfFlag;
 using rocksdb::PerfContext;
 using rocksdb::MemoryUtil;
 
@@ -532,6 +535,10 @@ rocksdb_t* rocksdb_open_as_secondary(const rocksdb_options_t* options,
   rocksdb_t* result = new rocksdb_t;
   result->rep = db;
   return result;
+}
+
+void rocksdb_resume(rocksdb_t* db, char** errptr) {
+  SaveError(errptr, db->rep->Resume());
 }
 
 rocksdb_backup_engine_t* rocksdb_backup_engine_open(
@@ -2747,6 +2754,14 @@ void rocksdb_ratelimiter_destroy(rocksdb_ratelimiter_t *limiter) {
 void rocksdb_set_perf_level(int v) {
   PerfLevel level = static_cast<PerfLevel>(v);
   SetPerfLevel(level);
+}
+
+void rocksdb_enable_perf_flag(uint64_t flag) { EnablePerfFlag(flag); }
+
+void rocksdb_disable_perf_flag(uint64_t flag) { DisablePerfFlag(flag); }
+
+int rocksdb_check_perf_flag(uint64_t flag) {
+  return static_cast<int>(CheckPerfFlag(flag));
 }
 
 rocksdb_perfcontext_t* rocksdb_perfcontext_create() {

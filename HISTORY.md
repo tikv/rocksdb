@@ -2,11 +2,14 @@
 ## Additional Improvements
 ### Public API Change
 * DeleteRange now returns `Status::InvalidArgument` if the range's end key comes before its start key according to the user comparator. Previously the behavior was undefined.
+* ldb now uses options.force_consistency_checks = true by default and "--disable_consistency_checks" is added to disable it.
+* Removed unused structure `CompactionFilterContext`.
 
 ### New Features
 * When user uses options.force_consistency_check in RocksDb, instead of crashing the process, we now pass the error back to the users without killing the process.
 * Added experimental ColumnFamilyOptions::sst_partitioner_factory to define determine the partitioning of sst files. This helps compaction to split the files on interesting boundaries (key prefixes) to make propagation of sst files less write amplifying (covering the whole key space).
 * Option `max_background_flushes` can be set dynamically using DB::SetDBOptions().
+* Allow `CompactionFilter`s to apply in more table file creation scenarios such as flush and recovery. For compatibility, `CompactionFilter`s by default apply during compaction. Users can customize this behavior by overriding `CompactionFilterFactory::ShouldFilterTableFileCreation()`. Picked from [facebook/rocksdb#pr8243](https://github.com/facebook/rocksdb/pull/8243).
 
 ### Bug Fixes
 * Fixed issue #6316 that can cause a corruption of the MANIFEST file in the middle when writing to it fails due to no disk space.
@@ -19,6 +22,8 @@
 * Fix a bug in which a snapshot read could be affected by a DeleteRange after the snapshot (#6062).
 * `WriteBatchWithIndex::DeleteRange` returns `Status::NotSupported`. Previously it returned success even though reads on the batch did not account for range tombstones. The corresponding language bindings now cannot be used. In C, that includes `rocksdb_writebatch_wi_delete_range`, `rocksdb_writebatch_wi_delete_range_cf`, `rocksdb_writebatch_wi_delete_rangev`, and `rocksdb_writebatch_wi_delete_rangev_cf`. In Java, that includes `WriteBatchWithIndex::deleteRange`.
 
+### Performance Improvements
+* When gathering unreferenced obsolete files for purging, file metas associated with active versions will no longer be copied for double-check. Updated VersionBuilder to make sure each physical file is reference counted by at most one FileMetaData.
 
 ## 6.4.6 (10/16/2019)
 * Fix a bug when partitioned filters and prefix search are used in conjunction, ::SeekForPrev could return invalid for an existing prefix. ::SeekForPrev might be called by the user, or internally on ::Prev, or within ::Seek if the return value involves Delete or a Merge operand.
@@ -54,6 +59,7 @@
 * ldb sometimes uses a string-append merge operator if no merge operator is passed in. This is to allow users to print keys from a DB with a merge operator.
 * Replaces old Registra with ObjectRegistry to allow user to create custom object from string, also add LoadEnv() to Env.
 * Added new overload of GetApproximateSizes which gets SizeApproximationOptions object and returns a Status. The older overloads are redirecting their calls to this new method and no longer assert if the include_flags doesn't have either of INCLUDE_MEMTABLES or INCLUDE_FILES bits set. It's recommended to use the new method only, as it is more type safe and returns a meaningful status in case of errors.
+* LDBCommandRunner::RunCommand() to return the status code as an integer, rather than call exit() using the code.
 
 ### New Features
 * Add argument `--secondary_path` to ldb to open the database as the secondary instance. This would keep the original DB intact.
@@ -93,6 +99,7 @@
 * Add an option `unordered_write` which trades snapshot guarantees with higher write throughput. When used with WRITE_PREPARED transactions with two_write_queues=true, it offers higher throughput with however no compromise on guarantees.
 * Allow DBImplSecondary to remove memtables with obsolete data after replaying MANIFEST and WAL.
 * Add an option `failed_move_fall_back_to_copy` (default is true) for external SST ingestion. When `move_files` is true and hard link fails, ingestion falls back to copy if `failed_move_fall_back_to_copy` is true. Otherwise, ingestion reports an error.
+* Add command `list_file_range_deletes` in ldb, which prints out tombstones in SST files.
 
 ### Performance Improvements
 * Reduce binary search when iterator reseek into the same data block.
