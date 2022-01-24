@@ -163,6 +163,7 @@ DBImpl::DBImpl(const DBOptions& options, const std::string& dbname,
       seq_per_batch_(seq_per_batch),
       batch_per_txn_(batch_per_txn),
       db_lock_(nullptr),
+      log_write_mutex_(stats_, env_, DB_MUTEX_WAIT_MICROS, false),
       shutting_down_(false),
       bg_cv_(&mutex_),
       logfile_number_(0),
@@ -1019,11 +1020,12 @@ Status DBImpl::SetDBOptions(
                          mutable_db_options_.max_background_jobs,
                          mutable_db_options_.base_background_compactions,
                          /* parallelize_compactions */ true);
-      const BGJobLimits new_bg_job_limits = GetBGJobLimits(
-          new_options.max_background_flushes,
-          new_options.max_background_compactions,
-          new_options.max_background_jobs,
-          new_options.base_background_compactions, /* parallelize_compactions */ true);
+      const BGJobLimits new_bg_job_limits =
+          GetBGJobLimits(new_options.max_background_flushes,
+                         new_options.max_background_compactions,
+                         new_options.max_background_jobs,
+                         new_options.base_background_compactions,
+                         /* parallelize_compactions */ true);
 
       const bool max_flushes_increased =
           new_bg_job_limits.max_flushes > current_bg_job_limits.max_flushes;

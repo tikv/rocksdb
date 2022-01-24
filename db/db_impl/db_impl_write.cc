@@ -88,15 +88,15 @@ Status DBImpl::MultiBatchWriteImpl(const WriteOptions& write_options,
   WriteContext write_context;
   bool ignore_missing_faimly = write_options.ignore_missing_column_families;
   if (writer.state == WriteThread::STATE_GROUP_LEADER) {
+    PERF_TIMER_STOP(write_pre_and_post_process_time);
+    PERF_TIMER_GUARD(write_delay_time);
     if (writer.callback && !writer.callback->AllowWriteBatching()) {
       write_thread_.WaitForMemTableWriters();
     }
     WriteThread::WriteGroup wal_write_group;
     LogContext log_context;
-    PERF_TIMER_STOP(write_pre_and_post_process_time);
     writer.status =
         PreprocessWrite(write_options, &log_context, &write_context);
-    PERF_TIMER_START(write_pre_and_post_process_time);
 
     // This can set non-OK status if callback fail.
     last_batch_group_size_ =
@@ -132,7 +132,6 @@ Status DBImpl::MultiBatchWriteImpl(const WriteOptions& write_options,
       RecordTick(stats_, BYTES_WRITTEN, total_byte_size);
       RecordInHistogram(stats_, BYTES_PER_WRITE, total_byte_size);
 
-      PERF_TIMER_STOP(write_pre_and_post_process_time);
       if (!write_options.disableWAL) {
         PERF_TIMER_GUARD(write_wal_time);
         stats->AddDBStats(InternalStats::kIntStatsWriteDoneBySelf, 1);
@@ -163,7 +162,6 @@ Status DBImpl::MultiBatchWriteImpl(const WriteOptions& write_options,
   bool is_leader_thread = false;
   WriteThread::WriteGroup memtable_write_group;
   if (writer.state == WriteThread::STATE_MEMTABLE_WRITER_LEADER) {
-    PERF_TIMER_GUARD(write_memtable_time);
     assert(writer.ShouldWriteToMemtable());
     write_thread_.EnterAsMemTableWriter(&writer, &memtable_write_group);
     assert(immutable_db_options_.allow_concurrent_memtable_write);
@@ -171,6 +169,7 @@ Status DBImpl::MultiBatchWriteImpl(const WriteOptions& write_options,
       is_leader_thread = true;
       write_thread_.LaunchParallelMemTableWriters(&memtable_write_group);
     } else {
+      PERF_TIMER_GUARD(write_memtable_time);
       auto version_set = versions_->GetColumnFamilySet();
       memtable_write_group.running.store(0);
       for (auto it = memtable_write_group.begin();
@@ -194,6 +193,7 @@ Status DBImpl::MultiBatchWriteImpl(const WriteOptions& write_options,
   }
   if (writer.state == WriteThread::STATE_PARALLEL_MEMTABLE_WRITER) {
     assert(writer.ShouldWriteToMemtable());
+    PERF_TIMER_GUARD(write_memtable_time);
     auto version_set = versions_->GetColumnFamilySet();
     WriteBatchInternal::AsyncInsertInto(
         &writer, writer.sequence, version_set, &flush_scheduler_,
@@ -640,8 +640,8 @@ Status DBImpl::PipelinedWriteImpl(const WriteOptions& write_options,
     LogContext log_context(!write_options.disableWAL && write_options.sync);
     // PreprocessWrite does its own perf timing.
     PERF_TIMER_STOP(write_pre_and_post_process_time);
+    PERF_TIMER_GUARD(write_delay_time);
     w.status = PreprocessWrite(write_options, &log_context, &write_context);
-    PERF_TIMER_START(write_pre_and_post_process_time);
 
     // This can set non-OK status if callback fail.
     last_batch_group_size_ =
@@ -677,8 +677,6 @@ Status DBImpl::PipelinedWriteImpl(const WriteOptions& write_options,
     stats->AddDBStats(InternalStats::kIntStatsBytesWritten, total_byte_size);
     RecordTick(stats_, BYTES_WRITTEN, total_byte_size);
     RecordInHistogram(stats_, BYTES_PER_WRITE, total_byte_size);
-
-    PERF_TIMER_STOP(write_pre_and_post_process_time);
 
     if (w.status.ok() && !write_options.disableWAL) {
       PERF_TIMER_GUARD(write_wal_time);
@@ -752,7 +750,7 @@ Status DBImpl::UnorderedWriteMemtable(const WriteOptions& write_options,
                                       WriteCallback* callback, uint64_t log_ref,
                                       SequenceNumber seq,
                                       const size_t sub_batch_cnt) {
-  PERF_TIMER_GUARD(write_pre_and_post_process_time);
+  PERF_TIMER_GUARD(write_memtable_time);
   StopWatch write_sw(env_, immutable_db_options_.statistics.get(), DB_WRITE);
 
   WriteThread::Writer w(write_options, my_batch, callback, log_ref,
@@ -824,6 +822,8 @@ Status DBImpl::WriteImplWALOnly(
   // else we are the leader of the write batch group
   assert(w.state == WriteThread::STATE_GROUP_LEADER);
 
+  PERF_TIMER_STOP(write_pre_and_post_process_time);
+  PERF_TIMER_GUARD(write_delay_time);
   if (publish_last_seq == kDoPublishLastSeq) {
     // Currently we only use kDoPublishLastSeq in unordered_write
     assert(immutable_db_options_.unordered_write);
@@ -884,8 +884,6 @@ Status DBImpl::WriteImplWALOnly(
   }
   RecordInHistogram(stats_, BYTES_PER_WRITE, total_byte_size);
 
-  PERF_TIMER_STOP(write_pre_and_post_process_time);
-
   PERF_TIMER_GUARD(write_wal_time);
   // LastAllocatedSequence is increased inside WriteToWAL under
   // wal_write_mutex_ to ensure ordered events in WAL
@@ -934,7 +932,6 @@ Status DBImpl::WriteImplWALOnly(
       status = SyncWAL();
     }
   }
-  PERF_TIMER_START(write_pre_and_post_process_time);
 
   if (!w.CallbackFailed()) {
     WriteStatusCheck(status);
@@ -1036,19 +1033,15 @@ Status DBImpl::PreprocessWrite(const WriteOptions& write_options,
   }
 
   PERF_TIMER_STOP(write_scheduling_flushes_compactions_time);
-  PERF_TIMER_GUARD(write_pre_and_post_process_time);
 
   if (UNLIKELY(status.ok() && (write_controller_.IsStopped() ||
                                write_controller_.NeedsDelay()))) {
-    PERF_TIMER_STOP(write_pre_and_post_process_time);
-    PERF_TIMER_GUARD(write_delay_time);
     // We don't know size of curent batch so that we always use the size
     // for previous one. It might create a fairness issue that expiration
     // might happen for smaller writes but larger writes can go through.
     // Can optimize it if it is an issue.
     InstrumentedMutexLock l(&mutex_);
     status = DelayWrite(last_batch_group_size_, write_options);
-    PERF_TIMER_START(write_pre_and_post_process_time);
   }
 
   InstrumentedMutexLock l(&log_write_mutex_);
@@ -1634,7 +1627,6 @@ Status DBImpl::ThrottleLowPriWritesIfNeeded(const WriteOptions& write_options,
       // is that in case the write is heavy, low pri writes may never have
       // a chance to run. Now we guarantee we are still slowly making
       // progress.
-      PERF_TIMER_GUARD(write_delay_time);
       write_controller_.low_pri_rate_limiter()->Request(
           my_batch->GetDataSize(), Env::IO_HIGH, nullptr /* stats */,
           RateLimiter::OpType::kWrite);

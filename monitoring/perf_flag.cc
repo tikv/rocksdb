@@ -22,8 +22,8 @@ void DisablePerfFlag(uint64_t flag) {
 }
 
 bool CheckPerfFlag(uint64_t flag) {
-  return ((uint64_t)GET_FLAG(flag) &
-          (uint64_t)0b1 << (flag & (uint64_t)0b111)) != 0;
+  return ((uint64_t)GET_FLAG(flag) & (uint64_t)0b1
+                                         << (flag & (uint64_t)0b111)) != 0;
 }
 
 }  // namespace rocksdb

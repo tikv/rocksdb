@@ -6,6 +6,7 @@
 #ifndef ROCKSDB_LITE
 
 #include "rocksdb/utilities/ldb_cmd.h"
+
 #include "test_util/sync_point.h"
 #include "test_util/testharness.h"
 
