@@ -1018,8 +1018,7 @@ void DumpManifestFile(Options options, std::string file, bool verbose, bool hex,
   ImmutableDBOptions immutable_db_options(options);
   VersionSet versions(dbname, &immutable_db_options, sopt, tc.get(), &wb, &wc,
                       /*block_cache_tracer=*/nullptr);
-  Status s =
-      versions.DumpManifest(options, file, verbose, hex, json, sst_file_number);
+  Status s = versions.DumpManifest(options, file, verbose, hex, json, sst_file_number);
   if (!s.ok()) {
     printf("Error in processing file %s %s\n", file.c_str(),
            s.ToString().c_str());

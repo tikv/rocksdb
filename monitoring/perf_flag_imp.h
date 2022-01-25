@@ -1,5 +1,4 @@
 #include <cstdint>
-
 #include "rocksdb/perf_flag.h"
 
 namespace rocksdb {
@@ -8,4 +7,4 @@ extern __thread uint8_t perf_flags[FLAGS_LEN];
 #else
 extern uint8_t perf_flags[FLAGS_LEN];
 #endif
-}  // namespace rocksdb
+}

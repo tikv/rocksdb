@@ -631,4 +631,4 @@ class UnsafeRemoveSstFileCommand : public LDBCommand {
   uint64_t sst_file_number_;
 };
 
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE

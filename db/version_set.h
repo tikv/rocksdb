@@ -927,10 +927,10 @@ class VersionSet {
                                      const EnvOptions& env_options,
                                      int new_levels);
 
-  // If sst_file_number is > 0, only prints manifest info for specified SST file
-  // number
-  Status DumpManifest(Options& options, std::string& dscname, bool verbose,
-                      bool hex, bool json, uint64_t sst_file_number);
+  // If sst_file_number is > 0, only prints manifest info for specified SST file number
+Status DumpManifest(Options& options, std::string& dscname,
+                                bool verbose, bool hex, bool json,
+                                uint64_t sst_file_number);
 
 #endif  // ROCKSDB_LITE
 

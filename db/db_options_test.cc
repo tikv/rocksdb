@@ -406,10 +406,10 @@ TEST_F(DBOptionsTest, EnableAutoCompactionButDisableStall) {
   dbfull()->TEST_WaitForFlushMemTable();
   ASSERT_EQ(2, NumTableFilesAtLevel(0));
   uint64_t l0_size = SizeAtLevel(0);
-
+  
   options.hard_pending_compaction_bytes_limit = l0_size;
   options.soft_pending_compaction_bytes_limit = l0_size;
-
+  
   Reopen(options);
   dbfull()->TEST_WaitForCompact();
   ASSERT_FALSE(dbfull()->TEST_write_controler().IsStopped());
@@ -418,14 +418,15 @@ TEST_F(DBOptionsTest, EnableAutoCompactionButDisableStall) {
   SyncPoint::GetInstance()->LoadDependency(
       {{"DBOptionsTest::EnableAutoCompactionButDisableStall:1",
         "BackgroundCallCompaction:0"},
-       {"DBImpl::BackgroundCompaction():BeforePickCompaction",
+        {"DBImpl::BackgroundCompaction():BeforePickCompaction",
         "DBOptionsTest::EnableAutoCompactionButDisableStall:2"},
-       {"DBOptionsTest::EnableAutoCompactionButDisableStall:3",
+        {"DBOptionsTest::EnableAutoCompactionButDisableStall:3",
         "DBImpl::BackgroundCompaction():AfterPickCompaction"}});
   // Block background compaction.
   SyncPoint::GetInstance()->EnableProcessing();
 
-  ASSERT_OK(dbfull()->SetOptions({{"disable_auto_compactions", "false"}}));
+  ASSERT_OK(
+      dbfull()->SetOptions({{"disable_auto_compactions", "false"}}));
   TEST_SYNC_POINT("DBOptionsTest::EnableAutoCompactionButDisableStall:1");
   // Wait for stall condition recalculate.
   TEST_SYNC_POINT("DBOptionsTest::EnableAutoCompactionButDisableStall:2");
@@ -433,7 +434,7 @@ TEST_F(DBOptionsTest, EnableAutoCompactionButDisableStall) {
   ASSERT_FALSE(dbfull()->TEST_write_controler().IsStopped());
   ASSERT_FALSE(dbfull()->TEST_write_controler().NeedsDelay());
   ASSERT_TRUE(dbfull()->TEST_write_controler().NeedSpeedupCompaction());
-
+  
   TEST_SYNC_POINT("DBOptionsTest::EnableAutoCompactionButDisableStall:3");
 
   // Background compaction executed.

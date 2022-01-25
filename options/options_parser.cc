@@ -202,8 +202,7 @@ Status RocksDBOptionsParser::ParseStatement(std::string* name,
 
 Status RocksDBOptionsParser::Parse(const std::string& file_name, Env* env,
                                    bool ignore_unknown_options) {
-  ConfigOptions
-      config_options;  // Use default for escaped(true) and check (exact)
+  ConfigOptions config_options;  // Use default for escaped(true) and check (exact)
   config_options.ignore_unknown_options = ignore_unknown_options;
   config_options.env = env;
   return Parse(config_options, file_name);
@@ -216,8 +215,7 @@ Status RocksDBOptionsParser::Parse(const ConfigOptions& config_options_in,
   auto ignore_unknown_options = config_options.ignore_unknown_options;
 
   std::unique_ptr<SequentialFile> seq_file;
-  Status s =
-      config_options.env->NewSequentialFile(file_name, &seq_file, EnvOptions());
+  Status s = config_options.env->NewSequentialFile(file_name, &seq_file, EnvOptions());
   if (!s.ok()) {
     return s;
   }

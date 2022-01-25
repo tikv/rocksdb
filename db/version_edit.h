@@ -13,7 +13,6 @@
 #include <string>
 #include <utility>
 #include <vector>
-
 #include "db/dbformat.h"
 #include "memory/arena.h"
 #include "rocksdb/cache.h"
