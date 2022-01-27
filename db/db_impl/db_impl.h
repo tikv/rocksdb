@@ -1667,11 +1667,10 @@ class DBImpl : public DB {
   std::deque<LogFileNumberSize> alive_log_files_;
   // Log files that aren't fully synced, and the current log file.
   // Synchronization:
-  //  - push_back() is done from write_thread_ with locked mutex_ and
-  //  log_write_mutex_
+  //  - push_back() is done from write_thread_ with locked log_write_mutex_
   //  - pop_front() is done from any thread with locked mutex_ and
   //  log_write_mutex_
-  //  - reads are done with either locked mutex_ or log_write_mutex_
+  //  - reads are done with locked log_write_mutex_
   //  - back() and items with getting_synced=true are not popped,
   //  - The same thread that sets getting_synced=true will reset it.
   //  - it follows that the object referred by back() can be safely read from
