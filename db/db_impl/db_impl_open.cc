@@ -57,7 +57,8 @@ DBOptions SanitizeOptions(const std::string& dbname, const DBOptions& src) {
   }
   auto bg_job_limits = DBImpl::GetBGJobLimits(
       result.max_background_flushes, result.max_background_compactions,
-      result.max_background_jobs, result.base_background_compactions, true /* parallelize_compactions */);
+      result.max_background_jobs, result.base_background_compactions,
+      true /* parallelize_compactions */);
   result.env->IncBackgroundThreadsIfNeeded(bg_job_limits.max_compactions,
                                            Env::Priority::LOW);
   result.env->IncBackgroundThreadsIfNeeded(bg_job_limits.max_flushes,
@@ -1066,7 +1067,14 @@ Status DBImpl::RestoreAliveLogFiles(const std::vector<uint64_t>& log_numbers) {
       break;
     }
     total_log_size_ += log.size;
-    alive_log_files_.push_back(log);
+    {
+      if (two_write_queues_) {
+        alive_log_files_.push_back(log);
+      } else {
+        InstrumentedMutexLock l(&log_write_mutex_);
+        alive_log_files_.push_back(log);
+      }
+    }
     // We preallocate space for logs, but then after a crash and restart, those
     // preallocated space are not needed anymore. It is likely only the last
     // log has such preallocated space, so we only truncate for the last log.
@@ -1380,14 +1388,10 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
             cfd, &sv_context, *cfd->GetLatestMutableCFOptions());
       }
       sv_context.Clean();
-      if (impl->two_write_queues_) {
-        impl->log_write_mutex_.Lock();
-      }
+      impl->log_write_mutex_.Lock();
       impl->alive_log_files_.push_back(
           DBImpl::LogFileNumberSize(impl->logfile_number_));
-      if (impl->two_write_queues_) {
-        impl->log_write_mutex_.Unlock();
-      }
+      impl->log_write_mutex_.Unlock();
       impl->DeleteObsoleteFiles();
       s = impl->directories_.GetDbDir()->Fsync();
     }

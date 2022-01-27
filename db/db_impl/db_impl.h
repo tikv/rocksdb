@@ -1693,7 +1693,7 @@ class DBImpl : public DB {
   std::atomic<uint64_t> total_log_size_;
 
   // If this is non-empty, we need to delete these log files in background
-  // threads. Protected by db mutex.
+  // threads. Protected by db log_write_mutex_.
   autovector<log::Writer*> logs_to_free_;
 
   bool is_snapshot_supported_;
