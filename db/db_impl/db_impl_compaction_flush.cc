@@ -98,6 +98,7 @@ Status DBImpl::SyncClosedLogs(JobContext* job_context) {
   Status s;
   if (!logs_to_sync.empty()) {
     log_write_mutex_.Unlock();
+    mutex_.Unlock();
 
     for (log::Writer* log : logs_to_sync) {
       ROCKS_LOG_INFO(immutable_db_options_.info_log,
@@ -124,6 +125,7 @@ Status DBImpl::SyncClosedLogs(JobContext* job_context) {
     // "number <= current_log_number - 1" is equivalent to
     // "number < current_log_number".
     MarkLogsSynced(current_log_number - 1, true, s);
+    mutex_.Lock();
     if (!s.ok()) {
       error_handler_.SetBGError(s, BackgroundErrorReason::kFlush);
       TEST_SYNC_POINT("DBImpl::SyncClosedLogs:Failed");
