@@ -98,7 +98,6 @@ Status DBImpl::SyncClosedLogs(JobContext* job_context) {
   Status s;
   if (!logs_to_sync.empty()) {
     log_write_mutex_.Unlock();
-    mutex_.Unlock();
 
     for (log::Writer* log : logs_to_sync) {
       ROCKS_LOG_INFO(immutable_db_options_.info_log,
@@ -125,9 +124,7 @@ Status DBImpl::SyncClosedLogs(JobContext* job_context) {
     // "number <= current_log_number - 1" is equivalent to
     // "number < current_log_number".
     MarkLogsSynced(current_log_number - 1, true, s);
-    mutex_.Lock();
     if (!s.ok()) {
-      error_handler_.SetBGError(s, BackgroundErrorReason::kFlush);
       TEST_SYNC_POINT("DBImpl::SyncClosedLogs:Failed");
       return s;
     }
@@ -177,7 +174,9 @@ Status DBImpl::FlushMemTableToOutputFile(
     // flushed SST may contain data from write batches whose updates to
     // other column families are missing.
     // SyncClosedLogs() may unlock and re-lock the db_mutex.
+    mutex_.Unlock();
     s = SyncClosedLogs(job_context);
+    mutex_.Lock();
   } else {
     TEST_SYNC_POINT("DBImpl::SyncClosedLogs:Skip");
   }
@@ -359,7 +358,9 @@ Status DBImpl::AtomicFlushMemTablesToOutputFiles(
   if (logfile_number_ > 0) {
     // TODO (yanqin) investigate whether we should sync the closed logs for
     // single column family case.
+    mutex_.Unlock();
     s = SyncClosedLogs(job_context);
+    mutex_.Lock();
   }
 
   // exec_status stores the execution status of flush_jobs as
