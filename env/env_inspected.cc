@@ -16,6 +16,10 @@ class InspectedSequentialFile : public SequentialFileWrapper {
   Status Read(size_t n, Slice* result, char* scratch) override {
     assert(inspector_);
     Status s;
+    s = SequentialFileWrapper::Read(n, result, scratch);
+    if (!s.ok()) {
+      return s;
+    }
     size_t offset = 0;
     size_t allowed = 0;
     while (offset < n) {
@@ -23,26 +27,8 @@ class InspectedSequentialFile : public SequentialFileWrapper {
       if (!s.ok()) {
         return s;
       }
-      assert(allowed <= n - offset);
-      if (allowed > 0) {
-        s = SequentialFileWrapper::Read(allowed, result, scratch + offset);
-        if (!s.ok()) {
-          break;
-        }
-        size_t actual_read = result->size();
-        if (result->data() != scratch + offset) {
-          // Only possible when underlying file ignores or misuses user
-          // provided buffer. Reject this case.
-          memmove(scratch + offset, result->data(), actual_read);
-          assert(false);
-        }
-        offset += actual_read;
-        if (actual_read < allowed) {
-          break;
-        }
-      }
+      offset += allowed;
     }
-    *result = Slice(scratch, offset);
     return s;
   }
 
@@ -50,32 +36,19 @@ class InspectedSequentialFile : public SequentialFileWrapper {
                         char* scratch) override {
     assert(inspector_);
     Status s;
-    size_t roffset = 0;
+    s = SequentialFileWrapper::PositionedRead(offset, n, result, scratch);
+    if (!s.ok()) {
+      return s;
+    }
+    size_t offset = 0;
     size_t allowed = 0;
-    while (roffset < n) {
-      s = inspector_->Read(n - roffset, &allowed);
+    while (offset < n) {
+      s = inspector_->Read(n - offset, &allowed);
       if (!s.ok()) {
         return s;
       }
-      assert(allowed <= n - roffset);
-      if (allowed > 0) {
-        s = SequentialFileWrapper::PositionedRead(offset + roffset, allowed,
-                                                  result, scratch + roffset);
-        if (!s.ok()) {
-          break;
-        }
-        size_t actual_read = result->size();
-        if (result->data() != scratch + roffset) {
-          memmove(scratch + roffset, result->data(), actual_read);
-          assert(false);
-        }
-        roffset += actual_read;
-        if (actual_read < allowed) {
-          break;
-        }
-      }
+      offset += allowed;
     }
-    *result = Slice(scratch, roffset);
     return s;
   }
 
@@ -96,32 +69,19 @@ class InspectedRandomAccessFile : public RandomAccessFileWrapper {
               char* scratch) const override {
     assert(inspector_);
     Status s;
-    size_t roffset = 0;
+    s = RandomAccessFileWrapper::Read(offset, n, result, scratch);
+    if (!s.ok()) {
+      return s;
+    }
+    size_t offset = 0;
     size_t allowed = 0;
-    while (roffset < n) {
-      s = inspector_->Read(n - roffset, &allowed);
+    while (offset < n) {
+      s = inspector_->Read(n - offset, &allowed);
       if (!s.ok()) {
         return s;
       }
-      assert(allowed <= n - roffset);
-      if (allowed > 0) {
-        s = RandomAccessFileWrapper::Read(offset + roffset, allowed, result,
-                                          scratch + roffset);
-        if (!s.ok()) {
-          break;
-        }
-        size_t actual_read = result->size();
-        if (result->data() != scratch + roffset) {
-          memmove(scratch + roffset, result->data(), actual_read);
-          assert(false);
-        }
-        roffset += actual_read;
-        if (actual_read < allowed) {
-          break;
-        }
-      }
+      offset += allowed;
     }
-    *result = Slice(scratch, roffset);
     return s;
   }
 
@@ -151,20 +111,16 @@ class InspectedWritableFile : public WritableFileWrapper {
   Status Append(const Slice& data) override {
     assert(inspector_);
     Status s;
-    size_t size = data.size();
+    s = WritableFileWrapper::Append(data);
+    if (!s.ok()) {
+      return s;
+    }
     size_t offset = 0;
     size_t allowed = 0;
-    while (offset < size) {
-      s = inspector_->Write(size - offset, &allowed);
+    while (offset < n) {
+      s = inspector_->Write(n - offset, &allowed);
       if (!s.ok()) {
         return s;
-      }
-      assert(allowed <= size - offset);
-      if (allowed > 0) {
-        s = WritableFileWrapper::Append(Slice(data.data() + offset, allowed));
-        if (!s.ok()) {
-          break;
-        }
       }
       offset += allowed;
     }
@@ -174,23 +130,18 @@ class InspectedWritableFile : public WritableFileWrapper {
   Status PositionedAppend(const Slice& data, uint64_t offset) override {
     assert(inspector_);
     Status s;
-    size_t size = data.size();
-    size_t roffset = 0;
+    s = WritableFileWrapper::PositionedAppend(data, offset);
+    if (!s.ok()) {
+      return s;
+    }
+    size_t offset = 0;
     size_t allowed = 0;
-    while (roffset < size) {
-      s = inspector_->Write(size - roffset, &allowed);
+    while (offset < n) {
+      s = inspector_->Write(n - offset, &allowed);
       if (!s.ok()) {
         return s;
       }
-      assert(allowed <= size - roffset);
-      if (allowed > 0) {
-        s = WritableFileWrapper::PositionedAppend(
-            Slice(data.data() + roffset, allowed), offset + roffset);
-        if (!s.ok()) {
-          break;
-        }
-      }
-      roffset += allowed;
+      offset += allowed;
     }
     return s;
   }
@@ -211,23 +162,18 @@ class InspectedRandomRWFile : public RandomRWFileWrapper {
   Status Write(uint64_t offset, const Slice& data) override {
     assert(inspector_);
     Status s;
-    size_t size = data.size();
-    size_t roffset = 0;
+    s = RandomRWFileWrapper::Write(offset, data);
+    if (!s.ok()) {
+      return s;
+    }
+    size_t offset = 0;
     size_t allowed = 0;
-    while (roffset < size) {
-      s = inspector_->Write(size - roffset, &allowed);
+    while (offset < n) {
+      s = inspector_->Write(n - offset, &allowed);
       if (!s.ok()) {
         return s;
       }
-      assert(allowed <= size - roffset);
-      if (allowed > 0) {
-        s = RandomRWFileWrapper::Write(offset + roffset,
-                                       Slice(data.data() + roffset, allowed));
-        if (!s.ok()) {
-          break;
-        }
-      }
-      roffset += allowed;
+      offset += allowed;
     }
     return s;
   }
@@ -236,32 +182,19 @@ class InspectedRandomRWFile : public RandomRWFileWrapper {
               char* scratch) const override {
     assert(inspector_);
     Status s;
-    size_t roffset = 0;
+    s = RandomRWFileWrapper::Read(offset, n, result, scratch);
+    if (!s.ok()) {
+      return s;
+    }
+    size_t offset = 0;
     size_t allowed = 0;
-    while (roffset < n) {
-      s = inspector_->Read(n - roffset, &allowed);
+    while (offset < n) {
+      s = inspector_->Read(n - offset, &allowed);
       if (!s.ok()) {
         return s;
       }
-      assert(allowed <= n - roffset);
-      if (allowed > 0) {
-        s = RandomRWFileWrapper::Read(offset + roffset, allowed, result,
-                                      scratch + roffset);
-        if (!s.ok()) {
-          return s;
-        }
-        size_t actual_read = result->size();
-        if (result->data() != scratch + roffset) {
-          memmove(scratch + roffset, result->data(), actual_read);
-          assert(false);
-        }
-        roffset += actual_read;
-        if (actual_read < allowed) {
-          break;
-        }
-      }
+      offset += allowed;
     }
-    *result = Slice(scratch, roffset);
     return s;
   }
 
