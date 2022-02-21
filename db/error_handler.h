@@ -24,7 +24,7 @@ class ErrorHandler {
          db_mutex_(db_mutex),
          auto_recovery_(false),
          recovery_in_prog_(false),
-         stop_state_(false) {}
+         db_stopped_(false) {}
    ~ErrorHandler() {}
 
    void EnableAutoRecovery() { auto_recovery_ = true; }
@@ -37,8 +37,10 @@ class ErrorHandler {
 
    Status ClearBGError();
 
-   bool IsDBStopped() { return stop_state_.load(std::memory_order_acquire); }
+   // Do not require DB mutex held.
+   bool IsDBStopped() { return db_stopped_.load(std::memory_order_acquire); }
 
+   // Require DB mutex held.
    bool IsBGWorkStopped() {
      return !bg_error_.ok() &&
             (bg_error_.severity() >= Status::Severity::kHardError ||
@@ -61,7 +63,7 @@ class ErrorHandler {
     // A flag indicating whether automatic recovery from errors is enabled
     bool auto_recovery_;
     bool recovery_in_prog_;
-    std::atomic<bool> stop_state_;
+    std::atomic<bool> db_stopped_;
 
     Status OverrideNoSpaceError(Status bg_error, bool* auto_recovery);
     void RecoverFromNoSpace();
