@@ -173,7 +173,10 @@ Status DBImpl::FlushMemTableToOutputFile(
     // the host crashes after flushing and before WAL is persistent, the
     // flushed SST may contain data from write batches whose updates to
     // other column families are missing.
-    // SyncClosedLogs() may unlock and re-lock the db_mutex.
+    // We must release mutex_ before calling `SyncClosedLogs` because it
+    // may be blocked waiting other thread to complete the operation of
+    // synchronizing log file.
+    // SyncClosedLogs() may unlock and re-lock the log_write_mutex.
     mutex_.Unlock();
     s = SyncClosedLogs(job_context);
     mutex_.Lock();

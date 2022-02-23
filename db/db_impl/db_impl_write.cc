@@ -1191,7 +1191,7 @@ Status DBImpl::WriteToWAL(const WriteThread::WriteGroup& write_group,
 
   if (status.ok() && need_log_sync) {
     StopWatch sw(env_, stats_, WAL_FILE_SYNC_MICROS);
-    // It's safe to access logs_ with unlocked mutex_ here because:
+    // It's safe to access logs_ with unlocked log_write_mutex_ here because:
     //  - we've set getting_synced=true for all logs,
     //    so other threads won't pop from logs_ while we're here,
     //  - only writer thread can push to logs_, and we're in
