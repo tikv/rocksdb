@@ -553,6 +553,8 @@ class DBImpl : public DB {
   void FindObsoleteFiles(JobContext* job_context, bool force,
                          bool no_full_scan = false);
 
+  void FindObsoleteLogFiles(JobContext* job_context);
+
   // Diffs the files listed in filenames and those that do not
   // belong to live files are possibly removed. Also, removes all the
   // files in sst_delete_files and log_delete_files.
