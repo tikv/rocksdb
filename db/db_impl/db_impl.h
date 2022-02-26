@@ -1619,12 +1619,11 @@ class DBImpl : public DB {
   // Lock over the persistent DB state.  Non-nullptr iff successfully acquired.
   FileLock* db_lock_;
 
-  // In addition to mutex_, log_write_mutex_ protected writes to stats_history_
+  // In addition to mutex_, stats_history_mutex_ protected writes to stats_history_
   InstrumentedMutex stats_history_mutex_;
-  // In addition to mutex_, log_write_mutex_ protected writes to logs_ and
-  // logfile_number_. With two_write_queues it also protects alive_log_files_,
-  // and log_empty_. Refer to the definition of each variable below for more
-  // details.
+  // In addition to mutex_, log_write_mutex_ protected access to logs_,
+  // logfile_number_, alive_log_files_ and log_empty_.
+  // Refer to the definition of each variable below for more details.
   // Note: to avoid dealock, if needed to acquire both log_write_mutex_ and
   // mutex_, the order should be first mutex_ and then log_write_mutex_.
   InstrumentedMutex log_write_mutex_;
