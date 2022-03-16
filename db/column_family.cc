@@ -1202,7 +1202,7 @@ Status ColumnFamilyData::ValidateOptions(
     }
   }
 
-  if (db_options.enable_multi_thread_write &&
+  if (db_options.enable_pipelined_commit &&
       cf_options.max_successive_merges > 0) {
     return Status::NotSupported(
         "Multi thread write is only supported with no successive merges");

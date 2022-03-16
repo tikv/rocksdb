@@ -1733,6 +1733,36 @@ TEST_F(ExternalSSTFileTest, WithUnorderedWrite) {
   SyncPoint::GetInstance()->ClearAllCallBacks();
 }
 
+TEST_F(ExternalSSTFileTest, WithCommitPipeline) {
+  SyncPoint::GetInstance()->DisableProcessing();
+  SyncPoint::GetInstance()->LoadDependency(
+      {{"DBImpl::WriteImpl:CommitAfterWriteWAL",
+        "ExternalSSTFileTest::WithCommitPipeline:WaitWriteWAL"},
+       {"DBImpl::WaitForPendingWrites:BeforeBlock",
+        "DBImpl::WriteImpl:BeforePipelineWriteMemtable"}});
+  SyncPoint::GetInstance()->SetCallBack(
+      "DBImpl::IngestExternalFile:NeedFlush", [&](void* need_flush) {
+        ASSERT_TRUE(*reinterpret_cast<bool*>(need_flush));
+      });
+
+  Options options = CurrentOptions();
+  options.unordered_write = false;
+  options.enable_pipelined_commit = true;
+  DestroyAndReopen(options);
+  Put("foo", "v1");
+  SyncPoint::GetInstance()->EnableProcessing();
+  port::Thread writer([&]() { Put("bar", "v2"); });
+
+  TEST_SYNC_POINT("ExternalSSTFileTest::WithCommitPipeline:WaitWriteWAL");
+  ASSERT_OK(GenerateAndAddExternalFile(options, {{"bar", "v3"}}, -1,
+                                       true /* allow_global_seqno */));
+  ASSERT_EQ(Get("bar"), "v3");
+
+  writer.join();
+  SyncPoint::GetInstance()->DisableProcessing();
+  SyncPoint::GetInstance()->ClearAllCallBacks();
+}
+
 TEST_P(ExternalSSTFileTest, IngestFileWithGlobalSeqnoRandomized) {
   Options options = CurrentOptions();
   options.IncreaseParallelism(20);

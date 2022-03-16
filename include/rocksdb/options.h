@@ -964,16 +964,11 @@ struct DBOptions {
   // to the head of the queue becomes write batch group leader and responsible
   // for writing to WAL.
   //
-  // If enable_multi_thread_write is true, there would be one thread pool
-  // sharing task with write thread. Every task would write one WriteBatch into
-  // memtable. And write thread could take tasks from write pool, when it is
-  // waiting to be waked. Enabling the feature may improve write throughput when
-  // you need not sync WAL, and spend too much time on inserting into memtable.
-  // You should use the interface MultiThreadWrite, and break your batch into
-  // smaller one.
+  // If enable_pipelined_commit is true, RocksDB will apply WriteBatch to
+  // memtable out of order but commit them in order.
   //
   // Default: false
-  bool enable_multi_thread_write = false;
+  bool enable_pipelined_commit = false;
 
   // If true, allow multi-writers to update mem tables in parallel.
   // Only some memtable_factory-s support concurrent writes; currently it

@@ -10,11 +10,13 @@
 
 #include <stdint.h>
 #include <stdio.h>
+
 #include <map>
 #include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
+
 #include "rocksdb/iterator.h"
 #include "rocksdb/listener.h"
 #include "rocksdb/metadata.h"
@@ -378,11 +380,6 @@ class DB {
   // Returns OK on success, non-OK on failure.
   // Note: consider setting options.sync = true.
   virtual Status Write(const WriteOptions& options, WriteBatch* updates) = 0;
-
-  virtual Status MultiBatchWrite(const WriteOptions& /*options*/,
-                                 std::vector<WriteBatch*>&& /*updates*/) {
-    return Status::NotSupported();
-  }
 
   // If the database contains an entry for "key" store the
   // corresponding value in *value and return OK.

@@ -105,7 +105,8 @@ DBOptions BuildDBOptions(const ImmutableDBOptions& immutable_db_options,
   options.enable_thread_tracking = immutable_db_options.enable_thread_tracking;
   options.delayed_write_rate = mutable_db_options.delayed_write_rate;
   options.enable_pipelined_write = immutable_db_options.enable_pipelined_write;
-  options.enable_multi_thread_write = immutable_db_options.enable_multi_thread_write;
+  options.enable_pipelined_commit =
+      immutable_db_options.enable_pipelined_commit;
   options.unordered_write = immutable_db_options.unordered_write;
   options.allow_concurrent_memtable_write =
       immutable_db_options.allow_concurrent_memtable_write;
@@ -1599,8 +1600,8 @@ std::unordered_map<std::string, OptionTypeInfo>
         {"enable_pipelined_write",
          {offsetof(struct DBOptions, enable_pipelined_write),
           OptionType::kBoolean, OptionVerificationType::kNormal, false, 0}},
-        {"enable_multi_thread_write",
-         {offsetof(struct DBOptions, enable_multi_thread_write),
+        {"enable_pipelined_commit",
+         {offsetof(struct DBOptions, enable_pipelined_commit),
           OptionType::kBoolean, OptionVerificationType::kNormal, false, 0}},
         {"unordered_write",
          {offsetof(struct DBOptions, unordered_write), OptionType::kBoolean,

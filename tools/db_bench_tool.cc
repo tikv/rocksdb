@@ -1251,60 +1251,6 @@ struct ReportFileOpCounters {
   std::atomic<uint64_t> bytes_written_;
 };
 
-class WriteBatchVec {
- public:
-  explicit WriteBatchVec(int max_batch_size)
-      : max_batch_size_(max_batch_size), current_(0) {}
-  ~WriteBatchVec() {
-    for (auto w : batches_) {
-      delete w;
-    }
-  }
-  void Clear() {
-    for (size_t i = 0; i <= current_ && i < batches_.size(); i++) {
-      batches_[i]->Clear();
-    }
-    current_ = 0;
-  }
-
-  Status Put(const Slice& key, const Slice& value) {
-    if (current_ < batches_.size() &&
-        batches_[current_]->Count() < max_batch_size_) {
-      return batches_[current_]->Put(key, value);
-    } else if (current_ + 1 >= batches_.size()) {
-      batches_.push_back(new WriteBatch);
-    }
-    if (current_ + 1 < batches_.size()) {
-      current_ += 1;
-    }
-    return batches_[current_]->Put(key, value);
-  }
-
-  std::vector<WriteBatch*> GetWriteBatch() const {
-    std::vector<WriteBatch*> batches;
-    for (size_t i = 0; i < batches_.size(); i++) {
-      if (i > current_) {
-        break;
-      }
-      batches.push_back(batches_[i]);
-    }
-    return batches;
-  }
-
-  int Count() const {
-    int count = 0;
-    for (size_t i = 0; i <= current_ && i < batches_.size(); i++) {
-      count += batches_[i]->Count();
-    }
-    return count;
-  }
-
- private:
-  int max_batch_size_;
-  size_t current_;
-  std::vector<WriteBatch*> batches_;
-};
-
 // A special Env to records and report file operations in db_bench
 class ReportFileOpEnv : public EnvWrapper {
  public:
@@ -3905,7 +3851,7 @@ class Benchmark {
       DBWithColumnFamilies* db) {
     Status s;
     if (use_multi_write_) {
-      options.enable_multi_thread_write = true;
+      options.enable_pipelined_commit = true;
     }
     // Open with column families if necessary.
     if (FLAGS_num_column_families > 1) {
@@ -4168,7 +4114,6 @@ class Benchmark {
 
     RandomGenerator gen;
     WriteBatch batch;
-    WriteBatchVec batches(32);
     Status s;
     int64_t bytes = 0;
 
@@ -4204,7 +4149,6 @@ class Benchmark {
       size_t id = thread->rand.Next() % num_key_gens;
       DBWithColumnFamilies* db_with_cfh = SelectDBWithCfh(id);
       batch.Clear();
-      batches.Clear();
 
       if (thread->shared->write_rate_limiter.get() != nullptr) {
         thread->shared->write_rate_limiter->Request(
@@ -4218,9 +4162,7 @@ class Benchmark {
       for (int64_t j = 0; j < entries_per_batch_; j++) {
         int64_t rand_num = key_gens[id]->Next();
         GenerateKeyFromInt(rand_num, FLAGS_num, &key);
-        if (use_multi_write_) {
-          batches.Put(key, gen.Generate(value_size_));
-        } else if (use_blob_db_) {
+        if (use_blob_db_) {
 #ifndef ROCKSDB_LITE
           Slice val = gen.Generate(value_size_);
           int ttl = rand() % FLAGS_blob_db_max_ttl_range;
@@ -4286,10 +4228,7 @@ class Benchmark {
           }
         }
       }
-      if (use_multi_write_) {
-        s = db_with_cfh->db->MultiBatchWrite(write_options_,
-                                             batches.GetWriteBatch());
-      } else if (!use_blob_db_) {
+      if (!use_blob_db_) {
         s = db_with_cfh->db->Write(write_options_, &batch);
       }
       thread->stats.FinishedOps(db_with_cfh, db_with_cfh->db,

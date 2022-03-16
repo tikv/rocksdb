@@ -123,11 +123,11 @@ DBOptions SanitizeOptions(const std::string& dbname, const DBOptions& src) {
 
   // multi thread write do not support two-write-que or write in 2PC
   if (result.two_write_queues || result.allow_2pc) {
-    result.enable_multi_thread_write = false;
+    result.enable_pipelined_commit = false;
   }
 
-  if (result.enable_multi_thread_write) {
-    result.enable_pipelined_write = true;
+  if (result.enable_pipelined_commit) {
+    result.enable_pipelined_write = false;
     result.allow_concurrent_memtable_write = true;
   }
 

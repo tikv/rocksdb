@@ -11,6 +11,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <deque>
 #include <mutex>
 #include <type_traits>
 #include <vector>
@@ -25,9 +26,29 @@
 #include "rocksdb/types.h"
 #include "rocksdb/write_batch.h"
 #include "util/autovector.h"
-#include "util/safe_queue.h"
 
 namespace rocksdb {
+struct CommitRequest {
+  uint64_t commit_lsn;
+  // We use finished_write to check whether this writer has applied to memtable.
+  std::atomic<bool> finished_write;
+  std::atomic<bool> committed;
+  CommitRequest() : commit_lsn(0), finished_write(false), committed(false) {}
+};
+
+class RequestQueue {
+ public:
+  RequestQueue();
+  ~RequestQueue();
+  void JoinCommitRequest(CommitRequest* req);
+  void CommitSequenceAwait(CommitRequest* req,
+                           std::atomic<uint64_t>* commit_sequence);
+
+ private:
+  std::mutex commit_mu_;
+  std::condition_variable cv_;
+  std::deque<CommitRequest*> requests_;
+};
 
 class WriteThread {
  public:
@@ -117,7 +138,6 @@ class WriteThread {
   // Information kept for every waiting writer.
   struct Writer {
     WriteBatch* batch;
-    std::vector<WriteBatch*> batches;
     bool sync;
     bool no_slowdown;
     bool disable_wal;
@@ -130,6 +150,7 @@ class WriteThread {
     bool made_waitable;          // records lazy construction of mutex and cv
     std::atomic<uint8_t> state;  // write under StateMutex() or pre-link
     WriteGroup* write_group;
+    CommitRequest* request;
     SequenceNumber sequence;  // the sequence number to use for the first key
     Status status;
     Status callback_status;   // status returned by callback->Callback()
@@ -153,6 +174,7 @@ class WriteThread {
           made_waitable(false),
           state(STATE_INIT),
           write_group(nullptr),
+          request(nullptr),
           sequence(kMaxSequenceNumber),
           link_older(nullptr),
           link_newer(nullptr) {}
@@ -174,29 +196,7 @@ class WriteThread {
           made_waitable(false),
           state(STATE_INIT),
           write_group(nullptr),
-          sequence(kMaxSequenceNumber),
-          link_older(nullptr),
-          link_newer(nullptr) {
-      batches.push_back(_batch);
-    }
-
-    Writer(const WriteOptions& write_options, std::vector<WriteBatch*>&& _batch,
-           WriteCallback* _callback, uint64_t _log_ref,
-           PreReleaseCallback* _pre_release_callback = nullptr)
-        : batch(nullptr),
-          batches(_batch),
-          sync(write_options.sync),
-          no_slowdown(write_options.no_slowdown),
-          disable_wal(write_options.disableWAL),
-          disable_memtable(false),
-          batch_cnt(0),
-          pre_release_callback(_pre_release_callback),
-          log_used(0),
-          log_ref(_log_ref),
-          callback(_callback),
-          made_waitable(false),
-          state(STATE_INIT),
-          write_group(nullptr),
+          request(nullptr),
           sequence(kMaxSequenceNumber),
           link_older(nullptr),
           link_newer(nullptr) {}
@@ -376,7 +376,14 @@ class WriteThread {
   // Remove the dummy writer and wake up waiting writers
   void EndWriteStall();
 
-  SafeFuncQueue write_queue_;
+  void JoinCommitRequest(CommitRequest* req) {
+    return commit_queue_.JoinCommitRequest(req);
+  }
+
+  void EnterAsCommitLeader(CommitRequest* req,
+                           std::atomic<uint64_t>* commit_sequence) {
+    commit_queue_.CommitSequenceAwait(req, commit_sequence);
+  }
 
  private:
   // See AwaitState.
@@ -388,7 +395,6 @@ class WriteThread {
 
   // Enable pipelined write to WAL and memtable.
   const bool enable_pipelined_write_;
-  const bool enable_multi_thread_write_;
 
   // Points to the newest pending writer. Only leader can remove
   // elements, adding can be done lock-free by anybody.
@@ -406,6 +412,7 @@ class WriteThread {
   // at the tail of the writer queue by the leader, so newer writers can just
   // check for this and bail
   Writer write_stall_dummy_;
+  RequestQueue commit_queue_;
 
   // Mutex and condvar for writers to block on a write stall. During a write
   // stall, writers with no_slowdown set to false will wait on this rather
