@@ -66,9 +66,9 @@ Status DBImpl::WriteWithCallback(const WriteOptions& write_options,
 }
 #endif  // ROCKSDB_LITE
 
-void DBImpl::CommitSequence(CommitRequest* request) {
-  request->finished_write.store(true, std::memory_order_release);
-  write_thread_.EnterAsCommitLeader(request, &versions_->last_sequence_);
+void DBImpl::PebbleWriteCommit(CommitRequest* request) {
+  request->applied.store(true, std::memory_order_release);
+  write_thread_.ExitWaitSequenceCommit(request, &versions_->last_sequence_);
   size_t pending_cnt = pending_memtable_writes_.fetch_sub(1) - 1;
   if (pending_cnt == 0) {
     // switch_cv_ waits until pending_memtable_writes_ = 0. Locking its mutex
@@ -124,7 +124,7 @@ Status DBImpl::PebbleWriteImpl(const WriteOptions& write_options,
             size_t count = WriteBatchInternal::Count(w->batch);
             if (count > 0) {
               w->request->commit_lsn = next_sequence + count - 1;
-              write_thread_.JoinCommitRequest(w->request);
+              write_thread_.EnterCommitQueue(w->request);
             }
             next_sequence += count;
             total_count += count;
@@ -182,6 +182,7 @@ Status DBImpl::PebbleWriteImpl(const WriteOptions& write_options,
 
   if (writer.request->commit_lsn != 0 && writer.status.ok()) {
     TEST_SYNC_POINT("DBImpl::WriteImpl:BeforePipelineWriteMemtable");
+    PERF_TIMER_GUARD(write_memtable_time);
     size_t total_count = WriteBatchInternal::Count(my_batch);
     InternalStats* stats = default_cf_internal_stats_;
     stats->AddDBStats(InternalStats::kIntStatsNumKeysWritten, total_count);
@@ -199,11 +200,11 @@ Status DBImpl::PebbleWriteImpl(const WriteOptions& write_options,
     if (!writer.FinalStatus().ok()) {
       writer.status = writer.FinalStatus();
     }
-    CommitSequence(writer.request);
+    PebbleWriteCommit(writer.request);
   } else if (writer.request->commit_lsn != 0) {
-    CommitSequence(writer.request);
+    PebbleWriteCommit(writer.request);
   } else {
-    writer.request->finished_write.store(true, std::memory_order_release);
+    writer.request->applied.store(true, std::memory_order_release);
   }
   return writer.status;
 }

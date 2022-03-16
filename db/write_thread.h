@@ -30,17 +30,18 @@
 namespace rocksdb {
 struct CommitRequest {
   uint64_t commit_lsn;
-  // We use finished_write to check whether this writer has applied to memtable.
-  std::atomic<bool> finished_write;
-  std::atomic<bool> committed;
-  CommitRequest() : commit_lsn(0), finished_write(false), committed(false) {}
+  // We use applied to check whether this writer has applied to memtable.
+  std::atomic<bool> applied;
+  // protected by RequestQueue::commit_mu_
+  bool committed;
+  CommitRequest() : commit_lsn(0), applied(false), committed(false) {}
 };
 
 class RequestQueue {
  public:
   RequestQueue();
   ~RequestQueue();
-  void JoinCommitRequest(CommitRequest* req);
+  void Enter(CommitRequest* req);
   void CommitSequenceAwait(CommitRequest* req,
                            std::atomic<uint64_t>* commit_sequence);
 
@@ -376,12 +377,10 @@ class WriteThread {
   // Remove the dummy writer and wake up waiting writers
   void EndWriteStall();
 
-  void JoinCommitRequest(CommitRequest* req) {
-    return commit_queue_.JoinCommitRequest(req);
-  }
+  void EnterCommitQueue(CommitRequest* req) { return commit_queue_.Enter(req); }
 
-  void EnterAsCommitLeader(CommitRequest* req,
-                           std::atomic<uint64_t>* commit_sequence) {
+  void ExitWaitSequenceCommit(CommitRequest* req,
+                              std::atomic<uint64_t>* commit_sequence) {
     commit_queue_.CommitSequenceAwait(req, commit_sequence);
   }
 

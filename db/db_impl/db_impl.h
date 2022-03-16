@@ -1029,7 +1029,7 @@ class DBImpl : public DB {
                          WriteCallback* callback = nullptr,
                          uint64_t* log_used = nullptr, uint64_t log_ref = 0,
                          uint64_t* seq_used = nullptr);
-  void CommitSequence(CommitRequest* writer);
+  void PebbleWriteCommit(CommitRequest* request);
 
   Status PipelinedWriteImpl(const WriteOptions& options, WriteBatch* updates,
                             WriteCallback* callback = nullptr,

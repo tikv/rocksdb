@@ -772,7 +772,7 @@ RequestQueue::RequestQueue() {}
 
 RequestQueue::~RequestQueue() {}
 
-void RequestQueue::JoinCommitRequest(CommitRequest* req) {
+void RequestQueue::Enter(CommitRequest* req) {
   std::unique_lock<std::mutex> guard(commit_mu_);
   requests_.push_back(req);
 }
@@ -780,18 +780,17 @@ void RequestQueue::JoinCommitRequest(CommitRequest* req) {
 void RequestQueue::CommitSequenceAwait(CommitRequest* req,
                                        std::atomic<uint64_t>* commit_sequence) {
   std::unique_lock<std::mutex> guard(commit_mu_);
-  while (!requests_.empty() && requests_.front() != req &&
-         !req->committed.load(std::memory_order_acquire)) {
+  while (!requests_.empty() && requests_.front() != req && !req->committed) {
     cv_.wait(guard);
   }
-  if (req->committed.load(std::memory_order_acquire)) {
+  if (req->committed) {
     return;
   } else if (requests_.front() == req) {
     while (!requests_.empty() &&
-           requests_.front()->finished_write.load(std::memory_order_acquire)) {
+           requests_.front()->applied.load(std::memory_order_acquire)) {
       CommitRequest* current = requests_.front();
       commit_sequence->store(current->commit_lsn, std::memory_order_release);
-      current->committed.store(true, std::memory_order_release);
+      current->committed = true;
       requests_.pop_front();
     }
     cv_.notify_all();
