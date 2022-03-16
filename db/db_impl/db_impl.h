@@ -1025,7 +1025,7 @@ class DBImpl : public DB {
                    PreReleaseCallback* pre_release_callback = nullptr);
 
   Status PebbleWriteImpl(const WriteOptions& write_options,
-                         WriteBatch* my_batch, CommitRequest* request,
+                         WriteBatch* my_batch,
                          WriteCallback* callback = nullptr,
                          uint64_t* log_used = nullptr, uint64_t log_ref = 0,
                          uint64_t* seq_used = nullptr);

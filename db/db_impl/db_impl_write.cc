@@ -81,13 +81,14 @@ void DBImpl::PebbleWriteCommit(CommitRequest* request) {
 }
 
 Status DBImpl::PebbleWriteImpl(const WriteOptions& write_options,
-                               WriteBatch* my_batch, CommitRequest* request,
-                               WriteCallback* callback, uint64_t* log_used,
-                               uint64_t log_ref, uint64_t* seq_used) {
+                               WriteBatch* my_batch, WriteCallback* callback,
+                               uint64_t* log_used, uint64_t log_ref,
+                               uint64_t* seq_used) {
   PERF_TIMER_GUARD(write_pre_and_post_process_time);
   StopWatch write_sw(env_, immutable_db_options_.statistics.get(), DB_WRITE);
+  CommitRequest request;
   WriteThread::Writer writer(write_options, my_batch, callback, log_ref, false);
-  writer.request = request;
+  writer.request = &request;
   write_thread_.JoinBatchGroup(&writer);
 
   WriteContext write_context;
@@ -300,9 +301,8 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
   }
 
   if (immutable_db_options_.enable_pipelined_commit) {
-    CommitRequest request;
-    return PebbleWriteImpl(write_options, my_batch, &request, callback,
-                           log_used, log_ref, seq_used);
+    return PebbleWriteImpl(write_options, my_batch, callback, log_used, log_ref,
+                           seq_used);
   }
 
   if (immutable_db_options_.enable_pipelined_write) {
