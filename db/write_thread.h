@@ -47,7 +47,7 @@ class RequestQueue {
 
  private:
   std::mutex commit_mu_;
-  std::condition_variable cv_;
+  std::condition_variable commit_cv_;
   std::deque<CommitRequest*> requests_;
 };
 

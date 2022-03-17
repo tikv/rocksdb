@@ -781,7 +781,7 @@ void RequestQueue::CommitSequenceAwait(CommitRequest* req,
                                        std::atomic<uint64_t>* commit_sequence) {
   std::unique_lock<std::mutex> guard(commit_mu_);
   while (!requests_.empty() && requests_.front() != req && !req->committed) {
-    cv_.wait(guard);
+    commit_cv_.wait(guard);
   }
   if (req->committed) {
     return;
@@ -793,7 +793,7 @@ void RequestQueue::CommitSequenceAwait(CommitRequest* req,
       current->committed = true;
       requests_.pop_front();
     }
-    cv_.notify_all();
+    commit_cv_.notify_all();
   }
 }
 
