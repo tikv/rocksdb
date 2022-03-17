@@ -25,7 +25,6 @@ WriteThread::WriteThread(const ImmutableDBOptions& db_options)
       allow_concurrent_memtable_write_(
           db_options.allow_concurrent_memtable_write),
       enable_pipelined_write_(db_options.enable_pipelined_write),
-      enable_multi_thread_write_(db_options.enable_multi_thread_write),
       max_write_batch_group_size_bytes(
           db_options.max_write_batch_group_size_bytes),
       newest_writer_(nullptr),
@@ -143,29 +142,6 @@ uint8_t WriteThread::AwaitState(Writer* w, uint8_t goal_mask,
   // 1/sampling_base.
   const int sampling_base = 256;
 
-  if (enable_multi_thread_write_) {
-    auto spin_begin = std::chrono::steady_clock::now();
-    while ((state & goal_mask) == 0) {
-      if (write_queue_.RunFunc()) {
-        spin_begin = std::chrono::steady_clock::now();
-      } else {
-        std::this_thread::yield();
-        auto now = std::chrono::steady_clock::now();
-        // If there is no task in the queue for a long time, we should block
-        // this thread to avoid costing too much CPU. Because there may be a
-        // large WriteBatch writing into memtable.
-        if ((now - spin_begin) > std::chrono::microseconds(max_yield_usec_)) {
-          break;
-        }
-      }
-      state = w->state.load(std::memory_order_acquire);
-    }
-    if ((state & goal_mask) == 0) {
-      TEST_SYNC_POINT_CALLBACK("WriteThread::AwaitState:BlockingWaiting", w);
-      state = BlockingAwaitState(w, goal_mask);
-    }
-    return state;
-  }
 
   if (max_yield_usec_ > 0) {
     update_ctx = Random::GetTLSInstance()->OneIn(sampling_base);
@@ -408,7 +384,7 @@ void WriteThread::EndWriteStall() {
 static WriteThread::AdaptationContext jbg_ctx("JoinBatchGroup");
 void WriteThread::JoinBatchGroup(Writer* w) {
   TEST_SYNC_POINT_CALLBACK("WriteThread::JoinBatchGroup:Start", w);
-  assert(!w->batches.empty());
+  assert(w->batch != nullptr);
 
   bool linked_as_leader = LinkOne(w, &newest_writer_);
 
@@ -443,10 +419,10 @@ void WriteThread::JoinBatchGroup(Writer* w) {
 size_t WriteThread::EnterAsBatchGroupLeader(Writer* leader,
                                             WriteGroup* write_group) {
   assert(leader->link_older == nullptr);
-  assert(!leader->batches.empty());
+  assert(leader->batch != nullptr);
   assert(write_group != nullptr);
 
-  size_t size = WriteBatchInternal::ByteSize(leader->batches);
+  size_t size = WriteBatchInternal::ByteSize(leader->batch);
 
   // Allow the group to grow up to a maximum size, but if the
   // original write is small, limit the growth so we do not slow
@@ -499,7 +475,7 @@ size_t WriteThread::EnterAsBatchGroupLeader(Writer* leader,
       break;
     }
 
-    if (w->batches.empty()) {
+    if (w->batch == nullptr) {
       // Do not include those writes with nullptr batch. Those are not writes,
       // those are something else. They want to be alone
       break;
@@ -510,7 +486,7 @@ size_t WriteThread::EnterAsBatchGroupLeader(Writer* leader,
       break;
     }
 
-    auto batch_size = WriteBatchInternal::ByteSize(w->batches);
+    auto batch_size = WriteBatchInternal::ByteSize(w->batch);
     if (size + batch_size > max_size) {
       // Do not make batch too big
       break;
@@ -530,10 +506,10 @@ void WriteThread::EnterAsMemTableWriter(Writer* leader,
                                         WriteGroup* write_group) {
   assert(leader != nullptr);
   assert(leader->link_older == nullptr);
-  assert(!leader->batches.empty());
+  assert(leader->batch != nullptr);
   assert(write_group != nullptr);
 
-  size_t size = WriteBatchInternal::ByteSize(leader->batches);
+  size_t size = WriteBatchInternal::ByteSize(leader->batch);
 
   // Allow the group to grow up to a maximum size, but if the
   // original write is small, limit the growth so we do not slow
@@ -549,8 +525,7 @@ void WriteThread::EnterAsMemTableWriter(Writer* leader,
   write_group->size = 1;
   Writer* last_writer = leader;
 
-  if (!allow_concurrent_memtable_write_ || enable_multi_thread_write_ ||
-      !leader->batches[0]->HasMerge()) {
+  if (!allow_concurrent_memtable_write_ || !leader->batch->HasMerge()) {
     Writer* newest_writer = newest_memtable_writer_.load();
     CreateMissingNewerLinks(newest_writer);
 
@@ -559,16 +534,16 @@ void WriteThread::EnterAsMemTableWriter(Writer* leader,
       assert(w->link_newer);
       w = w->link_newer;
 
-      if (w->batches.empty()) {
+      if (w->batch == nullptr) {
         break;
       }
 
-      if (!enable_multi_thread_write_ && w->batches[0]->HasMerge()) {
+      if (w->batch->HasMerge()) {
         break;
       }
 
       if (!allow_concurrent_memtable_write_) {
-        auto batch_size = WriteBatchInternal::ByteSize(w->batches);
+        auto batch_size = WriteBatchInternal::ByteSize(w->batch);
         if (size + batch_size > max_size) {
           // Do not make batch too big
           break;
@@ -583,9 +558,8 @@ void WriteThread::EnterAsMemTableWriter(Writer* leader,
   }
 
   write_group->last_writer = last_writer;
-  write_group->last_sequence = last_writer->sequence +
-                               WriteBatchInternal::Count(last_writer->batches) -
-                               1;
+  write_group->last_sequence =
+      last_writer->sequence + WriteBatchInternal::Count(last_writer->batch) - 1;
 }
 
 void WriteThread::ExitAsMemTableWriter(Writer* /*self*/,
@@ -791,7 +765,7 @@ void WriteThread::ExitAsBatchGroupLeader(WriteGroup& write_group,
 
 static WriteThread::AdaptationContext eu_ctx("EnterUnbatched");
 void WriteThread::EnterUnbatched(Writer* w, InstrumentedMutex* mu) {
-  assert(w != nullptr && w->batches.empty());
+  assert(w != nullptr && w->batch == nullptr);
   mu->Unlock();
   bool linked_as_leader = LinkOne(w, &newest_writer_);
   if (!linked_as_leader) {
@@ -828,6 +802,35 @@ void WriteThread::WaitForMemTableWriters() {
     AwaitState(&w, STATE_MEMTABLE_WRITER_LEADER, &wfmw_ctx);
   }
   newest_memtable_writer_.store(nullptr);
+}
+
+RequestQueue::RequestQueue() {}
+
+RequestQueue::~RequestQueue() {}
+
+void RequestQueue::Enter(CommitRequest* req) {
+  std::unique_lock<std::mutex> guard(commit_mu_);
+  requests_.push_back(req);
+}
+
+void RequestQueue::CommitSequenceAwait(CommitRequest* req,
+                                       std::atomic<uint64_t>* commit_sequence) {
+  std::unique_lock<std::mutex> guard(commit_mu_);
+  while (!requests_.empty() && requests_.front() != req && !req->committed) {
+    commit_cv_.wait(guard);
+  }
+  if (req->committed) {
+    return;
+  } else if (requests_.front() == req) {
+    while (!requests_.empty() &&
+           requests_.front()->applied.load(std::memory_order_acquire)) {
+      CommitRequest* current = requests_.front();
+      commit_sequence->store(current->commit_lsn, std::memory_order_release);
+      current->committed = true;
+      requests_.pop_front();
+    }
+    commit_cv_.notify_all();
+  }
 }
 
 }  // namespace ROCKSDB_NAMESPACE
