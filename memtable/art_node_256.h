@@ -14,15 +14,13 @@ namespace rocksdb {
 
  class Node256 : public InnerNode {
 public:
-  Node256();
+   Node256() { n_children_.store(0); }
+   virtual ~Node256() {}
 
-  Node **find_child(char partial_key) override;
+  std::atomic<Node*>*find_child(char partial_key) override;
   void set_child(char partial_key, Node *child) override;
-  Node *del_child(char partial_key) override;
-  InnerNode *grow() override;
-  InnerNode *shrink() override;
+  InnerNode *grow(Allocator* allocator) override;
   bool is_full() const override;
-  bool is_underfull() const override;
 
   char next_partial_key(char partial_key) const override;
 
@@ -31,44 +29,27 @@ public:
   int n_children() const override;
 
 private:
-  uint16_t n_children_ = 0;
-  std::array<Node *, 256> children_;
+  std::atomic<uint16_t> n_children_;
+  std::atomic<Node *>  children_[256];
 };
 
- Node256::Node256() { children_.fill(nullptr); }
-
- Node **Node256::find_child(char partial_key) {
-  return children_[128 + partial_key] != nullptr ? &children_[128 + partial_key]
-                                                 : nullptr;
+ std::atomic<Node*>*Node256::find_child(char partial_key) {
+  return &children_[128 + partial_key];
 }
 
-
 void Node256::set_child(char partial_key, Node *child) {
-  children_[128 + partial_key] = child;
+  children_[128 + partial_key].store(child, std::memory_order_release);
   ++n_children_;
 }
 
- Node *Node256::del_child(char partial_key) {
-  Node *child_to_delete = children_[128 + partial_key];
-  if (child_to_delete != nullptr) {
-    children_[128 + partial_key] = nullptr;
-    --n_children_;
-  }
-  return child_to_delete;
-}
-
- InnerNode *Node256::grow() {
+ InnerNode *Node256::grow(Allocator* _allocator) {
   throw std::runtime_error("Node256 cannot grow");
 }
-
 
  bool Node256::is_full() const {
   return n_children_ == 256;
 }
 
- bool Node256::is_underfull() const {
-  return n_children_ == 48;
-}
 
  char Node256::next_partial_key(char partial_key) const {
   while (true) {

@@ -15,18 +15,13 @@
 
 namespace rocksdb {
 
-class Node16;
-
 class Node4 : public InnerNode {
-  friend class Node16;
-
 public:
-  Node **find_child(char partial_key) override;
+  ~Node4() {}
+  std::atomic<Node*> *find_child(char partial_key) override;
   void set_child(char partial_key, Node *child) override;
-  Node *del_child(char partial_key) override;
-  InnerNode *grow() override;
+  InnerNode *grow(Allocator* allocator) override;
   bool is_full() const override;
-  bool is_underfull() const override;
 
   char next_partial_key(char partial_key) const override;
 
@@ -35,14 +30,17 @@ public:
   int n_children() const override;
 
 private:
-  uint8_t n_children_ = 0;
-  char keys_[4];
-  Node *children_[4];
+  std::atomic<uint8_t> n_children_;
+  std::atomic<uint32_t> keys_;
+  std::atomic<Node*> children_[4];
 };
 
- Node **Node4::find_child(char partial_key) {
-  for (int i = 0; i < n_children_; ++i) {
-    if (keys_[i] == partial_key) {
+ std::atomic<Node*> *Node4::find_child(char partial_key) {
+   uint8_t key = partial_key;
+   uint8_t n_children = n_children_.load(std::memory_order_acquire);
+   uint32_t keys = keys_.load(std::memory_order_acquire);
+  for (uint8_t i = 0; i < n_children; ++i) {
+    if (((keys >> (i * 8)) & 255) == key) {
       return &children_[i];
     }
   }
@@ -51,70 +49,57 @@ private:
 
  void Node4::set_child(char partial_key, Node *child) {
   /* determine index for child */
-  int c_i;
-  for (c_i = 0; c_i < n_children_ && partial_key >= keys_[c_i]; ++c_i) {
-  }
-  std::memmove(keys_ + c_i + 1, keys_ + c_i, n_children_ - c_i);
-  std::memmove(children_ + c_i + 1, children_ + c_i,
-               (n_children_ - c_i) * sizeof(void *));
-
-  keys_[c_i] = partial_key;
-  children_[c_i] = child;
-  ++n_children_;
+  uint8_t n_children = n_children_.load(std::memory_order_relaxed);
+  uint8_t c_i = partial_key;
+  uint32_t idx_value = (uint32_t)c_i << (n_children * 8);
+  uint32_t key = keys_.load(std::memory_order_relaxed);
+  keys_.store(key | idx_value, std::memory_order_release);
+  children_[c_i].store(child, std::memory_order_release);
+  n_children_.store(n_children + 1, std::memory_order_release);
 }
 
- Node *Node4::del_child(char partial_key) {
-  Node *child_to_delete = nullptr;
-  for (int i = 0; i < n_children_; ++i) {
-    if (child_to_delete == nullptr && partial_key == keys_[i]) {
-      child_to_delete = children_[i];
-    }
-    if (child_to_delete != nullptr) {
-      /* move existing sibling to the left */
-      keys_[i] = i < n_children_ - 1 ? keys_[i + 1] : 0;
-      children_[i] = i < n_children_ - 1 ? children_[i + 1] : nullptr;
-    }
-  }
-  if (child_to_delete != nullptr) {
-    --n_children_;
-  }
-  return child_to_delete;
-}
+ InnerNode *Node4::grow(Allocator* allocator) {
+   Node16* new_node = new (allocator->AllocateAligned(sizeof(Node16)))Node16();
+  uint8_t n_children = n_children_.load(std::memory_order_acquire);
+  new_node->n_children_.store(n_children, std::memory_order_relaxed);
+  uint32_t keys = keys_.load(std::memory_order_acquire);
 
- InnerNode *Node4::grow() {
-  auto new_node = new Node16();
-  new_node->prefix_ = this->prefix_;
-  new_node->prefix_len_ = this->prefix_len_;
-  new_node->n_children_ = this->n_children_;
-  std::copy(this->keys_, this->keys_ + this->n_children_, new_node->keys_);
-  std::copy(this->children_, this->children_ + this->n_children_, new_node->children_);
-  delete this;
+  for (uint8_t i = 0; i < n_children; ++i) {
+    uint8_t c = (keys >> (i * 8)) & 255;
+    if (c >= 128) {
+      new_node->set_child(c - 128, children_[i].load(std::memory_order_relaxed));
+    } else {
+      new_node->set_child((char)c - 128, children_[i].load(std::memory_order_relaxed));
+    }
+  }
   return new_node;
 }
 
-
  bool Node4::is_full() const { return n_children_ == 4; }
 
- bool Node4::is_underfull() const {
-  return false;
-}
-
  char Node4::next_partial_key(char partial_key) const {
-  for (int i = 0; i < n_children_; ++i) {
-    if (keys_[i] >= partial_key) {
-      return keys_[i];
-    }
-  }
+   uint32_t keys = keys_.load(std::memory_order_acquire);
+   uint8_t n_children = n_children_.load(std::memory_order_acquire);
+   for (uint8_t i = 0; i < n_children; ++i) {
+      uint8_t c = keys & 255;
+       if ((char)c >= partial_key) {
+         return (char)c;
+       }
+       keys >>= 8;
+   }
   /* return 0; */
   throw std::out_of_range("provided partial key does not have a successor");
 }
 
  char Node4::prev_partial_key(char partial_key) const {
-  for (int i = n_children_ - 1; i >= 0; --i) {
-    if (keys_[i] <= partial_key) {
-      return keys_[i];
-    }
-  }
+   uint32_t keys = keys_.load(std::memory_order_acquire);
+   uint8_t n_children = n_children_.load(std::memory_order_acquire);
+   for (uint8_t i = n_children - 1; i >= 0; --i) {
+     uint8_t c = (keys >> (i * 8)) & 255;
+     if ((char)c <= partial_key) {
+       return (char)c;
+     }
+   }
   /* return 255; */
   throw std::out_of_range("provided partial key does not have a predecessor");
 }

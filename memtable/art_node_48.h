@@ -15,85 +15,73 @@ namespace rocksdb {
 
 
  class Node48 : public InnerNode {
-  friend class Node16;
-  friend class Node256;
 
 public:
   Node48();
+  virtual ~Node48() {}
 
-  Node **find_child(char partial_key) override;
+  std::atomic<Node*> *find_child(char partial_key) override;
   void set_child(char partial_key, Node *child) override;
-  Node *del_child(char partial_key) override;
-  InnerNode *grow() override;
+  InnerNode *grow(Allocator* allocator) override;
   bool is_full() const override;
-  bool is_underfull() const override;
 
   char next_partial_key(char partial_key) const override;
   char prev_partial_key(char partial_key) const override;
+  uint8_t get_index(uint8_t key) const;
+  void set_index(uint8_t key, uint8_t index);
 
   int n_children() const override;
 
 private:
-  static const char EMPTY;
+  static const uint8_t EMPTY;
 
-  uint8_t n_children_ = 0;
-  char indexes_[256];
-  Node *children_[48];
+  std::atomic<uint8_t> n_children_;
+  std::atomic<uint64_t> indexes_[32];
+  std::atomic<Node*> children_[48];
 };
 
  Node48::Node48() {
-  std::fill(this->indexes_, this->indexes_ + 256, Node48::EMPTY);
-  std::fill(this->children_, this->children_ + 48, nullptr);
+   for (int i = 0; i < 32; i ++) {
+     indexes_[i].store(0, std::memory_order_relaxed);
+   }
+   for (int i = 0; i < 48; i ++) {
+     children_[i].store(nullptr, std::memory_order_relaxed);
+   }
+   n_children_.store(0, std::memory_order_relaxed);
 }
 
- Node **Node48::find_child(char partial_key) {
+ std::atomic<Node*> *Node48::find_child(char partial_key) {
   // TODO(rafaelkallis): direct lookup instead of temp save?
-  uint8_t index = indexes_[128 + partial_key];
+  uint8_t index = get_index(partial_key + 128);
   return Node48::EMPTY != index ? &children_[index] : nullptr;
 }
 
+uint8_t Node48::get_index(uint8_t key) const {
+  uint64_t index = indexes_[key >> 3].load(std::memory_order_acquire);
+  return (index >> ((key & 7) << 3) & 255) - 1;
+}
+
+void Node48::set_index(uint8_t key, uint8_t index) {
+  uint64_t old_index = indexes_[key >> 3].load(std::memory_order_acquire);
+  indexes_[key >> 3].store(old_index | (index + 1) << (key & 7), std::memory_order_release);
+}
 
 void Node48::set_child(char partial_key, Node *child) {
-
-  // TODO(rafaelkallis): pick random starting entry in order to increase
-  // performance? i.e. for (int i = random([0,48)); i != (i-1) % 48; i = (i+1) %
-  // 48){}
-
-  /* find empty child entry */
-  for (int i = 0; i < 48; ++i) {
-    if (children_[i] == nullptr) {
-      indexes_[128 + partial_key] = (uint8_t) i;
-      children_[i] = child;
-      break;
-    }
-  }
-  ++n_children_;
+  uint8_t n_children = n_children_.load(std::memory_order_relaxed);
+  set_index(partial_key + 128, n_children);
+  children_[n_children].store(child, std::memory_order_release);
+  n_children_.store(n_children + 1, std::memory_order_release);
 }
 
- Node *Node48::del_child(char partial_key) {
-  Node *child_to_delete = nullptr;
-  unsigned char index = indexes_[128 + partial_key];
-  if (index != Node48::EMPTY) {
-    child_to_delete = children_[index];
-    indexes_[128 + partial_key] = Node48::EMPTY;
-    children_[index] = nullptr;
-    --n_children_;
-  }
-  return child_to_delete;
-}
-
- InnerNode *Node48::grow() {
-  auto new_node = new Node256();
-  new_node->prefix_ = this->prefix_;
-  new_node->prefix_len_ = this->prefix_len_;
+ InnerNode *Node48::grow(Allocator* allocator) {
+  auto new_node = new (allocator->AllocateAligned(sizeof(Node256)))Node256();
   uint8_t index;
   for (int partial_key = -128; partial_key < 127; ++partial_key) {
-    index = indexes_[128 + partial_key];
+    index = get_index(partial_key + 128);
     if (index != Node48::EMPTY) {
       new_node->set_child(partial_key, children_[index]);
     }
   }
-  delete this;
   return new_node;
 }
 
@@ -102,15 +90,12 @@ void Node48::set_child(char partial_key, Node *child) {
   return n_children_ == 48;
 }
 
- bool Node48::is_underfull() const {
-  return n_children_ == 16;
-}
-
- const char Node48::EMPTY = 48;
+ const uint8_t Node48::EMPTY = 255;
 
  char Node48::next_partial_key(char partial_key) const {
   while (true) {
-    if (indexes_[128 + partial_key] != Node48::EMPTY) {
+    uint8_t index = get_index(partial_key + 128);
+    if (index != Node48::EMPTY) {
       return partial_key;
     }
     if (partial_key == 127) {
@@ -122,7 +107,8 @@ void Node48::set_child(char partial_key, Node *child) {
 
  char Node48::prev_partial_key(char partial_key) const {
   while (true) {
-    if (indexes_[128 + partial_key] != Node48::EMPTY) {
+    uint8_t index = get_index(partial_key + 128);
+    if (index != Node48::EMPTY) {
       return partial_key;
     }
     if (partial_key == -128) {

@@ -12,24 +12,29 @@
 #include <iostream>
 #include <iterator>
 #include <stdexcept>
+#include "memtable/art_inner_node.h"
 
 namespace rocksdb {
 
-class Node {
-public:
-  virtual ~Node() = default;
+enum NodeType {
+  kNode4,
+  kNode16,
+  kNode48,
+  kNode256,
+};
 
-  Node() = default;
-  Node(const Node &other) = default;
-  Node(Node &&other) noexcept = default;
-  Node &operator=(const Node &other) = default;
-  Node &operator=(Node &&other) noexcept = default;
+
+
+struct Node {
+  Node() {}
 
   /**
    * Determines if this Node is a leaf Node, i.e., contains a value.
    * Needed for downcasting a Node instance to a leaf_Node or inner_Node instance.
    */
-  virtual bool is_leaf() const = 0;
+  bool is_leaf() const {
+      return value != nullptr;
+  }
 
   /**
    * Determines the number of matching bytes between the Node's prefix and the key.
@@ -43,15 +48,23 @@ public:
    *           ^^^^*
    * index:    01234
    */
-  int check_prefix(const char *key, int key_len) const;
+  int check_prefix(const char *key, int depth, int key_len) const;
 
-  char *prefix_ = nullptr;
-  uint16_t prefix_len_ = 0;
+  NodeType inner_type;
+  InnerNode* inner;
+  char* value;
+  uint16_t prefix_len;
+  char prefix[1];
 };
 
-int Node::check_prefix(const char *key, int key_len) const {
-  key_len = std::min(key_len, (int)prefix_len_);
-  return std::mismatch(prefix_, prefix_ + key_len, key).second - key;
+int Node::check_prefix(const char *key, int depth, int key_len) const {
+  int l = std::min((int)prefix_len, key_len - depth);
+  for (int i = 0; i < l; i ++) {
+    if (key[i + depth] != prefix[i]) {
+      return i;
+    }
+  }
+  return l;
 }
 
 } // namespace rocksdb

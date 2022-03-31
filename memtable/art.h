@@ -5,11 +5,10 @@
 
 #pragma once
 
-#include "memtable/art_leaf_node.h"
 #include "memtable/art_inner_node.h"
 #include "memtable/art_node.h"
 #include "memtable/art_node_4.h"
-#include "memtable/art_tree_it.h"
+#include "memory/allocator.h"
 #include <algorithm>
 #include <iostream>
 #include <stack>
@@ -18,6 +17,7 @@ namespace rocksdb {
 
 class AdaptiveRadixTree {
 public:
+  AdaptiveRadixTree(Allocator* allocator);
   ~AdaptiveRadixTree();
 
   /**
@@ -26,7 +26,7 @@ public:
    * @param key - The key to find.
    * @return the value associated with the key or a nullptr.
    */
-  char* get(const char *key) const;
+  char* Get(const char *key) const;
 
   /**
    * Associates the given key with the given value.
@@ -38,107 +38,86 @@ public:
    * @return a nullptr if no other value is associated with they or the
    * previously associated value.
    */
-  char *set(const char *key, char *value);
+  char *Insert(const char *key, int key_len, char* v);
 
-  /**
-   * Deletes the given key and returns it's associated value.
-   * The associated value is returned,
-   * since the method consumer is the resource owner.
-   * If no value is associated with the given key, nullptr is returned.
-   *
-   * @param key - The key to delete.
-   * @return the values assciated with they key or a nullptr otherwise.
-   */
-  char* del(const char *key);
 
-  /**
-   * Forward iterator that traverses the tree in lexicographic order.
-   */
-  TreeIter begin();
-
-  /**
-   * Forward iterator that traverses the tree in lexicographic order starting
-   * from the provided key.
-   */
-  TreeIter begin(const char *key);
-
-  /**
-   * Iterator to the end of the lexicographic order.
-   */
-  TreeIter end();
+  char* AllocateLeafNode(const char* v, size_t value_size);
+  Node* AllocateNode(InnerNode* inner, size_t prefix_size);
 
 private:
-  Node *root_ = nullptr;
+  std::atomic<Node*> root_;
+  Allocator* allocator_;
 };
 
 AdaptiveRadixTree::~AdaptiveRadixTree() {
-  if (root_ == nullptr) {
-    return;
-  }
-  std::stack<Node *> node_stack;
-  node_stack.push(root_);
-  Node *cur;
-  InnerNode *cur_inner;
-  ChildIter it, it_end;
-  while (!node_stack.empty()) {
-    cur = node_stack.top();
-    node_stack.pop();
-    if (!cur->is_leaf()) {
-      cur_inner = static_cast<InnerNode*>(cur);
-      for (it = cur_inner->begin(), it_end = cur_inner->end(); it != it_end; ++it) {
-        node_stack.push(*cur_inner->find_child(*it));
-      }
-    }
-    if (cur->prefix_ != nullptr) {
-      delete[] cur->prefix_;
-    }
-    delete cur;
-  }
 }
 
-char* AdaptiveRadixTree::get(const char *key) const {
-  Node *cur = root_, **child;
+AdaptiveRadixTree::AdaptiveRadixTree(Allocator* allocator)
+  : allocator_(allocator){
+  root_.store(nullptr, std::memory_order_relaxed);
+}
+
+char* AdaptiveRadixTree::Get(const char *key) const {
+  Node *cur = root_.load(std::memory_order_acquire);
+  std::atomic<Node*>* child = nullptr;
   int depth = 0, key_len = std::strlen(key) + 1;
   while (cur != nullptr) {
-    if (cur->prefix_len_ != cur->check_prefix(key + depth, key_len - depth)) {
+    if (cur->prefix_len != cur->check_prefix(key, depth, key_len)) {
       /* prefix mismatch */
       return nullptr;
     }
-    if (cur->prefix_len_ == key_len - depth) {
+    if (cur->prefix_len == key_len - depth) {
       /* exact match */
-      return cur->is_leaf() ? static_cast<LeafNode*>(cur)->value_ : nullptr;
+      return cur->value;
     }
-    child = static_cast<InnerNode*>(cur)->find_child(key[depth + cur->prefix_len_]);
-    depth += (cur->prefix_len_ + 1);
-    cur = child != nullptr ? *child : nullptr;
+
+    if (cur->inner == nullptr) {
+      return nullptr;
+    }
+    child = cur->inner->find_child(key[depth + cur->prefix_len]);
+    depth += cur->prefix_len + 1;
+    cur = child != nullptr ? child->load(std::memory_order_acquire) : nullptr;
   }
   return nullptr;
 }
 
-char* AdaptiveRadixTree::set(const char *key, char* value) {
+Node* AdaptiveRadixTree::AllocateNode(InnerNode* inner, size_t prefix_size) {
+  size_t extra_prefix = prefix_size;
+  if (extra_prefix > 0) {
+    extra_prefix -= 1;
+  }
+  char* addr = allocator_->AllocateAligned(sizeof(Node) + extra_prefix);
+  Node* node = reinterpret_cast<Node*>(addr);
+  node->inner = inner;
+  node->value = nullptr;
+  node->prefix_len = prefix_size;
+  return node;
+}
+
+
+char* AdaptiveRadixTree::Insert(const char *key, int l, char* leaf) {
   int key_len = std::strlen(key) + 1, depth = 0, prefix_match_len;
-  if (root_ == nullptr) {
-    root_ = new LeafNode(value);
-    root_->prefix_ = new char[key_len];
-    std::copy(key, key + key_len + 1, root_->prefix_);
-    root_->prefix_len_ = key_len;
+
+  std::atomic<Node*>* cur_address = &root_;
+  Node *cur = root_.load(std::memory_order_relaxed);
+  if (cur == nullptr) {
+    Node* root = AllocateNode(nullptr, l);
+    root->value = leaf;
+    memcpy(root->prefix, key, l);
+    root_.store(root, std::memory_order_release);
     return nullptr;
   }
 
-  Node **cur = &root_, **child;
-  InnerNode **cur_inner;
   char child_partial_key;
-  bool is_prefix_match;
 
   while (true) {
     /* number of bytes of the current node's prefix that match the key */
-    prefix_match_len = (**cur).check_prefix(key + depth, key_len - depth);
+    prefix_match_len = cur->check_prefix(key, depth, key_len);
 
     /* true if the current node's prefix matches with a part of the key */
-    is_prefix_match = (std::min<int>((**cur).prefix_len_, key_len - depth)) ==
-                      prefix_match_len;
+    bool is_prefix_match = cur->prefix_len == prefix_match_len;
 
-    if (is_prefix_match && (**cur).prefix_len_ == key_len - depth) {
+    if (is_prefix_match && cur->prefix_len == key_len - depth) {
       /* exact match:
        * => "replace"
        * => replace value of current node.
@@ -153,13 +132,9 @@ char* AdaptiveRadixTree::set(const char *key, char* value) {
        */
 
       /* cur must be a leaf */
-      auto cur_leaf = static_cast<LeafNode*>(*cur);
-      char *old_value = cur_leaf->value_;
-      cur_leaf->value_ = value;
-      return old_value;
-    }
-
-    if (!is_prefix_match) {
+      cur->value = leaf;
+      return cur->value;
+    } else if (!is_prefix_match) {
       /* prefix mismatch:
        * => new parent node with common prefix and no associated value.
        * => new node with value to insert.
@@ -176,43 +151,44 @@ char* AdaptiveRadixTree::set(const char *key, char* value) {
        *                        /|\      /|\
        */
 
-      auto new_parent = new Node4();
-      new_parent->prefix_ = new char[prefix_match_len];
-      std::copy((**cur).prefix_, (**cur).prefix_ + prefix_match_len,
-                new_parent->prefix_);
-      new_parent->prefix_len_ = prefix_match_len;
-      new_parent->set_child((**cur).prefix_[prefix_match_len], *cur);
+      InnerNode* inner = new (allocator_->AllocateAligned(sizeof(Node4)))Node4();
+      Node* new_parent = AllocateNode(inner, prefix_match_len);
+      memcpy(new_parent->prefix, cur->prefix, prefix_match_len);
 
-      // TODO(rafaelkallis): shrink?
-      /* memmove((**cur).prefix_, (**cur).prefix_ + prefix_match_len + 1, */
-      /*         (**cur).prefix_len_ - prefix_match_len - 1); */
-      /* (**cur).prefix_len_ -= prefix_match_len + 1; */
+      int old_prefix_len = cur->prefix_len;
+      int new_prefix_len = old_prefix_len - prefix_match_len - 1;
 
-      auto old_prefix = (**cur).prefix_;
-      auto old_prefix_len = (**cur).prefix_len_;
-      (**cur).prefix_ = new char[old_prefix_len - prefix_match_len - 1];
-      (**cur).prefix_len_ = old_prefix_len - prefix_match_len - 1;
-      std::copy(old_prefix + prefix_match_len + 1, old_prefix + old_prefix_len,
-                (**cur).prefix_);
-      delete old_prefix;
-
-      auto new_node = new LeafNode(value);
-      new_node->prefix_ = new char[key_len - depth - prefix_match_len - 1];
-      std::copy(key + depth + prefix_match_len + 1, key + key_len,
-                new_node->prefix_);
-      new_node->prefix_len_ = key_len - depth - prefix_match_len - 1;
-      new_parent->set_child(key[depth + prefix_match_len], new_node);
-
-      *cur = new_parent;
+      Node* new_cur = AllocateNode(cur->inner, new_prefix_len);
+      new_cur->value = cur->value;
+      if (new_prefix_len > 0) {
+        memcpy(new_cur->prefix, cur->prefix + prefix_match_len + 1, new_prefix_len);
+      }
+      inner->set_child(cur->prefix[prefix_match_len], cur);
+      if (depth + prefix_match_len < key_len) {
+        size_t leaf_prefix_len = key_len - depth - prefix_match_len - 1;
+        Node* new_node = AllocateNode(nullptr, leaf_prefix_len);
+        new_node->value = leaf;
+        if (leaf_prefix_len > 0) {
+          memcpy(new_node->prefix, key + depth + prefix_match_len + 1, leaf_prefix_len);
+        }
+        inner->set_child(key[depth + prefix_match_len], new_node);
+      } else {
+        new_parent->value = leaf;
+      }
+      cur_address->store(new_parent, std::memory_order_release);
       return nullptr;
     }
 
+    assert(depth + cur->prefix_len < key_len);
     /* must be inner node */
-    cur_inner = reinterpret_cast<InnerNode**>(cur);
-    child_partial_key = key[depth + (**cur).prefix_len_];
-    child = (**cur_inner).find_child(child_partial_key);
+    child_partial_key = key[depth + cur->prefix_len];
+    if (cur->inner == nullptr) {
+      Node4* new_inner = new (allocator_->AllocateAligned(sizeof(Node4))) Node4();
+      cur->inner = new_inner;
+    }
+    std::atomic<Node*>* child = cur->inner->find_child(child_partial_key);
 
-    if (child == nullptr) {
+    if (child == nullptr || child->load(std::memory_order_relaxed) == nullptr) {
       /*
        * no child associated with the next partial key.
        * => create new node with value to insert.
@@ -224,16 +200,16 @@ char* AdaptiveRadixTree::set(const char *key, char* value) {
        *   (a)->v1               (a)->v1 +()->v2
        */
 
-      if ((**cur_inner).is_full()) {
-        *cur_inner = (**cur_inner).grow();
+      if (cur->inner->is_full()) {
+        cur->inner = cur->inner->grow(allocator_);
       }
-
-      auto new_node = new LeafNode(value);
-      new_node->prefix_ = new char[key_len - depth - (**cur).prefix_len_ - 1];
-      std::copy(key + depth + (**cur).prefix_len_ + 1, key + key_len,
-                new_node->prefix_);
-      new_node->prefix_len_ = key_len - depth - (**cur).prefix_len_ - 1;
-      (**cur_inner).set_child(child_partial_key, new_node);
+      size_t leaf_prefix_len = key_len - depth - cur->prefix_len - 1;
+      Node* new_node = AllocateNode(nullptr, leaf_prefix_len);
+      new_node->value = leaf;
+      if (leaf_prefix_len > 0) {
+        memcpy(new_node->prefix, key + depth + cur->prefix_len + 1, leaf_prefix_len);
+      }
+      cur->inner->set_child(child_partial_key, new_node);
       return nullptr;
     }
 
@@ -245,20 +221,8 @@ char* AdaptiveRadixTree::set(const char *key, char* value) {
      *  (a)->v1  ()->v2           (a)->v1 *()->v2
      */
 
-    depth += (**cur).prefix_len_ + 1;
-    cur = child;
+    depth += cur->prefix_len + 1;
+    cur = child->load(std::memory_order_relaxed);
   }
 }
-
-
-TreeIter AdaptiveRadixTree::begin() {
-  return TreeIter::min(this->root_);
-}
-
-TreeIter AdaptiveRadixTree::begin(const char *key) {
-  return TreeIter::greater_equal(this->root_, key);
-}
-
-TreeIter AdaptiveRadixTree::end() { return TreeIter(); }
-
 } // namespace rocksdb
