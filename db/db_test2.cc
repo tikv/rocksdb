@@ -2199,7 +2199,6 @@ TEST_F(DBTest2, ReadAmpBitmapLiveInCacheAfterDBClose) {
     Close();
     Reopen(options);
 
-    uint64_t total_useful_bytes = 0;
     std::set<int> read_keys;
     std::string value;
     // Iter1: Read half the DB, Read even keys
@@ -2210,8 +2209,6 @@ TEST_F(DBTest2, ReadAmpBitmapLiveInCacheAfterDBClose) {
 
       if (read_keys.find(i) == read_keys.end()) {
         auto internal_key = InternalKey(key, 0, ValueType::kTypeValue);
-        total_useful_bytes +=
-            GetEncodedEntrySize(internal_key.size(), value.size());
         read_keys.insert(i);
       }
     }
@@ -2237,8 +2234,6 @@ TEST_F(DBTest2, ReadAmpBitmapLiveInCacheAfterDBClose) {
 
       if (read_keys.find(i) == read_keys.end()) {
         auto internal_key = InternalKey(key, 0, ValueType::kTypeValue);
-        total_useful_bytes +=
-            GetEncodedEntrySize(internal_key.size(), value.size());
         read_keys.insert(i);
       }
     }
