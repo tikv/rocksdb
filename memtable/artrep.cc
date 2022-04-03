@@ -51,7 +51,7 @@ public:
 
  void Get(const LookupKey& k, void* callback_args,
           bool (*callback_func)(void* arg, const char* entry)) override {
-   char* value = skip_list_.Get(k.user_key().data());
+   const char* value = skip_list_.Get(k.user_key().data());
    if (value != nullptr) {
      callback_func(callback_args, value);
    }

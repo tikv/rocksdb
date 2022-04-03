@@ -16,15 +16,6 @@
 
 namespace rocksdb {
 
-enum NodeType {
-  kNode4,
-  kNode16,
-  kNode48,
-  kNode256,
-};
-
-
-
 struct Node {
   Node() {}
 
@@ -50,11 +41,10 @@ struct Node {
    */
   int check_prefix(const char *key, int depth, int key_len) const;
 
-  NodeType inner_type;
   InnerNode* inner;
   const char* value;
   uint16_t prefix_len;
-  char prefix[1];
+  const char* prefix;
 };
 
 int Node::check_prefix(const char *key, int depth, int key_len) const {

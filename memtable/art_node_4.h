@@ -54,7 +54,7 @@ private:
   uint32_t idx_value = (uint32_t)c_i << (n_children * 8);
   uint32_t key = keys_.load(std::memory_order_relaxed);
   keys_.store(key | idx_value, std::memory_order_release);
-  children_[c_i].store(child, std::memory_order_release);
+  children_[n_children].store(child, std::memory_order_release);
   n_children_.store(n_children + 1, std::memory_order_release);
 }
 

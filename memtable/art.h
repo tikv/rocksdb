@@ -42,6 +42,7 @@ class AdaptiveRadixTree {
     void SeekForPrev(const char* key, int l);
     void SeekForPrevImpl(const char* key, int l);
     void Next();
+    void Prev();
     bool Valid() const;
     const char* Value() const { return traversal_stack_.back().node_->value; }
     void SeekImpl(const char* key, int key_len);
@@ -74,8 +75,9 @@ public:
   const char* Insert(const char* key, int key_len, const char* v);
 
   Node* AllocateNode(InnerNode* inner, size_t prefix_size);
+  char* AllocateKey(size_t l) { return allocator_->AllocateAligned(l); }
 
-private:
+ private:
   std::atomic<Node*> root_;
   Allocator* allocator_;
 };
@@ -113,14 +115,11 @@ const char* AdaptiveRadixTree::Get(const char* key) const {
 }
 
 Node* AdaptiveRadixTree::AllocateNode(InnerNode* inner, size_t prefix_size) {
-  size_t extra_prefix = prefix_size;
-  if (extra_prefix > 0) {
-    extra_prefix -= 1;
-  }
-  char* addr = allocator_->AllocateAligned(sizeof(Node) + extra_prefix);
+  char* addr = allocator_->AllocateAligned(sizeof(Node));
   Node* node = reinterpret_cast<Node*>(addr);
   node->inner = inner;
   node->value = nullptr;
+  node->prefix = nullptr;
   node->prefix_len = prefix_size;
   return node;
 }
@@ -134,7 +133,7 @@ const char* AdaptiveRadixTree::Insert(const char* key, int l,
   if (cur == nullptr) {
     Node* root = AllocateNode(nullptr, l);
     root->value = leaf;
-    memcpy(root->prefix, key, l);
+    root->prefix = key;
     root_.store(root, std::memory_order_release);
     return nullptr;
   }
@@ -184,24 +183,20 @@ const char* AdaptiveRadixTree::Insert(const char* key, int l,
 
       InnerNode* inner = new (allocator_->AllocateAligned(sizeof(Node4)))Node4();
       Node* new_parent = AllocateNode(inner, prefix_match_len);
-      memcpy(new_parent->prefix, cur->prefix, prefix_match_len);
+      new_parent->prefix = cur->prefix;
 
       int old_prefix_len = cur->prefix_len;
       int new_prefix_len = old_prefix_len - prefix_match_len - 1;
 
       Node* new_cur = AllocateNode(cur->inner, new_prefix_len);
       new_cur->value = cur->value;
-      if (new_prefix_len > 0) {
-        memcpy(new_cur->prefix, cur->prefix + prefix_match_len + 1, new_prefix_len);
-      }
+      new_cur->prefix = cur->prefix + prefix_match_len + 1;
       inner->set_child(cur->prefix[prefix_match_len], cur);
       if (depth + prefix_match_len < key_len) {
         size_t leaf_prefix_len = key_len - depth - prefix_match_len - 1;
         Node* new_node = AllocateNode(nullptr, leaf_prefix_len);
         new_node->value = leaf;
-        if (leaf_prefix_len > 0) {
-          memcpy(new_node->prefix, key + depth + prefix_match_len + 1, leaf_prefix_len);
-        }
+        new_node->prefix = key + depth + prefix_match_len + 1;
         inner->set_child(key[depth + prefix_match_len], new_node);
       } else {
         new_parent->value = leaf;
@@ -234,17 +229,13 @@ const char* AdaptiveRadixTree::Insert(const char* key, int l,
       if (cur->inner->is_full()) {
         Node* old = cur;
         cur = AllocateNode(cur->inner->grow(allocator_), old->prefix_len);
-        if (old->prefix_len > 0) {
-          memcpy(cur->prefix, old->prefix, old->prefix_len);
-          cur_address->store(cur, std::memory_order_release);
-        }
+        cur->prefix = old->prefix;
+        cur_address->store(cur, std::memory_order_release);
       }
       size_t leaf_prefix_len = key_len - depth - cur->prefix_len - 1;
       Node* new_node = AllocateNode(nullptr, leaf_prefix_len);
       new_node->value = leaf;
-      if (leaf_prefix_len > 0) {
-        memcpy(new_node->prefix, key + depth + cur->prefix_len + 1, leaf_prefix_len);
-      }
+      new_node->prefix = key + depth + cur->prefix_len + 1;
       cur->inner->set_child(child_partial_key, new_node);
       return nullptr;
     }
@@ -348,14 +339,34 @@ void AdaptiveRadixTree::Iterator::Next() {
     SeekLeftLeaf();
   }
 }
+void AdaptiveRadixTree::Iterator::Prev() {
+  NodeIterator& step = traversal_stack_.back();
+  assert(step.node_->value != nullptr);
+  traversal_stack_.pop_back();
+  while (!traversal_stack_.empty()) {
+    NodeIterator& cur_step = traversal_stack_.back();
+    cur_step.Prev();
+    if (cur_step.Valid()) {
+      traversal_stack_.emplace_back(
+          cur_step.child, cur_step.depth_ + cur_step.node_->prefix_len + 1);
+      break;
+    } else if (cur_step.node_->is_leaf()) {
+      break;
+    }
+    traversal_stack_.pop_back();
+  }
+  if (!traversal_stack_.empty()) {
+    SeekRightLeaf();
+  }
+}
 
 void AdaptiveRadixTree::Iterator::SeekLeftLeaf() {
   if (traversal_stack_.empty()) {
     return;
   }
-  while (!traversal_stack_.back().node_->is_leaf()) {
+  while (traversal_stack_.back().node_->inner != nullptr) {
     NodeIterator& cur_step = traversal_stack_.back();
-    cur_step.SeekToFirst();
+    cur_step.SeekToLast();
     traversal_stack_.emplace_back(
         cur_step.child, cur_step.depth_ + cur_step.node_->prefix_len + 1);
   }

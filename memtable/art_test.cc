@@ -31,7 +31,37 @@ static Key Decode(const char* key) {
   return rv;
 }
 
-class ArtTest : public testing::Test {};
+class ArtTest : public testing::Test {
+ public:
+  void Insert(AdaptiveRadixTree* list, Key key) {
+    char* buf = list->AllocateKey(sizeof(Key));
+    memcpy(buf, &key, sizeof(Key));
+    list->Insert(buf, 8, buf);
+    keys_.insert(key);
+  }
+
+  void Validate(AdaptiveRadixTree* list) {
+    // Check keys exist.
+    for (Key key : keys_) {
+      ASSERT_TRUE(list->Get(Encode(&key)) != nullptr);
+    }
+    // Iterate over the list, make sure keys appears in order and no extra
+    // keys exist.
+    AdaptiveRadixTree::Iterator iter(list);
+    ASSERT_FALSE(iter.Valid());
+    Key zero = 0;
+    iter.Seek(Encode(&zero), 8);
+    for (Key key : keys_) {
+      ASSERT_TRUE(iter.Valid());
+      ASSERT_EQ(key, Decode(iter.Value()));
+      iter.Next();
+    }
+    ASSERT_FALSE(iter.Valid());
+  }
+
+ private:
+  std::set<Key> keys_;
+};
 
 TEST_F(ArtTest, Empty) {
   Arena arena;
@@ -85,7 +115,7 @@ TEST_F(ArtTest, InsertAndLookup) {
     ASSERT_EQ(*(keys.begin()), Decode(iter.Value()));
 
     uint64_t max_key = R - 1;
-    iter.SeekForPrev(Encode(&max_key));
+    iter.SeekForPrev(Encode(&max_key), 8);
     ASSERT_TRUE(iter.Valid());
     ASSERT_EQ(*(keys.rbegin()), Decode(iter.Value()));
 
@@ -101,7 +131,7 @@ TEST_F(ArtTest, InsertAndLookup) {
   // Forward iteration test
   for (Key i = 0; i < R; i++) {
     AdaptiveRadixTree::Iterator iter(&list);
-    iter.Seek(Encode(&i));
+    iter.Seek(Encode(&i), 8);
 
     // Compare against model iterator
     std::set<Key>::iterator model_iter = keys.lower_bound(i);
@@ -121,7 +151,7 @@ TEST_F(ArtTest, InsertAndLookup) {
   // Backward iteration test
   for (Key i = 0; i < R; i++) {
     AdaptiveRadixTree::Iterator iter(&list);
-    iter.SeekForPrev(Encode(&i));
+    iter.SeekForPrev(Encode(&i), 8);
 
     // Compare against model iterator
     std::set<Key>::iterator model_iter = keys.upper_bound(i);
@@ -136,103 +166,6 @@ TEST_F(ArtTest, InsertAndLookup) {
       }
     }
   }
-}
-
-TEST_F(ArtTest, InsertWithHint_Sequential) {
-  const int N = 100000;
-  Arena arena;
-  TestComparator cmp;
-  TestInlineSkipList list(cmp, &arena);
-  void* hint = nullptr;
-  for (int i = 0; i < N; i++) {
-    Key key = i;
-    InsertWithHint(&list, key, &hint);
-  }
-  Validate(&list);
-}
-
-TEST_F(ArtTest, InsertWithHint_MultipleHints) {
-  const int N = 100000;
-  const int S = 100;
-  Random rnd(534);
-  Arena arena;
-  TestComparator cmp;
-  TestInlineSkipList list(cmp, &arena);
-  void* hints[S];
-  Key last_key[S];
-  for (int i = 0; i < S; i++) {
-    hints[i] = nullptr;
-    last_key[i] = 0;
-  }
-  for (int i = 0; i < N; i++) {
-    Key s = rnd.Uniform(S);
-    Key key = (s << 32) + (++last_key[s]);
-    InsertWithHint(&list, key, &hints[s]);
-  }
-  Validate(&list);
-}
-
-TEST_F(ArtTest, InsertWithHint_MultipleHintsRandom) {
-  const int N = 100000;
-  const int S = 100;
-  Random rnd(534);
-  Arena arena;
-  TestComparator cmp;
-  TestInlineSkipList list(cmp, &arena);
-  void* hints[S];
-  for (int i = 0; i < S; i++) {
-    hints[i] = nullptr;
-  }
-  for (int i = 0; i < N; i++) {
-    Key s = rnd.Uniform(S);
-    Key key = (s << 32) + rnd.Next();
-    InsertWithHint(&list, key, &hints[s]);
-  }
-  Validate(&list);
-}
-
-TEST_F(ArtTest, InsertWithHint_CompatibleWithInsertWithoutHint) {
-  const int N = 100000;
-  const int S1 = 100;
-  const int S2 = 100;
-  Random rnd(534);
-  Arena arena;
-  TestComparator cmp;
-  TestInlineSkipList list(cmp, &arena);
-  std::unordered_set<Key> used;
-  Key with_hint[S1];
-  Key without_hint[S2];
-  void* hints[S1];
-  for (int i = 0; i < S1; i++) {
-    hints[i] = nullptr;
-    while (true) {
-      Key s = rnd.Next();
-      if (used.insert(s).second) {
-        with_hint[i] = s;
-        break;
-      }
-    }
-  }
-  for (int i = 0; i < S2; i++) {
-    while (true) {
-      Key s = rnd.Next();
-      if (used.insert(s).second) {
-        without_hint[i] = s;
-        break;
-      }
-    }
-  }
-  for (int i = 0; i < N; i++) {
-    Key s = rnd.Uniform(S1 + S2);
-    if (s < S1) {
-      Key key = (with_hint[s] << 32) + rnd.Next();
-      InsertWithHint(&list, key, &hints[s]);
-    } else {
-      Key key = (without_hint[s - S1] << 32) + rnd.Next();
-      Insert(&list, key);
-    }
-  }
-  Validate(&list);
 }
 
 #ifndef ROCKSDB_VALGRIND_RUN
@@ -324,7 +257,7 @@ class ConcurrentTest {
   AdaptiveRadixTree list_;
 
  public:
-  ConcurrentTest() : list_(TestComparator(), &arena_) {}
+  ConcurrentTest() : list_(&arena_) {}
 
   // REQUIRES: No concurrent calls to WriteStep or ConcurrentWriteStep
   void WriteStep(Random* rnd) {
@@ -333,18 +266,7 @@ class ConcurrentTest {
     const Key new_key = MakeKey(k, g);
     char* buf = list_.AllocateKey(sizeof(Key));
     memcpy(buf, &new_key, sizeof(Key));
-    list_.Insert(buf);
-    current_.Set(k, g);
-  }
-
-  // REQUIRES: No concurrent calls for the same k
-  void ConcurrentWriteStep(uint32_t k) {
-    const int g = current_.Get(k) + 1;
-    const Key new_key = MakeKey(k, g);
-    char* buf = list_.AllocateKey(sizeof(Key));
-    memcpy(buf, &new_key, sizeof(Key));
-    list_.InsertConcurrently(buf);
-    ASSERT_EQ(g, current_.Get(k) + 1);
+    list_.Insert(buf, 8, buf);
     current_.Set(k, g);
   }
 
@@ -357,7 +279,7 @@ class ConcurrentTest {
 
     Key pos = RandomTarget(rnd);
     typename AdaptiveRadixTree::Iterator iter(&list_);
-    iter.Seek(Encode(&pos));
+    iter.Seek(Encode(&pos), 8);
     while (true) {
       Key current;
       if (!iter.Valid()) {
@@ -400,21 +322,20 @@ class ConcurrentTest {
         Key new_target = RandomTarget(rnd);
         if (new_target > pos) {
           pos = new_target;
-          iter.Seek(Encode(&new_target));
+          iter.Seek(Encode(&new_target), 8);
         }
       }
     }
   }
 };
 
-template <template <typename U> class SkipList>
-const uint32_t ConcurrentTest<SkipList>::K;
+const uint32_t ConcurrentTest::K;
 
 // Simple test that does single-threaded testing of the ConcurrentTest
 // scaffolding.
 TEST_F(ArtTest, ConcurrentReadWithoutThreads) {
   {
-    ConcurrentTest<rocksdb::InlineSkipList> test;
+    ConcurrentTest test;
     Random rnd(test::RandomSeed());
     for (int i = 0; i < 10000; i++) {
       test.ReadStep(&rnd);
@@ -422,31 +343,13 @@ TEST_F(ArtTest, ConcurrentReadWithoutThreads) {
     }
   }
   {
-    ConcurrentTest<rocksdb::DoublySkipList> test;
+    ConcurrentTest test;
     Random rnd(test::RandomSeed());
     for (int i = 0; i < 10000; i++) {
       test.ReadStep(&rnd);
       test.WriteStep(&rnd);
     }
   }
-}
-
-template <template <typename U> class SkipList>
-static void InnerConcurrentInsertWithoutThreads() {
-  ConcurrentTest test;
-  Random rnd(test::RandomSeed());
-  for (int i = 0; i < 10000; i++) {
-    test.ReadStep(&rnd);
-    uint32_t base = rnd.Next();
-    for (int j = 0; j < 4; ++j) {
-      test.ConcurrentWriteStep((base + j) % ConcurrentTest<SkipList>::K);
-    }
-  }
-}
-
-TEST_F(ArtTest, ConcurrentInsertWithoutThreads) {
-  InnerConcurrentInsertWithoutThreads<rocksdb::InlineSkipList>();
-  InnerConcurrentInsertWithoutThreads<rocksdb::DoublySkipList>();
 }
 
 class TestState {
@@ -460,7 +363,6 @@ class TestState {
   virtual void AdjustPendingWriters(int delta) = 0;
   virtual void WaitForPendingWriters() = 0;
   // REQUIRES: No concurrent calls for the same k
-  virtual void ConcurrentWriteStep(uint32_t k) = 0;
   virtual void ReadStep(Random* rnd) = 0;
 
  public:
@@ -469,7 +371,6 @@ class TestState {
   std::atomic<uint32_t> next_writer_;
 };
 
-template <template <typename U> class SkipList>
 class TestStateImpl : public TestState {
  public:
   ConcurrentTest t_;
@@ -509,7 +410,6 @@ class TestStateImpl : public TestState {
     mu_.Unlock();
   }
 
-  void ConcurrentWriteStep(uint32_t k) override { t_.ConcurrentWriteStep(k); }
   void ReadStep(Random* rnd) override { t_.ReadStep(rnd); }
 
  private:
@@ -529,14 +429,6 @@ static void ConcurrentReader(void* arg) {
     ++reads;
   }
   state->Change(TestState::DONE);
-}
-
-static void ConcurrentWriter(void* arg) {
-  TestState* state = reinterpret_cast<TestState*>(arg);
-  uint32_t k =
-      state->next_writer_++ % ConcurrentTest<rocksdb::InlineSkipList>::K;
-  state->ConcurrentWriteStep(k);
-  state->AdjustPendingWriters(-1);
 }
 
 static void RunConcurrentRead(int run) {

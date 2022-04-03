@@ -13,6 +13,8 @@
 #include <iterator>
 #include <stdexcept>
 
+#include "memory/allocator.h"
+
 namespace rocksdb {
 
 struct Node;
