@@ -93,30 +93,25 @@ void Node48::set_child(char partial_key, Node *child) {
  const uint8_t Node48::EMPTY = 255;
 
  char Node48::next_partial_key(char partial_key) const {
-  while (true) {
-    uint8_t index = get_index(partial_key + 128);
-    if (index != Node48::EMPTY) {
-      return partial_key;
-    }
-    if (partial_key == 127) {
-      throw std::out_of_range("provided partial key does not have a successor");
-    }
-    ++partial_key;
-  }
+   while (partial_key < 127) {
+     uint8_t index = get_index(partial_key + 128);
+     if (index != Node48::EMPTY) {
+       break;
+     }
+     ++partial_key;
+   }
+   return partial_key;
 }
 
  char Node48::prev_partial_key(char partial_key) const {
-  while (true) {
-    uint8_t index = get_index(partial_key + 128);
-    if (index != Node48::EMPTY) {
-      return partial_key;
-    }
-    if (partial_key == -128) {
-      throw std::out_of_range(
-          "provided partial key does not have a predecessor");
-    }
-    --partial_key;
-  }
+   while (partial_key > -128) {
+     uint8_t index = get_index(partial_key + 128);
+     if (index != Node48::EMPTY) {
+       return partial_key;
+     }
+     --partial_key;
+   }
+   return partial_key;
 }
 
  int Node48::n_children() const { return n_children_; }

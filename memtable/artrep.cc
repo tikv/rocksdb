@@ -13,34 +13,30 @@ namespace {
 
 class AdaptiveRadixTreeRep : public MemTableRep {
   AdaptiveRadixTree skip_list_;
-  const MemTableRep::KeyComparator& cmp_;
-  const SliceTransform* transform_;
-  const size_t lookahead_;
 
-  friend class LookaheadIterator;
 public:
- explicit AdaptiveRadixTreeRep(const MemTableRep::KeyComparator& compare,
-                      Allocator* allocator, const SliceTransform* transform,
-                      const size_t lookahead)
-     : MemTableRep(allocator),
-       skip_list_(allocator),
-       cmp_(compare),
-       transform_(transform),
-       lookahead_(lookahead) {}
+ explicit AdaptiveRadixTreeRep(Allocator* allocator)
+     : MemTableRep(allocator), skip_list_(allocator) {}
 
  KeyHandle Allocate(const size_t len, char** buf) override {
-   // *buf = skip_list_.AllocateKey(len);
-   return static_cast<KeyHandle>(nullptr);
+   *buf = allocator_->Allocate(len);
+   return static_cast<KeyHandle>(*buf);
  }
 
   // Insert key into the list.
   // REQUIRES: nothing that compares equal to key is currently in the list.
  void Insert(KeyHandle handle) override {
-   skip_list_.Insert(static_cast<char*>(handle), 0, nullptr);
+   char* buf = static_cast<char*>(handle);
+   uint32_t len = 0;
+   // +5: we assume "data" is not corrupted
+   // unsigned char is 7 bits, uint32_t is 32 bits, need 5 unsigned char
+   auto p = GetVarint32Ptr(buf, buf + 5 /* limit */, &len);
+   skip_list_.Insert(p, len, buf);
  }
 
  bool InsertKey(KeyHandle handle) override {
-   return skip_list_.Insert(static_cast<char*>(handle), 0, nullptr);
+   Insert(handle);
+   return false;
  }
 
   // Returns true iff an entry that compares equal to key is in the list.
@@ -55,7 +51,10 @@ public:
 
  void Get(const LookupKey& k, void* callback_args,
           bool (*callback_func)(void* arg, const char* entry)) override {
-   callback_func(callback_args, skip_list_.Get(k.user_key().data()));
+   char* value = skip_list_.Get(k.user_key().data());
+   if (value != nullptr) {
+     callback_func(callback_args, value);
+   }
  }
 
   uint64_t ApproximateNumEntries(const Slice& start_ikey,
@@ -70,72 +69,72 @@ public:
 
   ~AdaptiveRadixTreeRep() override {}
 
-//  // Iteration over the contents of a skip list
-//  class Iterator : public MemTableRep::Iterator {
-//   public:
-//    // Initialize an iterator over the specified list.
-//    // The returned iterator is not valid.
-//    explicit Iterator(
-//        const AdaptiveRadixTreeRep* list)
-//        : iter_(list) {}
-//
-//    ~Iterator() override {}
-//
-//    // Returns true iff the iterator is positioned at a valid node.
-//    bool Valid() const override { return iter_.Valid(); }
-//
-//    // Returns the key at the current position.
-//    // REQUIRES: Valid()
-//    const char* key() const override { return iter_.key(); }
-//
-//    // Advances to the next position.
-//    // REQUIRES: Valid()
-//    void Next() override { iter_.Next(); }
-//
-//    // Advances to the previous position.
-//    // REQUIRES: Valid()
-//    void Prev() override { iter_.Prev(); }
-//
-//    // Advance to the first entry with a key >= target
-//    void Seek(const Slice& user_key, const char* memtable_key) override {
-//      if (memtable_key != nullptr) {
-//        iter_.Seek(memtable_key);
-//      } else {
-//        iter_.Seek(EncodeKey(&tmp_, user_key));
-//      }
-//    }
-//
-//    // Retreat to the last entry with a key <= target
-//    void SeekForPrev(const Slice& user_key, const char* memtable_key) override {
-//      if (memtable_key != nullptr) {
-//        iter_.SeekForPrev(memtable_key);
-//      } else {
-//        iter_.SeekForPrev(EncodeKey(&tmp_, user_key));
-//      }
-//    }
-//
-//    // Position at the first entry in list.
-//    // Final state of iterator is Valid() iff list is not empty.
-//    void SeekToFirst() override { iter_.SeekToFirst(); }
-//
-//    // Position at the last entry in list.
-//    // Final state of iterator is Valid() iff list is not empty.
-//    void SeekToLast() override { iter_.SeekToLast(); }
-//
-//   protected:
-//    std::string tmp_;       // For passing to EncodeKey
-//  };
+  // Iteration over the contents of a skip list
+  class Iterator : public MemTableRep::Iterator {
+   public:
+    // Initialize an iterator over the specified list.
+    // The returned iterator is not valid.
+    explicit Iterator(AdaptiveRadixTree* list) : iter_(list) {}
 
+    ~Iterator() override {}
+
+    // Returns true iff the iterator is positioned at a valid node.
+    bool Valid() const override { return iter_.Valid(); }
+
+    // Returns the key at the current position.
+    // REQUIRES: Valid()
+    const char* key() const override { return iter_.Value(); }
+
+    // Advances to the next position.
+    // REQUIRES: Valid()
+    void Next() override { iter_.Next(); }
+
+    // Advances to the previous position.
+    // REQUIRES: Valid()
+    void Prev() override { assert(false); }
+
+    // Advance to the first entry with a key >= target
+    void Seek(const Slice& user_key, const char* memtable_key) override {
+      if (memtable_key != nullptr) {
+        uint32_t l = 0;
+        const char* key = GetVarint32Ptr(memtable_key, memtable_key + 5, &l);
+        iter_.Seek(key, l);
+      } else {
+        iter_.Seek(user_key.data(), user_key.size());
+      }
+    }
+
+    // Retreat to the last entry with a key <= target
+    void SeekForPrev(const Slice& user_key, const char* memtable_key) override {
+      assert(false);
+    }
+
+    // Position at the first entry in list.
+    // Final state of iterator is Valid() iff list is not empty.
+    void SeekToFirst() override { iter_.SeekToFirst(); }
+
+    // Position at the last entry in list.
+    // Final state of iterator is Valid() iff list is not empty.
+    void SeekToLast() override { assert(false); }
+
+   protected:
+    std::string tmp_;  // For passing to EncodeKey
+    AdaptiveRadixTree::Iterator iter_;
+  };
 
   MemTableRep::Iterator* GetIterator(Arena* arena = nullptr) override {
-//      void *mem =
-//        arena ? arena->AllocateAligned(sizeof(AdaptiveRadixTreeRep::Iterator))
-//              : operator new(sizeof(AdaptiveRadixTreeRep::Iterator));
-//      return new (mem) AdaptiveRadixTreeRep::Iterator(&skip_list_);
-    return nullptr;
+    void* mem =
+        arena ? arena->AllocateAligned(sizeof(AdaptiveRadixTreeRep::Iterator)) :
+              operator new(sizeof(AdaptiveRadixTreeRep::Iterator));
+    return new (mem) AdaptiveRadixTreeRep::Iterator(&skip_list_);
   }
 };
 }
 
+MemTableRep* AdaptiveRadixTreeFactory::CreateMemTableRep(
+    const MemTableRep::KeyComparator& compare, Allocator* allocator,
+    const SliceTransform* transform, Logger* /*logger*/) {
+  return new AdaptiveRadixTreeRep(allocator);
+}
 
 } // namespace rocksdb

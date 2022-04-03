@@ -323,6 +323,23 @@ private:
   const size_t lookahead_;
 };
 
+// This uses a doubly skip list to store keys, which is similar to skip list,
+// but optimize for prev seek.
+class AdaptiveRadixTreeFactory : public MemTableRepFactory {
+ public:
+  AdaptiveRadixTreeFactory() {}
+
+  using MemTableRepFactory::CreateMemTableRep;
+  virtual MemTableRep* CreateMemTableRep(const MemTableRep::KeyComparator&,
+                                         Allocator*, const SliceTransform*,
+                                         Logger* logger) override;
+  const char* Name() const override { return "AdaptiveRadixTreeFactory"; }
+
+  bool IsInsertConcurrentlySupported() const override { return false; }
+
+  bool CanHandleDuplicatedKey() const override { return false; }
+};
+
 #ifndef ROCKSDB_LITE
 // This creates MemTableReps that are backed by an std::vector. On iteration,
 // the vector is sorted. This is useful for workloads where iteration is very

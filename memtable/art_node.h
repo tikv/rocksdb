@@ -52,7 +52,7 @@ struct Node {
 
   NodeType inner_type;
   InnerNode* inner;
-  char* value;
+  const char* value;
   uint16_t prefix_len;
   char prefix[1];
 };

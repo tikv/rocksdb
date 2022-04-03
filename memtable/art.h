@@ -16,6 +16,39 @@
 namespace rocksdb {
 
 class AdaptiveRadixTree {
+  struct NodeIterator {
+    Node* node_;
+    int depth_;
+    char cur_partial_key_ = -128;
+    Node* child = nullptr;
+
+    NodeIterator(Node* node, int depth) : node_(node), depth_(depth) {}
+
+    void Next();
+    void Prev();
+    bool Valid();
+    void SeekToFirst();
+    void SeekToLast();
+  };
+
+ public:
+  struct Iterator {
+    std::atomic<Node*>* root_;
+    std::vector<NodeIterator> traversal_stack_;
+    explicit Iterator(AdaptiveRadixTree* tree) : root_(&tree->root_) {}
+    void Seek(const char* key, int l);
+    void SeekToFirst();
+    void SeekToLast();
+    void SeekForPrev(const char* key, int l);
+    void SeekForPrevImpl(const char* key, int l);
+    void Next();
+    bool Valid() const;
+    const char* Value() const { return traversal_stack_.back().node_->value; }
+    void SeekImpl(const char* key, int key_len);
+    void SeekLeftLeaf();
+    void SeekRightLeaf();
+  };
+
 public:
   AdaptiveRadixTree(Allocator* allocator);
   ~AdaptiveRadixTree();
@@ -26,7 +59,7 @@ public:
    * @param key - The key to find.
    * @return the value associated with the key or a nullptr.
    */
-  char* Get(const char *key) const;
+  const char* Get(const char* key) const;
 
   /**
    * Associates the given key with the given value.
@@ -38,10 +71,8 @@ public:
    * @return a nullptr if no other value is associated with they or the
    * previously associated value.
    */
-  char *Insert(const char *key, int key_len, char* v);
+  const char* Insert(const char* key, int key_len, const char* v);
 
-
-  char* AllocateLeafNode(const char* v, size_t value_size);
   Node* AllocateNode(InnerNode* inner, size_t prefix_size);
 
 private:
@@ -57,7 +88,7 @@ AdaptiveRadixTree::AdaptiveRadixTree(Allocator* allocator)
   root_.store(nullptr, std::memory_order_relaxed);
 }
 
-char* AdaptiveRadixTree::Get(const char *key) const {
+const char* AdaptiveRadixTree::Get(const char* key) const {
   Node *cur = root_.load(std::memory_order_acquire);
   std::atomic<Node*>* child = nullptr;
   int depth = 0, key_len = std::strlen(key) + 1;
@@ -94,8 +125,8 @@ Node* AdaptiveRadixTree::AllocateNode(InnerNode* inner, size_t prefix_size) {
   return node;
 }
 
-
-char* AdaptiveRadixTree::Insert(const char *key, int l, char* leaf) {
+const char* AdaptiveRadixTree::Insert(const char* key, int l,
+                                      const char* leaf) {
   int key_len = std::strlen(key) + 1, depth = 0, prefix_match_len;
 
   std::atomic<Node*>* cur_address = &root_;
@@ -201,7 +232,12 @@ char* AdaptiveRadixTree::Insert(const char *key, int l, char* leaf) {
        */
 
       if (cur->inner->is_full()) {
-        cur->inner = cur->inner->grow(allocator_);
+        Node* old = cur;
+        cur = AllocateNode(cur->inner->grow(allocator_), old->prefix_len);
+        if (old->prefix_len > 0) {
+          memcpy(cur->prefix, old->prefix, old->prefix_len);
+          cur_address->store(cur, std::memory_order_release);
+        }
       }
       size_t leaf_prefix_len = key_len - depth - cur->prefix_len - 1;
       Node* new_node = AllocateNode(nullptr, leaf_prefix_len);
@@ -222,7 +258,266 @@ char* AdaptiveRadixTree::Insert(const char *key, int l, char* leaf) {
      */
 
     depth += cur->prefix_len + 1;
+    cur_address = child;
     cur = child->load(std::memory_order_relaxed);
   }
 }
+
+void AdaptiveRadixTree::NodeIterator::SeekToLast() {
+  cur_partial_key_ = node_->inner->prev_partial_key(127);
+  auto next = node_->inner->find_child(cur_partial_key_);
+  if (next != nullptr) {
+    child = next->load(std::memory_order_acquire);
+  } else {
+    child = nullptr;
+  }
+}
+
+void AdaptiveRadixTree::NodeIterator::SeekToFirst() {
+  cur_partial_key_ = node_->inner->next_partial_key(-128);
+  auto next = node_->inner->find_child(cur_partial_key_);
+  if (next != nullptr) {
+    child = next->load(std::memory_order_acquire);
+  } else {
+    child = nullptr;
+  }
+}
+
+void AdaptiveRadixTree::NodeIterator::Next() {
+  if (cur_partial_key_ == 127) {
+    child = nullptr;
+    return;
+  }
+  cur_partial_key_ = node_->inner->next_partial_key(cur_partial_key_ + 1);
+  auto next = node_->inner->find_child(cur_partial_key_);
+  if (next != nullptr) {
+    child = next->load(std::memory_order_acquire);
+  } else {
+    child = nullptr;
+  }
+}
+void AdaptiveRadixTree::NodeIterator::Prev() {
+  if (cur_partial_key_ == -128) {
+    child = nullptr;
+    return;
+  }
+  cur_partial_key_ = node_->inner->prev_partial_key(cur_partial_key_ - 1);
+  auto next = node_->inner->find_child(cur_partial_key_);
+  if (next != nullptr) {
+    child = next->load(std::memory_order_acquire);
+  } else {
+    child = nullptr;
+  }
+}
+
+bool AdaptiveRadixTree::NodeIterator::Valid() { return child != nullptr; }
+
+void AdaptiveRadixTree::Iterator::Seek(const char* key, int l) {
+  SeekImpl(key, l);
+  if (!traversal_stack_.empty()) {
+    SeekLeftLeaf();
+  }
+}
+
+bool AdaptiveRadixTree::Iterator::Valid() const {
+  return !traversal_stack_.empty();
+}
+
+void AdaptiveRadixTree::Iterator::Next() {
+  NodeIterator& step = traversal_stack_.back();
+  assert(step.node_->value != nullptr);
+  if (step.node_->inner == nullptr) {
+    traversal_stack_.pop_back();
+    while (!traversal_stack_.empty()) {
+      NodeIterator& cur_step = traversal_stack_.back();
+      cur_step.Next();
+      if (cur_step.Valid()) {
+        traversal_stack_.emplace_back(
+            cur_step.child, cur_step.depth_ + cur_step.node_->prefix_len + 1);
+        break;
+      }
+      traversal_stack_.pop_back();
+    }
+    if (!traversal_stack_.empty()) {
+      SeekLeftLeaf();
+    }
+  } else {
+    step.SeekToFirst();
+    traversal_stack_.emplace_back(step.child,
+                                  step.depth_ + step.node_->prefix_len + 1);
+    SeekLeftLeaf();
+  }
+}
+
+void AdaptiveRadixTree::Iterator::SeekLeftLeaf() {
+  if (traversal_stack_.empty()) {
+    return;
+  }
+  while (!traversal_stack_.back().node_->is_leaf()) {
+    NodeIterator& cur_step = traversal_stack_.back();
+    cur_step.SeekToFirst();
+    traversal_stack_.emplace_back(
+        cur_step.child, cur_step.depth_ + cur_step.node_->prefix_len + 1);
+  }
+}
+void AdaptiveRadixTree::Iterator::SeekRightLeaf() {
+  if (traversal_stack_.empty()) {
+    return;
+  }
+  while (!traversal_stack_.back().node_->is_leaf()) {
+    NodeIterator& cur_step = traversal_stack_.back();
+    cur_step.SeekToLast();
+    traversal_stack_.emplace_back(
+        cur_step.child, cur_step.depth_ + cur_step.node_->prefix_len + 1);
+  }
+}
+
+void AdaptiveRadixTree::Iterator::SeekToFirst() {
+  traversal_stack_.clear();
+  traversal_stack_.emplace_back(root_->load(std::memory_order_acquire), 0);
+  SeekLeftLeaf();
+}
+
+void AdaptiveRadixTree::Iterator::SeekToLast() {
+  traversal_stack_.clear();
+  traversal_stack_.emplace_back(root_->load(std::memory_order_acquire), 0);
+}
+
+void AdaptiveRadixTree::Iterator::SeekForPrev(const char* key, int key_len) {
+  SeekForPrevImpl(key, key_len);
+  SeekRightLeaf();
+}
+
+void AdaptiveRadixTree::Iterator::SeekForPrevImpl(const char* key,
+                                                  int key_len) {
+  Node* cur = root_->load(std::memory_order_acquire);
+
+  // sentinel child iterator for root
+  traversal_stack_.clear();
+  traversal_stack_.push_back(NodeIterator(cur, 0));
+
+  while (!traversal_stack_.empty()) {
+    NodeIterator& cur_step = traversal_stack_.back();
+    Node* cur_node = cur_step.node_;
+    int cur_depth = cur_step.depth_;
+    int prefix_match_len = cur_node->check_prefix(key, cur_depth, key_len);
+    // if search key "equals" the prefix
+    if (key_len == cur_depth + prefix_match_len) {
+      // if search key is "equal" or "less" than the prefix,
+      //  we only need to seek to left leaf in this tree.
+      return;
+    } else if (prefix_match_len < cur_node->prefix_len) {
+      if (key[cur_depth + prefix_match_len] >
+          cur_node->prefix[prefix_match_len]) {
+        // if search key is "less than" the prefix,
+        //  we only need to seek to left leaf in this tree.
+        return;
+      } else {
+        // this prefix is less than target key, it means that no key in this
+        // tree is greater than the target key.
+        traversal_stack_.clear();
+        return;
+      }
+    } else {
+      assert(prefix_match_len == cur_node->prefix_len &&
+             key_len > cur_depth + prefix_match_len);
+      // seek subtree where search key is "lesser than or equal" the subtree
+      // partial key
+      if (cur_node->is_leaf() && cur_node->inner == nullptr) {
+        traversal_stack_.clear();
+        return;
+      }
+      std::atomic<Node*>* child =
+          cur_node->inner->find_child(key[cur_depth + cur_node->prefix_len]);
+      if (child != nullptr) {
+        Node* next = child->load(std::memory_order_acquire);
+        if (next != nullptr) {
+          traversal_stack_.emplace_back(next,
+                                        cur_depth + cur_node->prefix_len + 1);
+          continue;
+        }
+      }
+      cur_step.SeekToLast();
+      for (; cur_step.Valid(); cur_step.Prev()) {
+        if (key[cur_depth + cur_node->prefix_len] > cur_step.cur_partial_key_) {
+          break;
+        }
+      }
+      if (cur_step.Valid()) {
+        traversal_stack_.emplace_back(cur_step.child,
+                                      cur_depth + cur_node->prefix_len + 1);
+      } else {
+        traversal_stack_.clear();
+      }
+      return;
+    }
+  }
+}
+
+void AdaptiveRadixTree::Iterator::SeekImpl(const char* key, int key_len) {
+  Node* cur = root_->load(std::memory_order_acquire);
+
+  // sentinel child iterator for root
+  traversal_stack_.clear();
+  traversal_stack_.push_back(NodeIterator(cur, 0));
+
+  while (!traversal_stack_.empty()) {
+    NodeIterator& cur_step = traversal_stack_.back();
+    Node* cur_node = cur_step.node_;
+    int cur_depth = cur_step.depth_;
+    int prefix_match_len = std::min<int>(
+        cur_node->check_prefix(key, cur_depth, key_len), key_len - cur_depth);
+    // if search key "equals" the prefix
+    if (key_len == cur_depth + prefix_match_len) {
+      // if search key is "equal" or "less" than the prefix,
+      //  we only need to seek to left leaf in this tree.
+      return;
+    } else if (prefix_match_len < cur_node->prefix_len) {
+      if (key[cur_depth + prefix_match_len] <
+          cur_node->prefix[prefix_match_len]) {
+        // if search key is "less than" the prefix,
+        //  we only need to seek to left leaf in this tree.
+        return;
+      } else {
+        // this prefix is less than target key, it means that no key in this
+        // tree is greater than the target key.
+        traversal_stack_.clear();
+        return;
+      }
+    } else {
+      assert(prefix_match_len == cur_node->prefix_len &&
+             key_len > cur_depth + prefix_match_len);
+      // seek subtree where search key is "lesser than or equal" the subtree
+      // partial key
+      if (cur_node->is_leaf() && cur_node->inner == nullptr) {
+        traversal_stack_.clear();
+        return;
+      }
+      std::atomic<Node*>* child =
+          cur_node->inner->find_child(key[cur_depth + cur_node->prefix_len]);
+      if (child != nullptr) {
+        Node* next = child->load(std::memory_order_acquire);
+        if (next != nullptr) {
+          traversal_stack_.emplace_back(next,
+                                        cur_depth + cur_node->prefix_len + 1);
+          continue;
+        }
+      }
+      cur_step.SeekToFirst();
+      for (; cur_step.Valid(); cur_step.Next()) {
+        if (key[cur_depth + cur_node->prefix_len] < cur_step.cur_partial_key_) {
+          break;
+        }
+      }
+      if (cur_step.Valid()) {
+        traversal_stack_.emplace_back(cur_step.child,
+                                      cur_depth + cur_node->prefix_len + 1);
+      } else {
+        traversal_stack_.clear();
+      }
+      return;
+    }
+  }
+}
+
 } // namespace rocksdb

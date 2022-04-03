@@ -52,28 +52,27 @@ void Node256::set_child(char partial_key, Node *child) {
 
 
  char Node256::next_partial_key(char partial_key) const {
-  while (true) {
-    if (children_[128 + partial_key] != nullptr) {
-      return partial_key;
-    }
-    if (partial_key == 127) {
-      throw std::out_of_range("provided partial key does not have a successor");
-    }
-    ++partial_key;
-  }
+   uint8_t key = 128 + partial_key;
+   while (key < 255) {
+     if (children_[key] != nullptr) {
+       return partial_key;
+     }
+     ++partial_key;
+     ++key;
+   }
+   return partial_key;
 }
 
  char Node256::prev_partial_key(char partial_key) const {
-  while (true) {
-    if (children_[128 + partial_key] != nullptr) {
-      return partial_key;
-    }
-    if (partial_key == -128) {
-      throw std::out_of_range(
-          "provided partial key does not have a predecessor");
-    }
-    --partial_key;
-  }
+   uint8_t key = 128 + partial_key;
+   while (key > 0) {
+     if (children_[key] != nullptr) {
+       return partial_key;
+     }
+     --partial_key;
+     --key;
+   }
+   return partial_key;
 }
 
  int Node256::n_children() const { return n_children_; }

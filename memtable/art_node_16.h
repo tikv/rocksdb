@@ -127,7 +127,7 @@ void Node16::set_child(char partial_key, Node *child) {
        keys >>= 8;
      }
    }
-  throw std::out_of_range("provided partial key does not have a successor");
+   return 127;
 }
 
  char Node16::prev_partial_key(char partial_key) const {

@@ -36,7 +36,7 @@ private:
 };
 
  std::atomic<Node*> *Node4::find_child(char partial_key) {
-   uint8_t key = partial_key;
+   uint8_t key = partial_key + 128;
    uint8_t n_children = n_children_.load(std::memory_order_acquire);
    uint32_t keys = keys_.load(std::memory_order_acquire);
   for (uint8_t i = 0; i < n_children; ++i) {
@@ -50,7 +50,7 @@ private:
  void Node4::set_child(char partial_key, Node *child) {
   /* determine index for child */
   uint8_t n_children = n_children_.load(std::memory_order_relaxed);
-  uint8_t c_i = partial_key;
+  uint8_t c_i = partial_key + 128;
   uint32_t idx_value = (uint32_t)c_i << (n_children * 8);
   uint32_t key = keys_.load(std::memory_order_relaxed);
   keys_.store(key | idx_value, std::memory_order_release);
@@ -66,11 +66,7 @@ private:
 
   for (uint8_t i = 0; i < n_children; ++i) {
     uint8_t c = (keys >> (i * 8)) & 255;
-    if (c >= 128) {
-      new_node->set_child(c - 128, children_[i].load(std::memory_order_relaxed));
-    } else {
-      new_node->set_child((char)c - 128, children_[i].load(std::memory_order_relaxed));
-    }
+    new_node->set_child(c - 128, children_[i].load(std::memory_order_relaxed));
   }
   return new_node;
 }
@@ -78,26 +74,27 @@ private:
  bool Node4::is_full() const { return n_children_ == 4; }
 
  char Node4::next_partial_key(char partial_key) const {
+   uint8_t key = partial_key + 128;
    uint32_t keys = keys_.load(std::memory_order_acquire);
    uint8_t n_children = n_children_.load(std::memory_order_acquire);
    for (uint8_t i = 0; i < n_children; ++i) {
       uint8_t c = keys & 255;
-       if ((char)c >= partial_key) {
-         return (char)c;
-       }
+      if (c >= key) {
+        return c - 128;
+      }
        keys >>= 8;
    }
-  /* return 0; */
-  throw std::out_of_range("provided partial key does not have a successor");
+   return 127;
 }
 
  char Node4::prev_partial_key(char partial_key) const {
+   uint8_t key = partial_key + 128;
    uint32_t keys = keys_.load(std::memory_order_acquire);
    uint8_t n_children = n_children_.load(std::memory_order_acquire);
    for (uint8_t i = n_children - 1; i >= 0; --i) {
      uint8_t c = (keys >> (i * 8)) & 255;
-     if ((char)c <= partial_key) {
-       return (char)c;
+     if (c <= key) {
+       return c - 128;
      }
    }
   /* return 255; */
