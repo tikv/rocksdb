@@ -133,7 +133,7 @@ char Node12::next_partial_key(char partial_key) const {
 }
 
 char Node12::prev_partial_key(char partial_key) const {
-  char ret = -128;
+  uint8_t ret = 0;
   const ChildrenNode* cur = first_.load(std::memory_order_acquire);
   while (cur != nullptr) {
     if (cur->c <= partial_key) {

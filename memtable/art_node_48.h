@@ -53,7 +53,7 @@ private:
 
  std::atomic<Node*> *Node48::find_child(char partial_key) {
   // TODO(rafaelkallis): direct lookup instead of temp save?
-  uint8_t index = get_index(partial_key + 128);
+  uint8_t index = get_index(partial_key);
   return Node48::EMPTY != index ? &children_[index] : nullptr;
 }
 
@@ -72,7 +72,7 @@ void Node48::set_index(uint8_t key, uint8_t index) {
 
 void Node48::set_child(char partial_key, Node *child) {
   uint8_t n_children = n_children_.load(std::memory_order_relaxed);
-  set_index(partial_key + 128, n_children);
+  set_index(partial_key, n_children);
   children_[n_children].store(child, std::memory_order_release);
   n_children_.store(n_children + 1, std::memory_order_release);
 }
@@ -80,8 +80,8 @@ void Node48::set_child(char partial_key, Node *child) {
  InnerNode *Node48::grow(Allocator* allocator) {
   auto new_node = new (allocator->AllocateAligned(sizeof(Node256)))Node256();
   uint8_t index;
-  for (int partial_key = -128; partial_key < 127; ++partial_key) {
-    index = get_index(partial_key + 128);
+  for (int partial_key = 0; partial_key <= 255; ++partial_key) {
+    index = get_index(partial_key);
     if (index != Node48::EMPTY) {
       new_node->set_child(partial_key, children_[index]);
     }
@@ -97,25 +97,27 @@ void Node48::set_child(char partial_key, Node *child) {
  const uint8_t Node48::EMPTY = 255;
 
  char Node48::next_partial_key(char partial_key) const {
-   while (partial_key < 127) {
-     uint8_t index = get_index(partial_key + 128);
+   uint8_t key = partial_key;
+   while (key < 255) {
+     uint8_t index = get_index(key);
      if (index != Node48::EMPTY) {
        break;
      }
-     ++partial_key;
+     ++key;
    }
-   return partial_key;
+   return key;
 }
 
  char Node48::prev_partial_key(char partial_key) const {
-   while (partial_key > -128) {
-     uint8_t index = get_index(partial_key + 128);
+   uint8_t key = partial_key;
+   while (key > 0) {
+     uint8_t index = get_index(key);
      if (index != Node48::EMPTY) {
-       return partial_key;
+       break;
      }
-     --partial_key;
+     --key;
    }
-   return partial_key;
+   return key;
 }
 
  int Node48::n_children() const { return n_children_; }

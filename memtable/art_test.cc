@@ -14,6 +14,7 @@
 #include "memory/arena.h"
 #include "rocksdb/env.h"
 #include "test_util/testharness.h"
+#include "util/coding.h"
 #include "util/hash.h"
 #include "util/random.h"
 
@@ -21,14 +22,31 @@ namespace rocksdb {
 
 typedef uint64_t Key;
 
-static const char* Encode(const uint64_t* key) {
-  return reinterpret_cast<const char*>(key);
+static char tmp_buf[9];
+
+static const char* Encode(const uint64_t value) {
+  tmp_buf[7] = value & 0xff;
+  tmp_buf[6] = (value >> 8) & 0xff;
+  tmp_buf[5] = (value >> 16) & 0xff;
+  tmp_buf[4] = (value >> 24) & 0xff;
+  tmp_buf[3] = (value >> 32) & 0xff;
+  tmp_buf[2] = (value >> 40) & 0xff;
+  tmp_buf[1] = (value >> 48) & 0xff;
+  tmp_buf[0] = (value >> 56) & 0xff;
+  return tmp_buf;
 }
 
-static Key Decode(const char* key) {
-  Key rv;
-  memcpy(&rv, key, sizeof(Key));
-  return rv;
+static uint32_t Decode32(const char* ptr) {
+  return ((static_cast<uint32_t>(static_cast<unsigned char>(ptr[3]))) |
+          (static_cast<uint32_t>(static_cast<unsigned char>(ptr[2])) << 8) |
+          (static_cast<uint32_t>(static_cast<unsigned char>(ptr[1])) << 16) |
+          (static_cast<uint32_t>(static_cast<unsigned char>(ptr[0])) << 24));
+}
+
+static Key Decode(const char* ptr) {
+  uint64_t hi = Decode32(ptr);
+  uint64_t lo = Decode32(ptr + 4);
+  return (hi << 32) | lo;
 }
 
 class ArtTest : public testing::Test {
@@ -43,14 +61,14 @@ class ArtTest : public testing::Test {
   void Validate(AdaptiveRadixTree* list) {
     // Check keys exist.
     for (Key key : keys_) {
-      ASSERT_TRUE(list->Get(Encode(&key), 8) != nullptr);
+      ASSERT_TRUE(list->Get(Encode(key), 8) != nullptr);
     }
     // Iterate over the list, make sure keys appears in order and no extra
     // keys exist.
     AdaptiveRadixTree::Iterator iter(list);
     ASSERT_FALSE(iter.Valid());
     Key zero = 0;
-    iter.Seek(Encode(&zero), 8);
+    iter.Seek(Encode(zero), 8);
     for (Key key : keys_) {
       ASSERT_TRUE(iter.Valid());
       ASSERT_EQ(key, Decode(iter.Value()));
@@ -73,33 +91,34 @@ TEST_F(ArtTest, Empty) {
   ASSERT_TRUE(!iter.Valid());
   iter.Seek("ancd", 4);
   ASSERT_TRUE(!iter.Valid());
-  // iter.SeekForPrev(100);
-  // ASSERT_TRUE(!iter.Valid());
-  // iter.SeekToLast();
-  // ASSERT_TRUE(!iter.Valid());
+  iter.SeekToLast();
+  ASSERT_TRUE(!iter.Valid());
 }
 
 TEST_F(ArtTest, InsertAndLookup) {
-  const int N = 20;
-  const int R = 20;
+  const int N = 2000;
+  const int R = 5000;
   Random rnd(1000);
   std::set<Key> keys;
   Arena arena;
   AdaptiveRadixTree list(&arena);
-  const char* v = "abc";
   for (int i = 0; i < N; i++) {
-    Key key = i;
+    Key key = rnd.Next() % R;
     if (keys.insert(key).second) {
       char* buf = arena.AllocateAligned(sizeof(Key));
-      memcpy(buf, &key, sizeof(Key));
+      const char* d = Encode(key);
+      memcpy(buf, d, sizeof(Key));
       list.Insert(buf, sizeof(key), buf);
     }
   }
 
   for (Key i = 0; i < R; i++) {
-    if (list.Get(Encode(&i), 8) != nullptr) {
+    if (list.Get(Encode(i), 8) != nullptr) {
       ASSERT_EQ(keys.count(i), 1U);
     } else {
+      if (keys.count(i) != 0) {
+        printf("miss %llu\n", i);
+      }
       ASSERT_EQ(keys.count(i), 0U);
     }
   }
@@ -110,12 +129,12 @@ TEST_F(ArtTest, InsertAndLookup) {
     ASSERT_TRUE(!iter.Valid());
 
     uint64_t zero = 0;
-    iter.Seek(Encode(&zero), 8);
+    iter.Seek(Encode(zero), 8);
     ASSERT_TRUE(iter.Valid());
     ASSERT_EQ(*(keys.begin()), Decode(iter.Value()));
 
     uint64_t max_key = R - 1;
-    iter.SeekForPrev(Encode(&max_key), 8);
+    iter.SeekForPrev(Encode(max_key), 8);
     ASSERT_TRUE(iter.Valid());
     ASSERT_EQ(*(keys.rbegin()), Decode(iter.Value()));
 
@@ -131,7 +150,7 @@ TEST_F(ArtTest, InsertAndLookup) {
   // Forward iteration test
   for (Key i = 0; i < R; i++) {
     AdaptiveRadixTree::Iterator iter(&list);
-    iter.Seek(Encode(&i), 8);
+    iter.Seek(Encode(i), 8);
 
     // Compare against model iterator
     std::set<Key>::iterator model_iter = keys.lower_bound(i);
@@ -151,7 +170,7 @@ TEST_F(ArtTest, InsertAndLookup) {
   // Backward iteration test
   for (Key i = 0; i < R; i++) {
     AdaptiveRadixTree::Iterator iter(&list);
-    iter.SeekForPrev(Encode(&i), 8);
+    iter.SeekForPrev(Encode(i), 8);
 
     // Compare against model iterator
     std::set<Key>::iterator model_iter = keys.upper_bound(i);
@@ -279,7 +298,7 @@ class ConcurrentTest {
 
     Key pos = RandomTarget(rnd);
     typename AdaptiveRadixTree::Iterator iter(&list_);
-    iter.Seek(Encode(&pos), 8);
+    iter.Seek(Encode(pos), 8);
     while (true) {
       Key current;
       if (!iter.Valid()) {
@@ -322,7 +341,7 @@ class ConcurrentTest {
         Key new_target = RandomTarget(rnd);
         if (new_target > pos) {
           pos = new_target;
-          iter.Seek(Encode(&new_target), 8);
+          iter.Seek(Encode(new_target), 8);
         }
       }
     }
