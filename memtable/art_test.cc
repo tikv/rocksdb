@@ -276,7 +276,9 @@ class ConcurrentTest {
   AdaptiveRadixTree list_;
 
  public:
-  ConcurrentTest() : list_(&arena_) {}
+  ConcurrentTest() : arena_(), list_(&arena_) {
+    printf("memory: %lu\n", arena_.MemoryAllocatedBytes());
+  }
 
   // REQUIRES: No concurrent calls to WriteStep or ConcurrentWriteStep
   void WriteStep(Random* rnd) {
@@ -284,7 +286,7 @@ class ConcurrentTest {
     const int g = current_.Get(k) + 1;
     const Key new_key = MakeKey(k, g);
     char* buf = list_.AllocateKey(sizeof(Key));
-    memcpy(buf, &new_key, sizeof(Key));
+    memcpy(buf, Encode(new_key), sizeof(Key));
     list_.Insert(buf, 8, buf);
     current_.Set(k, g);
   }
@@ -356,7 +358,7 @@ TEST_F(ArtTest, ConcurrentReadWithoutThreads) {
   {
     ConcurrentTest test;
     Random rnd(test::RandomSeed());
-    for (int i = 0; i < 10000; i++) {
+    for (int i = 0; i < 1000; i++) {
       test.ReadStep(&rnd);
       test.WriteStep(&rnd);
     }
@@ -364,7 +366,7 @@ TEST_F(ArtTest, ConcurrentReadWithoutThreads) {
   {
     ConcurrentTest test;
     Random rnd(test::RandomSeed());
-    for (int i = 0; i < 10000; i++) {
+    for (int i = 0; i < 1000; i++) {
       test.ReadStep(&rnd);
       test.WriteStep(&rnd);
     }

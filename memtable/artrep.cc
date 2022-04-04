@@ -31,12 +31,12 @@ public:
    // +5: we assume "data" is not corrupted
    // unsigned char is 7 bits, uint32_t is 32 bits, need 5 unsigned char
    auto p = GetVarint32Ptr(buf, buf + 5 /* limit */, &len);
-   skip_list_.Insert(p, len, buf);
+   skip_list_.Insert(p, len - 8, buf);
  }
 
  bool InsertKey(KeyHandle handle) override {
    Insert(handle);
-   return false;
+   return true;
  }
 
   // Returns true iff an entry that compares equal to key is in the list.

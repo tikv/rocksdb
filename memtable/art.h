@@ -219,7 +219,8 @@ const char* AdaptiveRadixTree::Insert(const char* key, int key_len,
     /* must be inner node */
     child_partial_key = key[depth + cur->prefix_len];
     if (cur->inner == nullptr) {
-      Node4* new_inner = new (allocator_->AllocateAligned(sizeof(Node4))) Node4();
+      Node4* new_inner =
+          new (allocator_->AllocateAligned(sizeof(Node4))) Node4();
       cur->inner = new_inner;
     }
     std::atomic<Node*>* child = cur->inner->find_child(child_partial_key);
