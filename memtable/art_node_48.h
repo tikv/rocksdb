@@ -1,7 +1,7 @@
-/**
- * @file Node48 header
- * @author Rafael Kallis <rk@rafaelkallis.com>
- */
+//  Copyright (c) 2011-present, Facebook, Inc.  All rights reserved.
+//  This source code is licensed under both the GPLv2 (found in the
+//  COPYING file in the root directory) and Apache 2.0 License
+//  (found in the LICENSE.Apache file in the root directory).
 
 #pragma once
 
@@ -13,10 +13,8 @@
 
 namespace rocksdb {
 
-
- class Node48 : public InnerNode {
-
-public:
+class Node48 : public InnerNode {
+ public:
   Node48();
   virtual ~Node48() {}
 
@@ -31,8 +29,6 @@ public:
   uint8_t get_index(uint8_t key) const;
   void set_index(uint8_t key, uint8_t index);
 
-  int n_children() const override;
-
 private:
   static const uint8_t EMPTY;
 
@@ -41,14 +37,14 @@ private:
   std::atomic<Node*> children_[48];
 };
 
- Node48::Node48() {
-   for (int i = 0; i < 32; i ++) {
-     indexes_[i].store(0, std::memory_order_relaxed);
-   }
-   for (int i = 0; i < 48; i ++) {
-     children_[i].store(nullptr, std::memory_order_relaxed);
-   }
-   n_children_.store(0, std::memory_order_relaxed);
+Node48::Node48() {
+  for (int i = 0; i < 32; i++) {
+    indexes_[i].store(0, std::memory_order_relaxed);
+  }
+  for (int i = 0; i < 48; i++) {
+    children_[i].store(nullptr, std::memory_order_relaxed);
+  }
+  n_children_.store(0, std::memory_order_relaxed);
 }
 
  std::atomic<Node*> *Node48::find_child(char partial_key) {
@@ -77,7 +73,7 @@ void Node48::set_child(char partial_key, Node *child) {
   n_children_.store(n_children + 1, std::memory_order_release);
 }
 
- InnerNode *Node48::grow(Allocator* allocator) {
+InnerNode *Node48::grow(Allocator *allocator) {
   auto new_node = new (allocator->AllocateAligned(sizeof(Node256)))Node256();
   uint8_t index;
   for (int partial_key = 0; partial_key <= 255; ++partial_key) {
@@ -89,38 +85,33 @@ void Node48::set_child(char partial_key, Node *child) {
   return new_node;
 }
 
+bool Node48::is_full() const { return n_children_ == 48; }
 
- bool Node48::is_full() const {
-  return n_children_ == 48;
+const uint8_t Node48::EMPTY = 255;
+
+char Node48::next_partial_key(char partial_key) const {
+  uint8_t key = partial_key;
+  while (key < 255) {
+    uint8_t index = get_index(key);
+    if (index != Node48::EMPTY) {
+      break;
+    }
+    ++key;
+  }
+  return key;
 }
 
- const uint8_t Node48::EMPTY = 255;
-
- char Node48::next_partial_key(char partial_key) const {
-   uint8_t key = partial_key;
-   while (key < 255) {
-     uint8_t index = get_index(key);
-     if (index != Node48::EMPTY) {
-       break;
-     }
-     ++key;
-   }
-   return key;
+char Node48::prev_partial_key(char partial_key) const {
+  uint8_t key = partial_key;
+  while (key > 0) {
+    uint8_t index = get_index(key);
+    if (index != Node48::EMPTY) {
+      break;
+    }
+    --key;
+  }
+  return key;
 }
-
- char Node48::prev_partial_key(char partial_key) const {
-   uint8_t key = partial_key;
-   while (key > 0) {
-     uint8_t index = get_index(key);
-     if (index != Node48::EMPTY) {
-       break;
-     }
-     --key;
-   }
-   return key;
-}
-
- int Node48::n_children() const { return n_children_; }
 
 } // namespace rocksdb
 

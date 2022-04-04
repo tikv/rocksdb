@@ -1,7 +1,7 @@
-/**
- * @file Node4 header
- * @author Rafael Kallis <rk@rafaelkallis.com>
- */
+//  Copyright (c) 2011-present, Facebook, Inc.  All rights reserved.
+//  This source code is licensed under both the GPLv2 (found in the
+//  COPYING file in the root directory) and Apache 2.0 License
+//  (found in the LICENSE.Apache file in the root directory).
 
 #pragma once
 
@@ -27,8 +27,6 @@ public:
   char next_partial_key(char partial_key) const override;
 
   char prev_partial_key(char partial_key) const override;
-
-  int n_children() const override;
 
 private:
   std::atomic<uint8_t> n_children_;
@@ -119,10 +117,6 @@ char Node4::next_partial_key(char partial_key) const {
      keys >>= 16;
    }
    return ret;
-}
-
- int Node4::n_children() const {
-  return this->n_children_;
 }
 
 } // namespace rocksdb

@@ -58,8 +58,6 @@ public:
    */
   virtual bool is_full() const = 0;
 
-  virtual int n_children() const = 0;
-
   virtual char next_partial_key(char partial_key) const = 0;
 
   virtual char prev_partial_key(char partial_key) const = 0;

@@ -1,7 +1,11 @@
-/**
- * @file adaptive radix tree
- * @author Rafael Kallis <rk@rafaelkallis.com>
- */
+//  Copyright (c) 2011-present, Facebook, Inc.  All rights reserved.
+//  This source code is licensed under both the GPLv2 (found in the
+//  COPYING file in the root directory) and Apache 2.0 License
+//  (found in the LICENSE.Apache file in the root directory).
+//
+// Copyright (c) 2011 The LevelDB Authors. All rights reserved.  Use of
+// this source code is governed by a BSD-style license that can be found
+// in the LICENSE file. See the AUTHORS file for names of contributors.
 
 #pragma once
 
@@ -59,24 +63,8 @@ public:
   AdaptiveRadixTree(Allocator* allocator);
   ~AdaptiveRadixTree();
 
-  /**
-   * Finds the value associated with the given key.
-   *
-   * @param key - The key to find.
-   * @return the value associated with the key or a nullptr.
-   */
   const char* Get(const char* key, int key_len) const;
 
-  /**
-   * Associates the given key with the given value.
-   * If another value is already associated with the given key,
-   * since the method consumer is the resource owner.
-   *
-   * @param key - The key to associate with the value.
-   * @param value - The value to be associated with the key.
-   * @return a nullptr if no other value is associated with they or the
-   * previously associated value.
-   */
   const char* Insert(const char* key, int key_len, const char* v);
 
   Node* AllocateNode(InnerNode* inner, int prefix_size);

@@ -1,7 +1,7 @@
-/**
- * @file Node12 header
- * @author Rafael Kallis <rk@rafaelkallis.com>
- */
+//  Copyright (c) 2011-present, Facebook, Inc.  All rights reserved.
+//  This source code is licensed under both the GPLv2 (found in the
+//  COPYING file in the root directory) and Apache 2.0 License
+//  (found in the LICENSE.Apache file in the root directory).
 
 #pragma once
 
@@ -11,10 +11,6 @@
 #include <cstdlib>
 #include <stdexcept>
 #include <utility>
-
-#if defined(__i386__) || defined(__amd64__)
-#include <emmintrin.h>
-#endif
 
 namespace rocksdb {
 
@@ -40,8 +36,6 @@ class Node12 : public InnerNode {
   char next_partial_key(char partial_key) const override;
 
   char prev_partial_key(char partial_key) const override;
-
-  int n_children() const override;
 
 private:
  std::atomic<uint8_t> n_children_;
@@ -148,8 +142,6 @@ char Node12::prev_partial_key(char partial_key) const {
   }
   return ret;
 }
-
-int Node12::n_children() const { return n_children_; }
 
 } // namespace rocksdb
 

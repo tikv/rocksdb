@@ -1024,7 +1024,6 @@ void CheckColumnFamilyMeta(const ColumnFamilyMetaData& cf_meta) {
   size_t file_count = 0;
   for (auto level_meta : cf_meta.levels) {
     uint64_t level_size = 0;
-    uint64_t level_csize = 0;
     file_count += level_meta.files.size();
     for (auto file_meta : level_meta.files) {
       level_size += file_meta.size;

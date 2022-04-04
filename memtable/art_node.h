@@ -1,7 +1,11 @@
-/**
- * @file trie Nodes header.
- * @author Rafael Kallis <rk@rafaelkallis.com>
- */
+//  Copyright (c) 2011-present, Facebook, Inc.  All rights reserved.
+//  This source code is licensed under both the GPLv2 (found in the
+//  COPYING file in the root directory) and Apache 2.0 License
+//  (found in the LICENSE.Apache file in the root directory).
+//
+// Copyright (c) 2011 The LevelDB Authors. All rights reserved.  Use of
+// this source code is governed by a BSD-style license that can be found
+// in the LICENSE file. See the AUTHORS file for names of contributors.
 
 #pragma once
 
@@ -19,26 +23,10 @@ namespace rocksdb {
 struct Node {
   Node() {}
 
-  /**
-   * Determines if this Node is a leaf Node, i.e., contains a value.
-   * Needed for downcasting a Node instance to a leaf_Node or inner_Node instance.
-   */
   bool is_leaf() const {
       return value != nullptr;
   }
 
-  /**
-   * Determines the number of matching bytes between the Node's prefix and the key.
-   *
-   * Given a Node with prefix: "abbbd", a key "abbbccc",
-   * check_prefix returns 4, since byte 4 of the prefix ('d') does not
-   * match byte 4 of the key ('c').
-   *
-   * key:     "abbbccc"
-   * prefix:  "abbbd"
-   *           ^^^^*
-   * index:    01234
-   */
   int check_prefix(const char *key, int depth, int key_len) const;
 
   InnerNode* inner;
