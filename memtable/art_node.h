@@ -43,12 +43,12 @@ struct Node {
 
   InnerNode* inner;
   const char* value;
-  uint16_t prefix_len;
+  int prefix_len;
   const char* prefix;
 };
 
 int Node::check_prefix(const char *key, int depth, int key_len) const {
-  int l = std::min((int)prefix_len, key_len - depth);
+  int l = std::min(prefix_len, key_len - depth);
   for (int i = 0; i < l; i ++) {
     if (key[i + depth] != prefix[i]) {
       return i;

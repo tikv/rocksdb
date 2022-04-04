@@ -60,7 +60,7 @@ public:
    * @param key - The key to find.
    * @return the value associated with the key or a nullptr.
    */
-  const char* Get(const char* key) const;
+  const char* Get(const char* key, int key_len) const;
 
   /**
    * Associates the given key with the given value.
@@ -74,7 +74,7 @@ public:
    */
   const char* Insert(const char* key, int key_len, const char* v);
 
-  Node* AllocateNode(InnerNode* inner, size_t prefix_size);
+  Node* AllocateNode(InnerNode* inner, int prefix_size);
   char* AllocateKey(size_t l) { return allocator_->AllocateAligned(l); }
 
  private:
@@ -90,12 +90,13 @@ AdaptiveRadixTree::AdaptiveRadixTree(Allocator* allocator)
   root_.store(nullptr, std::memory_order_relaxed);
 }
 
-const char* AdaptiveRadixTree::Get(const char* key) const {
+const char* AdaptiveRadixTree::Get(const char* key, int key_len) const {
   Node *cur = root_.load(std::memory_order_acquire);
   std::atomic<Node*>* child = nullptr;
-  int depth = 0, key_len = std::strlen(key) + 1;
+  int depth = 0;
   while (cur != nullptr) {
-    if (cur->prefix_len != cur->check_prefix(key, depth, key_len)) {
+    int prefix_match_len = cur->check_prefix(key, depth, key_len);
+    if (cur->prefix_len != prefix_match_len) {
       /* prefix mismatch */
       return nullptr;
     }
@@ -114,7 +115,7 @@ const char* AdaptiveRadixTree::Get(const char* key) const {
   return nullptr;
 }
 
-Node* AdaptiveRadixTree::AllocateNode(InnerNode* inner, size_t prefix_size) {
+Node* AdaptiveRadixTree::AllocateNode(InnerNode* inner, int prefix_size) {
   char* addr = allocator_->AllocateAligned(sizeof(Node));
   Node* node = reinterpret_cast<Node*>(addr);
   node->inner = inner;
@@ -124,14 +125,14 @@ Node* AdaptiveRadixTree::AllocateNode(InnerNode* inner, size_t prefix_size) {
   return node;
 }
 
-const char* AdaptiveRadixTree::Insert(const char* key, int l,
+const char* AdaptiveRadixTree::Insert(const char* key, int key_len,
                                       const char* leaf) {
-  int key_len = std::strlen(key) + 1, depth = 0, prefix_match_len;
+  int depth = 0, prefix_match_len;
 
   std::atomic<Node*>* cur_address = &root_;
   Node *cur = root_.load(std::memory_order_relaxed);
   if (cur == nullptr) {
-    Node* root = AllocateNode(nullptr, l);
+    Node* root = AllocateNode(nullptr, key_len);
     root->value = leaf;
     root->prefix = key;
     root_.store(root, std::memory_order_release);
@@ -142,8 +143,8 @@ const char* AdaptiveRadixTree::Insert(const char* key, int l,
 
   while (true) {
     /* number of bytes of the current node's prefix that match the key */
+    assert(cur != nullptr);
     prefix_match_len = cur->check_prefix(key, depth, key_len);
-
     /* true if the current node's prefix matches with a part of the key */
     bool is_prefix_match = cur->prefix_len == prefix_match_len;
 
@@ -184,16 +185,20 @@ const char* AdaptiveRadixTree::Insert(const char* key, int l,
       InnerNode* inner = new (allocator_->AllocateAligned(sizeof(Node4)))Node4();
       Node* new_parent = AllocateNode(inner, prefix_match_len);
       new_parent->prefix = cur->prefix;
-
       int old_prefix_len = cur->prefix_len;
       int new_prefix_len = old_prefix_len - prefix_match_len - 1;
+      assert(new_prefix_len >= 0);
 
       Node* new_cur = AllocateNode(cur->inner, new_prefix_len);
       new_cur->value = cur->value;
-      new_cur->prefix = cur->prefix + prefix_match_len + 1;
-      inner->set_child(cur->prefix[prefix_match_len], cur);
+      if (new_prefix_len > 0) {
+        new_cur->prefix = cur->prefix + prefix_match_len + 1;
+      } else {
+        new_cur->prefix = nullptr;
+      }
+      inner->set_child(cur->prefix[prefix_match_len], new_cur);
       if (depth + prefix_match_len < key_len) {
-        size_t leaf_prefix_len = key_len - depth - prefix_match_len - 1;
+        int leaf_prefix_len = key_len - depth - prefix_match_len - 1;
         Node* new_node = AllocateNode(nullptr, leaf_prefix_len);
         new_node->value = leaf;
         new_node->prefix = key + depth + prefix_match_len + 1;
@@ -232,7 +237,7 @@ const char* AdaptiveRadixTree::Insert(const char* key, int l,
         cur->prefix = old->prefix;
         cur_address->store(cur, std::memory_order_release);
       }
-      size_t leaf_prefix_len = key_len - depth - cur->prefix_len - 1;
+      int leaf_prefix_len = key_len - depth - cur->prefix_len - 1;
       Node* new_node = AllocateNode(nullptr, leaf_prefix_len);
       new_node->value = leaf;
       new_node->prefix = key + depth + cur->prefix_len + 1;
@@ -385,13 +390,20 @@ void AdaptiveRadixTree::Iterator::SeekRightLeaf() {
 
 void AdaptiveRadixTree::Iterator::SeekToFirst() {
   traversal_stack_.clear();
-  traversal_stack_.emplace_back(root_->load(std::memory_order_acquire), 0);
-  SeekLeftLeaf();
+  Node* root = root_->load(std::memory_order_acquire);
+  if (root != nullptr) {
+    traversal_stack_.emplace_back(root, 0);
+    SeekLeftLeaf();
+  }
 }
 
 void AdaptiveRadixTree::Iterator::SeekToLast() {
   traversal_stack_.clear();
-  traversal_stack_.emplace_back(root_->load(std::memory_order_acquire), 0);
+  Node* root = root_->load(std::memory_order_acquire);
+  if (root != nullptr) {
+    traversal_stack_.emplace_back(root_->load(std::memory_order_acquire), 0);
+    SeekRightLeaf();
+  }
 }
 
 void AdaptiveRadixTree::Iterator::SeekForPrev(const char* key, int key_len) {
@@ -402,7 +414,9 @@ void AdaptiveRadixTree::Iterator::SeekForPrev(const char* key, int key_len) {
 void AdaptiveRadixTree::Iterator::SeekForPrevImpl(const char* key,
                                                   int key_len) {
   Node* cur = root_->load(std::memory_order_acquire);
-
+  if (cur == nullptr) {
+    return;
+  }
   // sentinel child iterator for root
   traversal_stack_.clear();
   traversal_stack_.push_back(NodeIterator(cur, 0));
@@ -467,6 +481,9 @@ void AdaptiveRadixTree::Iterator::SeekForPrevImpl(const char* key,
 
 void AdaptiveRadixTree::Iterator::SeekImpl(const char* key, int key_len) {
   Node* cur = root_->load(std::memory_order_acquire);
+  if (cur == nullptr) {
+    return;
+  }
 
   // sentinel child iterator for root
   traversal_stack_.clear();

@@ -19,6 +19,7 @@ public:
 
   std::atomic<Node*>*find_child(char partial_key) override;
   void set_child(char partial_key, Node *child) override;
+  const char *node_type() const override { return "Node256"; }
   InnerNode *grow(Allocator* allocator) override;
   bool is_full() const override;
 
@@ -46,21 +47,18 @@ void Node256::set_child(char partial_key, Node *child) {
   throw std::runtime_error("Node256 cannot grow");
 }
 
- bool Node256::is_full() const {
-  return n_children_ == 256;
-}
+bool Node256::is_full() const { return false; }
 
-
- char Node256::next_partial_key(char partial_key) const {
-   uint8_t key = 128 + partial_key;
-   while (key < 255) {
-     if (children_[key] != nullptr) {
-       return partial_key;
-     }
-     ++partial_key;
-     ++key;
-   }
-   return partial_key;
+char Node256::next_partial_key(char partial_key) const {
+  uint8_t key = 128 + partial_key;
+  while (key < 255) {
+    if (children_[key] != nullptr) {
+      return partial_key;
+    }
+    ++partial_key;
+    ++key;
+  }
+  return partial_key;
 }
 
  char Node256::prev_partial_key(char partial_key) const {

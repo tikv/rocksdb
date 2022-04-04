@@ -43,6 +43,7 @@ public:
    * @param child - The child Node.
    */
   virtual void set_child(char partial_key, Node *child) = 0;
+  virtual const char* node_type() const = 0;
 
   /**
    * Creates and returns a new Node with bigger children capacity.

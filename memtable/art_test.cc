@@ -43,7 +43,7 @@ class ArtTest : public testing::Test {
   void Validate(AdaptiveRadixTree* list) {
     // Check keys exist.
     for (Key key : keys_) {
-      ASSERT_TRUE(list->Get(Encode(&key)) != nullptr);
+      ASSERT_TRUE(list->Get(Encode(&key), 8) != nullptr);
     }
     // Iterate over the list, make sure keys appears in order and no extra
     // keys exist.
@@ -80,24 +80,24 @@ TEST_F(ArtTest, Empty) {
 }
 
 TEST_F(ArtTest, InsertAndLookup) {
-  const int N = 2000;
-  const int R = 5000;
+  const int N = 20;
+  const int R = 20;
   Random rnd(1000);
   std::set<Key> keys;
   Arena arena;
   AdaptiveRadixTree list(&arena);
   const char* v = "abc";
   for (int i = 0; i < N; i++) {
-    Key key = rnd.Next() % R;
+    Key key = i;
     if (keys.insert(key).second) {
       char* buf = arena.AllocateAligned(sizeof(Key));
       memcpy(buf, &key, sizeof(Key));
-      list.Insert(buf, sizeof(key), v);
+      list.Insert(buf, sizeof(key), buf);
     }
   }
 
   for (Key i = 0; i < R; i++) {
-    if (list.Get(Encode(&i))) {
+    if (list.Get(Encode(&i), 8) != nullptr) {
       ASSERT_EQ(keys.count(i), 1U);
     } else {
       ASSERT_EQ(keys.count(i), 0U);

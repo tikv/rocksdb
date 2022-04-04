@@ -41,7 +41,7 @@ public:
 
   // Returns true iff an entry that compares equal to key is in the list.
  bool Contains(const char* key) const override {
-   return skip_list_.Get(key) != nullptr;
+   return skip_list_.Get(key, strlen(key)) != nullptr;
  }
 
  size_t ApproximateMemoryUsage() override {
@@ -51,7 +51,7 @@ public:
 
  void Get(const LookupKey& k, void* callback_args,
           bool (*callback_func)(void* arg, const char* entry)) override {
-   const char* value = skip_list_.Get(k.user_key().data());
+   const char* value = skip_list_.Get(k.user_key().data(), k.user_key().size());
    if (value != nullptr) {
      callback_func(callback_args, value);
    }
