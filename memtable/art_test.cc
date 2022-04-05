@@ -8,7 +8,6 @@
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
 #include "memtable/art.h"
-
 #include <set>
 
 #include "memory/arena.h"

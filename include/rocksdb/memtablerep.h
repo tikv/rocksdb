@@ -323,16 +323,17 @@ private:
   const size_t lookahead_;
 };
 
-// This uses a doubly skip list to store keys, which is similar to skip list,
-// but optimize for prev seek.
+// This uses an adaptive radix tree to store keys, which is similar to trie,
+// but optimize for memory use.
 class AdaptiveRadixTreeFactory : public MemTableRepFactory {
  public:
-  AdaptiveRadixTreeFactory() {}
+  explicit AdaptiveRadixTreeFactory() {}
+  virtual ~AdaptiveRadixTreeFactory() {}
 
   using MemTableRepFactory::CreateMemTableRep;
-  virtual MemTableRep* CreateMemTableRep(const MemTableRep::KeyComparator&,
-                                         Allocator*, const SliceTransform*,
-                                         Logger* logger) override;
+  MemTableRep* CreateMemTableRep(const MemTableRep::KeyComparator&, Allocator*,
+                                 const SliceTransform*,
+                                 Logger* logger) override;
   const char* Name() const override { return "AdaptiveRadixTreeFactory"; }
 
   bool IsInsertConcurrentlySupported() const override { return false; }

@@ -3472,7 +3472,7 @@ class Benchmark {
         );
         break;
       case kAdaptiveRadixTree:
-        options.memtable_factory.reset(new AdaptiveRadixTreeFactory);
+        options.memtable_factory.reset(new AdaptiveRadixTreeFactory());
         options.enable_pipelined_write = true;
         options.enable_pipelined_commit = false;
         options.allow_concurrent_memtable_write = false;
