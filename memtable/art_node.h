@@ -14,6 +14,7 @@
 #include <cassert>
 #include <cstring>
 #include <iostream>
+#include <atomic>
 #include <iterator>
 #include <stdexcept>
 
