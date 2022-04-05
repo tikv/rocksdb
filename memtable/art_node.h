@@ -16,9 +16,10 @@
 #include <iostream>
 #include <iterator>
 #include <stdexcept>
-#include "memtable/art_inner_node.h"
 
 namespace rocksdb {
+
+class InnerNode;
 
 struct Node {
   Node() {}
@@ -27,23 +28,21 @@ struct Node {
       return value != nullptr;
   }
 
-  int check_prefix(const char *key, int depth, int key_len) const;
+  int check_prefix(const char* key, int depth, int key_len) const {
+    int l = std::min(prefix_len, key_len - depth);
+    for (int i = 0; i < l; i++) {
+      if (key[i + depth] != prefix[i]) {
+        return i;
+      }
+    }
+    return l;
+  }
 
   InnerNode* inner;
   const char* value;
   int prefix_len;
   const char* prefix;
 };
-
-int Node::check_prefix(const char *key, int depth, int key_len) const {
-  int l = std::min(prefix_len, key_len - depth);
-  for (int i = 0; i < l; i ++) {
-    if (key[i + depth] != prefix[i]) {
-      return i;
-    }
-  }
-  return l;
-}
 
 } // namespace rocksdb
 
