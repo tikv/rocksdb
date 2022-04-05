@@ -1258,6 +1258,13 @@ ROCKS_TESTS = [
         [],
     ],
     [
+        "art_test",
+        "memtable/art_test.cc",
+        "serial",
+        [],
+        [],
+    ],
+    [
         "slice_transform_test",
         "util/slice_transform_test.cc",
         "serial",
