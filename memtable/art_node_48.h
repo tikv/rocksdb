@@ -18,14 +18,14 @@ class Node48 : public InnerNode {
   Node48();
   virtual ~Node48() {}
 
-  std::atomic<Node*> *find_child(char partial_key) override;
-  void set_child(char partial_key, Node *child) override;
+  std::atomic<Node *> *find_child(uint8_t partial_key) override;
+  void set_child(uint8_t partial_key, Node *child) override;
   const char *node_type() const override { return "Node48"; }
   InnerNode *grow(Allocator* allocator) override;
   bool is_full() const override;
 
-  char next_partial_key(char partial_key) const override;
-  char prev_partial_key(char partial_key) const override;
+  uint8_t next_partial_key(uint8_t partial_key) const override;
+  uint8_t prev_partial_key(uint8_t partial_key) const override;
   uint8_t get_index(uint8_t key) const;
   void set_index(uint8_t key, uint8_t index);
 
@@ -47,7 +47,7 @@ Node48::Node48() {
   n_children_.store(0, std::memory_order_relaxed);
 }
 
- std::atomic<Node*> *Node48::find_child(char partial_key) {
+std::atomic<Node *> *Node48::find_child(uint8_t partial_key) {
   // TODO(rafaelkallis): direct lookup instead of temp save?
   uint8_t index = get_index(partial_key);
   return Node48::EMPTY != index ? &children_[index] : nullptr;
@@ -66,7 +66,7 @@ void Node48::set_index(uint8_t key, uint8_t index) {
                            std::memory_order_release);
 }
 
-void Node48::set_child(char partial_key, Node *child) {
+void Node48::set_child(uint8_t partial_key, Node *child) {
   uint8_t n_children = n_children_.load(std::memory_order_relaxed);
   set_index(partial_key, n_children);
   children_[n_children].store(child, std::memory_order_release);
@@ -89,7 +89,7 @@ bool Node48::is_full() const { return n_children_ == 48; }
 
 const uint8_t Node48::EMPTY = 255;
 
-char Node48::next_partial_key(char partial_key) const {
+uint8_t Node48::next_partial_key(uint8_t partial_key) const {
   uint8_t key = partial_key;
   while (key < 255) {
     uint8_t index = get_index(key);
@@ -101,8 +101,7 @@ char Node48::next_partial_key(char partial_key) const {
   return key;
 }
 
-char Node48::prev_partial_key(char partial_key) const {
-  uint8_t key = partial_key;
+uint8_t Node48::prev_partial_key(uint8_t key) const {
   while (key > 0) {
     uint8_t index = get_index(key);
     if (index != Node48::EMPTY) {

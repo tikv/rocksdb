@@ -13,30 +13,34 @@ namespace rocksdb {
 
 class Node256 : public InnerNode {
  public:
-  Node256() { n_children_.store(0); }
+  Node256() {
+    n_children_.store(0, std::memory_order_relaxed);
+    for (int i = 0; i < 256; i++) {
+      children_[i].store(nullptr, std::memory_order_relaxed);
+    }
+  }
   virtual ~Node256() {}
 
-  std::atomic<Node*>*find_child(char partial_key) override;
-  void set_child(char partial_key, Node *child) override;
+  std::atomic<Node *> *find_child(uint8_t partial_key) override;
+  void set_child(uint8_t partial_key, Node *child) override;
   const char *node_type() const override { return "Node256"; }
   InnerNode *grow(Allocator* allocator) override;
   bool is_full() const override;
 
-  char next_partial_key(char partial_key) const override;
+  uint8_t next_partial_key(uint8_t partial_key) const override;
 
-  char prev_partial_key(char partial_key) const override;
+  uint8_t prev_partial_key(uint8_t partial_key) const override;
 
-private:
-  std::atomic<uint16_t> n_children_;
+ private:
+  std::atomic<uint32_t> n_children_;
   std::atomic<Node *>  children_[256];
 };
 
-std::atomic<Node *> *Node256::find_child(char partial_key) {
-  uint8_t key = partial_key;
+std::atomic<Node *> *Node256::find_child(uint8_t key) {
   return &children_[key];
 }
 
-void Node256::set_child(char partial_key, Node *child) {
+void Node256::set_child(uint8_t partial_key, Node *child) {
   uint8_t key = partial_key;
   children_[key].store(child, std::memory_order_release);
   ++n_children_;
@@ -48,8 +52,7 @@ InnerNode *Node256::grow(Allocator *_allocator) {
 
 bool Node256::is_full() const { return false; }
 
-char Node256::next_partial_key(char partial_key) const {
-  uint8_t key = partial_key;
+uint8_t Node256::next_partial_key(uint8_t key) const {
   while (key < 255) {
     if (children_[key].load(std::memory_order_acquire) != nullptr) {
       break;
@@ -59,8 +62,7 @@ char Node256::next_partial_key(char partial_key) const {
   return key;
 }
 
-char Node256::prev_partial_key(char partial_key) const {
-  uint8_t key = partial_key;
+uint8_t Node256::prev_partial_key(uint8_t key) const {
   while (key > 0) {
     if (children_[key].load(std::memory_order_acquire) != nullptr) {
       break;

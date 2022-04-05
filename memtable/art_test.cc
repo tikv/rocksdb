@@ -8,9 +8,11 @@
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
 #include "memtable/art.h"
+
 #include <set>
 
 #include "memory/arena.h"
+#include "memory/concurrent_arena.h"
 #include "rocksdb/env.h"
 #include "test_util/testharness.h"
 #include "util/coding.h"
@@ -21,17 +23,17 @@ namespace rocksdb {
 
 typedef uint64_t Key;
 
-static char tmp_buf[9];
 
 static const char* Encode(const uint64_t value) {
-  tmp_buf[7] = value & 0xff;
-  tmp_buf[6] = (value >> 8) & 0xff;
-  tmp_buf[5] = (value >> 16) & 0xff;
-  tmp_buf[4] = (value >> 24) & 0xff;
-  tmp_buf[3] = (value >> 32) & 0xff;
-  tmp_buf[2] = (value >> 40) & 0xff;
-  tmp_buf[1] = (value >> 48) & 0xff;
-  tmp_buf[0] = (value >> 56) & 0xff;
+  thread_local char tmp_buf[9];
+  tmp_buf[7] = (uint8_t)(value & 0xff);
+  tmp_buf[6] = (uint8_t)((value >> 8) & 0xff);
+  tmp_buf[5] = (uint8_t)((value >> 16) & 0xff);
+  tmp_buf[4] = (uint8_t)((value >> 24) & 0xff);
+  tmp_buf[3] = (uint8_t)((value >> 32) & 0xff);
+  tmp_buf[2] = (uint8_t)((value >> 40) & 0xff);
+  tmp_buf[1] = (uint8_t)((value >> 48) & 0xff);
+  tmp_buf[0] = (uint8_t)((value >> 56) & 0xff);
   return tmp_buf;
 }
 
@@ -275,8 +277,11 @@ class ConcurrentTest {
   AdaptiveRadixTree list_;
 
  public:
-  ConcurrentTest() : arena_(), list_(&arena_) {
-    printf("memory: %lu\n", arena_.MemoryAllocatedBytes());
+  ConcurrentTest() : arena_(4096 * 16), list_(&arena_) {}
+
+  void DEBUG_print() {
+    printf("memory allocated: %lu\n", arena_.MemoryAllocatedBytes());
+    printf("memory usage: %lu\n", arena_.ApproximateMemoryUsage());
   }
 
   // REQUIRES: No concurrent calls to WriteStep or ConcurrentWriteStep
@@ -357,7 +362,7 @@ TEST_F(ArtTest, ConcurrentReadWithoutThreads) {
   {
     ConcurrentTest test;
     Random rnd(test::RandomSeed());
-    for (int i = 0; i < 1000; i++) {
+    for (int i = 0; i < 20000; i++) {
       test.ReadStep(&rnd);
       test.WriteStep(&rnd);
     }
@@ -365,7 +370,7 @@ TEST_F(ArtTest, ConcurrentReadWithoutThreads) {
   {
     ConcurrentTest test;
     Random rnd(test::RandomSeed());
-    for (int i = 0; i < 1000; i++) {
+    for (int i = 0; i < 20000; i++) {
       test.ReadStep(&rnd);
       test.WriteStep(&rnd);
     }

@@ -17,16 +17,21 @@ namespace rocksdb {
 
 class Node4 : public InnerNode {
 public:
-  ~Node4() {}
-  std::atomic<Node*> *find_child(char partial_key) override;
-  void set_child(char partial_key, Node *child) override;
-  const char *node_type() const override { return "Node4"; }
-  InnerNode *grow(Allocator* allocator) override;
-  bool is_full() const override;
+ ~Node4() {}
+ Node4() : n_children_(0), keys_(0) {
+   for (int i = 0; i < 4; i++) {
+     children_[i].store(nullptr, std::memory_order_relaxed);
+   }
+ }
+ std::atomic<Node *> *find_child(uint8_t partial_key) override;
+ void set_child(uint8_t partial_key, Node *child) override;
+ const char *node_type() const override { return "Node4"; }
+ InnerNode *grow(Allocator *allocator) override;
+ bool is_full() const override;
 
-  char next_partial_key(char partial_key) const override;
+ uint8_t next_partial_key(uint8_t partial_key) const override;
 
-  char prev_partial_key(char partial_key) const override;
+ uint8_t prev_partial_key(uint8_t partial_key) const override;
 
 private:
   std::atomic<uint8_t> n_children_;
@@ -34,13 +39,13 @@ private:
   std::atomic<Node*> children_[4];
 };
 
-std::atomic<Node *> *Node4::find_child(char partial_key) {
-  uint8_t key = partial_key;
+std::atomic<Node *> *Node4::find_child(uint8_t key) {
   uint64_t keys = keys_.load(std::memory_order_acquire);
   while (keys > 0) {
     uint8_t c = keys & 255;
     uint8_t idx = ((keys >> 8) & 255) - 1;
     if (c == key) {
+      assert(idx < 4);
       return &children_[idx];
     }
     keys >>= 16;
@@ -48,9 +53,10 @@ std::atomic<Node *> *Node4::find_child(char partial_key) {
   return nullptr;
 }
 
-void Node4::set_child(char partial_key, Node *child) {
+void Node4::set_child(uint8_t partial_key, Node *child) {
   /* determine index for child */
   uint8_t n_children = n_children_.load(std::memory_order_relaxed);
+  assert(n_children < 4);
   children_[n_children].store(child, std::memory_order_release);
   uint64_t keys = keys_.load(std::memory_order_relaxed);
   uint8_t c_i = partial_key;
@@ -90,7 +96,7 @@ InnerNode *Node4::grow(Allocator *allocator) {
 
 bool Node4::is_full() const { return n_children_ == 4; }
 
-char Node4::next_partial_key(char partial_key) const {
+uint8_t Node4::next_partial_key(uint8_t partial_key) const {
   uint8_t key = partial_key;
   uint64_t keys = keys_.load(std::memory_order_acquire);
   uint8_t ret = 255;
@@ -105,18 +111,18 @@ char Node4::next_partial_key(char partial_key) const {
   return ret;
 }
 
- char Node4::prev_partial_key(char partial_key) const {
-   uint8_t ret = 0;
-   uint8_t key = partial_key;
-   uint64_t keys = keys_.load(std::memory_order_acquire);
-   while (keys > 0) {
-     uint8_t c = keys & 255;
-     if (c <= key) {
-       ret = c;
-     }
-     keys >>= 16;
-   }
-   return ret;
+uint8_t Node4::prev_partial_key(uint8_t partial_key) const {
+  uint8_t ret = 0;
+  uint8_t key = partial_key;
+  uint64_t keys = keys_.load(std::memory_order_acquire);
+  while (keys > 0) {
+    uint8_t c = keys & 255;
+    if (c <= key) {
+      ret = c;
+    }
+    keys >>= 16;
+  }
+  return ret;
 }
 
 } // namespace rocksdb

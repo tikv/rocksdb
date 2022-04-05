@@ -110,7 +110,7 @@ const char* AdaptiveRadixTree::Get(const char* key, int key_len) const {
 
 Node* AdaptiveRadixTree::AllocateNode(InnerNode* inner, int prefix_size) {
   char* addr = allocator_->AllocateAligned(sizeof(Node));
-  Node* node = reinterpret_cast<Node*>(addr);
+  Node* node = new (addr) Node;
   node->inner = inner;
   node->value = nullptr;
   node->prefix = nullptr;
@@ -207,7 +207,7 @@ const char* AdaptiveRadixTree::Insert(const char* key, int key_len,
     /* must be inner node */
     child_partial_key = key[depth + cur->prefix_len];
     if (cur->inner == nullptr) {
-      Node4* new_inner =
+      InnerNode* new_inner =
           new (allocator_->AllocateAligned(sizeof(Node4))) Node4();
       cur->inner = new_inner;
     }
@@ -235,6 +235,7 @@ const char* AdaptiveRadixTree::Insert(const char* key, int key_len,
       Node* new_node = AllocateNode(nullptr, leaf_prefix_len);
       new_node->value = leaf;
       new_node->prefix = key + depth + cur->prefix_len + 1;
+      assert(leaf_prefix_len >= 0);
       cur->inner->set_child(child_partial_key, new_node);
       return nullptr;
     }
@@ -405,8 +406,9 @@ void AdaptiveRadixTree::Iterator::SeekForPrevImpl(const char* key,
       //  we only need to seek to left leaf in this tree.
       return;
     } else if (prefix_match_len < cur_node->prefix_len) {
-      if (key[cur_depth + prefix_match_len] >
-          cur_node->prefix[prefix_match_len]) {
+      uint8_t k1 = key[cur_depth + prefix_match_len];
+      uint8_t k2 = cur_node->prefix[prefix_match_len];
+      if (k1 > k2) {
         // if search key is "less than" the prefix,
         //  we only need to seek to left leaf in this tree.
         return;
@@ -478,8 +480,9 @@ void AdaptiveRadixTree::Iterator::SeekImpl(const char* key, int key_len) {
       //  we only need to seek to left leaf in this tree.
       return;
     } else if (prefix_match_len < cur_node->prefix_len) {
-      if (key[cur_depth + prefix_match_len] <
-          cur_node->prefix[prefix_match_len]) {
+      uint8_t k1 = key[cur_depth + prefix_match_len];
+      uint8_t k2 = cur_node->prefix[prefix_match_len];
+      if (k1 < k2) {
         // if search key is "less than" the prefix,
         //  we only need to seek to left leaf in this tree.
         return;

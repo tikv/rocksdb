@@ -30,7 +30,7 @@ public:
    * @return Child Node identified by the given partial key or
    * a null pointer of no child Node is associated with the partial key.
    */
-  virtual std::atomic<Node*>* find_child(char partial_key) = 0;
+  virtual std::atomic<Node*>* find_child(uint8_t partial_key) = 0;
 
   /**
    * Adds the given Node to the Node's children.
@@ -42,7 +42,7 @@ public:
    * @param partial_key - The partial key associated with the child.
    * @param child - The child Node.
    */
-  virtual void set_child(char partial_key, Node *child) = 0;
+  virtual void set_child(uint8_t partial_key, Node* child) = 0;
   virtual const char* node_type() const = 0;
 
   /**
@@ -58,9 +58,9 @@ public:
    */
   virtual bool is_full() const = 0;
 
-  virtual char next_partial_key(char partial_key) const = 0;
+  virtual uint8_t next_partial_key(uint8_t partial_key) const = 0;
 
-  virtual char prev_partial_key(char partial_key) const = 0;
+  virtual uint8_t prev_partial_key(uint8_t partial_key) const = 0;
 };
 
 

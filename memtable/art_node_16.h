@@ -18,7 +18,7 @@ class Node12 : public InnerNode {
   const static uint8_t MAX_CHILDREN_NUM = 12;
   struct ChildrenNode {
     ChildrenNode() {}
-    char c;
+    uint8_t c;
     uint8_t idx;
     std::atomic<uint8_t> next;
     std::atomic<Node*> child;
@@ -27,23 +27,23 @@ class Node12 : public InnerNode {
  public:
   Node12() : n_children_(0), first_(nullptr) {}
   ~Node12() {}
-  std::atomic<Node*>* find_child(char partial_key) override;
-  void set_child(char partial_key, Node *child) override;
+  std::atomic<Node*>* find_child(uint8_t partial_key) override;
+  void set_child(uint8_t partial_key, Node* child) override;
   const char* node_type() const override { return "Node16"; }
   InnerNode *grow(Allocator* allocator) override;
   bool is_full() const override;
 
-  char next_partial_key(char partial_key) const override;
+  uint8_t next_partial_key(uint8_t partial_key) const override;
 
-  char prev_partial_key(char partial_key) const override;
+  uint8_t prev_partial_key(uint8_t partial_key) const override;
 
-private:
- std::atomic<uint8_t> n_children_;
- std::atomic<ChildrenNode*> first_;
- ChildrenNode children_[MAX_CHILDREN_NUM];
+ private:
+  std::atomic<uint8_t> n_children_;
+  std::atomic<ChildrenNode*> first_;
+  ChildrenNode children_[MAX_CHILDREN_NUM];
 };
 
-std::atomic<Node*>* Node12::find_child(char partial_key) {
+std::atomic<Node*>* Node12::find_child(uint8_t partial_key) {
   ChildrenNode* next = first_.load(std::memory_order_acquire);
   while (next != nullptr) {
     if (next->c == partial_key) {
@@ -59,7 +59,7 @@ std::atomic<Node*>* Node12::find_child(char partial_key) {
   return nullptr;
 }
 
-void Node12::set_child(char partial_key, Node* child) {
+void Node12::set_child(uint8_t partial_key, Node* child) {
   /* determine index for child */
   uint8_t child_i = n_children_.fetch_add(1, std::memory_order_relaxed);
   ChildrenNode* new_child = &children_[child_i];
@@ -111,7 +111,7 @@ InnerNode* Node12::grow(Allocator* allocator) {
 
 bool Node12::is_full() const { return n_children_ == MAX_CHILDREN_NUM; }
 
-char Node12::next_partial_key(char partial_key) const {
+uint8_t Node12::next_partial_key(uint8_t partial_key) const {
   const ChildrenNode* cur = first_.load(std::memory_order_acquire);
   while (cur != nullptr) {
     if (cur->c >= partial_key) {
@@ -123,10 +123,10 @@ char Node12::next_partial_key(char partial_key) const {
     }
     cur = &children_[idx - 1];
   }
-  return 127;
+  return 255;
 }
 
-char Node12::prev_partial_key(char partial_key) const {
+uint8_t Node12::prev_partial_key(uint8_t partial_key) const {
   uint8_t ret = 0;
   const ChildrenNode* cur = first_.load(std::memory_order_acquire);
   while (cur != nullptr) {
