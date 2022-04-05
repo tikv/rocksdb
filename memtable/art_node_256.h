@@ -46,7 +46,8 @@ void Node256::set_child(uint8_t partial_key, Node *child) {
   ++n_children_;
 }
 
-InnerNode *Node256::grow(Allocator *_allocator) {
+InnerNode *Node256::grow(Allocator *allocator) {
+  (void)allocator;
   throw std::runtime_error("Node256 cannot grow");
 }
 

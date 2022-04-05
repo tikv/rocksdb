@@ -97,16 +97,22 @@ public:
     void Seek(const Slice& user_key, const char* memtable_key) override {
       if (memtable_key != nullptr) {
         uint32_t l = 0;
-        const char* key = GetVarint32Ptr(memtable_key, memtable_key + 5, &l);
-        iter_.Seek(key, l);
+        const char* k = GetVarint32Ptr(memtable_key, memtable_key + 5, &l);
+        iter_.Seek(k, l - 8);
       } else {
-        iter_.Seek(user_key.data(), user_key.size());
+        iter_.Seek(user_key.data(), user_key.size() - 8);
       }
     }
 
     // Retreat to the last entry with a key <= target
     void SeekForPrev(const Slice& user_key, const char* memtable_key) override {
-      assert(false);
+      if (memtable_key != nullptr) {
+        uint32_t l = 0;
+        const char* k = GetVarint32Ptr(memtable_key, memtable_key + 5, &l);
+        iter_.SeekForPrev(k, l - 8);
+      } else {
+        iter_.SeekForPrev(user_key.data(), user_key.size() - 8);
+      }
     }
 
     // Position at the first entry in list.
@@ -115,7 +121,7 @@ public:
 
     // Position at the last entry in list.
     // Final state of iterator is Valid() iff list is not empty.
-    void SeekToLast() override { assert(false); }
+    void SeekToLast() override { iter_.SeekToLast(); }
 
    protected:
     std::string tmp_;  // For passing to EncodeKey
@@ -133,7 +139,7 @@ public:
 
 MemTableRep* AdaptiveRadixTreeFactory::CreateMemTableRep(
     const MemTableRep::KeyComparator& compare, Allocator* allocator,
-    const SliceTransform* transform, Logger* /*logger*/) {
+    const SliceTransform* /* transform */, Logger* /*logger*/) {
   return new AdaptiveRadixTreeRep(allocator);
 }
 
