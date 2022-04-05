@@ -117,9 +117,6 @@ TEST_F(ArtTest, InsertAndLookup) {
     if (list.Get(Encode(i), 8) != nullptr) {
       ASSERT_EQ(keys.count(i), 1U);
     } else {
-      if (keys.count(i) != 0) {
-        printf("miss %llu\n", i);
-      }
       ASSERT_EQ(keys.count(i), 0U);
     }
   }

@@ -25,7 +25,7 @@ struct Node {
   Node() {}
 
   bool is_leaf() const {
-      return value != nullptr;
+    return value.load(std::memory_order_acquire) != nullptr;
   }
 
   int check_prefix(const char* key, int depth, int key_len) const {
@@ -38,8 +38,16 @@ struct Node {
     return l;
   }
 
+  void set_value(const char* leaf) {
+    value.store(leaf, std::memory_order_release);
+  }
+
+  const char* get_value() const {
+    return value.load(std::memory_order_acquire);
+  }
+
   InnerNode* inner;
-  const char* value;
+  std::atomic<const char*> value;
   int prefix_len;
   const char* prefix;
 };

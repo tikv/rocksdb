@@ -29,7 +29,7 @@ const char* AdaptiveRadixTree::Get(const char* key, int key_len) const {
     }
     if (cur->prefix_len == key_len - depth) {
       /* exact match */
-      return cur->value;
+      return cur->get_value();
     }
 
     if (cur->inner == nullptr) {
@@ -46,7 +46,7 @@ Node* AdaptiveRadixTree::AllocateNode(InnerNode* inner, int prefix_size) {
   char* addr = allocator_->AllocateAligned(sizeof(Node));
   Node* node = new (addr) Node;
   node->inner = inner;
-  node->value = nullptr;
+  node->value.store(nullptr, std::memory_order_relaxed);
   node->prefix = nullptr;
   node->prefix_len = prefix_size;
   return node;
@@ -60,7 +60,7 @@ const char* AdaptiveRadixTree::Insert(const char* key, int key_len,
   Node* cur = root_.load(std::memory_order_relaxed);
   if (cur == nullptr) {
     Node* root = AllocateNode(nullptr, key_len);
-    root->value = leaf;
+    root->set_value(leaf);
     root->prefix = key;
     root_.store(root, std::memory_order_release);
     return nullptr;
@@ -74,6 +74,7 @@ const char* AdaptiveRadixTree::Insert(const char* key, int key_len,
     prefix_match_len = cur->check_prefix(key, depth, key_len);
     /* true if the current node's prefix matches with a part of the key */
     bool is_prefix_match = cur->prefix_len == prefix_match_len;
+    const char* current_value = cur->get_value();
 
     if (is_prefix_match && cur->prefix_len == key_len - depth) {
       /* exact match:
@@ -90,8 +91,8 @@ const char* AdaptiveRadixTree::Insert(const char* key, int key_len,
        */
 
       /* cur must be a leaf */
-      cur->value = leaf;
-      return cur->value;
+      cur->set_value(leaf);
+      return current_value;
     } else if (!is_prefix_match) {
       /* prefix mismatch:
        * => new parent node with common prefix and no associated value.
@@ -118,7 +119,7 @@ const char* AdaptiveRadixTree::Insert(const char* key, int key_len,
       assert(new_prefix_len >= 0);
 
       Node* new_cur = AllocateNode(cur->inner, new_prefix_len);
-      new_cur->value = cur->value;
+      new_cur->set_value(current_value);
       if (new_prefix_len > 0) {
         new_cur->prefix = cur->prefix + prefix_match_len + 1;
       } else {
@@ -128,11 +129,11 @@ const char* AdaptiveRadixTree::Insert(const char* key, int key_len,
       if (depth + prefix_match_len < key_len) {
         int leaf_prefix_len = key_len - depth - prefix_match_len - 1;
         Node* new_node = AllocateNode(nullptr, leaf_prefix_len);
-        new_node->value = leaf;
+        new_node->set_value(leaf);
         new_node->prefix = key + depth + prefix_match_len + 1;
         inner->set_child(key[depth + prefix_match_len], new_node);
       } else {
-        new_parent->value = leaf;
+        new_parent->set_value(leaf);
       }
       cur_address->store(new_parent, std::memory_order_release);
       return nullptr;
@@ -168,7 +169,7 @@ const char* AdaptiveRadixTree::Insert(const char* key, int key_len,
       }
       int leaf_prefix_len = key_len - depth - cur->prefix_len - 1;
       Node* new_node = AllocateNode(nullptr, leaf_prefix_len);
-      new_node->value = leaf;
+      new_node->set_value(leaf);
       new_node->prefix = key + depth + cur->prefix_len + 1;
       assert(leaf_prefix_len >= 0);
       cur->inner->set_child(child_partial_key, new_node);
@@ -252,7 +253,6 @@ bool AdaptiveRadixTree::Iterator::Valid() const {
 
 void AdaptiveRadixTree::Iterator::Next() {
   NodeIterator& step = traversal_stack_.back();
-  assert(step.node_->value != nullptr);
   if (step.node_->inner == nullptr) {
     SeekForward();
     if (!traversal_stack_.empty()) {

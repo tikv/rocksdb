@@ -46,7 +46,9 @@ class AdaptiveRadixTree {
     void Next();
     void Prev();
     bool Valid() const;
-    const char* Value() const { return traversal_stack_.back().node_->value; }
+    const char* Value() const {
+      return traversal_stack_.back().node_->get_value();
+    }
 
    private:
     void SeekForPrevImpl(const char* key, int l);
