@@ -283,6 +283,11 @@ class DB {
       const std::string& name, const std::string& output_directory,
       const std::string& input, std::string* output,
       const CompactionServiceOptionsOverride& override_options);
+  static Status OpenAndCompact(
+      const OpenAndCompactOptions& options, const std::string& name,
+      const std::string& output_directory, const std::string& input,
+      std::string* output,
+      const CompactionServiceOptionsOverride& override_options);
 
   // Merge multiple DBs into this one. All DBs must have disjoint internal
   // keys.
@@ -321,6 +326,19 @@ class DB {
       const std::vector<DB*>& /*instances*/) {
     return Status::NotSupported("`MergeDisjointInstances` not implemented");
   }
+
+  // Experimental and subject to change
+  // Open DB and trim data newer than specified timestamp.
+  // The trim_ts specified the user-defined timestamp trim bound.
+  // This API should only be used at timestamp enabled column families recovery.
+  // If some input column families do not support timestamp, nothing will
+  // be happened to them. The data with timestamp > trim_ts
+  // will be removed after this API returns successfully.
+  static Status OpenAndTrimHistory(
+      const DBOptions& db_options, const std::string& dbname,
+      const std::vector<ColumnFamilyDescriptor>& column_families,
+      std::vector<ColumnFamilyHandle*>* handles, DB** dbptr,
+      std::string trim_ts);
 
   virtual Status Resume() { return Status::NotSupported(); }
 
