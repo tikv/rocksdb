@@ -4889,8 +4889,10 @@ Status VersionSet::DumpManifest(Options& options, std::string& dscname,
               printf("--------------- Column family \"%s\"  (ID %" PRIu32
                      ") --------------\n",
                      cfd->GetName().c_str(), cfd->GetID());
-              printf("%s at level %d\n", files[i]->DebugString(hex).c_str(),
-                     level);
+              auto debugged_string = files[i]->DebugString(hex);
+              fwrite(debugged_string.data(), sizeof(char), debugged_string.size(),
+                     stdout);
+              printf(" at level %d\n", level);
               break;
             }
           }
@@ -4907,7 +4909,9 @@ Status VersionSet::DumpManifest(Options& options, std::string& dscname,
         } else {
           printf("comparator: <NO COMPARATOR>\n");
         }
-        printf("%s \n", v->DebugString(hex).c_str());
+        auto debugged_string = v->DebugString(hex);
+        fwrite(debugged_string.data(), sizeof(char), debugged_string.size(),
+               stdout);
       }
       delete v;
     }
