@@ -1131,4 +1131,4 @@ void DoublySkipList<Comparator>::TEST_Validate() const {
   }
 }
 
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE
