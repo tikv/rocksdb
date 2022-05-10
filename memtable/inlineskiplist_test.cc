@@ -8,8 +8,10 @@
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
 #include "memtable/inlineskiplist.h"
+
 #include <set>
 #include <unordered_set>
+
 #include "memory/concurrent_arena.h"
 #include "memtable/doubly_skiplist.h"
 #include "rocksdb/env.h"
