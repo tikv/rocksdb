@@ -48,7 +48,7 @@
 #include "util/coding.h"
 #include "util/random.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 template <class Comparator>
 class DoublySkipList {
