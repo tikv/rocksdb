@@ -6,7 +6,6 @@
 #include "db/write_thread.h"
 
 #include <chrono>
-#include <iostream>
 #include <thread>
 
 #include "db/column_family.h"

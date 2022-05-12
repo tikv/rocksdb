@@ -684,14 +684,6 @@ uint32_t WriteBatchInternal::Count(const WriteBatch* b) {
   return DecodeFixed32(b->rep_.data() + 8);
 }
 
-uint32_t WriteBatchInternal::Count(const std::vector<WriteBatch*> b) {
-  uint32_t count = 0;
-  for (auto w : b) {
-    count += DecodeFixed32(w->rep_.data() + 8);
-  }
-  return count;
-}
-
 void WriteBatchInternal::SetCount(WriteBatch* b, uint32_t n) {
   EncodeFixed32(&b->rep_[8], n);
 }

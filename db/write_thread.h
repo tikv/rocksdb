@@ -21,7 +21,6 @@
 #include "monitoring/instrumented_mutex.h"
 #include "rocksdb/options.h"
 #include "rocksdb/status.h"
-#include "rocksdb/threadpool.h"
 #include "rocksdb/types.h"
 #include "rocksdb/write_batch.h"
 #include "util/autovector.h"

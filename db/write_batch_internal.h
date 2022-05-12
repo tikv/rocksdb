@@ -27,7 +27,6 @@ namespace ROCKSDB_NAMESPACE {
 class MemTable;
 class FlushScheduler;
 class ColumnFamilyData;
-class ColumnFamilySet;
 
 class ColumnFamilyMemTables {
  public:
@@ -133,8 +132,6 @@ class WriteBatchInternal {
   // Return the number of entries in the batch.
   static uint32_t Count(const WriteBatch* batch);
 
-  static uint32_t Count(const std::vector<WriteBatch*> batch);
-
   // Set the count for the number of entries in the batch.
   static void SetCount(WriteBatch* batch, uint32_t n);
 
@@ -155,14 +152,6 @@ class WriteBatchInternal {
 
   static size_t ByteSize(const WriteBatch* batch) {
     return batch->rep_.size();
-  }
-
-  static size_t ByteSize(const std::vector<WriteBatch*> batch) {
-    size_t count = 0;
-    for (auto w : batch) {
-      count += w->rep_.size();
-    }
-    return count;
   }
 
   static Status SetContents(WriteBatch* batch, const Slice& contents);
