@@ -142,7 +142,6 @@ uint8_t WriteThread::AwaitState(Writer* w, uint8_t goal_mask,
   // 1/sampling_base.
   const int sampling_base = 256;
 
-
   if (max_yield_usec_ > 0) {
     update_ctx = Random::GetTLSInstance()->OneIn(sampling_base);
 
