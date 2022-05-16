@@ -37,33 +37,6 @@ void FileMetaData::UpdateBoundaries(const Slice& key, const Slice& value,
   largest.DecodeFrom(key);
   fd.smallest_seqno = std::min(fd.smallest_seqno, seqno);
   fd.largest_seqno = std::max(fd.largest_seqno, seqno);
-
-  if (value_type == kTypeBlobIndex) {
-    BlobIndex blob_index;
-    const Status s = blob_index.DecodeFrom(value);
-    if (!s.ok()) {
-      return;
-    }
-
-    if (blob_index.IsInlined()) {
-      return;
-    }
-
-    if (blob_index.HasTTL()) {
-      return;
-    }
-
-    // Paranoid check: this should not happen because BlobDB numbers the blob
-    // files starting from 1.
-    if (blob_index.file_number() == kInvalidBlobFileNumber) {
-      return;
-    }
-
-    if (oldest_blob_file_number == kInvalidBlobFileNumber ||
-        oldest_blob_file_number > blob_index.file_number()) {
-      oldest_blob_file_number = blob_index.file_number();
-    }
-  }
 }
 
 void VersionEdit::Clear() {
