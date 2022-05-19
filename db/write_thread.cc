@@ -367,7 +367,7 @@ void WriteThread::EndWriteStall() {
 static WriteThread::AdaptationContext jbg_ctx("JoinBatchGroup");
 void WriteThread::JoinBatchGroup(Writer* w) {
   TEST_SYNC_POINT_CALLBACK("WriteThread::JoinBatchGroup:Start", w);
-  assert(w->batch != nullptr);
+  assert(!w->batches.empty());
 
   bool linked_as_leader = LinkOne(w, &newest_writer_);
 
@@ -402,10 +402,10 @@ void WriteThread::JoinBatchGroup(Writer* w) {
 size_t WriteThread::EnterAsBatchGroupLeader(Writer* leader,
                                             WriteGroup* write_group) {
   assert(leader->link_older == nullptr);
-  assert(leader->batch != nullptr);
+  assert(!leader->batches.empty());
   assert(write_group != nullptr);
 
-  size_t size = WriteBatchInternal::ByteSize(leader->batch);
+  size_t size = WriteBatchInternal::ByteSize(leader->batches);
 
   // Allow the group to grow up to a maximum size, but if the
   // original write is small, limit the growth so we do not slow
@@ -451,7 +451,7 @@ size_t WriteThread::EnterAsBatchGroupLeader(Writer* leader,
       break;
     }
 
-    if (w->batch == nullptr) {
+    if (w->batches.empty()) {
       // Do not include those writes with nullptr batch. Those are not writes,
       // those are something else. They want to be alone
       break;
@@ -462,7 +462,7 @@ size_t WriteThread::EnterAsBatchGroupLeader(Writer* leader,
       break;
     }
 
-    auto batch_size = WriteBatchInternal::ByteSize(w->batch);
+    auto batch_size = WriteBatchInternal::ByteSize(w->batches);
     if (size + batch_size > max_size) {
       // Do not make batch too big
       break;
@@ -482,10 +482,10 @@ void WriteThread::EnterAsMemTableWriter(Writer* leader,
                                         WriteGroup* write_group) {
   assert(leader != nullptr);
   assert(leader->link_older == nullptr);
-  assert(leader->batch != nullptr);
+  assert(!leader->batches.empty());
   assert(write_group != nullptr);
 
-  size_t size = WriteBatchInternal::ByteSize(leader->batch);
+  size_t size = WriteBatchInternal::ByteSize(leader->batches);
 
   // Allow the group to grow up to a maximum size, but if the
   // original write is small, limit the growth so we do not slow
@@ -500,7 +500,7 @@ void WriteThread::EnterAsMemTableWriter(Writer* leader,
   write_group->size = 1;
   Writer* last_writer = leader;
 
-  if (!allow_concurrent_memtable_write_ || !leader->batch->HasMerge()) {
+  if (!allow_concurrent_memtable_write_ || !leader->batches[0]->HasMerge()) {
     Writer* newest_writer = newest_memtable_writer_.load();
     CreateMissingNewerLinks(newest_writer);
 
@@ -508,16 +508,18 @@ void WriteThread::EnterAsMemTableWriter(Writer* leader,
     while (w != newest_writer) {
       w = w->link_newer;
 
-      if (w->batch == nullptr) {
+      if (w->batches.empty()) {
         break;
       }
 
-      if (w->batch->HasMerge()) {
+      if (w->batches[0]->HasMerge()) {
+	#include <cstdio>
+	fprintf(stderr, "here?\n");
         break;
       }
 
       if (!allow_concurrent_memtable_write_) {
-        auto batch_size = WriteBatchInternal::ByteSize(w->batch);
+        auto batch_size = WriteBatchInternal::ByteSize(w->batches);
         if (size + batch_size > max_size) {
           // Do not make batch too big
           break;
@@ -532,8 +534,9 @@ void WriteThread::EnterAsMemTableWriter(Writer* leader,
   }
 
   write_group->last_writer = last_writer;
-  write_group->last_sequence =
-      last_writer->sequence + WriteBatchInternal::Count(last_writer->batch) - 1;
+  write_group->last_sequence = last_writer->sequence +
+                               WriteBatchInternal::Count(last_writer->batches) -
+                               1;
 }
 
 void WriteThread::ExitAsMemTableWriter(Writer* /*self*/,
@@ -729,7 +732,7 @@ void WriteThread::ExitAsBatchGroupLeader(WriteGroup& write_group,
 
 static WriteThread::AdaptationContext eu_ctx("EnterUnbatched");
 void WriteThread::EnterUnbatched(Writer* w, InstrumentedMutex* mu) {
-  assert(w != nullptr && w->batch == nullptr);
+  assert(w != nullptr && w->batches.empty());
   mu->Unlock();
   bool linked_as_leader = LinkOne(w, &newest_writer_);
   if (!linked_as_leader) {
@@ -781,13 +784,33 @@ void RequestQueue::CommitSequenceAwait(CommitRequest* req,
                                        std::atomic<uint64_t>* commit_sequence) {
   std::unique_lock<std::mutex> guard(commit_mu_);
   while (!requests_.empty() && requests_.front() != req && !req->committed) {
+    // When the subsequent commit finds that the front writer has not yet
+    // submitted, it will help the front writer to perform some tasks
+    if (requests_.front()->writer->task_queue.running_nr.load(std::memory_order_acquire) > 1) {
+      auto task = requests_.front()->writer->task_queue.Pop();
+      if (task) {
+        guard.unlock();
+        task();
+        guard.lock();
+	continue;
+      }
+    } else {
+      // The front writer may be waiting for this helper writer
+      commit_cv_.notify_all();
+    }
     commit_cv_.wait(guard);
   }
   if (req->committed) {
     return;
   } else if (requests_.front() == req) {
+    // Because the front writer can return after committing,
+    // so just wait for the help writers to finish
+    while (requests_.front()->writer->task_queue.running_nr.load(std::memory_order_acquire) > 0) {
+      commit_cv_.wait(guard);
+    }
     while (!requests_.empty() &&
-           requests_.front()->applied.load(std::memory_order_acquire)) {
+           requests_.front()->applied.load(std::memory_order_acquire) &&
+           requests_.front()->writer->task_queue.running_nr.load(std::memory_order_acquire) == 0) {
       CommitRequest* current = requests_.front();
       commit_sequence->store(current->commit_lsn, std::memory_order_release);
       current->committed = true;

@@ -1995,6 +1995,43 @@ Status WriteBatchInternal::InsertInto(
   return s;
 }
 
+void WriteBatchInternal::AsyncInsertInto(WriteThread::Writer* writer,
+                                         SequenceNumber sequence,
+                                         ColumnFamilySet* version_set,
+                                         FlushScheduler* flush_scheduler,
+                                         bool ignore_missing_column_families,
+                                         DB* db) {
+  auto batch_size = writer->batches.size();
+  writer->task_queue.running_nr.store(batch_size, std::memory_order_release);
+  for (size_t i = 0; i < batch_size; i++) {
+    auto f = [=]() {
+      ColumnFamilyMemTablesImpl memtables(version_set);
+      MemTableInserter inserter(
+          sequence, &memtables, flush_scheduler, ignore_missing_column_families,
+          0 /*recovering_log_number*/, db, true /*concurrent_memtable_writes*/,
+          nullptr /*has_valid_writes*/);
+      inserter.set_log_number_ref(writer->log_ref);
+      SetSequence(writer->batches[i], sequence);
+      Status s = writer->batches[i]->Iterate(&inserter);
+      if (!s.ok()) {
+        std::lock_guard<std::mutex> guard(writer->StateMutex());
+        writer->status = s;
+      }
+      inserter.PostProcess();
+      writer->task_queue.running_nr.fetch_sub(1);
+    };
+    if (i + 1 == batch_size) {
+      // If there is only one WriteBatch written by this thread, It shall do it
+      // by self, because this batch may be large. And every thread does the latest
+      // one by self will reduce the cost of calling `SafeFuncQueue::Push`.
+      f();
+    } else {
+      writer->task_queue.Push(std::move(f));
+      sequence += WriteBatchInternal::Count(writer->batches[i]);
+    }
+  }
+}
+
 Status WriteBatchInternal::SetContents(WriteBatch* b, const Slice& contents) {
   assert(contents.size() >= WriteBatchInternal::kHeader);
   b->rep_.assign(contents.data(), contents.size());

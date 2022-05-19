@@ -26,16 +26,11 @@
 #include "rocksdb/types.h"
 #include "rocksdb/write_batch.h"
 #include "util/autovector.h"
+#include "util/safe_queue.h"
 
 namespace rocksdb {
-struct CommitRequest {
-  uint64_t commit_lsn;
-  // We use applied to check whether this writer has applied to memtable.
-  std::atomic<bool> applied;
-  // protected by RequestQueue::commit_mu_
-  bool committed;
-  CommitRequest() : commit_lsn(0), applied(false), committed(false) {}
-};
+
+struct CommitRequest;
 
 class RequestQueue {
  public:
@@ -139,6 +134,7 @@ class WriteThread {
   // Information kept for every waiting writer.
   struct Writer {
     WriteBatch* batch;
+    std::vector<WriteBatch*> batches;
     bool sync;
     bool no_slowdown;
     bool disable_wal;
@@ -160,6 +156,8 @@ class WriteThread {
     std::aligned_storage<sizeof(std::condition_variable)>::type state_cv_bytes;
     Writer* link_older;  // read/write only before linking, or as leader
     Writer* link_newer;  // lazy, read/write only before linking, or as leader
+
+    SafeFuncQueue task_queue;
 
     Writer()
         : batch(nullptr),
@@ -190,6 +188,30 @@ class WriteThread {
           disable_wal(write_options.disableWAL),
           disable_memtable(_disable_memtable),
           batch_cnt(_batch_cnt),
+          pre_release_callback(_pre_release_callback),
+          log_used(0),
+          log_ref(_log_ref),
+          callback(_callback),
+          made_waitable(false),
+          state(STATE_INIT),
+          write_group(nullptr),
+          request(nullptr),
+          sequence(kMaxSequenceNumber),
+          link_older(nullptr),
+          link_newer(nullptr) {
+      batches.push_back(_batch);
+    }
+
+    Writer(const WriteOptions& write_options, std::vector<WriteBatch*>&& _batch,
+           WriteCallback* _callback, uint64_t _log_ref, bool _disable_memtable,
+           PreReleaseCallback* _pre_release_callback = nullptr)
+        : batch(nullptr),
+          batches(_batch),
+          sync(write_options.sync),
+          no_slowdown(write_options.no_slowdown),
+          disable_wal(write_options.disableWAL),
+          disable_memtable(_disable_memtable),
+          batch_cnt(0),
           pre_release_callback(_pre_release_callback),
           log_used(0),
           log_ref(_log_ref),
@@ -457,6 +479,15 @@ class WriteThread {
   // Set a follower in write_group to completed state and remove it from the
   // write group.
   void CompleteFollower(Writer* w, WriteGroup& write_group);
+};
+
+struct CommitRequest {
+  WriteThread::Writer* writer;
+  uint64_t commit_lsn;
+  std::atomic<bool> applied;
+  // protected by RequestQueue::commit_mu_
+  bool committed;
+  CommitRequest(WriteThread::Writer* w) : writer(w), commit_lsn(0), applied(false), committed(false) {}
 };
 
 }  // namespace rocksdb

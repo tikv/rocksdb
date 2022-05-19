@@ -154,6 +154,10 @@ class DBImpl : public DB {
   virtual Status Write(const WriteOptions& options,
                        WriteBatch* updates) override;
 
+  using DB::PebbleWrite;
+  virtual Status PebbleWrite(const WriteOptions& options,
+                             std::vector<WriteBatch*>&& updates) override;
+
   using DB::Get;
   virtual Status Get(const ReadOptions& options,
                      ColumnFamilyHandle* column_family, const Slice& key,
@@ -1025,7 +1029,7 @@ class DBImpl : public DB {
                    PreReleaseCallback* pre_release_callback = nullptr);
 
   Status PebbleWriteImpl(const WriteOptions& write_options,
-                         WriteBatch* my_batch,
+                         std::vector<WriteBatch*>&& my_batch,
                          WriteCallback* callback = nullptr,
                          uint64_t* log_used = nullptr, uint64_t log_ref = 0,
                          uint64_t* seq_used = nullptr);
