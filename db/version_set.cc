@@ -20,6 +20,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include <iostream>
+
 #include "db/blob/blob_fetcher.h"
 #include "db/blob/blob_file_cache.h"
 #include "db/blob/blob_file_reader.h"
@@ -755,6 +757,12 @@ Version::~Version() {
             ObsoleteFileInfo(f, cfd_->ioptions()->cf_paths[path_id].path));
       }
     }
+  }
+
+  // Copy new files to next version.
+  if (cfd_ && cfd_->dummy_versions() != next_) {
+    auto& next_vstorage = next_->storage_info_.new_files_;
+    next_vstorage.insert(next_vstorage.end(), storage_info_.new_files_.begin(), storage_info_.new_files_.end());
   }
 }
 
@@ -3055,6 +3063,7 @@ bool CompareCompensatedSizeDescending(const Fsize& first, const Fsize& second) {
 } // anonymous namespace
 
 void VersionStorageInfo::AddFile(int level, FileMetaData* f, bool newly_added) {
+  std::cout << "AddFile level=" << level << " number=" << f->fd.GetNumber() << " new=" << newly_added << std::endl;
   auto& level_files = files_[level];
   level_files.push_back(f);
 

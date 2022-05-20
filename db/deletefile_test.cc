@@ -417,6 +417,7 @@ TEST_F(DeleteFileTest, BackgroundPurgeTestMultipleJobs) {
   SetOptions(&options);
   Destroy(options);
   options.create_if_missing = true;
+  options.disable_auto_compactions = true;
   Reopen(options);
 
   std::string first("0"), last("999999");
@@ -427,14 +428,21 @@ TEST_F(DeleteFileTest, BackgroundPurgeTestMultipleJobs) {
 
   // We keep an iterator alive
   CreateTwoLevels();
+  std::cout << "----" << std::endl;
   ReadOptions read_options;
   read_options.background_purge_on_iterator_cleanup = true;
   Iterator* itr1 = db_->NewIterator(read_options);
+  std::cout << "----" << std::endl;
   ASSERT_OK(itr1->status());
+  CheckFileTypeCounts(dbname_, 0, 2, 1);
   CreateTwoLevels();
+  std::cout << "----" << std::endl;
   Iterator* itr2 = db_->NewIterator(read_options);
+  std::cout << "----" << std::endl;
   ASSERT_OK(itr2->status());
+  CheckFileTypeCounts(dbname_, 0, 4, 1);
   ASSERT_OK(db_->CompactRange(compact_options, &first_slice, &last_slice));
+  std::cout << "----" << std::endl;
   // 5 sst files after 2 compactions with 2 live iterators
   CheckFileTypeCounts(dbname_, 0, 5, 1);
 
