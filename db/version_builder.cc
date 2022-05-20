@@ -284,8 +284,7 @@ class VersionBuilder::Rep {
   }
 
   void UnrefFile(FileMetaData* f) {
-    f->refs--;
-    if (f->refs <= 0) {
+    if (f->Unref()) {
       if (f->table_reader_handle) {
         assert(table_cache_ != nullptr);
         table_cache_->ReleaseHandle(f->table_reader_handle);
@@ -777,7 +776,11 @@ class VersionBuilder::Rep {
     }
 
     FileMetaData* const f = new FileMetaData(meta);
-    f->refs = 1;
+    f->Ref();
+    FileMetaData* base_f = base_vstorage_->GetFileMetaDataByNumber(file_number);
+    if (base_f != nullptr) {
+      base_f->ShareRefWith(f);
+    }
 
     auto& add_files = level_state.added_files;
     assert(add_files.find(file_number) == add_files.end());

@@ -98,11 +98,13 @@ bool DBImpl::IsFileDeletionsEnabled() const {
   return 0 == disable_delete_obsolete_files_;
 }
 
-// * Returns the list of live files in 'sst_live' and 'blob_live'.
 // If it's doing full scan:
+// * Returns the list of live files in 'sst_live' and 'blob_live'.
 // * Returns the list of all files in the filesystem in
 // 'full_scan_candidate_files'.
-// Otherwise, gets obsolete files from VersionSet.
+// Otherwise:
+// * Gets obsolete files from VersionSet.
+//
 // no_full_scan = true -- never do the full scan using GetChildren()
 // force = false -- don't force the full scan, except every
 //  mutable_db_options_.delete_obsolete_files_period_micros
@@ -166,8 +168,9 @@ void DBImpl::FindObsoleteFiles(JobContext* job_context, bool force,
   job_context->log_number = MinLogNumberToKeep();
   job_context->prev_log_number = versions_->prev_log_number();
 
-  versions_->AddLiveFiles(&job_context->sst_live, &job_context->blob_live);
   if (doing_the_full_scan) {
+    versions_->AddLiveFiles(&job_context->sst_live, &job_context->blob_live);
+
     InfoLogPrefix info_log_prefix(!immutable_db_options_.db_log_dir.empty(),
                                   dbname_);
     std::set<std::string> paths;

@@ -185,8 +185,6 @@ struct FileMetaData {
   uint64_t raw_key_size = 0;    // total uncompressed key size.
   uint64_t raw_value_size = 0;  // total uncompressed value size.
 
-  int refs = 0;  // Reference count
-
   bool being_compacted = false;       // Is this file undergoing compaction?
   bool init_stats_from_file = false;  // true if the data-entry stats of this
                                       // file has initialized from file.
@@ -242,6 +240,33 @@ struct FileMetaData {
         min_timestamp(std::move(_min_timestamp)),
         max_timestamp(std::move(_max_timestamp)) {
     TEST_SYNC_POINT_CALLBACK("FileMetaData::FileMetaData", this);
+  }
+
+  void Ref() {
+    if (shared_refs_ == nullptr) {
+      ++refs_;
+    } else {
+      ++(*shared_refs_);
+    }
+  }
+
+  bool Unref() {
+    if (shared_refs_ == nullptr) {
+      assert(refs_ > 0);
+      return --refs_ == 0;
+    } else {
+      assert(*shared_refs_ > 0);
+      return --(*shared_refs_) == 0;
+    }
+  }
+
+  void ShareRefWith(FileMetaData* rhs) {
+    assert(rhs->shared_refs_ == nullptr);
+    if (shared_refs_ == nullptr) {
+      shared_refs_ = std::make_shared<int>(refs_);
+    }
+    (*shared_refs_) += rhs->refs_;
+    rhs->shared_refs_ = shared_refs_;
   }
 
   // REQUIRED: Keys must be given to the function in sorted order (it expects
@@ -329,6 +354,10 @@ struct FileMetaData {
     }
     return r;
   }
+
+ private:
+  int refs_ = 0;  // Reference count
+  std::shared_ptr<int> shared_refs_ = nullptr;
 };
 
 // A compressed copy of file meta data that just contain minimum data needed
