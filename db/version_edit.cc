@@ -40,7 +40,7 @@ void FileMetaData::UpdateBoundaries(const Slice& key, const Slice& value,
 
   if (value_type == kTypeBlobIndex) {
     BlobIndex blob_index;
-    const Status s = blob_index.DecodeFrom(value);
+    const Status s = blob_index.DecodeFrom(value, false /*panic*/);
     if (!s.ok()) {
       return;
     }
