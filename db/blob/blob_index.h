@@ -12,12 +12,6 @@
 #include "util/compression.h"
 #include "util/string_util.h"
 
-#ifdef NDEBUG
-#undef NDEBUG
-#include <cassert>
-#define NDEBUG
-#endif
-
 namespace ROCKSDB_NAMESPACE {
 
 // BlobIndex is a pointer to the blob and metadata of the blob. The index is
@@ -97,10 +91,7 @@ class BlobIndex {
     return compression_;
   }
 
-  Status DecodeFrom(Slice slice, bool panic = true) {
-    if (panic) {
-      assert(false);
-    }
+  Status DecodeFrom(Slice slice) {
     static const std::string kErrorMessage = "Error while decoding blob index";
     if (slice.size() == 0) {
       return Status::Corruption(kErrorMessage, "Empty slice");
@@ -196,8 +187,3 @@ class BlobIndex {
 };
 
 }  // namespace ROCKSDB_NAMESPACE
-
-#ifdef NDEBUG
-#undef assert
-#define assert(expr) (__ASSERT_VOID_CAST(0))
-#endif
