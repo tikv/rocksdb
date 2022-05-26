@@ -3284,7 +3284,7 @@ TEST_F(OptionsParserTest, IgnoreUnknownOptions) {
     bool should_ignore = true;
     if (case_id == 0) {
       // same version
-      should_ignore = true;
+      should_ignore = false;
       version_string =
           ToString(ROCKSDB_MAJOR) + "." + ToString(ROCKSDB_MINOR) + ".0";
     } else if (case_id == 1) {
