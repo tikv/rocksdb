@@ -354,6 +354,21 @@ class VersionStorageInfo {
   using BlobFiles = std::map<uint64_t, std::shared_ptr<BlobFileMetaData>>;
   const BlobFiles& GetBlobFiles() const { return blob_files_; }
 
+  // REQUIRES: This version has been saved (see VersionBuilder::SaveTo)
+  std::shared_ptr<BlobFileMetaData> GetBlobFileMetaData(
+      uint64_t blob_file_number) const {
+    const auto it = blob_files_.find(blob_file_number);
+
+    if (it == blob_files_.end()) {
+      return nullptr;
+    }
+
+    const auto& meta = it->second;
+    assert(meta);
+
+    return meta;
+  }
+
   uint64_t GetTotalBlobFileSize() const {
     uint64_t total_blob_bytes = 0;
 
