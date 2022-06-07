@@ -1253,6 +1253,10 @@ Status DBImpl::CompactFiles(const CompactionOptions& compact_options,
 
   // Perform CompactFiles
   TEST_SYNC_POINT("TestCompactFiles::IngestExternalFile2");
+  TEST_SYNC_POINT_CALLBACK(
+      "TestCompactFiles:PausingManualCompaction:3",
+      reinterpret_cast<void*>(
+          const_cast<std::atomic<int>*>(&manual_compaction_paused_)));
   {
     InstrumentedMutexLock l(&mutex_);
 
@@ -1408,7 +1412,7 @@ Status DBImpl::CompactFilesImpl(
       c->mutable_cf_options()->paranoid_file_checks,
       c->mutable_cf_options()->report_bg_io_stats, dbname_,
       &compaction_job_stats, Env::Priority::USER, io_tracer_,
-      &manual_compaction_paused_, nullptr, db_id_, db_session_id_,
+      kManualCompactionCanceledFalse_, db_id_, db_session_id_,
       c->column_family_data()->GetFullHistoryTsLow(), &blob_callback_);
 
   // Creating a compaction influences the compaction score because the score
@@ -1872,8 +1876,7 @@ Status DBImpl::RunManualCompaction(
     // and `CompactRangeOptions::canceled` might not work well together.
     while (bg_bottom_compaction_scheduled_ > 0 ||
            bg_compaction_scheduled_ > 0) {
-      if (manual_compaction_paused_ > 0 ||
-          (manual.canceled != nullptr && *manual.canceled == true)) {
+      if (manual_compaction_paused_ > 0 || manual.canceled == true) {
         // Pretend the error came from compaction so the below cleanup/error
         // handling code can process it.
         manual.done = true;
@@ -2430,9 +2433,17 @@ Status DBImpl::EnableAutoCompaction(
   return s;
 }
 
+// NOTE: Calling DisableManualCompaction() may overwrite the
+// user-provided canceled variable in CompactRangeOptions
 void DBImpl::DisableManualCompaction() {
   InstrumentedMutexLock l(&mutex_);
   manual_compaction_paused_.fetch_add(1, std::memory_order_release);
+
+  // Mark the canceled as true when the cancellation is triggered by
+  // manual_compaction_paused (may overwrite user-provided `canceled`)
+  for (const auto& manual_compaction : manual_compaction_dequeue_) {
+    manual_compaction->canceled = true;
+  }
 
   // Wake up manual compactions waiting to start.
   bg_cv_.SignalAll();
@@ -2446,6 +2457,11 @@ void DBImpl::DisableManualCompaction() {
   }
 }
 
+// NOTE: In contrast to DisableManualCompaction(), calling
+// EnableManualCompaction() does NOT overwrite the user-provided *canceled
+// variable to be false since there is NO CHANCE a canceled compaction
+// is uncanceled. In other words, a canceled compaction must have been
+// dropped out of the manual compaction queue, when we disable it.
 void DBImpl::EnableManualCompaction() {
   InstrumentedMutexLock l(&mutex_);
   assert(manual_compaction_paused_ > 0);
@@ -3094,10 +3110,7 @@ Status DBImpl::BackgroundCompaction(bool* made_progress,
     if (shutting_down_.load(std::memory_order_acquire)) {
       status = Status::ShutdownInProgress();
     } else if (is_manual &&
-               manual_compaction_paused_.load(std::memory_order_acquire) > 0) {
-      status = Status::Incomplete(Status::SubCode::kManualCompactionPaused);
-    } else if (is_manual && manual_compaction->canceled &&
-               manual_compaction->canceled->load(std::memory_order_acquire)) {
+               manual_compaction->canceled.load(std::memory_order_acquire)) {
       status = Status::Incomplete(Status::SubCode::kManualCompactionPaused);
     }
   } else {
@@ -3414,6 +3427,7 @@ Status DBImpl::BackgroundCompaction(bool* made_progress,
     GetSnapshotContext(job_context, &snapshot_seqs,
                        &earliest_write_conflict_snapshot, &snapshot_checker);
     assert(is_snapshot_supported_ || snapshots_.empty());
+
     CompactionJob compaction_job(
         job_context->job_id, c.get(), immutable_db_options_,
         mutable_db_options_, file_options_for_compaction_, versions_.get(),
@@ -3426,9 +3440,9 @@ Status DBImpl::BackgroundCompaction(bool* made_progress,
         c->mutable_cf_options()->paranoid_file_checks,
         c->mutable_cf_options()->report_bg_io_stats, dbname_,
         &compaction_job_stats, thread_pri, io_tracer_,
-        is_manual ? &manual_compaction_paused_ : nullptr,
-        is_manual ? manual_compaction->canceled : nullptr, db_id_,
-        db_session_id_, c->column_family_data()->GetFullHistoryTsLow(),
+        is_manual ? manual_compaction->canceled
+                  : kManualCompactionCanceledFalse_,
+        db_id_, db_session_id_, c->column_family_data()->GetFullHistoryTsLow(),
         &blob_callback_);
     compaction_job.Prepare();
 

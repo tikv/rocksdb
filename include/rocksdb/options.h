@@ -1785,6 +1785,13 @@ struct CompactRangeOptions {
   // Cancellation can be delayed waiting on automatic compactions when used
   // together with `exclusive_manual_compaction == true`.
   std::atomic<bool>* canceled = nullptr;
+  // NOTE: Calling DisableManualCompaction() overwrites the uer-provided
+  // canceled variable in CompactRangeOptions.
+  // Typically, when CompactRange is being called in one thread (t1) with
+  // canceled = false, and DisableManualCompaction is being called in the
+  // other thread (t2), manual compaction is disabled normally, even if the
+  // compaction iterator may still scan a few items before *canceled is
+  // set to true
 };
 
 // IngestExternalFileOptions is used by IngestExternalFile()

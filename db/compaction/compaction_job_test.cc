@@ -352,6 +352,7 @@ class CompactionJobTestBase : public testing::Test {
     SnapshotChecker* snapshot_checker = nullptr;
     ASSERT_TRUE(full_history_ts_low_.empty() ||
                 ucmp_->timestamp_size() == full_history_ts_low_.size());
+    const std::atomic<bool> kManualCompactionCanceledFalse{false};
     CompactionJob compaction_job(
         0, &compaction, db_options_, mutable_db_options_, env_options_,
         versions_.get(), &shutting_down_, preserve_deletes_seqnum_, &log_buffer,
@@ -359,8 +360,8 @@ class CompactionJobTestBase : public testing::Test {
         earliest_write_conflict_snapshot, snapshot_checker, table_cache_,
         &event_logger, false, false, dbname_, &compaction_job_stats_,
         Env::Priority::USER, nullptr /* IOTracer */,
-        /*manual_compaction_paused=*/nullptr,
-        /*manual_compaction_canceled=*/nullptr, /*db_id=*/"",
+        /*manual_compaction_canceled=*/kManualCompactionCanceledFalse,
+        /*db_id=*/"",
         /*db_session_id=*/"", full_history_ts_low_);
     VerifyInitializationOfCompactionJobStats(compaction_job_stats_);
 

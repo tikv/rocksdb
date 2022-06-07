@@ -28,22 +28,20 @@ CompactionIterator::CompactionIterator(
     bool report_detailed_time, bool expect_valid_internal_key,
     CompactionRangeDelAggregator* range_del_agg,
     BlobFileBuilder* blob_file_builder, bool allow_data_in_errors,
+    const std::atomic<bool>& manual_compaction_canceled,
     const Compaction* compaction, const CompactionFilter* compaction_filter,
     const std::atomic<bool>* shutting_down,
     const SequenceNumber preserve_deletes_seqnum,
-    const std::atomic<int>* manual_compaction_paused,
-    const std::atomic<bool>* manual_compaction_canceled,
     const std::shared_ptr<Logger> info_log,
     const std::string* full_history_ts_low)
     : CompactionIterator(
           input, cmp, merge_helper, last_sequence, snapshots,
           earliest_write_conflict_snapshot, snapshot_checker, env,
           report_detailed_time, expect_valid_internal_key, range_del_agg,
-          blob_file_builder, allow_data_in_errors,
+          blob_file_builder, allow_data_in_errors, manual_compaction_canceled,
           std::unique_ptr<CompactionProxy>(
               compaction ? new RealCompaction(compaction) : nullptr),
-          compaction_filter, shutting_down, preserve_deletes_seqnum,
-          manual_compaction_paused, manual_compaction_canceled, info_log,
+          compaction_filter, shutting_down, preserve_deletes_seqnum, info_log,
           full_history_ts_low) {}
 
 CompactionIterator::CompactionIterator(
@@ -54,12 +52,11 @@ CompactionIterator::CompactionIterator(
     bool report_detailed_time, bool expect_valid_internal_key,
     CompactionRangeDelAggregator* range_del_agg,
     BlobFileBuilder* blob_file_builder, bool allow_data_in_errors,
+    const std::atomic<bool>& manual_compaction_canceled,
     std::unique_ptr<CompactionProxy> compaction,
     const CompactionFilter* compaction_filter,
     const std::atomic<bool>* shutting_down,
     const SequenceNumber preserve_deletes_seqnum,
-    const std::atomic<int>* manual_compaction_paused,
-    const std::atomic<bool>* manual_compaction_canceled,
     const std::shared_ptr<Logger> info_log,
     const std::string* full_history_ts_low)
     : input_(input, cmp,
@@ -78,7 +75,6 @@ CompactionIterator::CompactionIterator(
       compaction_(std::move(compaction)),
       compaction_filter_(compaction_filter),
       shutting_down_(shutting_down),
-      manual_compaction_paused_(manual_compaction_paused),
       manual_compaction_canceled_(manual_compaction_canceled),
       preserve_deletes_seqnum_(preserve_deletes_seqnum),
       info_log_(info_log),
