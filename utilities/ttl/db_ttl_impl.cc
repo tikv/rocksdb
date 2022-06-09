@@ -267,7 +267,7 @@ Status DBWithTTLImpl::Merge(const WriteOptions& options,
   return Write(options, &batch);
 }
 
-Status DBWithTTLImpl::Write(const WriteOptions& opts, WriteBatch* updates) {
+Status DBWithTTLImpl::Write(const WriteOptions& opts, WriteBatch* updates, uint64_t* seq) {
   class Handler : public WriteBatch::Handler {
    public:
     explicit Handler(Env* env) : env_(env) {}
@@ -311,7 +311,7 @@ Status DBWithTTLImpl::Write(const WriteOptions& opts, WriteBatch* updates) {
   if (!handler.batch_rewrite_status.ok()) {
     return handler.batch_rewrite_status;
   } else {
-    return db_->Write(opts, &(handler.updates_ttl));
+    return db_->Write(opts, &(handler.updates_ttl), seq);
   }
 }
 
