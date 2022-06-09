@@ -11,6 +11,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <string>
