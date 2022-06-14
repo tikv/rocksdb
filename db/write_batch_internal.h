@@ -196,11 +196,10 @@ class WriteBatchInternal {
                            bool seq_per_batch = false, size_t batch_cnt = 0,
                            bool batch_per_txn = true);
 
-  static void AsyncInsertInto(WriteThread::Writer* writer,
-                              SequenceNumber sequence,
-                              ColumnFamilySet* version_set,
-                              FlushScheduler* flush_scheduler,
-                              bool ignore_missing_column_families, DB* db);
+  static Status InsertInto(
+      WriteThread::Writer* writer, const WriteBatch* batch,
+      ColumnFamilySet* version_set, FlushScheduler* flush_scheduler,
+      bool ignore_missing_column_families, DB* db);
 
   static Status Append(WriteBatch* dst, const WriteBatch* src,
                        const bool WAL_only = false);

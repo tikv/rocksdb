@@ -217,7 +217,7 @@ TEST_P(DBWriteTest, MultiThreadWrite) {
               }
               batches.push_back(batch);
             }
-            dbfull()->PebbleWrite(opt, std::move(batches));
+            dbfull()->MultiBatchWrite(opt, std::move(batches));
           }
         },
         t));

@@ -154,9 +154,9 @@ class DBImpl : public DB {
   virtual Status Write(const WriteOptions& options,
                        WriteBatch* updates) override;
 
-  using DB::PebbleWrite;
-  virtual Status PebbleWrite(const WriteOptions& options,
-                             std::vector<WriteBatch*>&& updates) override;
+  using DB::MultiBatchWrite;
+  virtual Status MultiBatchWrite(const WriteOptions& options,
+                                 std::vector<WriteBatch*>&& updates) override;
 
   using DB::Get;
   virtual Status Get(const ReadOptions& options,

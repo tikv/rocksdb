@@ -381,8 +381,8 @@ class DB {
   // Note: consider setting options.sync = true.
   virtual Status Write(const WriteOptions& options, WriteBatch* updates) = 0;
 
-  virtual Status PebbleWrite(const WriteOptions& /*options*/,
-                             std::vector<WriteBatch*>&& /*updates*/) {
+  virtual Status MultiBatchWrite(const WriteOptions& /*options*/,
+                                 std::vector<WriteBatch*>&& /*updates*/) {
     return Status::NotSupported();
   }
 
