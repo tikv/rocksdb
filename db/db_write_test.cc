@@ -189,7 +189,7 @@ TEST_P(DBWriteTest, MultiThreadWrite) {
   Options options = GetOptions();
   std::unique_ptr<FaultInjectionTestEnv> mock_env(
       new FaultInjectionTestEnv(env_));
-  if (!options.enable_pipelined_commit) {
+  if (!options.enable_multi_batch_write) {
     return;
   }
   constexpr int kNumThreads = 4;
@@ -249,7 +249,7 @@ INSTANTIATE_TEST_CASE_P(DBWriteTestInstance, DBWriteTest,
                         testing::Values(DBTestBase::kDefault,
                                         DBTestBase::kConcurrentWALWrites,
                                         DBTestBase::kPipelinedWrite,
-                                        DBTestBase::kCommitPipeline));
+                                        DBTestBase::kMultiBatchWrite));
 
 }  // namespace rocksdb
 

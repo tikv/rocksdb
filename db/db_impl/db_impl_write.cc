@@ -66,7 +66,7 @@ Status DBImpl::WriteWithCallback(const WriteOptions& write_options,
 }
 #endif  // ROCKSDB_LITE
 
-void DBImpl::PebbleWriteCommit(CommitRequest* request) {
+void DBImpl::MultiBatchWriteCommit(CommitRequest* request) {
   write_thread_.ExitWaitSequenceCommit(request, &versions_->last_sequence_);
   size_t pending_cnt = pending_memtable_writes_.fetch_sub(1) - 1;
   if (pending_cnt == 0) {
@@ -80,18 +80,50 @@ void DBImpl::PebbleWriteCommit(CommitRequest* request) {
 }
 
 Status DBImpl::MultiBatchWrite(const WriteOptions& options,
-                           std::vector<WriteBatch*>&& updates) {
-  if (immutable_db_options_.enable_pipelined_commit) {
-    return PebbleWriteImpl(options, std::move(updates), nullptr, nullptr);
+                               std::vector<WriteBatch*>&& updates) {
+  if (immutable_db_options_.enable_multi_batch_write) {
+    return MultiBatchWriteImpl(options, std::move(updates), nullptr, nullptr);
   } else {
     return Status::NotSupported();
   }
 }
 
-Status DBImpl::PebbleWriteImpl(const WriteOptions& write_options,
-                               std::vector<WriteBatch*>&& my_batch,
-                               WriteCallback* callback, uint64_t* log_used,
-                               uint64_t log_ref, uint64_t* seq_used) {
+// In this way, RocksDB will apply WriteBatch to memtable out of order but commit
+// them in order. (We borrow the idea from:
+// https://github.com/cockroachdb/pebble/blob/master/docs/rocksdb.md#commit-pipeline.
+// On this basis, we split the WriteBatch into smaller-grained WriteBatch vector,
+// and when the WriteBatch sizes of multiple writers are not balanced, writers
+// that finish first need to help the front writer finish writing the remaining
+// WriteBatch to increase cpu usage and reduce overall latency)
+//
+// More details:
+//
+//    Request Queue        WriteBatchVec
+//   +--------------+             +---------------------+
+//   | Front Writer |      ->     | WB1 | WB2 | WB3|... |
+//   +--------------+    +-----+  +---------------------+
+//   | Writer 2     | -> | WB1 |
+//   +--------------+    +-----+  +-----------+
+//   | Writer 3     |      ->     | WB1 | WB2 |
+//   +--------------+     +---+   +-----------+
+//   | ...          | ->  |...|
+//   +--------------+     +---+
+//
+// 1.   Mutli Writers enter the `Request queue` to determine the commit order.
+// 2.   Then all writers write to the memtable in parallel (Each thread iterates over
+//      its own write batch vector).
+// 3.1. If the Front Writer finishes writing and enters the commit phase first, it will
+//      pop itself from the `Request queue`, then this function will return to its caller,
+//      and the Writer 2 becomes the new front.
+// 3.2. If the Writer 2 or 3 finishes writing and enters the commit phase first, it will
+//      help the front writer complete its pending WBs one by one until all done and wake
+//      up the Front Writer, then the Front Writer will traverse and pop completed writers,
+//      the first unfinished writer encountered will become the new front.
+//
+Status DBImpl::MultiBatchWriteImpl(const WriteOptions& write_options,
+                                   std::vector<WriteBatch*>&& my_batch,
+                                   WriteCallback* callback, uint64_t* log_used,
+                                   uint64_t log_ref, uint64_t* seq_used) {
   PERF_TIMER_GUARD(write_pre_and_post_process_time);
   StopWatch write_sw(env_, immutable_db_options_.statistics.get(), DB_WRITE);
   WriteThread::Writer writer(write_options, std::move(my_batch), callback, log_ref, false);
@@ -206,17 +238,16 @@ Status DBImpl::PebbleWriteImpl(const WriteOptions& write_options,
     stats->AddDBStats(InternalStats::kIntStatsNumKeysWritten, total_count);
     RecordTick(stats_, NUMBER_KEYS_WRITTEN, total_count);
 
-    while (writer.multi_batch_writer.ConsumeOne(&writer));
+    while (writer.ConsumeOne());
+    MultiBatchWriteCommit(writer.request);
 
     WriteStatusCheck(writer.status);
     if (!writer.FinalStatus().ok()) {
-      std::lock_guard<std::mutex> guard(writer.StateMutex());
       writer.status = writer.FinalStatus();
     }
-    PebbleWriteCommit(writer.request);
   } else if (writer.request->commit_lsn != 0) {
     writer.multi_batch_writer.pending_wb_cnt.store(0);
-    PebbleWriteCommit(writer.request);
+    MultiBatchWriteCommit(writer.request);
   } else {
     writer.multi_batch_writer.pending_wb_cnt.store(0);
   }
@@ -249,7 +280,7 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
     return Status::NotSupported(
         "pipelined_writes is not compatible with concurrent prepares");
   }
-  if (two_write_queues_ && immutable_db_options_.enable_pipelined_commit) {
+  if (two_write_queues_ && immutable_db_options_.enable_multi_batch_write) {
     return Status::NotSupported(
         "pipelined_writes is not compatible with concurrent prepares");
   }
@@ -313,11 +344,11 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
     return status;
   }
 
-  if (immutable_db_options_.enable_pipelined_commit) {
+  if (immutable_db_options_.enable_multi_batch_write) {
     std::vector<WriteBatch*> updates(1);
     updates[0] = my_batch;
-    return PebbleWriteImpl(write_options, std::move(updates), callback, log_used, log_ref,
-                           seq_used);
+    return MultiBatchWriteImpl(write_options, std::move(updates), callback, log_used, log_ref,
+                               seq_used);
   }
 
   if (immutable_db_options_.enable_pipelined_write) {

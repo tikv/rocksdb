@@ -785,11 +785,11 @@ void RequestQueue::CommitSequenceAwait(CommitRequest* req,
     // When the subsequent commit finds that the front writer has not yet
     // submitted, it will help the front writer to perform some tasks
     auto front = requests_.front()->writer;
-    if (front->multi_batch_writer.pending_wb_cnt.load(std::memory_order_acquire) > 1) {
-      auto claimed = front->multi_batch_writer.claimed_cnt.fetch_add(1, std::memory_order_acquire);
+    if (front->ConsumableOnOtherThreads()) {
+      auto claimed = front->Claim();
       if (claimed < front->multi_batch_writer.batches.size()) {
         guard.unlock();
-        front->multi_batch_writer.ConsumeOne(front, claimed);
+        front->ConsumeOne(claimed);
         guard.lock();
         continue;
       }
@@ -804,11 +804,10 @@ void RequestQueue::CommitSequenceAwait(CommitRequest* req,
   } else if (requests_.front() == req) {
     // Because the front writer can return after committing,
     // so just wait for the help writers to finish
-    while (requests_.front()->writer->multi_batch_writer.pending_wb_cnt.load(std::memory_order_acquire) > 0) {
+    while (requests_.front()->writer->HasPendingWB()) {
       commit_cv_.wait(guard);
     }
-    while (!requests_.empty() &&
-           requests_.front()->writer->multi_batch_writer.pending_wb_cnt.load(std::memory_order_acquire) == 0) {
+    while (!requests_.empty() && !requests_.front()->writer->HasPendingWB()) {
       CommitRequest* current = requests_.front();
       commit_sequence->store(current->commit_lsn, std::memory_order_release);
       current->committed = true;
@@ -818,24 +817,28 @@ void RequestQueue::CommitSequenceAwait(CommitRequest* req,
   }
 }
 
-void WriteThread::MultiBatchWriter::ConsumeOne(Writer* writer, size_t claimed) {
-  assert(claimed < batches.size());
+void WriteThread::Writer::ConsumeOne(size_t claimed) {
+  assert(claimed < multi_batch_writer.batches.size());
   Status s = WriteBatchInternal::InsertInto(
-      writer, batches[claimed], version_set, flush_scheduler,
-      ignore_missing_column_families, db);
+      this, multi_batch_writer.batches[claimed],
+      multi_batch_writer.version_set,
+      multi_batch_writer.flush_scheduler,
+      multi_batch_writer.ignore_missing_column_families,
+      multi_batch_writer.db);
   if (!s.ok()) {
-    std::lock_guard<std::mutex> guard(writer->StateMutex());
-    writer->status = s;
+    std::lock_guard<std::mutex> guard(this->StateMutex());
+    this->status = s;
   }
-  pending_wb_cnt--;
+  multi_batch_writer.pending_wb_cnt--;
 }
 
-bool WriteThread::MultiBatchWriter::ConsumeOne(WriteThread::Writer* writer) {
-  auto claimed = claimed_cnt.fetch_add(1, std::memory_order_acquire);
-  if (claimed < batches.size()) {
-    ConsumeOne(writer, claimed);
+bool WriteThread::Writer::ConsumeOne() {
+  auto claimed = Claim();
+  if (claimed < multi_batch_writer.batches.size()) {
+    ConsumeOne(claimed);
     return true;
   }
   return false;
 }
+
 }  // namespace rocksdb

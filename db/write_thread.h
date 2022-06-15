@@ -166,9 +166,6 @@ class WriteThread {
       ignore_missing_column_families = _ignore_missing_column_families;
       db = _db;
     }
-
-    void ConsumeOne(Writer* writer, size_t claimed);
-    bool ConsumeOne(Writer* writer);
   };
 
   // Information kept for every waiting writer.
@@ -330,6 +327,21 @@ class WriteThread {
                  static_cast<void*>(&state_cv_bytes));
     }
 
+    bool ConsumableOnOtherThreads() {
+      return multi_batch_writer.pending_wb_cnt.load(std::memory_order_acquire) > 1;
+    }
+
+    size_t Claim() {
+      return multi_batch_writer.claimed_cnt.fetch_add(1, std::memory_order_acquire);
+    }
+
+    bool HasPendingWB() {
+      return multi_batch_writer.pending_wb_cnt.load(std::memory_order_acquire) > 0;
+    }
+
+    void ConsumeOne(size_t claimed);
+
+    bool ConsumeOne();
   };
 
   struct AdaptationContext {
