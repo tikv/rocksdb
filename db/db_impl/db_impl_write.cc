@@ -165,9 +165,7 @@ Status DBImpl::MultiBatchWriteImpl(const WriteOptions& write_options,
             size_t count = WriteBatchInternal::Count(w->multi_batch_writer.batches);
             if (count > 0) {
               auto sequence = w->sequence;
-              auto pending_wb_cnt = w->multi_batch_writer.pending_wb_cnt.load();
-              for (size_t i = 0; i < pending_wb_cnt; i++) {
-                auto b = w->multi_batch_writer.batches[i];
+              for (auto b: w->multi_batch_writer.batches) {
                 WriteBatchInternal::SetSequence(b, sequence);
                 sequence += WriteBatchInternal::Count(b);
               }
