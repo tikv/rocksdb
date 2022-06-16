@@ -221,6 +221,8 @@ Status DBImpl::MultiBatchWriteImpl(const WriteOptions& write_options,
     }
     if (writer.status.ok()) {
       pending_memtable_writes_ += memtable_write_cnt;
+    } else {
+      writer.multi_batch_writer.pending_wb_cnt.store(0);
     }
     write_thread_.ExitAsBatchGroupLeader(wal_write_group, writer.status);
   }
@@ -246,7 +248,6 @@ Status DBImpl::MultiBatchWriteImpl(const WriteOptions& write_options,
       writer.status = writer.FinalStatus();
     }
   } else if (writer.request->commit_lsn != 0) {
-    writer.multi_batch_writer.pending_wb_cnt.store(0);
     MultiBatchWriteCommit(writer.request);
   } else {
     writer.multi_batch_writer.pending_wb_cnt.store(0);
