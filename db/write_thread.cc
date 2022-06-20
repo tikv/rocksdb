@@ -802,9 +802,9 @@ void RequestQueue::CommitSequenceAwait(CommitRequest* req,
   if (req->committed) {
     return;
   } else if (requests_.front() == req) {
-    // Because the front writer can return after committing,
-    // so just wait for the help writers to finish
-    while (requests_.front()->writer->HasPendingWB()) {
+    // As the front writer, some write tasks can be stolen by other writers.
+    // Wait for them to finish.
+    while (req->HasPendingWB()) {
       commit_cv_.wait(guard);
     }
     while (!requests_.empty() && !requests_.front()->writer->HasPendingWB()) {
