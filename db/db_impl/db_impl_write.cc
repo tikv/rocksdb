@@ -248,6 +248,9 @@ Status DBImpl::MultiBatchWriteImpl(const WriteOptions& write_options,
       writer.status = writer.FinalStatus();
     }
   } else if (writer.request->commit_lsn != 0) {
+    // When the leader fails to write WAL, all writers in the group need to cancel
+    // the write to memtable.
+    writer.ResetPendingWBCnt();
     MultiBatchWriteCommit(writer.request);
   } else {
     writer.ResetPendingWBCnt();

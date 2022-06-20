@@ -804,7 +804,7 @@ void RequestQueue::CommitSequenceAwait(CommitRequest* req,
   } else if (requests_.front() == req) {
     // As the front writer, some write tasks can be stolen by other writers.
     // Wait for them to finish.
-    while (req->HasPendingWB()) {
+    while (req->writer->HasPendingWB()) {
       commit_cv_.wait(guard);
     }
     while (!requests_.empty() && !requests_.front()->writer->HasPendingWB()) {
@@ -823,7 +823,7 @@ void WriteThread::Writer::ConsumeOne(size_t claimed) {
   Status s = WriteBatchInternal::InsertInto(
       multi_batch.batches[claimed], &memtables, multi_batch.flush_scheduler,
       multi_batch.ignore_missing_column_families, 0, this->log_ref,
-      multi_batch.db);
+      multi_batch.db, true);
   if (!s.ok()) {
     std::lock_guard<std::mutex> guard(this->StateMutex());
     this->status = s;
