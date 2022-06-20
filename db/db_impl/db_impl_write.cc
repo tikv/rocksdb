@@ -162,15 +162,15 @@ Status DBImpl::MultiBatchWriteImpl(const WriteOptions& write_options,
         if (w->CheckCallback(this)) {
           if (w->ShouldWriteToMemtable()) {
             w->sequence = next_sequence;
-            size_t count = WriteBatchInternal::Count(w->multi_batch_writer.batches);
+            size_t count = WriteBatchInternal::Count(w->multi_batch.batches);
             if (count > 0) {
               auto sequence = w->sequence;
-              for (auto b: w->multi_batch_writer.batches) {
+              for (auto b: w->multi_batch.batches) {
                 WriteBatchInternal::SetSequence(b, sequence);
                 sequence += WriteBatchInternal::Count(b);
               }
-              w->multi_batch_writer.SetContext(versions_->GetColumnFamilySet(), &flush_scheduler_,
-                                               write_options.ignore_missing_column_families, this);
+              w->multi_batch.SetContext(versions_->GetColumnFamilySet(), &flush_scheduler_,
+                                        write_options.ignore_missing_column_families, this);
               w->request->commit_lsn = next_sequence + count - 1;
               write_thread_.EnterCommitQueue(w->request);
             }
@@ -179,7 +179,7 @@ Status DBImpl::MultiBatchWriteImpl(const WriteOptions& write_options,
             memtable_write_cnt++;
           }
           total_byte_size = WriteBatchInternal::AppendedByteSize(
-              total_byte_size, WriteBatchInternal::ByteSize(w->multi_batch_writer.batches));
+              total_byte_size, WriteBatchInternal::ByteSize(w->multi_batch.batches));
         }
       }
       if (writer.disable_wal) {
@@ -220,7 +220,9 @@ Status DBImpl::MultiBatchWriteImpl(const WriteOptions& write_options,
     if (writer.status.ok()) {
       pending_memtable_writes_ += memtable_write_cnt;
     } else {
-      writer.multi_batch_writer.pending_wb_cnt.store(0);
+      // The `pending_wb_cnt` must be reset to avoid other writers helping
+      // the front writer write its WBs after it failed to write the WAL.
+      writer.ResetPendingWBCnt();
     }
     write_thread_.ExitAsBatchGroupLeader(wal_write_group, writer.status);
   }
@@ -248,7 +250,7 @@ Status DBImpl::MultiBatchWriteImpl(const WriteOptions& write_options,
   } else if (writer.request->commit_lsn != 0) {
     MultiBatchWriteCommit(writer.request);
   } else {
-    writer.multi_batch_writer.pending_wb_cnt.store(0);
+    writer.ResetPendingWBCnt();
   }
   return writer.status;
 }
@@ -475,12 +477,12 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
       if (writer->CheckCallback(this)) {
         valid_batches += writer->batch_cnt;
         if (writer->ShouldWriteToMemtable()) {
-          total_count += WriteBatchInternal::Count(writer->multi_batch_writer.batches[0]);
-          parallel = parallel && !writer->multi_batch_writer.batches[0]->HasMerge();
+          total_count += WriteBatchInternal::Count(writer->multi_batch.batches[0]);
+          parallel = parallel && !writer->multi_batch.batches[0]->HasMerge();
         }
         total_byte_size = WriteBatchInternal::AppendedByteSize(
             total_byte_size,
-            WriteBatchInternal::ByteSize(writer->multi_batch_writer.batches[0]));
+            WriteBatchInternal::ByteSize(writer->multi_batch.batches[0]));
         if (writer->pre_release_callback) {
           pre_release_callback_cnt++;
         }
@@ -571,7 +573,7 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
           assert(writer->batch_cnt);
           next_sequence += writer->batch_cnt;
         } else if (writer->ShouldWriteToMemtable()) {
-          next_sequence += WriteBatchInternal::Count(writer->multi_batch_writer.batches[0]);
+          next_sequence += WriteBatchInternal::Count(writer->multi_batch.batches[0]);
         }
       }
     }
@@ -693,13 +695,13 @@ Status DBImpl::PipelinedWriteImpl(const WriteOptions& write_options,
         if (writer->CheckCallback(this)) {
           if (writer->ShouldWriteToMemtable()) {
             writer->sequence = next_sequence;
-            size_t count = WriteBatchInternal::Count(writer->multi_batch_writer.batches[0]);
+            size_t count = WriteBatchInternal::Count(writer->multi_batch.batches[0]);
             next_sequence += count;
             total_count += count;
           }
           total_byte_size = WriteBatchInternal::AppendedByteSize(
               total_byte_size,
-              WriteBatchInternal::ByteSize(writer->multi_batch_writer.batches[0]));
+              WriteBatchInternal::ByteSize(writer->multi_batch.batches[0]));
         }
       }
       if (w.disable_wal) {
@@ -896,7 +898,7 @@ Status DBImpl::WriteImplWALOnly(
     if (writer->CheckCallback(this)) {
       total_byte_size = WriteBatchInternal::AppendedByteSize(
           total_byte_size,
-          WriteBatchInternal::ByteSize(writer->multi_batch_writer.batches[0]));
+          WriteBatchInternal::ByteSize(writer->multi_batch.batches[0]));
       if (writer->pre_release_callback) {
         pre_release_callback_cnt++;
       }
@@ -1125,12 +1127,12 @@ WriteBatch* DBImpl::MergeBatch(const WriteThread::WriteGroup& write_group,
   auto* leader = write_group.leader;
   assert(!leader->disable_wal);  // Same holds for all in the batch group
   if (write_group.size == 1 && !leader->CallbackFailed() &&
-      leader->multi_batch_writer.batches.size() == 1 &&
-      leader->multi_batch_writer.batches[0]->GetWalTerminationPoint().is_cleared()) {
+      leader->multi_batch.batches.size() == 1 &&
+      leader->multi_batch.batches[0]->GetWalTerminationPoint().is_cleared()) {
     // we simply write the first WriteBatch to WAL if the group only
     // contains one batch, that batch should be written to the WAL,
     // and the batch is not wanting to be truncated
-    merged_batch = leader->multi_batch_writer.batches[0];
+    merged_batch = leader->multi_batch.batches[0];
     if (WriteBatchInternal::IsLatestPersistentState(merged_batch)) {
       *to_be_cached_state = merged_batch;
     }
@@ -1142,7 +1144,7 @@ WriteBatch* DBImpl::MergeBatch(const WriteThread::WriteGroup& write_group,
     merged_batch = tmp_batch;
     for (auto writer : write_group) {
       if (!writer->CallbackFailed()) {
-        for (auto b : writer->multi_batch_writer.batches) {
+        for (auto b : writer->multi_batch.batches) {
           Status s = WriteBatchInternal::Append(merged_batch, b,
                                                 /*WAL_only*/ true);
           // Always returns Status::OK.
@@ -1206,7 +1208,7 @@ Status DBImpl::WriteToWAL(const WriteThread::WriteGroup& write_group,
   StopWatch write_sw(env_, stats_, DB_WRITE_WAL_TIME);
   WriteBatch* merged_batch = MergeBatch(write_group, &tmp_batch_,
                                         &write_with_wal, &to_be_cached_state);
-  if (merged_batch == write_group.leader->multi_batch_writer.batches[0]) {
+  if (merged_batch == write_group.leader->multi_batch.batches[0]) {
     write_group.leader->log_used = logfile_number_;
   } else if (write_with_wal > 1) {
     for (auto writer : write_group) {
@@ -1281,7 +1283,7 @@ Status DBImpl::ConcurrentWriteToWAL(const WriteThread::WriteGroup& write_group,
   // We need to lock log_write_mutex_ since logs_ and alive_log_files might be
   // pushed back concurrently
   log_write_mutex_.Lock();
-  if (merged_batch == write_group.leader->multi_batch_writer.batches[0]) {
+  if (merged_batch == write_group.leader->multi_batch.batches[0]) {
     write_group.leader->log_used = logfile_number_;
   } else if (write_with_wal > 1) {
     for (auto writer : write_group) {
@@ -1331,7 +1333,7 @@ Status DBImpl::WriteRecoverableState() {
     WriteBatchInternal::SetSequence(&cached_recoverable_state_, seq + 1);
     auto status = WriteBatchInternal::InsertInto(
         &cached_recoverable_state_, column_family_memtables_.get(),
-        &flush_scheduler_, true, 0 /*recovery_log_number*/, this,
+        &flush_scheduler_, true, 0 /*recovery_log_number*/, 0 /*log_ref*/, this,
         false /* concurrent_memtable_writes */, &next_seq, &dont_care_bool,
         seq_per_batch_);
     auto last_seq = next_seq - 1;

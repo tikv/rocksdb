@@ -133,7 +133,7 @@ class WriteThread {
     Iterator end() const { return Iterator(nullptr, nullptr); }
   };
 
-  struct MultiBatchWriter {
+  struct MultiBatch {
     std::vector<WriteBatch*> batches;
     std::atomic<size_t> claimed_cnt;
     std::atomic<size_t> pending_wb_cnt;
@@ -142,7 +142,7 @@ class WriteThread {
     bool ignore_missing_column_families;
     DB *db;
 
-    MultiBatchWriter()
+    MultiBatch()
         : claimed_cnt(0),
           pending_wb_cnt(0),
           version_set(nullptr),
@@ -150,7 +150,7 @@ class WriteThread {
           ignore_missing_column_families(false),
           db(nullptr) {}
 
-    explicit MultiBatchWriter(std::vector<WriteBatch*>&& _batch)
+    explicit MultiBatch(std::vector<WriteBatch*>&& _batch)
         : batches(_batch),
           claimed_cnt(0),
           pending_wb_cnt(_batch.size()),
@@ -192,7 +192,7 @@ class WriteThread {
     Writer* link_older;  // read/write only before linking, or as leader
     Writer* link_newer;  // lazy, read/write only before linking, or as leader
 
-    MultiBatchWriter multi_batch_writer;
+    MultiBatch multi_batch;
 
     Writer()
         : sync(false),
@@ -232,8 +232,8 @@ class WriteThread {
           sequence(kMaxSequenceNumber),
           link_older(nullptr),
           link_newer(nullptr) {
-      multi_batch_writer.batches.push_back(_batch);
-      multi_batch_writer.pending_wb_cnt.fetch_add(1);
+      multi_batch.batches.push_back(_batch);
+      multi_batch.pending_wb_cnt.fetch_add(1, std::memory_order_acq_rel);
     }
 
     Writer(const WriteOptions& write_options, std::vector<WriteBatch*>&& _batch,
@@ -255,7 +255,7 @@ class WriteThread {
           sequence(kMaxSequenceNumber),
           link_older(nullptr),
           link_newer(nullptr),
-          multi_batch_writer(std::move(_batch)) {}
+          multi_batch(std::move(_batch)) {}
 
     ~Writer() {
       if (made_waitable) {
@@ -328,20 +328,31 @@ class WriteThread {
     }
 
     bool ConsumableOnOtherThreads() {
-      return multi_batch_writer.pending_wb_cnt.load(std::memory_order_acquire) > 1;
+      return multi_batch.pending_wb_cnt.load(std::memory_order_acquire) > 1;
     }
 
     size_t Claim() {
-      return multi_batch_writer.claimed_cnt.fetch_add(1, std::memory_order_acquire);
+      return multi_batch.claimed_cnt.fetch_add(1, std::memory_order_acq_rel);
     }
 
     bool HasPendingWB() {
-      return multi_batch_writer.pending_wb_cnt.load(std::memory_order_acquire) > 0;
+      return multi_batch.pending_wb_cnt.load(std::memory_order_acquire) > 0;
+    }
+
+    void ResetPendingWBCnt() {
+      multi_batch.pending_wb_cnt.store(0, std::memory_order_release);
+    }
+
+    bool ConsumeOne() {
+      auto claimed = Claim();
+      if (claimed < multi_batch.batches.size()) {
+        ConsumeOne(claimed);
+        return true;
+      }
+      return false;
     }
 
     void ConsumeOne(size_t claimed);
-
-    bool ConsumeOne();
   };
 
   struct AdaptationContext {
