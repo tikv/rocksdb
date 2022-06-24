@@ -229,8 +229,8 @@ class DBImpl : public DB {
                      const Slice& end_key, const Slice& ts) override;
 
   using DB::Write;
-  virtual Status Write(const WriteOptions& options,
-                       WriteBatch* updates) override;
+  virtual Status Write(const WriteOptions& options, WriteBatch* updates,
+                       uint64_t* seq) override;
 
   using DB::MultiBatchWrite;
   virtual Status MultiBatchWrite(const WriteOptions& options,

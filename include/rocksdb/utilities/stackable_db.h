@@ -258,8 +258,10 @@ class StackableDB : public DB {
     return db_->Merge(options, column_family, key, ts, value);
   }
 
-  virtual Status Write(const WriteOptions& opts, WriteBatch* updates) override {
-    return db_->Write(opts, updates);
+  using DB::Write;
+  virtual Status Write(const WriteOptions& opts, WriteBatch* updates,
+                       uint64_t* seq) override {
+    return db_->Write(opts, updates, seq);
   }
 
   using DB::NewIterator;
