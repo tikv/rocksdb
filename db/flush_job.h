@@ -38,6 +38,7 @@
 #include "rocksdb/listener.h"
 #include "rocksdb/memtablerep.h"
 #include "rocksdb/transaction_log.h"
+#include "rocksdb/types.h"
 #include "table/scoped_arena_iterator.h"
 #include "util/autovector.h"
 #include "util/stop_watch.h"
@@ -77,7 +78,7 @@ class FlushJob {
 
   // Require db_mutex held.
   // Once PickMemTable() is called, either Run() or Cancel() has to be called.
-  void PickMemTable();
+  SequenceNumber PickMemTable();
   Status Run(LogsWithPrepTracker* prep_tracker = nullptr,
              FileMetaData* file_meta = nullptr);
   void Cancel();

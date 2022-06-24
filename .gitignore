@@ -79,3 +79,6 @@ tp2/
 fbcode/
 fbcode
 buckifier/*.pyc
+
+.cache/
+.vscode/

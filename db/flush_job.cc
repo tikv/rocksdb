@@ -39,6 +39,7 @@
 #include "rocksdb/statistics.h"
 #include "rocksdb/status.h"
 #include "rocksdb/table.h"
+#include "rocksdb/types.h"
 #include "table/block_based/block.h"
 #include "table/block_based/block_based_table_factory.h"
 #include "table/merging_iterator.h"
@@ -160,14 +161,14 @@ void FlushJob::RecordFlushIOStats() {
   IOSTATS_RESET(bytes_written);
 }
 
-void FlushJob::PickMemTable() {
+SequenceNumber FlushJob::PickMemTable() {
   db_mutex_->AssertHeld();
   assert(!pick_memtable_called);
   pick_memtable_called = true;
   // Save the contents of the earliest memtable as a new Table
   cfd_->imm()->PickMemtablesToFlush(max_memtable_id_, &mems_);
   if (mems_.empty()) {
-    return;
+    return 0;
   }
 
   ReportFlushInputSize(mems_);
@@ -188,6 +189,7 @@ void FlushJob::PickMemTable() {
 
   base_ = cfd_->current();
   base_->Ref();  // it is likely that we do not need this reference
+  return mems_.back()->GetLargestSequenceNumber();
 }
 
 Status FlushJob::Run(LogsWithPrepTracker* prep_tracker,

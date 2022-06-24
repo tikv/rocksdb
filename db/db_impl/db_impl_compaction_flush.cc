@@ -18,6 +18,7 @@
 #include "monitoring/perf_context_imp.h"
 #include "monitoring/thread_status_updater.h"
 #include "monitoring/thread_status_util.h"
+#include "rocksdb/types.h"
 #include "test_util/sync_point.h"
 #include "util/concurrent_task_limiter_impl.h"
 
@@ -158,12 +159,12 @@ Status DBImpl::FlushMemTableToOutputFile(
   FileMetaData file_meta;
 
   TEST_SYNC_POINT("DBImpl::FlushMemTableToOutputFile:BeforePickMemtables");
-  flush_job.PickMemTable();
+  SequenceNumber largest_seqno = flush_job.PickMemTable();
   TEST_SYNC_POINT("DBImpl::FlushMemTableToOutputFile:AfterPickMemtables");
 
 #ifndef ROCKSDB_LITE
   // may temporarily unlock and lock the mutex.
-  NotifyOnFlushBegin(cfd, &file_meta, mutable_cf_options, job_context->job_id);
+  NotifyOnFlushBegin(cfd, &file_meta, mutable_cf_options, job_context->job_id, largest_seqno);
 #endif  // ROCKSDB_LITE
 
   Status s;
@@ -304,6 +305,7 @@ Status DBImpl::AtomicFlushMemTablesToOutputFiles(
   autovector<std::string> distinct_output_dir_paths;
   std::vector<std::unique_ptr<FlushJob>> jobs;
   std::vector<MutableCFOptions> all_mutable_cf_options;
+  std::vector<SequenceNumber> largest_seqnos;
   int num_cfs = static_cast<int>(cfds.size());
   all_mutable_cf_options.reserve(num_cfs);
   for (int i = 0; i < num_cfs; ++i) {
@@ -338,7 +340,8 @@ Status DBImpl::AtomicFlushMemTablesToOutputFiles(
         stats_, &event_logger_, mutable_cf_options.report_bg_io_stats,
         false /* sync_output_directory */, false /* write_manifest */,
         thread_pri));
-    jobs.back()->PickMemTable();
+    SequenceNumber largest_seqno =  jobs.back()->PickMemTable();
+    largest_seqnos.push_back(largest_seqno);
   }
 
   std::vector<FileMetaData> file_meta(num_cfs);
@@ -350,7 +353,8 @@ Status DBImpl::AtomicFlushMemTablesToOutputFiles(
     const MutableCFOptions& mutable_cf_options = all_mutable_cf_options.at(i);
     // may temporarily unlock and lock the mutex.
     NotifyOnFlushBegin(cfds[i], &file_meta[i], mutable_cf_options,
-                       job_context->job_id);
+                       job_context->job_id,
+                       largest_seqnos[i]);
   }
 #endif /* !ROCKSDB_LITE */
 
@@ -551,7 +555,8 @@ Status DBImpl::AtomicFlushMemTablesToOutputFiles(
 
 void DBImpl::NotifyOnFlushBegin(ColumnFamilyData* cfd, FileMetaData* file_meta,
                                 const MutableCFOptions& mutable_cf_options,
-                                int job_id) {
+                                int job_id,
+                                SequenceNumber largest_seqno) {
 #ifndef ROCKSDB_LITE
   if (immutable_db_options_.listeners.size() == 0U) {
     return;
@@ -581,7 +586,7 @@ void DBImpl::NotifyOnFlushBegin(ColumnFamilyData* cfd, FileMetaData* file_meta,
     info.triggered_writes_slowdown = triggered_writes_slowdown;
     info.triggered_writes_stop = triggered_writes_stop;
     info.smallest_seqno = file_meta->fd.smallest_seqno;
-    info.largest_seqno = file_meta->fd.largest_seqno;
+    info.largest_seqno = largest_seqno;
     info.flush_reason = cfd->GetFlushReason();
     for (auto listener : immutable_db_options_.listeners) {
       listener->OnFlushBegin(this, info);
