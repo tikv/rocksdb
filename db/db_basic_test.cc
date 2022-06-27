@@ -471,6 +471,8 @@ TEST_F(DBBasicTest, GoBackInTime) {
 }
 
 TEST_F(DBBasicTest, MergeNonMemory) {
+  const int files_per_instance = 10;
+
   Options options;
   options.create_if_missing = true;
   std::vector<ColumnFamilyDescriptor> column_families;
@@ -493,27 +495,44 @@ TEST_F(DBBasicTest, MergeNonMemory) {
     dbs.push_back(db);
     WriteOptions wopts;
     wopts.disableWAL = true;
-    ASSERT_OK(db->Put(wopts, handles[1], std::to_string(i), std::to_string(i)));
-    ASSERT_OK(db->Flush(FlushOptions(), handles[1]));
+    for (int j = 0; j < files_per_instance; ++j) {
+      ASSERT_OK(db->Put(wopts, handles[1],
+                        std::to_string(i) + "_" + std::to_string(j),
+                        std::to_string(i)));
+      ASSERT_OK(db->Flush(FlushOptions(), handles[1]));
+    }
   }
 
   auto path = test::PerThreadDBPath(env_, "merged");
   std::vector<ColumnFamilyHandle*> handles;
   DB* new_db;
+  auto start = std::chrono::system_clock::now();
   ASSERT_OK(DB::OpenFromDisjointInstances(options, path, column_families, dbs,
                                           &handles, &new_db));
+  auto end = std::chrono::system_clock::now();
+  std::chrono::duration<double> elapsed_seconds = end - start;
+  std::cout << "time = " << elapsed_seconds.count() << "s" << std::endl;
+
   std::string result;
   for (int i = 0; i < 2; ++i) {
-    ASSERT_OK(
-        new_db->Get(ReadOptions(), handles[1], std::to_string(i), &result));
-    ASSERT_EQ(result, std::to_string(i));
-    ASSERT_OK(new_db->Put(WriteOptions(), handles[1], std::to_string(i), "v2"));
+    for (int j = 0; j < files_per_instance; ++j) {
+      ASSERT_OK(new_db->Get(ReadOptions(), handles[1],
+                            std::to_string(i) + "_" + std::to_string(j),
+                            &result));
+      ASSERT_EQ(result, std::to_string(i));
+      // Overwrite.
+      ASSERT_OK(new_db->Put(WriteOptions(), handles[1],
+                            std::to_string(i) + "_" + std::to_string(j), "v2"));
+    }
   }
   ASSERT_OK(new_db->Flush(FlushOptions(), handles[1]));
   for (int i = 0; i < 2; ++i) {
-    ASSERT_OK(
-        new_db->Get(ReadOptions(), handles[1], std::to_string(i), &result));
-    ASSERT_EQ(result, "v2");
+    for (int j = 0; j < files_per_instance; ++j) {
+      ASSERT_OK(new_db->Get(ReadOptions(), handles[1],
+                            std::to_string(i) + "_" + std::to_string(j),
+                            &result));
+      ASSERT_EQ(result, "v2");
+    }
   }
 }
 

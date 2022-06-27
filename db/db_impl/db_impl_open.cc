@@ -2068,6 +2068,7 @@ Status DBImpl::OpenFromDisjointInstances(
         break;
       }
     }
+    new_db_impl->versions_->FetchAddFileNumber(next_file_number);
   }
   if (s.ok()) {
     // TODO: Merge memtables.
