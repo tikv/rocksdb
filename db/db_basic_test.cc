@@ -470,6 +470,53 @@ TEST_F(DBBasicTest, GoBackInTime) {
   ASSERT_EQ("v1", Get(1, "bar"));
 }
 
+TEST_F(DBBasicTest, MergeNonMemory) {
+  Options options;
+  options.create_if_missing = true;
+  std::vector<ColumnFamilyDescriptor> column_families;
+  column_families.push_back(ColumnFamilyDescriptor(
+      ROCKSDB_NAMESPACE::kDefaultColumnFamilyName, ColumnFamilyOptions()));
+  column_families.push_back(
+      ColumnFamilyDescriptor("new_cf", ColumnFamilyOptions()));
+
+  std::vector<DB*> dbs;
+  for (int i = 0; i < 2; ++i) {
+    auto path = test::PerThreadDBPath(env_, std::to_string(i));
+    DB* db;
+    ASSERT_OK(DB::Open(options, path, &db));
+    ColumnFamilyHandle* cf;
+    ASSERT_OK(db->CreateColumnFamily(ColumnFamilyOptions(), "new_cf", &cf));
+    ASSERT_OK(db->DestroyColumnFamilyHandle(cf));
+    delete db;
+    std::vector<ColumnFamilyHandle*> handles;
+    ASSERT_OK(DB::Open(options, path, column_families, &handles, &db));
+    dbs.push_back(db);
+    WriteOptions wopts;
+    wopts.disableWAL = true;
+    ASSERT_OK(db->Put(wopts, handles[1], std::to_string(i), std::to_string(i)));
+    ASSERT_OK(db->Flush(FlushOptions(), handles[1]));
+  }
+
+  auto path = test::PerThreadDBPath(env_, "merged");
+  std::vector<ColumnFamilyHandle*> handles;
+  DB* new_db;
+  ASSERT_OK(DB::OpenFromDisjointInstances(options, path, column_families, dbs,
+                                          &handles, &new_db));
+  std::string result;
+  for (int i = 0; i < 2; ++i) {
+    ASSERT_OK(
+        new_db->Get(ReadOptions(), handles[1], std::to_string(i), &result));
+    ASSERT_EQ(result, std::to_string(i));
+    ASSERT_OK(new_db->Put(WriteOptions(), handles[1], std::to_string(i), "v2"));
+  }
+  ASSERT_OK(new_db->Flush(FlushOptions(), handles[1]));
+  for (int i = 0; i < 2; ++i) {
+    ASSERT_OK(
+        new_db->Get(ReadOptions(), handles[1], std::to_string(i), &result));
+    ASSERT_EQ(result, "v2");
+  }
+}
+
 TEST_F(DBBasicTest, FlushEmptyColumnFamily) {
   // Block flush thread and disable compaction thread
   env_->SetBackgroundThreads(1, Env::HIGH);

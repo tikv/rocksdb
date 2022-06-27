@@ -1930,19 +1930,181 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
   return s;
 }
 
-Status DB::OpenFromDisjointInstances(const DBOptions& db_options,
-                                     const std::string& name,
-                                     const std::vector<DB*> instances,
-                                     std::vector<ColumnFamilyHandle*>* handles,
-                                     DB** dbptr) {
-  return DBImpl::OpenFromDisjointInstances(db_options, name, instances, handles,
-                                           dbptr);
+Status DB::OpenFromDisjointInstances(
+    const DBOptions& db_options, const std::string& name,
+    const std::vector<ColumnFamilyDescriptor>& column_families,
+    const std::vector<DB*> instances, std::vector<ColumnFamilyHandle*>* handles,
+    DB** dbptr) {
+  return DBImpl::OpenFromDisjointInstances(db_options, name, column_families,
+                                           instances, handles, dbptr);
 }
 
 Status DBImpl::OpenFromDisjointInstances(
     const DBOptions& db_options, const std::string& name,
+    const std::vector<ColumnFamilyDescriptor>& column_families,
     const std::vector<DB*> instances, std::vector<ColumnFamilyHandle*>* handles,
     DB** dbptr) {
-  return Status::NotSupported("Not implemented");
+  Status s;
+  if (column_families.size() == 0 ||
+      column_families.front().name !=
+          ROCKSDB_NAMESPACE::kDefaultColumnFamilyName) {
+    return Status::InvalidArgument("Missing default column family descriptor.");
+  }
+  s = DB::Open(Options(db_options, column_families.front().options), name,
+               dbptr);
+  if (!s.ok()) {
+    delete *dbptr;
+    *dbptr = nullptr;
+    return s;
+  }
+  DBImpl* new_db_impl = static_cast<DBImpl*>(*dbptr);
+  autovector<uint64_t> cf_ids;
+  autovector<ColumnFamilyData*> cfds;
+  for (auto& cf : column_families) {
+    ColumnFamilyHandle* cf_handle;
+    if (handles->size() == 0) {
+      auto* cfd = new_db_impl->versions_->GetColumnFamilySet()->GetDefault();
+      cf_handle =
+          new ColumnFamilyHandleImpl(cfd, new_db_impl, &new_db_impl->mutex_);
+    } else {
+      s = new_db_impl->CreateColumnFamily(cf.options, cf.name, &cf_handle);
+    }
+    if (!s.ok()) {
+      for (auto* h : *handles) {
+        delete h;
+      }
+      handles->clear();
+      delete *dbptr;
+      *dbptr = nullptr;
+      return s;
+    }
+    handles->push_back(cf_handle);
+    cf_ids.push_back(cf_handle->GetID());
+    cfds.push_back(
+        new_db_impl->versions_->GetColumnFamilySet()->GetColumnFamily(
+            cf_handle->GetID()));
+  }
+
+  autovector<DBImpl*> db_impls;
+  for (auto* db : instances) {
+    DBImpl* db_impl = static_cast<DBImpl*>(db);
+    db_impls.push_back(db_impl);
+    // Sanity checks.
+    if (db_impl->total_log_size_ != 0) {
+      s = Status::InvalidArgument("DB WAL should be empty.");
+    }
+    if (s.ok()) {
+      for (auto* cf : *handles) {
+        InstrumentedMutexLock lock(&db_impl->mutex_);
+        ColumnFamilyHandle* old_cf =
+            db_impl->GetColumnFamilyHandle(cf->GetID());
+        if (old_cf == nullptr || old_cf->GetName() != cf->GetName()) {
+          s = Status::InvalidArgument("Column family doesn't match.");
+          break;
+        }
+      }
+    }
+    // TODO: check key range overlap.
+    if (s.ok()) {
+      s = db->PauseBackgroundWork();
+    }
+    if (!s.ok()) {
+      break;
+    }
+  }
+
+  std::vector<VersionEdit> edits;
+  if (s.ok()) {
+    // Merge table files.
+    uint64_t next_file_number = 1;
+    for (auto cf : cf_ids) {
+      edits.emplace_back();
+      edits.back().SetColumnFamily(cf);
+    }
+    for (auto db : db_impls) {
+      InstrumentedMutexLock lock(&db->mutex_);
+      for (size_t i = 0; s.ok() && i < cf_ids.size(); i++) {
+        uint64_t cf = cf_ids[i];
+        auto& new_cfd = cfds[i];
+        auto& edit = edits[i];
+        auto cfd = db->versions_->GetColumnFamilySet()->GetColumnFamily(cf);
+        assert(cfd != nullptr && !cfd->IsDropped());
+        VersionStorageInfo& vsi = *cfd->current()->storage_info();
+        auto& cf_paths = cfd->ioptions()->cf_paths;
+        auto GetDir = [&](size_t path_id) {
+          // Matching TableFileName() behavior
+          if (path_id >= cf_paths.size()) {
+            assert(false);
+            return cf_paths.back().path;
+          } else {
+            return cf_paths[path_id].path;
+          }
+        };
+
+        for (int level = 0; s.ok() && level < vsi.num_levels(); ++level) {
+          const auto& level_files = vsi.LevelFiles(level);
+          for (const auto& f : level_files) {
+            assert(f);
+            uint64_t target_file_number = ++next_file_number;
+            std::string src =
+                MakeTableFileName(GetDir(f->fd.GetPathId()), f->fd.GetNumber());
+            std::string target = MakeTableFileName(
+                new_cfd->ioptions()->cf_paths.front().path, target_file_number);
+            s = new_db_impl->GetEnv()->LinkFile(src, target);
+            if (!s.ok()) {
+              break;
+            }
+            edit.AddFile(
+                level, target_file_number, 0 /*path_id*/, f->fd.GetFileSize(),
+                f->smallest, f->largest, f->fd.smallest_seqno,
+                f->fd.largest_seqno, f->marked_for_compaction, f->temperature,
+                f->oldest_blob_file_number, f->oldest_ancester_time,
+                f->file_creation_time, f->file_checksum,
+                f->file_checksum_func_name, f->min_timestamp, f->max_timestamp);
+          }
+        }
+      }
+      if (!s.ok()) {
+        break;
+      }
+    }
+  }
+  if (s.ok()) {
+    // TODO: Merge memtables.
+    uint64_t max_seq_number = 0;
+    for (auto* db : db_impls) {
+      max_seq_number = std::max(max_seq_number, db->versions_->LastSequence());
+    }
+    new_db_impl->versions_->SetLastAllocatedSequence(max_seq_number);
+    new_db_impl->versions_->SetLastSequence(max_seq_number);
+  }
+  if (s.ok()) {
+    InstrumentedMutexLock lock(&new_db_impl->mutex_);
+    for (size_t i = 0; s.ok() && i < cf_ids.size(); i++) {
+      auto cfd = cfds[i];
+      auto& mutable_cf_options = *cfd->GetLatestMutableCFOptions();
+      SuperVersionContext sv_context(/* create_superversion */ true);
+      s = new_db_impl->versions_->LogAndApply(cfd, mutable_cf_options,
+                                              &edits[i], &new_db_impl->mutex_,
+                                              nullptr, false);
+      new_db_impl->InstallSuperVersionAndScheduleWork(cfd, &sv_context,
+                                                      mutable_cf_options);
+      sv_context.Clean();
+    }
+  }
+
+  // Cleaning up.
+  for (auto* db : db_impls) {
+    db->ContinueBackgroundWork();
+  }
+  if (!s.ok()) {
+    for (auto* h : *handles) {
+      delete h;
+    }
+    handles->clear();
+    delete *dbptr;
+    *dbptr = nullptr;
+  }
+  return s;
 }
 }  // namespace ROCKSDB_NAMESPACE

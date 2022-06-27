@@ -278,6 +278,7 @@ class DB {
 
   static Status OpenFromDisjointInstances(
       const DBOptions& db_options, const std::string& name,
+      const std::vector<ColumnFamilyDescriptor>& column_families,
       const std::vector<DB*> instances,
       std::vector<ColumnFamilyHandle*>* handles, DB** dbptr);
 

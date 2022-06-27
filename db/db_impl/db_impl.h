@@ -936,6 +936,12 @@ class DBImpl : public DB {
                      std::vector<ColumnFamilyHandle*>* handles, DB** dbptr,
                      const bool seq_per_batch, const bool batch_per_txn);
 
+  static Status OpenFromDisjointInstances(
+      const DBOptions& db_options, const std::string& name,
+      const std::vector<ColumnFamilyDescriptor>& column_families,
+      const std::vector<DB*> instances,
+      std::vector<ColumnFamilyHandle*>* handles, DB** dbptr);
+
   static IOStatus CreateAndNewDirectory(
       FileSystem* fs, const std::string& dirname,
       std::unique_ptr<FSDirectory>* directory);
