@@ -276,6 +276,11 @@ class DB {
       const std::string& input, std::string* output,
       const CompactionServiceOptionsOverride& override_options);
 
+  static Status OpenFromDisjointInstances(
+      const DBOptions& db_options, const std::string& name,
+      const std::vector<DB*> instances,
+      std::vector<ColumnFamilyHandle*>* handles, DB** dbptr);
+
   virtual Status Resume() { return Status::NotSupported(); }
 
   // Close the DB by releasing resources, closing files etc. This should be
@@ -1200,6 +1205,11 @@ class DB {
     options.target_level = target_level;
     options.target_path_id = target_path_id;
     return CompactRange(options, DefaultColumnFamily(), begin, end);
+  }
+
+  virtual Status TrimRange(ColumnFamilyHandle* column_family,
+                           const Slice* begin, const Slice* end) {
+    return Status::NotSupported("Not implemented");
   }
 
   virtual Status SetOptions(

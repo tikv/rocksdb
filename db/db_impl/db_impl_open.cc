@@ -1929,4 +1929,20 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
   }
   return s;
 }
+
+Status DB::OpenFromDisjointInstances(const DBOptions& db_options,
+                                     const std::string& name,
+                                     const std::vector<DB*> instances,
+                                     std::vector<ColumnFamilyHandle*>* handles,
+                                     DB** dbptr) {
+  return DBImpl::OpenFromDisjointInstances(db_options, name, instances, handles,
+                                           dbptr);
+}
+
+Status DBImpl::OpenFromDisjointInstances(
+    const DBOptions& db_options, const std::string& name,
+    const std::vector<DB*> instances, std::vector<ColumnFamilyHandle*>* handles,
+    DB** dbptr) {
+  return Status::NotSupported("Not implemented");
+}
 }  // namespace ROCKSDB_NAMESPACE
