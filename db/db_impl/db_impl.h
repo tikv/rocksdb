@@ -1039,6 +1039,8 @@ class DBImpl : public DB {
       std::vector<std::vector<FileMetaData>>* metadata,
       std::vector<std::shared_ptr<BlobFileMetaData>>* blob_metadata = nullptr);
 
+  void TEST_SetSequence(uint64_t seq);
+
   void TEST_LockMutex();
 
   void TEST_UnlockMutex();

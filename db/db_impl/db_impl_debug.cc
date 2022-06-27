@@ -81,6 +81,10 @@ void DBImpl::TEST_GetFilesMetaData(
   }
 }
 
+void DBImpl::TEST_SetSequence(uint64_t seq) {
+  versions_->TEST_SetLastSequence(seq);
+}
+
 uint64_t DBImpl::TEST_Current_Manifest_FileNo() {
   return versions_->manifest_file_number();
 }

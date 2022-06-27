@@ -1140,6 +1140,12 @@ class VersionSet {
     last_sequence_.store(s, std::memory_order_release);
   }
 
+  void TEST_SetLastSequence(uint64_t s) {
+    // assert(s >= last_sequence_);
+    assert(!db_options_->two_write_queues || s <= last_allocated_sequence_);
+    last_sequence_.store(s, std::memory_order_release);
+  }
+
   // Note: memory_order_release must be sufficient
   void SetLastPublishedSequence(uint64_t s) {
     assert(s >= last_published_sequence_);

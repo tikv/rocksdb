@@ -441,6 +441,35 @@ TEST_F(DBBasicTest, FlushMultipleMemtable) {
   } while (ChangeCompactOptions());
 }
 
+TEST_F(DBBasicTest, GoBackInTime) {
+  Options options = CurrentOptions();
+  WriteOptions writeOpt = WriteOptions();
+  CreateAndReopenWithCF({"pikachu"}, options);
+
+  dbfull()->TEST_SetSequence(100);
+  ASSERT_OK(dbfull()->Put(writeOpt, handles_[1], "foo", "v1"));
+  // Time goes back. The new memtable created in Flush will have a smaller seq.
+  dbfull()->TEST_SetSequence(50);
+  ASSERT_OK(Flush(1));
+
+  // Put the same key with a small seq.
+  ASSERT_OK(dbfull()->Put(writeOpt, handles_[1], "foo", "v2"));
+  ASSERT_OK(dbfull()->Put(writeOpt, handles_[1], "bar", "v1"));
+  // Set to a large seq because read will acquire it as snapshot.
+  dbfull()->TEST_SetSequence(1000);
+  // Memory supersedes disk. So we can get the version with smaller seq.
+  ASSERT_EQ("v2", Get(1, "foo"));
+  ASSERT_EQ("v1", Get(1, "bar"));
+
+  ASSERT_OK(Flush(1));
+  ASSERT_EQ("v1", Get(1, "foo"));
+  ASSERT_EQ("v1", Get(1, "bar"));
+
+  dbfull()->CompactRange(CompactRangeOptions(), handles_[1], nullptr, nullptr);
+  ASSERT_EQ("v1", Get(1, "foo"));
+  ASSERT_EQ("v1", Get(1, "bar"));
+}
+
 TEST_F(DBBasicTest, FlushEmptyColumnFamily) {
   // Block flush thread and disable compaction thread
   env_->SetBackgroundThreads(1, Env::HIGH);
