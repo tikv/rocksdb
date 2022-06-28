@@ -1208,8 +1208,8 @@ class DB {
     return CompactRange(options, DefaultColumnFamily(), begin, end);
   }
 
-  virtual Status TrimRange(ColumnFamilyHandle* column_family,
-                           const Slice* begin, const Slice* end) {
+  virtual Status TrimRange(ColumnFamilyHandle* /*column_family*/,
+                           const Slice* /*begin*/, const Slice* /*end*/) {
     return Status::NotSupported("Not implemented");
   }
 
