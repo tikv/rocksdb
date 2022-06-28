@@ -1212,11 +1212,6 @@ class DB {
     return CompactRange(options, DefaultColumnFamily(), begin, end);
   }
 
-  virtual Status TrimRange(ColumnFamilyHandle* /*column_family*/,
-                           const Slice* /*begin*/, const Slice* /*end*/) {
-    return Status::NotSupported("Not implemented");
-  }
-
   virtual Status SetOptions(
       ColumnFamilyHandle* /*column_family*/,
       const std::unordered_map<std::string, std::string>& /*new_options*/) {

@@ -441,35 +441,6 @@ TEST_F(DBBasicTest, FlushMultipleMemtable) {
   } while (ChangeCompactOptions());
 }
 
-TEST_F(DBBasicTest, GoBackInTime) {
-  Options options = CurrentOptions();
-  WriteOptions writeOpt = WriteOptions();
-  CreateAndReopenWithCF({"pikachu"}, options);
-
-  dbfull()->TEST_SetSequence(100);
-  ASSERT_OK(dbfull()->Put(writeOpt, handles_[1], "foo", "v1"));
-  // Time goes back. The new memtable created in Flush will have a smaller seq.
-  dbfull()->TEST_SetSequence(50);
-  ASSERT_OK(Flush(1));
-
-  // Put the same key with a small seq.
-  ASSERT_OK(dbfull()->Put(writeOpt, handles_[1], "foo", "v2"));
-  ASSERT_OK(dbfull()->Put(writeOpt, handles_[1], "bar", "v1"));
-  // Set to a large seq because read will acquire it as snapshot.
-  dbfull()->TEST_SetSequence(1000);
-  // Memory supersedes disk. So we can get the version with smaller seq.
-  ASSERT_EQ("v2", Get(1, "foo"));
-  ASSERT_EQ("v1", Get(1, "bar"));
-
-  ASSERT_OK(Flush(1));
-  ASSERT_EQ("v1", Get(1, "foo"));
-  ASSERT_EQ("v1", Get(1, "bar"));
-
-  dbfull()->CompactRange(CompactRangeOptions(), handles_[1], nullptr, nullptr);
-  ASSERT_EQ("v1", Get(1, "foo"));
-  ASSERT_EQ("v1", Get(1, "bar"));
-}
-
 TEST_F(DBBasicTest, MergeNonMemory) {
   const int files_per_instance = 10;
 
@@ -568,7 +539,8 @@ TEST_F(DBBasicTest, MergeOverlapped) {
 
   std::vector<DB*> dbs;
   std::vector<std::string> paths;
-  for (int i = 0; i < 2; ++i) {
+  int needs_trim = 2;
+  for (int i = 0; i < 5; ++i) {
     auto path = test::PerThreadDBPath(env_, std::to_string(i));
     DB* db;
     ASSERT_OK(DB::Open(options, path, &db));
@@ -582,11 +554,11 @@ TEST_F(DBBasicTest, MergeOverlapped) {
     paths.push_back(path);
     WriteOptions wopts;
     wopts.disableWAL = true;
-    ASSERT_OK(db->Put(wopts, handles[1], std::to_string(i), std::to_string(i)));
-    ASSERT_OK(db->Flush(FlushOptions(), handles[1]));
-    if (i == 1) {
-      ASSERT_OK(db->DeleteRange(wopts, handles[1], "0", "9"));
-      ASSERT_OK(db->Flush(FlushOptions(), handles[1]));
+    ASSERT_OK(db->Put(wopts, handles[0], std::to_string(i), std::to_string(i)));
+    ASSERT_OK(db->Flush(FlushOptions(), handles[0]));
+    if (i == needs_trim) {
+      ASSERT_OK(db->DeleteRange(wopts, handles[0], std::to_string(i + 1), "9"));
+      ASSERT_OK(db->Flush(FlushOptions(), handles[0]));
     }
     for (auto h : handles) {
       ASSERT_OK(db->DestroyColumnFamilyHandle(h));
@@ -599,6 +571,24 @@ TEST_F(DBBasicTest, MergeOverlapped) {
   DB* new_db;
   ASSERT_NOK(DB::CreateFromDisjointInstances(options, path, column_families,
                                              dbs, &handles, &new_db));
+  ASSERT_OK(DestroyDB(path, options, column_families));
+
+  Slice start = std::to_string(needs_trim - 1) + "9";
+  Slice end = std::to_string(needs_trim + 1);
+  CompactRangeOptions copts;
+  copts.bottommost_level_compaction = BottommostLevelCompaction::kForce;
+  ASSERT_OK(dbs[needs_trim]->CompactRange(
+      copts, dbs[needs_trim]->DefaultColumnFamily(), nullptr, &start));
+  ASSERT_OK(dbs[needs_trim]->CompactRange(
+      copts, dbs[needs_trim]->DefaultColumnFamily(), &end, nullptr));
+  ASSERT_OK(DB::CreateFromDisjointInstances(options, path, column_families, dbs,
+                                            &handles, &new_db));
+  std::string result;
+  for (int i = 0; i < 5; ++i) {
+    ASSERT_OK(
+        new_db->Get(ReadOptions(), handles[0], std::to_string(i), &result));
+    ASSERT_EQ(result, std::to_string(i));
+  }
 
   for (auto h : handles) {
     ASSERT_OK(new_db->DestroyColumnFamilyHandle(h));
@@ -610,6 +600,35 @@ TEST_F(DBBasicTest, MergeOverlapped) {
   for (auto p : paths) {
     DestroyDB(p, options, column_families);
   }
+}
+
+TEST_F(DBBasicTest, GoBackInTime) {
+  Options options = CurrentOptions();
+  WriteOptions writeOpt = WriteOptions();
+  CreateAndReopenWithCF({"pikachu"}, options);
+
+  dbfull()->TEST_SetSequence(100);
+  ASSERT_OK(dbfull()->Put(writeOpt, handles_[1], "foo", "v1"));
+  // Time goes back. The new memtable created in Flush will have a smaller seq.
+  dbfull()->TEST_SetSequence(50);
+  ASSERT_OK(Flush(1));
+
+  // Put the same key with a small seq.
+  ASSERT_OK(dbfull()->Put(writeOpt, handles_[1], "foo", "v2"));
+  ASSERT_OK(dbfull()->Put(writeOpt, handles_[1], "bar", "v1"));
+  // Set to a large seq because read will acquire it as snapshot.
+  dbfull()->TEST_SetSequence(1000);
+  // Memory supersedes disk. So we can get the version with smaller seq.
+  ASSERT_EQ("v2", Get(1, "foo"));
+  ASSERT_EQ("v1", Get(1, "bar"));
+
+  ASSERT_OK(Flush(1));
+  ASSERT_EQ("v1", Get(1, "foo"));
+  ASSERT_EQ("v1", Get(1, "bar"));
+
+  dbfull()->CompactRange(CompactRangeOptions(), handles_[1], nullptr, nullptr);
+  ASSERT_EQ("v1", Get(1, "foo"));
+  ASSERT_EQ("v1", Get(1, "bar"));
 }
 
 TEST_F(DBBasicTest, FlushEmptyColumnFamily) {
