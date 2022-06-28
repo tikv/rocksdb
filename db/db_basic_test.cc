@@ -475,6 +475,10 @@ TEST_F(DBBasicTest, MergeNonMemory) {
 
   Options options;
   options.create_if_missing = true;
+  options.level0_file_num_compaction_trigger = files_per_instance * 10;
+  options.level0_slowdown_writes_trigger = files_per_instance * 10;
+  options.level0_stop_writes_trigger = files_per_instance * 10;
+
   std::vector<ColumnFamilyDescriptor> column_families;
   column_families.push_back(ColumnFamilyDescriptor(
       ROCKSDB_NAMESPACE::kDefaultColumnFamilyName, ColumnFamilyOptions()));
@@ -554,7 +558,6 @@ TEST_F(DBBasicTest, MergeNonMemory) {
 }
 
 TEST_F(DBBasicTest, MergeOverlapped) {
-  const int files_per_instance = 1;
   Options options;
   options.create_if_missing = true;
   std::vector<ColumnFamilyDescriptor> column_families;
