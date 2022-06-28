@@ -482,6 +482,7 @@ TEST_F(DBBasicTest, MergeNonMemory) {
       ColumnFamilyDescriptor("new_cf", ColumnFamilyOptions()));
 
   std::vector<DB*> dbs;
+  std::vector<std::string> paths;
   for (int i = 0; i < 2; ++i) {
     auto path = test::PerThreadDBPath(env_, std::to_string(i));
     DB* db;
@@ -493,6 +494,7 @@ TEST_F(DBBasicTest, MergeNonMemory) {
     std::vector<ColumnFamilyHandle*> handles;
     ASSERT_OK(DB::Open(options, path, column_families, &handles, &db));
     dbs.push_back(db);
+    paths.push_back(path);
     WriteOptions wopts;
     wopts.disableWAL = true;
     for (int j = 0; j < files_per_instance; ++j) {
@@ -501,14 +503,18 @@ TEST_F(DBBasicTest, MergeNonMemory) {
                         std::to_string(i)));
       ASSERT_OK(db->Flush(FlushOptions(), handles[1]));
     }
+    for (auto h : handles) {
+      ASSERT_OK(db->DestroyColumnFamilyHandle(h));
+    }
   }
 
   auto path = test::PerThreadDBPath(env_, "merged");
+  paths.push_back(path);
   std::vector<ColumnFamilyHandle*> handles;
   DB* new_db;
   auto start = std::chrono::system_clock::now();
-  ASSERT_OK(DB::OpenFromDisjointInstances(options, path, column_families, dbs,
-                                          &handles, &new_db));
+  ASSERT_OK(DB::CreateFromDisjointInstances(options, path, column_families, dbs,
+                                            &handles, &new_db));
   auto end = std::chrono::system_clock::now();
   std::chrono::duration<double> elapsed_seconds = end - start;
   std::cout << "time = " << elapsed_seconds.count() << "s" << std::endl;
@@ -533,6 +539,73 @@ TEST_F(DBBasicTest, MergeNonMemory) {
                             &result));
       ASSERT_EQ(result, "v2");
     }
+  }
+
+  for (auto h : handles) {
+    ASSERT_OK(new_db->DestroyColumnFamilyHandle(h));
+  }
+  delete new_db;
+  for (auto db : dbs) {
+    delete db;
+  }
+  for (auto p : paths) {
+    DestroyDB(p, options, column_families);
+  }
+}
+
+TEST_F(DBBasicTest, MergeOverlapped) {
+  const int files_per_instance = 1;
+  Options options;
+  options.create_if_missing = true;
+  std::vector<ColumnFamilyDescriptor> column_families;
+  column_families.push_back(ColumnFamilyDescriptor(
+      ROCKSDB_NAMESPACE::kDefaultColumnFamilyName, ColumnFamilyOptions()));
+  column_families.push_back(
+      ColumnFamilyDescriptor("new_cf", ColumnFamilyOptions()));
+
+  std::vector<DB*> dbs;
+  std::vector<std::string> paths;
+  for (int i = 0; i < 2; ++i) {
+    auto path = test::PerThreadDBPath(env_, std::to_string(i));
+    DB* db;
+    ASSERT_OK(DB::Open(options, path, &db));
+    ColumnFamilyHandle* cf;
+    ASSERT_OK(db->CreateColumnFamily(ColumnFamilyOptions(), "new_cf", &cf));
+    ASSERT_OK(db->DestroyColumnFamilyHandle(cf));
+    delete db;
+    std::vector<ColumnFamilyHandle*> handles;
+    ASSERT_OK(DB::Open(options, path, column_families, &handles, &db));
+    dbs.push_back(db);
+    paths.push_back(path);
+    WriteOptions wopts;
+    wopts.disableWAL = true;
+    ASSERT_OK(db->Put(wopts, handles[1], std::to_string(i), std::to_string(i)));
+    ASSERT_OK(db->Flush(FlushOptions(), handles[1]));
+    if (i == 1) {
+      ASSERT_OK(db->DeleteRange(wopts, handles[1], "0", "9"));
+      ASSERT_OK(db->Flush(FlushOptions(), handles[1]));
+    }
+    for (auto h : handles) {
+      ASSERT_OK(db->DestroyColumnFamilyHandle(h));
+    }
+  }
+
+  auto path = test::PerThreadDBPath(env_, "merged");
+  paths.push_back(path);
+  std::vector<ColumnFamilyHandle*> handles;
+  DB* new_db;
+  ASSERT_NOK(DB::CreateFromDisjointInstances(options, path, column_families,
+                                             dbs, &handles, &new_db));
+
+  for (auto h : handles) {
+    ASSERT_OK(new_db->DestroyColumnFamilyHandle(h));
+  }
+  delete new_db;
+  for (auto db : dbs) {
+    delete db;
+  }
+  for (auto p : paths) {
+    DestroyDB(p, options, column_families);
   }
 }
 

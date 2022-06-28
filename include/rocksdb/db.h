@@ -276,7 +276,11 @@ class DB {
       const std::string& input, std::string* output,
       const CompactionServiceOptionsOverride& override_options);
 
-  static Status OpenFromDisjointInstances(
+  // Create a new DB by merging multiple disjoint DBs.
+  // Memtable merge is not supported. All source DBs must be flushed
+  // beforehand. If any of the source DBs is written during the merge process,
+  // the operation will be aborted.
+  static Status CreateFromDisjointInstances(
       const DBOptions& db_options, const std::string& name,
       const std::vector<ColumnFamilyDescriptor>& column_families,
       const std::vector<DB*> instances,
