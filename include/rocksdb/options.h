@@ -1962,4 +1962,8 @@ struct LiveFilesStorageInfoOptions {
 };
 #endif  // !ROCKSDB_LITE
 
+struct MergeInstanceOptions {
+  bool merge_memtable = false;
+};
+
 }  // namespace ROCKSDB_NAMESPACE

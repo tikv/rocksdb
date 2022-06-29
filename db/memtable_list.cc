@@ -383,6 +383,14 @@ void MemTableList::PickMemtablesToFlush(uint64_t max_memtable_id,
             });
 }
 
+void MemTableList::ExportMemtables(autovector<MemTable*>* ret) {
+  const auto& memlist = current_->memlist_;
+  for (auto it = memlist.rbegin(); it != memlist.rend(); ++it) {
+    MemTable* m = *it;
+    ret->push_back(m);
+  }
+}
+
 void MemTableList::RollbackMemtableFlush(const autovector<MemTable*>& mems,
                                          uint64_t /*file_number*/) {
   AutoThreadOperationStageUpdater stage_updater(

@@ -1931,20 +1931,24 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
 }
 
 Status DB::CreateFromDisjointInstances(
-    const DBOptions& db_options, const std::string& name,
+    const MergeInstanceOptions& merge_options, const DBOptions& db_options,
+    const std::string& name,
     const std::vector<ColumnFamilyDescriptor>& column_families,
     const std::vector<DB*> instances, std::vector<ColumnFamilyHandle*>* handles,
     DB** dbptr) {
-  return DBImpl::CreateFromDisjointInstances(db_options, name, column_families,
-                                             instances, handles, dbptr);
+  return DBImpl::CreateFromDisjointInstances(merge_options, db_options, name,
+                                             column_families, instances,
+                                             handles, dbptr);
 }
 
 Status DBImpl::CreateFromDisjointInstances(
-    const DBOptions& db_options, const std::string& name,
+    const MergeInstanceOptions& merge_options, const DBOptions& db_options,
+    const std::string& name,
     const std::vector<ColumnFamilyDescriptor>& column_families,
     const std::vector<DB*> instances, std::vector<ColumnFamilyHandle*>* handles,
     DB** dbptr) {
   Status s;
+  MergeInstanceOptions mopts(merge_options);
   // Sanity check.
   if (column_families.size() == 0 ||
       column_families.front().name !=
@@ -1963,6 +1967,8 @@ Status DBImpl::CreateFromDisjointInstances(
     *dbptr = nullptr;
     return s;
   }
+  WriteBufferManager* write_buffer_manager =
+      db_options.write_buffer_manager.get();
   DBImpl* new_db_impl = static_cast<DBImpl*>(*dbptr);
   autovector<uint64_t> cf_ids;
   autovector<ColumnFamilyData*> new_cfds;
@@ -2004,6 +2010,9 @@ Status DBImpl::CreateFromDisjointInstances(
   for (auto* db : instances) {
     DBImpl* db_impl = static_cast<DBImpl*>(db);
     db_impls.push_back(db_impl);
+    if (db_impl->write_buffer_manager_ != write_buffer_manager) {
+      mopts.merge_memtable = false;
+    }
     if (s.ok() && db_impl->total_log_size_ != 0) {
       s = Status::InvalidArgument("DB WAL should be empty.");
     }
@@ -2139,18 +2148,62 @@ Status DBImpl::CreateFromDisjointInstances(
     }
     new_db_impl->versions_->FetchAddFileNumber(next_file_number);
   }
-  // Check memory states.
+  // Merge memtable.
   if (s.ok()) {
-    uint64_t max_seq_number = 0;
-    for (auto* db : db_impls) {
-      if (db->write_buffer_manager_->buffer_size() > 0) {
-        s = Status::InvalidArgument("DB has unpersisted data.");
-        break;
+    if (mopts.merge_memtable) {
+      uint64_t max_seq_number = 0;
+      autovector<MemTable*> to_delete;  // not used.
+      InstrumentedMutexLock lock(&new_db_impl->mutex_);
+      for (auto* db : db_impls) {
+        // Block all writes.
+        db->mutex_.Lock();
+        max_seq_number =
+            std::max(max_seq_number, db->versions_->LastSequence());
       }
-      max_seq_number = std::max(max_seq_number, db->versions_->LastSequence());
+      new_db_impl->versions_->SetLastAllocatedSequence(max_seq_number);
+      new_db_impl->versions_->SetLastSequence(max_seq_number);
+      for (size_t i = 0; i < cf_ids.size(); i++) {
+        auto cf = cf_ids[i];
+        auto new_cfd = new_cfds[i];
+        auto& mutable_cf_options = *new_cfd->GetLatestMutableCFOptions();
+        autovector<MemTable*> mems;
+        for (auto* db : db_impls) {
+          auto cfd = db->versions_->GetColumnFamilySet()->GetColumnFamily(cf);
+          cfd->imm()->ExportMemtables(&mems);
+          if (!cfd->mem()->IsEmpty()) {
+            mems.push_back(cfd->mem());
+          }
+        }
+        SuperVersionContext sv_context(/* create_superversion */ true);
+        auto* fresh_mem =
+            new_cfd->ConstructNewMemtable(mutable_cf_options, max_seq_number);
+        mems.push_back(fresh_mem);
+        for (auto mem : mems) {
+          assert(mem != nullptr);
+          new_cfd->imm()->Add(new_cfd->mem(), &to_delete);
+          mem->Ref();
+          new_cfd->SetMemtable(mem);
+        }
+        new_db_impl->InstallSuperVersionAndScheduleWork(new_cfd, &sv_context,
+                                                        mutable_cf_options);
+        sv_context.Clean();
+      }
+      for (auto* db : db_impls) {
+        db->mutex_.Unlock();
+      }
+    } else {
+      uint64_t max_seq_number = 0;
+      for (auto* db : db_impls) {
+        if (db->write_buffer_manager_->buffer_size() > 0) {
+          s = Status::InvalidArgument("DB has unpersisted data.");
+          break;
+        }
+        max_seq_number =
+            std::max(max_seq_number, db->versions_->LastSequence());
+      }
+      new_db_impl->versions_->SetLastAllocatedSequence(max_seq_number);
+      new_db_impl->versions_->SetLastSequence(max_seq_number);
     }
-    new_db_impl->versions_->SetLastAllocatedSequence(max_seq_number);
-    new_db_impl->versions_->SetLastSequence(max_seq_number);
   }
   // Apply version edits.
   if (s.ok()) {

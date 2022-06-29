@@ -281,7 +281,8 @@ class DB {
   // beforehand. If any of the source DBs is written during the merge process,
   // the operation will be aborted.
   static Status CreateFromDisjointInstances(
-      const DBOptions& db_options, const std::string& name,
+      const MergeInstanceOptions& merge_options, const DBOptions& db_options,
+      const std::string& name,
       const std::vector<ColumnFamilyDescriptor>& column_families,
       const std::vector<DB*> instances,
       std::vector<ColumnFamilyHandle*>* handles, DB** dbptr);

@@ -441,20 +441,26 @@ TEST_F(DBBasicTest, FlushMultipleMemtable) {
   } while (ChangeCompactOptions());
 }
 
-TEST_F(DBBasicTest, MergeNonMemory) {
-  const int files_per_instance = 10;
+TEST_F(DBBasicTest, Merge) {
+  const int files_per_instance = 1;
 
   Options options;
   options.create_if_missing = true;
-  options.level0_file_num_compaction_trigger = files_per_instance * 10;
-  options.level0_slowdown_writes_trigger = files_per_instance * 10;
-  options.level0_stop_writes_trigger = files_per_instance * 10;
+  options.disable_write_stall = true;
+  options.avoid_flush_during_shutdown = true;
+  options.write_buffer_manager.reset(
+      new WriteBufferManager(options.db_write_buffer_size));
+  FlushOptions fopts;
+  fopts.allow_write_stall = true;
+  MergeInstanceOptions mopts;
+  mopts.merge_memtable = true;
 
   std::vector<ColumnFamilyDescriptor> column_families;
-  column_families.push_back(ColumnFamilyDescriptor(
-      ROCKSDB_NAMESPACE::kDefaultColumnFamilyName, ColumnFamilyOptions()));
   column_families.push_back(
-      ColumnFamilyDescriptor("new_cf", ColumnFamilyOptions()));
+      ColumnFamilyDescriptor(ROCKSDB_NAMESPACE::kDefaultColumnFamilyName,
+                             ColumnFamilyOptions(options)));
+  column_families.push_back(
+      ColumnFamilyDescriptor("new_cf", ColumnFamilyOptions(options)));
 
   std::vector<DB*> dbs;
   std::vector<std::string> paths;
@@ -463,7 +469,8 @@ TEST_F(DBBasicTest, MergeNonMemory) {
     DB* db;
     ASSERT_OK(DB::Open(options, path, &db));
     ColumnFamilyHandle* cf;
-    ASSERT_OK(db->CreateColumnFamily(ColumnFamilyOptions(), "new_cf", &cf));
+    ASSERT_OK(
+        db->CreateColumnFamily(ColumnFamilyOptions(options), "new_cf", &cf));
     ASSERT_OK(db->DestroyColumnFamilyHandle(cf));
     delete db;
     std::vector<ColumnFamilyHandle*> handles;
@@ -476,7 +483,11 @@ TEST_F(DBBasicTest, MergeNonMemory) {
       ASSERT_OK(db->Put(wopts, handles[1],
                         std::to_string(i) + "_" + std::to_string(j),
                         std::to_string(i)));
-      ASSERT_OK(db->Flush(FlushOptions(), handles[1]));
+      ASSERT_OK(db->Flush(fopts, handles[1]));
+      // Put some to memtable.
+      ASSERT_OK(db->Put(wopts, handles[1],
+                        std::to_string(i) + "^" + std::to_string(j),
+                        std::to_string(i)));
     }
     for (auto h : handles) {
       ASSERT_OK(db->DestroyColumnFamilyHandle(h));
@@ -484,15 +495,21 @@ TEST_F(DBBasicTest, MergeNonMemory) {
   }
 
   auto path = test::PerThreadDBPath(env_, "merged");
-  paths.push_back(path);
   std::vector<ColumnFamilyHandle*> handles;
   DB* new_db;
   auto start = std::chrono::system_clock::now();
-  ASSERT_OK(DB::CreateFromDisjointInstances(options, path, column_families, dbs,
-                                            &handles, &new_db));
+  ASSERT_OK(DB::CreateFromDisjointInstances(
+      mopts, options, path, column_families, dbs, &handles, &new_db));
   auto end = std::chrono::system_clock::now();
   std::chrono::duration<double> elapsed_seconds = end - start;
   std::cout << "time = " << elapsed_seconds.count() << "s" << std::endl;
+
+  for (auto db : dbs) {
+    delete db;
+  }
+  for (auto p : paths) {
+    DestroyDB(p, options, column_families);
+  }
 
   std::string result;
   for (int i = 0; i < 2; ++i) {
@@ -501,16 +518,26 @@ TEST_F(DBBasicTest, MergeNonMemory) {
                             std::to_string(i) + "_" + std::to_string(j),
                             &result));
       ASSERT_EQ(result, std::to_string(i));
+      ASSERT_OK(new_db->Get(ReadOptions(), handles[1],
+                            std::to_string(i) + "^" + std::to_string(j),
+                            &result));
+      ASSERT_EQ(result, std::to_string(i));
       // Overwrite.
       ASSERT_OK(new_db->Put(WriteOptions(), handles[1],
                             std::to_string(i) + "_" + std::to_string(j), "v2"));
+      ASSERT_OK(new_db->Put(WriteOptions(), handles[1],
+                            std::to_string(i) + "^" + std::to_string(j), "v2"));
     }
   }
-  ASSERT_OK(new_db->Flush(FlushOptions(), handles[1]));
+  ASSERT_OK(new_db->Flush(fopts, handles[1]));
   for (int i = 0; i < 2; ++i) {
     for (int j = 0; j < files_per_instance; ++j) {
       ASSERT_OK(new_db->Get(ReadOptions(), handles[1],
                             std::to_string(i) + "_" + std::to_string(j),
+                            &result));
+      ASSERT_EQ(result, "v2");
+      ASSERT_OK(new_db->Get(ReadOptions(), handles[1],
+                            std::to_string(i) + "^" + std::to_string(j),
                             &result));
       ASSERT_EQ(result, "v2");
     }
@@ -520,22 +547,18 @@ TEST_F(DBBasicTest, MergeNonMemory) {
     ASSERT_OK(new_db->DestroyColumnFamilyHandle(h));
   }
   delete new_db;
-  for (auto db : dbs) {
-    delete db;
-  }
-  for (auto p : paths) {
-    DestroyDB(p, options, column_families);
-  }
+  DestroyDB(path, options, column_families);
 }
 
 TEST_F(DBBasicTest, MergeOverlapped) {
   Options options;
   options.create_if_missing = true;
   std::vector<ColumnFamilyDescriptor> column_families;
-  column_families.push_back(ColumnFamilyDescriptor(
-      ROCKSDB_NAMESPACE::kDefaultColumnFamilyName, ColumnFamilyOptions()));
   column_families.push_back(
-      ColumnFamilyDescriptor("new_cf", ColumnFamilyOptions()));
+      ColumnFamilyDescriptor(ROCKSDB_NAMESPACE::kDefaultColumnFamilyName,
+                             ColumnFamilyOptions(options)));
+  column_families.push_back(
+      ColumnFamilyDescriptor("new_cf", ColumnFamilyOptions(options)));
 
   std::vector<DB*> dbs;
   std::vector<std::string> paths;
@@ -545,7 +568,8 @@ TEST_F(DBBasicTest, MergeOverlapped) {
     DB* db;
     ASSERT_OK(DB::Open(options, path, &db));
     ColumnFamilyHandle* cf;
-    ASSERT_OK(db->CreateColumnFamily(ColumnFamilyOptions(), "new_cf", &cf));
+    ASSERT_OK(
+        db->CreateColumnFamily(ColumnFamilyOptions(options), "new_cf", &cf));
     ASSERT_OK(db->DestroyColumnFamilyHandle(cf));
     delete db;
     std::vector<ColumnFamilyHandle*> handles;
@@ -569,8 +593,9 @@ TEST_F(DBBasicTest, MergeOverlapped) {
   paths.push_back(path);
   std::vector<ColumnFamilyHandle*> handles;
   DB* new_db;
-  ASSERT_NOK(DB::CreateFromDisjointInstances(options, path, column_families,
-                                             dbs, &handles, &new_db));
+  ASSERT_NOK(DB::CreateFromDisjointInstances(MergeInstanceOptions(), options,
+                                             path, column_families, dbs,
+                                             &handles, &new_db));
   ASSERT_OK(DestroyDB(path, options, column_families));
 
   Slice start = std::to_string(needs_trim - 1) + "9";
@@ -581,7 +606,8 @@ TEST_F(DBBasicTest, MergeOverlapped) {
       copts, dbs[needs_trim]->DefaultColumnFamily(), nullptr, &start));
   ASSERT_OK(dbs[needs_trim]->CompactRange(
       copts, dbs[needs_trim]->DefaultColumnFamily(), &end, nullptr));
-  ASSERT_OK(DB::CreateFromDisjointInstances(options, path, column_families, dbs,
+  ASSERT_OK(DB::CreateFromDisjointInstances(MergeInstanceOptions(), options,
+                                            path, column_families, dbs,
                                             &handles, &new_db));
   std::string result;
   for (int i = 0; i < 5; ++i) {
