@@ -461,6 +461,14 @@ TEST_F(DBBasicTest, Merge) {
                              ColumnFamilyOptions(options)));
   column_families.push_back(
       ColumnFamilyDescriptor("new_cf", ColumnFamilyOptions(options)));
+  std::vector<ColumnFamilyDescriptor> column_families_for_old;
+  column_families_for_old.push_back(
+      ColumnFamilyDescriptor(ROCKSDB_NAMESPACE::kDefaultColumnFamilyName,
+                             ColumnFamilyOptions(options)));
+  column_families_for_old.push_back(
+      ColumnFamilyDescriptor("phantom", ColumnFamilyOptions(options)));
+  column_families_for_old.push_back(
+      ColumnFamilyDescriptor("new_cf", ColumnFamilyOptions(options)));
 
   std::vector<DB*> dbs;
   std::vector<std::string> paths;
@@ -468,24 +476,27 @@ TEST_F(DBBasicTest, Merge) {
     auto path = test::PerThreadDBPath(env_, std::to_string(i));
     DB* db;
     ASSERT_OK(DB::Open(options, path, &db));
-    ColumnFamilyHandle* cf;
-    ASSERT_OK(
-        db->CreateColumnFamily(ColumnFamilyOptions(options), "new_cf", &cf));
-    ASSERT_OK(db->DestroyColumnFamilyHandle(cf));
+    for (auto& cf : column_families_for_old) {
+      if (cf.name != "default") {
+        ColumnFamilyHandle* cf_handle;
+        ASSERT_OK(db->CreateColumnFamily(cf.options, cf.name, &cf_handle));
+        ASSERT_OK(db->DestroyColumnFamilyHandle(cf_handle));
+      }
+    }
     delete db;
     std::vector<ColumnFamilyHandle*> handles;
-    ASSERT_OK(DB::Open(options, path, column_families, &handles, &db));
+    ASSERT_OK(DB::Open(options, path, column_families_for_old, &handles, &db));
     dbs.push_back(db);
     paths.push_back(path);
     WriteOptions wopts;
     wopts.disableWAL = true;
     for (int j = 0; j < files_per_instance; ++j) {
-      ASSERT_OK(db->Put(wopts, handles[1],
+      ASSERT_OK(db->Put(wopts, handles[2],
                         std::to_string(i) + "_" + std::to_string(j),
                         std::to_string(i)));
-      ASSERT_OK(db->Flush(fopts, handles[1]));
+      ASSERT_OK(db->Flush(fopts, handles[2]));
       // Put some to memtable.
-      ASSERT_OK(db->Put(wopts, handles[1],
+      ASSERT_OK(db->Put(wopts, handles[2],
                         std::to_string(i) + "^" + std::to_string(j),
                         std::to_string(i)));
     }
@@ -508,7 +519,7 @@ TEST_F(DBBasicTest, Merge) {
     delete db;
   }
   for (auto p : paths) {
-    DestroyDB(p, options, column_families);
+    DestroyDB(p, options, column_families_for_old);
   }
 
   std::string result;

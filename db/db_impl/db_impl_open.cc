@@ -1959,7 +1959,7 @@ Status DBImpl::CreateFromDisjointInstances(
     return Status::InvalidArgument(
         "create_if_missing must be set to create a DB.");
   }
-  // Preparing target DB.
+  // Create target DB and column families.
   s = DB::Open(Options(db_options, column_families.front().options), name,
                dbptr);
   if (!s.ok()) {
@@ -2005,7 +2005,7 @@ Status DBImpl::CreateFromDisjointInstances(
       break;
     }
   }
-  // Preparing source DBs.
+  // Validate and prepare source DBs.
   autovector<DBImpl*> db_impls;
   for (auto* db : instances) {
     DBImpl* db_impl = static_cast<DBImpl*>(db);
@@ -2020,33 +2020,28 @@ Status DBImpl::CreateFromDisjointInstances(
       s = Status::InvalidArgument("DB memtable should be empty.");
     }
     if (s.ok()) {
-      for (auto* cf : *handles) {
-        InstrumentedMutexLock lock(&db_impl->mutex_);
-        ColumnFamilyHandle* old_cf =
-            db_impl->GetColumnFamilyHandle(cf->GetID());
-        if (old_cf == nullptr || old_cf->GetName() != cf->GetName()) {
-          s = Status::InvalidArgument("Column family doesn't match.");
-          break;
-        }
-      }
-    }
-    if (s.ok()) {
       s = db->PauseBackgroundWork();
     }
     if (!s.ok()) {
       break;
     }
   }
+  // Check source DB key range overlap.
   if (s.ok()) {
     for (size_t i = 0; s.ok() && i < cf_ids.size(); i++) {
-      auto cf = cf_ids[i];
+      auto& cf_name = column_families[i].name;
       auto* comparator = column_families[i].options.comparator;
       using CfRange = std::pair<Slice, Slice>;
       std::vector<CfRange> db_ranges;
       for (auto* db : db_impls) {
         Slice smallest, largest;
-        auto cfd = db->versions_->GetColumnFamilySet()->GetColumnFamily(cf);
-        assert(cfd != nullptr && !cfd->IsDropped());
+        auto cfd =
+            db->versions_->GetColumnFamilySet()->GetColumnFamily(cf_name);
+        if (cfd == nullptr || cfd->IsDropped()) {
+          s = Status::InvalidArgument("Column family not found in source DB: " +
+                                      cf_name);
+          break;
+        }
         VersionStorageInfo& vsi = *cfd->current()->storage_info();
         for (const auto& f : vsi.LevelFiles(0)) {
           Slice start = f->smallest.user_key();
@@ -2075,22 +2070,24 @@ Status DBImpl::CreateFromDisjointInstances(
         }
         db_ranges.push_back(CfRange(smallest, largest));
       }
-      std::sort(db_ranges.begin(), db_ranges.end(), [=](CfRange a, CfRange b) {
-        return comparator->Compare(a.first, b.first) < 0;
-      });
-      Slice last_largest;
-      for (auto& range : db_ranges) {
-        if (last_largest.size() == 0 ||
-            comparator->Compare(last_largest, range.first) < 0) {
-          last_largest = range.second;
-        } else {
-          s = Status::InvalidArgument("DB table data is not disjoint.");
-          break;
+      if (s.ok()) {
+        std::sort(db_ranges.begin(), db_ranges.end(),
+                  [=](CfRange a, CfRange b) {
+                    return comparator->Compare(a.first, b.first) < 0;
+                  });
+        Slice last_largest;
+        for (auto& range : db_ranges) {
+          if (last_largest.size() == 0 ||
+              comparator->Compare(last_largest, range.first) < 0) {
+            last_largest = range.second;
+          } else {
+            s = Status::InvalidArgument("DB table data is not disjoint.");
+            break;
+          }
         }
       }
     }
   }
-
   // Merge table files.
   std::vector<VersionEdit> cf_edits;
   if (s.ok()) {
@@ -2102,11 +2099,12 @@ Status DBImpl::CreateFromDisjointInstances(
     for (auto db : db_impls) {
       InstrumentedMutexLock lock(&db->mutex_);
       for (size_t i = 0; s.ok() && i < cf_ids.size(); i++) {
-        uint64_t cf = cf_ids[i];
+        auto& cf_name = column_families[i].name;
         auto& new_cfd = new_cfds[i];
         auto& edit = cf_edits[i];
-        auto cfd = db->versions_->GetColumnFamilySet()->GetColumnFamily(cf);
-        assert(cfd != nullptr && !cfd->IsDropped());
+        auto cfd =
+            db->versions_->GetColumnFamilySet()->GetColumnFamily(cf_name);
+        assert(cfd != nullptr && !cfd->IsDropped());  // already checked before.
         VersionStorageInfo& vsi = *cfd->current()->storage_info();
         auto& cf_paths = cfd->ioptions()->cf_paths;
         auto GetDir = [&](size_t path_id) {
@@ -2163,18 +2161,19 @@ Status DBImpl::CreateFromDisjointInstances(
       new_db_impl->versions_->SetLastAllocatedSequence(max_seq_number);
       new_db_impl->versions_->SetLastSequence(max_seq_number);
       for (size_t i = 0; i < cf_ids.size(); i++) {
-        auto cf = cf_ids[i];
+        auto& cf_name = column_families[i].name;
         auto new_cfd = new_cfds[i];
         auto& mutable_cf_options = *new_cfd->GetLatestMutableCFOptions();
         autovector<MemTable*> mems;
         for (auto* db : db_impls) {
-          auto cfd = db->versions_->GetColumnFamilySet()->GetColumnFamily(cf);
+          auto cfd =
+              db->versions_->GetColumnFamilySet()->GetColumnFamily(cf_name);
+          assert(cfd != nullptr && !cfd->IsDropped());
           cfd->imm()->ExportMemtables(&mems);
           if (!cfd->mem()->IsEmpty()) {
             mems.push_back(cfd->mem());
           }
         }
-        SuperVersionContext sv_context(/* create_superversion */ true);
         auto* fresh_mem =
             new_cfd->ConstructNewMemtable(mutable_cf_options, max_seq_number);
         mems.push_back(fresh_mem);
@@ -2184,9 +2183,6 @@ Status DBImpl::CreateFromDisjointInstances(
           mem->Ref();
           new_cfd->SetMemtable(mem);
         }
-        new_db_impl->InstallSuperVersionAndScheduleWork(new_cfd, &sv_context,
-                                                        mutable_cf_options);
-        sv_context.Clean();
       }
       for (auto* db : db_impls) {
         db->mutex_.Unlock();
