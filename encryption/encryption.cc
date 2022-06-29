@@ -78,8 +78,10 @@ Status AESCTRCipherStream::Cipher(uint64_t file_offset, char* data,
     return Status::IOError("Failed to create cipher context.");
   }
 
-  uint64_t block_index = file_offset / AES_BLOCK_SIZE;
-  uint64_t block_offset = file_offset % AES_BLOCK_SIZE;
+  const size_t block_size = BlockSize();
+
+  uint64_t block_index = file_offset / block_size;
+  uint64_t block_offset = file_offset % block_size;
 
   // In CTR mode, OpenSSL EVP API treat the IV as a 128-bit big-endien, and
   // increase it by 1 for each block.
@@ -92,7 +94,7 @@ Status AESCTRCipherStream::Cipher(uint64_t file_offset, char* data,
   if (std::numeric_limits<uint64_t>::max() - block_index < initial_iv_low_) {
     iv_high++;
   }
-  unsigned char iv[AES_BLOCK_SIZE];
+  unsigned char iv[block_size];
   PutBigEndian64(iv_high, iv);
   PutBigEndian64(iv_low, iv + sizeof(uint64_t));
 
@@ -114,7 +116,7 @@ Status AESCTRCipherStream::Cipher(uint64_t file_offset, char* data,
   uint64_t data_offset = 0;
   size_t remaining_data_size = data_size;
   int output_size = 0;
-  unsigned char partial_block[AES_BLOCK_SIZE];
+  unsigned char partial_block[block_size];
 
   // In the following we assume EVP_CipherUpdate allow in and out buffer are
   // the same, to save one memcpy. This is not specified in official man page.
@@ -123,20 +125,20 @@ Status AESCTRCipherStream::Cipher(uint64_t file_offset, char* data,
   // buffer to fake a full block.
   if (block_offset > 0) {
     size_t partial_block_size =
-        std::min<size_t>(AES_BLOCK_SIZE - block_offset, remaining_data_size);
+        std::min<size_t>(block_size - block_offset, remaining_data_size);
     memcpy(partial_block + block_offset, data, partial_block_size);
     ret = EVP_CipherUpdate(ctx, partial_block, &output_size, partial_block,
-                           AES_BLOCK_SIZE);
+                           static_cast<int>(block_size));
     if (ret != 1) {
       FreeCipherContext(ctx);
       return Status::IOError("Crypter failed for first block, offset " +
                              ToString(file_offset));
     }
-    if (output_size != AES_BLOCK_SIZE) {
+    if (output_size != static_cast<int>(block_size)) {
       FreeCipherContext(ctx);
       return Status::IOError(
           "Unexpected crypter output size for first block, expected " +
-          ToString(AES_BLOCK_SIZE) + " vs actual " + ToString(output_size));
+          ToString(block_size) + " vs actual " + ToString(output_size));
     }
     memcpy(data, partial_block + block_offset, partial_block_size);
     data_offset += partial_block_size;
@@ -144,9 +146,9 @@ Status AESCTRCipherStream::Cipher(uint64_t file_offset, char* data,
   }
 
   // Handle full blocks in the middle.
-  if (remaining_data_size >= AES_BLOCK_SIZE) {
+  if (remaining_data_size >= block_size) {
     size_t actual_data_size =
-        remaining_data_size - remaining_data_size % AES_BLOCK_SIZE;
+        remaining_data_size - remaining_data_size % block_size;
     unsigned char* full_blocks =
         reinterpret_cast<unsigned char*>(data) + data_offset;
     ret = EVP_CipherUpdate(ctx, full_blocks, &output_size, full_blocks,
@@ -169,20 +171,20 @@ Status AESCTRCipherStream::Cipher(uint64_t file_offset, char* data,
   // Handle partial block at the end. The parital block is copied to buffer to
   // fake a full block.
   if (remaining_data_size > 0) {
-    assert(remaining_data_size < AES_BLOCK_SIZE);
+    assert(remaining_data_size < block_size);
     memcpy(partial_block, data + data_offset, remaining_data_size);
     ret = EVP_CipherUpdate(ctx, partial_block, &output_size, partial_block,
-                           AES_BLOCK_SIZE);
+                           static_cast<int>(block_size));
     if (ret != 1) {
       FreeCipherContext(ctx);
       return Status::IOError("Crypter failed for last block, offset " +
                              ToString(file_offset + data_offset));
     }
-    if (output_size != AES_BLOCK_SIZE) {
+    if (output_size != static_cast<int>(block_size)) {
       FreeCipherContext(ctx);
       return Status::IOError(
           "Unexpected crypter output size for last block, expected " +
-          ToString(AES_BLOCK_SIZE) + " vs actual " + ToString(output_size));
+          ToString(block_size) + " vs actual " + ToString(output_size));
     }
     memcpy(data + data_offset, partial_block, remaining_data_size);
   }
@@ -213,7 +215,8 @@ Status NewAESCTRCipherStream(EncryptionMethod method, const std::string& key,
       cipher = EVP_aes_256_ctr();
       break;
     case EncryptionMethod::kSM4_CTR:
-    #if OPENSSL_VERSION_NUMBER < 0x101010bfL
+    // Openssl support SM4 after 1.1.1 release version.
+    #if OPENSSL_VERSION_NUMBER < 0x1010100fL
       return Status::InvalidArgument("Unsupport SM4 encryption method under OpenSSL version: " +
                                      OPENSSL_VERSION_TEXT);
     #else
