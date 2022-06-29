@@ -277,9 +277,8 @@ class DB {
       const CompactionServiceOptionsOverride& override_options);
 
   // Create a new DB by merging multiple disjoint DBs.
-  // Memtable merge is not supported. All source DBs must be flushed
-  // beforehand. If any of the source DBs is written during the merge process,
-  // the operation will be aborted.
+  // Unless memtable merge is enabled, if any of the source DBs is written
+  // during the merge process, the operation will be aborted.
   static Status CreateFromDisjointInstances(
       const MergeInstanceOptions& merge_options, const DBOptions& db_options,
       const std::string& name,
