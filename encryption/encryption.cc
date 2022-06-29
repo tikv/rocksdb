@@ -107,6 +107,7 @@ Status AESCTRCipherStream::Cipher(uint64_t file_offset, char* data,
   // multiply of block size.
   ret = EVP_CIPHER_CTX_set_padding(ctx, 0);
   if (ret != 1) {
+    FreeCipherContext(ctx);
     return Status::IOError("Failed to disable padding for cipher context.");
   }
 
@@ -127,10 +128,12 @@ Status AESCTRCipherStream::Cipher(uint64_t file_offset, char* data,
     ret = EVP_CipherUpdate(ctx, partial_block, &output_size, partial_block,
                            AES_BLOCK_SIZE);
     if (ret != 1) {
+      FreeCipherContext(ctx);
       return Status::IOError("Crypter failed for first block, offset " +
                              ToString(file_offset));
     }
     if (output_size != AES_BLOCK_SIZE) {
+      FreeCipherContext(ctx);
       return Status::IOError(
           "Unexpected crypter output size for first block, expected " +
           ToString(AES_BLOCK_SIZE) + " vs actual " + ToString(output_size));
@@ -149,10 +152,12 @@ Status AESCTRCipherStream::Cipher(uint64_t file_offset, char* data,
     ret = EVP_CipherUpdate(ctx, full_blocks, &output_size, full_blocks,
                            static_cast<int>(actual_data_size));
     if (ret != 1) {
+      FreeCipherContext(ctx);
       return Status::IOError("Crypter failed at offset " +
                              ToString(file_offset + data_offset));
     }
     if (output_size != static_cast<int>(actual_data_size)) {
+      FreeCipherContext(ctx);
       return Status::IOError("Unexpected crypter output size, expected " +
                              ToString(actual_data_size) + " vs actual " +
                              ToString(output_size));
@@ -169,16 +174,24 @@ Status AESCTRCipherStream::Cipher(uint64_t file_offset, char* data,
     ret = EVP_CipherUpdate(ctx, partial_block, &output_size, partial_block,
                            AES_BLOCK_SIZE);
     if (ret != 1) {
+      FreeCipherContext(ctx);
       return Status::IOError("Crypter failed for last block, offset " +
                              ToString(file_offset + data_offset));
     }
     if (output_size != AES_BLOCK_SIZE) {
+      FreeCipherContext(ctx);
       return Status::IOError(
           "Unexpected crypter output size for last block, expected " +
           ToString(AES_BLOCK_SIZE) + " vs actual " + ToString(output_size));
     }
     memcpy(data + data_offset, partial_block, remaining_data_size);
   }
+
+  // Since padding is disabled, and the cipher flow always passes a multiply
+  // of block size data while each EVP_CipherUpdate, there is no need to call
+  // EVP_CipherFinal_ex to finish the last block cipher.
+  // Reference to the implement of EVP_CipherFinal_ex:
+  // https://github.com/openssl/openssl/blob/OpenSSL_1_1_1-stable/crypto/evp/evp_enc.c#L219
   FreeCipherContext(ctx);
   return Status::OK();
 #endif
@@ -199,6 +212,14 @@ Status NewAESCTRCipherStream(EncryptionMethod method, const std::string& key,
     case EncryptionMethod::kAES256_CTR:
       cipher = EVP_aes_256_ctr();
       break;
+    case EncryptionMethod::kSM4_CTR:
+    #if OPENSSL_VERSION_NUMBER < 0x101010bfL
+      return Status::InvalidArgument("Unsupport SM4 encryption method under OpenSSL version: " +
+                                     OPENSSL_VERSION_TEXT);
+    #else
+      cipher = EVP_sm4_ctr();
+      break;
+    #endif
     default:
       return Status::InvalidArgument("Unsupported encryption method: " +
                                      ToString(static_cast<int>(method)));
@@ -267,6 +288,7 @@ Status KeyManagedEncryptedEnv::NewSequentialFile(
     case EncryptionMethod::kAES128_CTR:
     case EncryptionMethod::kAES192_CTR:
     case EncryptionMethod::kAES256_CTR:
+    case EncryptionMethod::kSM4_CTR:
       s = encrypted_env_->NewSequentialFile(fname, result, options);
       // Hack: when upgrading from TiKV <= v5.0.0-rc, the old current
       // file is encrypted but it could be replaced with a plaintext
@@ -303,6 +325,7 @@ Status KeyManagedEncryptedEnv::NewRandomAccessFile(
     case EncryptionMethod::kAES128_CTR:
     case EncryptionMethod::kAES192_CTR:
     case EncryptionMethod::kAES256_CTR:
+    case EncryptionMethod::kSM4_CTR:
       s = encrypted_env_->NewRandomAccessFile(fname, result, options);
       break;
     default:
@@ -336,6 +359,7 @@ Status KeyManagedEncryptedEnv::NewWritableFile(
     case EncryptionMethod::kAES128_CTR:
     case EncryptionMethod::kAES192_CTR:
     case EncryptionMethod::kAES256_CTR:
+    case EncryptionMethod::kSM4_CTR:
       s = encrypted_env_->NewWritableFile(fname, result, options);
       break;
     default:
@@ -365,6 +389,7 @@ Status KeyManagedEncryptedEnv::ReopenWritableFile(
     case EncryptionMethod::kAES128_CTR:
     case EncryptionMethod::kAES192_CTR:
     case EncryptionMethod::kAES256_CTR:
+    case EncryptionMethod::kSM4_CTR:
       s = encrypted_env_->ReopenWritableFile(fname, result, options);
       break;
     default:
@@ -393,6 +418,7 @@ Status KeyManagedEncryptedEnv::ReuseWritableFile(
     case EncryptionMethod::kAES128_CTR:
     case EncryptionMethod::kAES192_CTR:
     case EncryptionMethod::kAES256_CTR:
+    case EncryptionMethod::kSM4_CTR:
       s = encrypted_env_->ReuseWritableFile(fname, old_fname, result, options);
       break;
     default:
@@ -429,6 +455,7 @@ Status KeyManagedEncryptedEnv::NewRandomRWFile(
     case EncryptionMethod::kAES128_CTR:
     case EncryptionMethod::kAES192_CTR:
     case EncryptionMethod::kAES256_CTR:
+    case EncryptionMethod::kSM4_CTR:
       s = encrypted_env_->NewRandomRWFile(fname, result, options);
       break;
     default:
