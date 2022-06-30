@@ -6507,6 +6507,8 @@ int db_bench_tool(int argc, char** argv) {
       method = encryption::EncryptionMethod::kAES192_CTR;
     } else if (!strcasecmp(FLAGS_encryption_method.c_str(), "AES256CTR")) {
       method = encryption::EncryptionMethod::kAES256_CTR;
+    } else if (!strcasecmp(FLAGS_encryption_method.c_str(), "SM4CTR")) {
+      method = encryption::EncryptionMethod::kSM4_CTR;
     }
     if (method == encryption::EncryptionMethod::kUnknown) {
       fprintf(stderr, "Unknown encryption method %s\n",
