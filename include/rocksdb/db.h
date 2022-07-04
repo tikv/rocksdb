@@ -284,7 +284,7 @@ class DB {
   // each other. Calling `CompactRange` on the complementary ranges can make
   // sure user-visible key range is consistent with internal key range.
   //
-  // To avoid triggerring L0 (or Memtable) stall condition, user can consider
+  // To avoid triggering L0 (or Memtable) stall conditions, user can consider
   // dynamically decreasing the corresponding limits before entering merge.
   //
   // WAL merge is not supported. User must write with disableWAL=true, or wait

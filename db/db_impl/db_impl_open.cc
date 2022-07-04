@@ -25,8 +25,6 @@
 #include "test_util/sync_point.h"
 #include "util/rate_limiter.h"
 
-#include <iostream>
-
 namespace ROCKSDB_NAMESPACE {
 Options SanitizeOptions(const std::string& dbname, const Options& src,
                         bool read_only) {
