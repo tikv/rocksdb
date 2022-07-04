@@ -11,6 +11,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <deque>
 #include <mutex>
 #include <type_traits>
 #include <vector>
@@ -25,9 +26,27 @@
 #include "rocksdb/types.h"
 #include "rocksdb/write_batch.h"
 #include "util/autovector.h"
-#include "util/safe_queue.h"
 
 namespace rocksdb {
+
+struct CommitRequest;
+
+class ColumnFamilySet;
+class FlushScheduler;
+
+class RequestQueue {
+ public:
+  RequestQueue();
+  ~RequestQueue();
+  void Enter(CommitRequest* req);
+  void CommitSequenceAwait(CommitRequest* req,
+                           std::atomic<uint64_t>* commit_sequence);
+
+ private:
+  std::mutex commit_mu_;
+  std::condition_variable commit_cv_;
+  std::deque<CommitRequest*> requests_;
+};
 
 class WriteThread {
  public:
@@ -114,10 +133,43 @@ class WriteThread {
     Iterator end() const { return Iterator(nullptr, nullptr); }
   };
 
+  struct MultiBatch {
+    std::vector<WriteBatch*> batches;
+    std::atomic<size_t> claimed_cnt;
+    std::atomic<size_t> pending_wb_cnt;
+    ColumnFamilySet* version_set;
+    FlushScheduler* flush_scheduler;
+    bool ignore_missing_column_families;
+    DB *db;
+
+    MultiBatch()
+        : claimed_cnt(0),
+          pending_wb_cnt(0),
+          version_set(nullptr),
+          flush_scheduler(nullptr),
+          ignore_missing_column_families(false),
+          db(nullptr) {}
+
+    explicit MultiBatch(std::vector<WriteBatch*>&& _batch)
+        : batches(_batch),
+          claimed_cnt(0),
+          pending_wb_cnt(_batch.size()),
+          version_set(nullptr),
+          flush_scheduler(nullptr),
+          ignore_missing_column_families(false),
+          db(nullptr) {}
+
+    void SetContext(ColumnFamilySet* _version_set, FlushScheduler* _flush_scheduler,
+                    bool _ignore_missing_column_families, DB* _db) {
+      version_set = _version_set;
+      flush_scheduler = _flush_scheduler;
+      ignore_missing_column_families = _ignore_missing_column_families;
+      db = _db;
+    }
+  };
+
   // Information kept for every waiting writer.
   struct Writer {
-    WriteBatch* batch;
-    std::vector<WriteBatch*> batches;
     bool sync;
     bool no_slowdown;
     bool disable_wal;
@@ -130,6 +182,7 @@ class WriteThread {
     bool made_waitable;          // records lazy construction of mutex and cv
     std::atomic<uint8_t> state;  // write under StateMutex() or pre-link
     WriteGroup* write_group;
+    CommitRequest* request;
     SequenceNumber sequence;  // the sequence number to use for the first key
     Status status;
     Status callback_status;   // status returned by callback->Callback()
@@ -139,9 +192,10 @@ class WriteThread {
     Writer* link_older;  // read/write only before linking, or as leader
     Writer* link_newer;  // lazy, read/write only before linking, or as leader
 
+    MultiBatch multi_batch;
+
     Writer()
-        : batch(nullptr),
-          sync(false),
+        : sync(false),
           no_slowdown(false),
           disable_wal(false),
           disable_memtable(false),
@@ -153,6 +207,7 @@ class WriteThread {
           made_waitable(false),
           state(STATE_INIT),
           write_group(nullptr),
+          request(nullptr),
           sequence(kMaxSequenceNumber),
           link_older(nullptr),
           link_newer(nullptr) {}
@@ -161,8 +216,7 @@ class WriteThread {
            WriteCallback* _callback, uint64_t _log_ref, bool _disable_memtable,
            size_t _batch_cnt = 0,
            PreReleaseCallback* _pre_release_callback = nullptr)
-        : batch(_batch),
-          sync(write_options.sync),
+        : sync(write_options.sync),
           no_slowdown(write_options.no_slowdown),
           disable_wal(write_options.disableWAL),
           disable_memtable(_disable_memtable),
@@ -174,21 +228,21 @@ class WriteThread {
           made_waitable(false),
           state(STATE_INIT),
           write_group(nullptr),
+          request(nullptr),
           sequence(kMaxSequenceNumber),
           link_older(nullptr),
           link_newer(nullptr) {
-      batches.push_back(_batch);
+      multi_batch.batches.push_back(_batch);
+      multi_batch.pending_wb_cnt.fetch_add(1, std::memory_order_acq_rel);
     }
 
     Writer(const WriteOptions& write_options, std::vector<WriteBatch*>&& _batch,
-           WriteCallback* _callback, uint64_t _log_ref,
+           WriteCallback* _callback, uint64_t _log_ref, bool _disable_memtable,
            PreReleaseCallback* _pre_release_callback = nullptr)
-        : batch(nullptr),
-          batches(_batch),
-          sync(write_options.sync),
+        : sync(write_options.sync),
           no_slowdown(write_options.no_slowdown),
           disable_wal(write_options.disableWAL),
-          disable_memtable(false),
+          disable_memtable(_disable_memtable),
           batch_cnt(0),
           pre_release_callback(_pre_release_callback),
           log_used(0),
@@ -197,9 +251,11 @@ class WriteThread {
           made_waitable(false),
           state(STATE_INIT),
           write_group(nullptr),
+          request(nullptr),
           sequence(kMaxSequenceNumber),
           link_older(nullptr),
-          link_newer(nullptr) {}
+          link_newer(nullptr),
+          multi_batch(std::move(_batch)) {}
 
     ~Writer() {
       if (made_waitable) {
@@ -270,6 +326,33 @@ class WriteThread {
       return *static_cast<std::condition_variable*>(
                  static_cast<void*>(&state_cv_bytes));
     }
+
+    bool ConsumableOnOtherThreads() {
+      return multi_batch.pending_wb_cnt.load(std::memory_order_acquire) > 1;
+    }
+
+    size_t Claim() {
+      return multi_batch.claimed_cnt.fetch_add(1, std::memory_order_acq_rel);
+    }
+
+    bool HasPendingWB() {
+      return multi_batch.pending_wb_cnt.load(std::memory_order_acquire) > 0;
+    }
+
+    void ResetPendingWBCnt() {
+      multi_batch.pending_wb_cnt.store(0, std::memory_order_release);
+    }
+
+    bool ConsumeOne() {
+      auto claimed = Claim();
+      if (claimed < multi_batch.batches.size()) {
+        ConsumeOne(claimed);
+        return true;
+      }
+      return false;
+    }
+
+    void ConsumeOne(size_t claimed);
   };
 
   struct AdaptationContext {
@@ -376,7 +459,12 @@ class WriteThread {
   // Remove the dummy writer and wake up waiting writers
   void EndWriteStall();
 
-  SafeFuncQueue write_queue_;
+  void EnterCommitQueue(CommitRequest* req) { return commit_queue_.Enter(req); }
+
+  void ExitWaitSequenceCommit(CommitRequest* req,
+                              std::atomic<uint64_t>* commit_sequence) {
+    commit_queue_.CommitSequenceAwait(req, commit_sequence);
+  }
 
  private:
   // See AwaitState.
@@ -388,7 +476,6 @@ class WriteThread {
 
   // Enable pipelined write to WAL and memtable.
   const bool enable_pipelined_write_;
-  const bool enable_multi_thread_write_;
 
   // Points to the newest pending writer. Only leader can remove
   // elements, adding can be done lock-free by anybody.
@@ -406,6 +493,7 @@ class WriteThread {
   // at the tail of the writer queue by the leader, so newer writers can just
   // check for this and bail
   Writer write_stall_dummy_;
+  RequestQueue commit_queue_;
 
   // Mutex and condvar for writers to block on a write stall. During a write
   // stall, writers with no_slowdown set to false will wait on this rather
@@ -451,6 +539,14 @@ class WriteThread {
   // Set a follower in write_group to completed state and remove it from the
   // write group.
   void CompleteFollower(Writer* w, WriteGroup& write_group);
+};
+
+struct CommitRequest {
+  WriteThread::Writer* writer;
+  uint64_t commit_lsn;
+  // protected by RequestQueue::commit_mu_
+  bool committed;
+  CommitRequest(WriteThread::Writer* w) : writer(w), commit_lsn(0), committed(false) {}
 };
 
 }  // namespace rocksdb

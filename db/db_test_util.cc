@@ -555,9 +555,10 @@ Options DBTestBase::GetOptions(
       options.enable_pipelined_write = true;
       break;
     }
-    case kMultiThreadWrite: {
-      options.enable_multi_thread_write = true;
-      options.enable_pipelined_write = true;
+    case kMultiBatchWrite: {
+      options.enable_multi_batch_write = true;
+      options.enable_pipelined_write = false;
+      options.two_write_queues = false;
       break;
     }
     case kConcurrentWALWrites: {

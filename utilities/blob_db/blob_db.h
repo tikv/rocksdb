@@ -191,8 +191,10 @@ class BlobDB : public StackableDB {
     return Status::NotSupported("Not supported operation in blob db.");
   }
 
+  using rocksdb::StackableDB::Write;
   virtual Status Write(const WriteOptions& opts,
-                       WriteBatch* updates) override = 0;
+                       WriteBatch* updates,
+                       uint64_t* seq) override = 0;
   using rocksdb::StackableDB::NewIterator;
   virtual Iterator* NewIterator(const ReadOptions& options) override = 0;
   virtual Iterator* NewIterator(const ReadOptions& options,

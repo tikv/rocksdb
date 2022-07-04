@@ -60,7 +60,7 @@ struct ImmutableDBOptions {
   bool enable_thread_tracking;
   bool enable_pipelined_write;
   bool unordered_write;
-  bool enable_multi_thread_write;
+  bool enable_multi_batch_write;
   bool allow_concurrent_memtable_write;
   bool enable_write_thread_adaptive_yield;
   uint64_t write_thread_max_yield_usec;
@@ -87,7 +87,6 @@ struct ImmutableDBOptions {
 
 struct MutableDBOptions {
   MutableDBOptions();
-  explicit MutableDBOptions(const MutableDBOptions& options) = default;
   explicit MutableDBOptions(const DBOptions& options);
 
   void Dump(Logger* log) const;

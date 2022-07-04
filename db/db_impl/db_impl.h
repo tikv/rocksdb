@@ -152,7 +152,8 @@ class DBImpl : public DB {
                               const Slice& key) override;
   using DB::Write;
   virtual Status Write(const WriteOptions& options,
-                       WriteBatch* updates) override;
+                       WriteBatch* updates,
+                       uint64_t* seq) override;
 
   using DB::MultiBatchWrite;
   virtual Status MultiBatchWrite(const WriteOptions& options,
@@ -1034,9 +1035,10 @@ class DBImpl : public DB {
 
   Status MultiBatchWriteImpl(const WriteOptions& write_options,
                              std::vector<WriteBatch*>&& my_batch,
-                             WriteCallback* callback,
+                             WriteCallback* callback = nullptr,
                              uint64_t* log_used = nullptr, uint64_t log_ref = 0,
                              uint64_t* seq_used = nullptr);
+  void MultiBatchWriteCommit(CommitRequest* request);
 
   Status PipelinedWriteImpl(const WriteOptions& options, WriteBatch* updates,
                             WriteCallback* callback = nullptr,
@@ -1389,7 +1391,8 @@ class DBImpl : public DB {
       mutex_.Lock();
     }
 
-    if (!immutable_db_options_.unordered_write) {
+    if (!immutable_db_options_.unordered_write &&
+        !immutable_db_options_.enable_multi_batch_write) {
       // Then the writes are finished before the next write group starts
       return;
     }

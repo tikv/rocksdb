@@ -54,8 +54,8 @@ void DBImpl::SetRecoverableStatePreReleaseCallback(
   recoverable_state_pre_release_callback_.reset(callback);
 }
 
-Status DBImpl::Write(const WriteOptions& write_options, WriteBatch* my_batch) {
-  return WriteImpl(write_options, my_batch, nullptr, nullptr);
+Status DBImpl::Write(const WriteOptions& write_options, WriteBatch* my_batch, uint64_t* seq) {
+  return WriteImpl(write_options, my_batch, nullptr, nullptr, 0, false, seq);
 }
 
 #ifndef ROCKSDB_LITE
@@ -66,33 +66,78 @@ Status DBImpl::WriteWithCallback(const WriteOptions& write_options,
 }
 #endif  // ROCKSDB_LITE
 
+void DBImpl::MultiBatchWriteCommit(CommitRequest* request) {
+  write_thread_.ExitWaitSequenceCommit(request, &versions_->last_sequence_);
+  size_t pending_cnt = pending_memtable_writes_.fetch_sub(1) - 1;
+  if (pending_cnt == 0) {
+    // switch_cv_ waits until pending_memtable_writes_ = 0. Locking its mutex
+    // before notify ensures that cv is in waiting state when it is notified
+    // thus not missing the update to pending_memtable_writes_ even though it
+    // is not modified under the mutex.
+    std::lock_guard<std::mutex> lck(switch_mutex_);
+    switch_cv_.notify_all();
+  }
+}
+
 Status DBImpl::MultiBatchWrite(const WriteOptions& options,
                                std::vector<WriteBatch*>&& updates) {
-  if (immutable_db_options_.enable_multi_thread_write) {
+  if (immutable_db_options_.enable_multi_batch_write) {
     return MultiBatchWriteImpl(options, std::move(updates), nullptr, nullptr);
   } else {
     return Status::NotSupported();
   }
 }
 
+// In this way, RocksDB will apply WriteBatch to memtable out of order but commit
+// them in order. (We borrow the idea from:
+// https://github.com/cockroachdb/pebble/blob/master/docs/rocksdb.md#commit-pipeline.
+// On this basis, we split the WriteBatch into smaller-grained WriteBatch vector,
+// and when the WriteBatch sizes of multiple writers are not balanced, writers
+// that finish first need to help the front writer finish writing the remaining
+// WriteBatch to increase cpu usage and reduce overall latency)
+//
+// More details:
+//
+//    Request Queue        WriteBatchVec
+//   +--------------+             +---------------------+
+//   | Front Writer |      ->     | WB1 | WB2 | WB3|... |
+//   +--------------+    +-----+  +---------------------+
+//   | Writer 2     | -> | WB1 |
+//   +--------------+    +-----+  +-----------+
+//   | Writer 3     |      ->     | WB1 | WB2 |
+//   +--------------+     +---+   +-----------+
+//   | ...          | ->  |...|
+//   +--------------+     +---+
+//
+// 1.   Mutli Writers enter the `Request queue` to determine the commit order.
+// 2.   Then all writers write to the memtable in parallel (Each thread iterates over
+//      its own write batch vector).
+// 3.1. If the Front Writer finishes writing and enters the commit phase first, it will
+//      pop itself from the `Request queue`, then this function will return to its caller,
+//      and the Writer 2 becomes the new front.
+// 3.2. If the Writer 2 or 3 finishes writing and enters the commit phase first, it will
+//      help the front writer complete its pending WBs one by one until all done and wake
+//      up the Front Writer, then the Front Writer will traverse and pop completed writers,
+//      the first unfinished writer encountered will become the new front.
+//
 Status DBImpl::MultiBatchWriteImpl(const WriteOptions& write_options,
                                    std::vector<WriteBatch*>&& my_batch,
                                    WriteCallback* callback, uint64_t* log_used,
                                    uint64_t log_ref, uint64_t* seq_used) {
   PERF_TIMER_GUARD(write_pre_and_post_process_time);
   StopWatch write_sw(env_, immutable_db_options_.statistics.get(), DB_WRITE);
-  WriteThread::Writer writer(write_options, std::move(my_batch), callback,
-                             log_ref);
+  WriteThread::Writer writer(write_options, std::move(my_batch), callback, log_ref, false);
+  CommitRequest request(&writer);
+  writer.request = &request;
   write_thread_.JoinBatchGroup(&writer);
 
   WriteContext write_context;
-  bool ignore_missing_faimly = write_options.ignore_missing_column_families;
   if (writer.state == WriteThread::STATE_GROUP_LEADER) {
-    if (writer.callback && !writer.callback->AllowWriteBatching()) {
-      write_thread_.WaitForMemTableWriters();
-    }
     WriteThread::WriteGroup wal_write_group;
     LogContext log_context;
+    if (writer.callback && !writer.callback->AllowWriteBatching()) {
+      WaitForPendingWrites();
+    }
     PERF_TIMER_STOP(write_pre_and_post_process_time);
     writer.status =
         PreprocessWrite(write_options, &log_context, &write_context);
@@ -105,21 +150,32 @@ Status DBImpl::MultiBatchWriteImpl(const WriteOptions& write_options,
         write_thread_.UpdateLastSequence(versions_->LastSequence()) + 1;
     size_t total_count = 0;
     size_t total_byte_size = 0;
-    size_t valid_batches = 0;
     auto stats = default_cf_internal_stats_;
+    size_t memtable_write_cnt = 0;
     if (writer.status.ok()) {
       SequenceNumber next_sequence = current_sequence;
       for (auto w : wal_write_group) {
         if (w->CheckCallback(this)) {
           if (w->ShouldWriteToMemtable()) {
             w->sequence = next_sequence;
-            size_t count = WriteBatchInternal::Count(w->batches);
+            size_t count = WriteBatchInternal::Count(w->multi_batch.batches);
+            if (count > 0) {
+              auto sequence = w->sequence;
+              for (auto b: w->multi_batch.batches) {
+                WriteBatchInternal::SetSequence(b, sequence);
+                sequence += WriteBatchInternal::Count(b);
+              }
+              w->multi_batch.SetContext(versions_->GetColumnFamilySet(), &flush_scheduler_,
+                                        write_options.ignore_missing_column_families, this);
+              w->request->commit_lsn = next_sequence + count - 1;
+              write_thread_.EnterCommitQueue(w->request);
+            }
             next_sequence += count;
             total_count += count;
+            memtable_write_cnt++;
           }
-          valid_batches += 1;
           total_byte_size = WriteBatchInternal::AppendedByteSize(
-              total_byte_size, WriteBatchInternal::ByteSize(w->batches));
+              total_byte_size, WriteBatchInternal::ByteSize(w->multi_batch.batches));
         }
       }
       if (writer.disable_wal) {
@@ -158,75 +214,44 @@ Status DBImpl::MultiBatchWriteImpl(const WriteOptions& write_options,
       MarkLogsSynced(logfile_number_, log_context.need_log_dir_sync,
                      writer.status);
     }
+    if (writer.status.ok()) {
+      pending_memtable_writes_ += memtable_write_cnt;
+    } else {
+      // The `pending_wb_cnt` must be reset to avoid other writers helping
+      // the front writer write its WBs after it failed to write the WAL.
+      writer.ResetPendingWBCnt();
+    }
     write_thread_.ExitAsBatchGroupLeader(wal_write_group, writer.status);
-  }
-  bool is_leader_thread = false;
-  WriteThread::WriteGroup memtable_write_group;
-  if (writer.state == WriteThread::STATE_MEMTABLE_WRITER_LEADER) {
-    PERF_TIMER_GUARD(write_memtable_time);
-    assert(writer.ShouldWriteToMemtable());
-    write_thread_.EnterAsMemTableWriter(&writer, &memtable_write_group);
-    assert(immutable_db_options_.allow_concurrent_memtable_write);
-    if (memtable_write_group.size > 1) {
-      is_leader_thread = true;
-      write_thread_.LaunchParallelMemTableWriters(&memtable_write_group);
-    } else {
-      auto version_set = versions_->GetColumnFamilySet();
-      memtable_write_group.running.store(0);
-      for (auto it = memtable_write_group.begin();
-           it != memtable_write_group.end(); ++it) {
-        if (!it.writer->ShouldWriteToMemtable()) {
-          continue;
-        }
-        WriteBatchInternal::AsyncInsertInto(
-            it.writer, it.writer->sequence, version_set, &flush_scheduler_,
-            ignore_missing_faimly, this, &write_thread_.write_queue_);
-      }
-      while (memtable_write_group.running.load(std::memory_order_acquire) > 0) {
-        if (!write_thread_.write_queue_.RunFunc()) {
-          std::this_thread::yield();
-        }
-      }
-      MemTableInsertStatusCheck(memtable_write_group.status);
-      versions_->SetLastSequence(memtable_write_group.last_sequence);
-      write_thread_.ExitAsMemTableWriter(&writer, memtable_write_group);
-    }
-  }
-  if (writer.state == WriteThread::STATE_PARALLEL_MEMTABLE_WRITER) {
-    assert(writer.ShouldWriteToMemtable());
-    auto version_set = versions_->GetColumnFamilySet();
-    WriteBatchInternal::AsyncInsertInto(
-        &writer, writer.sequence, version_set, &flush_scheduler_,
-        ignore_missing_faimly, this, &write_thread_.write_queue_);
-    // Because `LaunchParallelMemTableWriters` has add `write_group->size` to `running`,
-    // the value of `running` is always larger than one if the leader thread does not
-    // call `CompleteParallelMemTableWriter`.
-    while (writer.write_group->running.load(std::memory_order_acquire) > 1) {
-      // Write thread could exit and block itself if it is not a leader thread.
-      if (!write_thread_.write_queue_.RunFunc() && !is_leader_thread) {
-        break;
-      }
-    }
-    // We only allow leader_thread to finish this WriteGroup because there may
-    // be another task which is done by the thread that is not in this WriteGroup,
-    // and it would not notify the threads in this WriteGroup. So we must make someone in
-    // this WriteGroup to complete it and leader thread is easy to be decided.
-    if (is_leader_thread) {
-      if (!write_thread_.CompleteParallelMemTableWriter(&writer)) {
-        return Status::Aborted("Leader thread must complete at last and exit as memtable writer.");
-      }
-      MemTableInsertStatusCheck(writer.status);
-      versions_->SetLastSequence(writer.write_group->last_sequence);
-      write_thread_.ExitAsMemTableWriter(&writer, *writer.write_group);
-    } else {
-      write_thread_.CompleteParallelMemTableWriter(&writer);
-    }
   }
 
   if (seq_used != nullptr) {
     *seq_used = writer.sequence;
   }
-  assert(writer.state == WriteThread::STATE_COMPLETED);
+  TEST_SYNC_POINT("DBImpl::WriteImpl:CommitAfterWriteWAL");
+
+  if (writer.request->commit_lsn != 0 && writer.status.ok()) {
+    TEST_SYNC_POINT("DBImpl::WriteImpl:BeforePipelineWriteMemtable");
+    PERF_TIMER_GUARD(write_memtable_time);
+    size_t total_count = WriteBatchInternal::Count(my_batch);
+    InternalStats* stats = default_cf_internal_stats_;
+    stats->AddDBStats(InternalStats::kIntStatsNumKeysWritten, total_count);
+    RecordTick(stats_, NUMBER_KEYS_WRITTEN, total_count);
+
+    while (writer.ConsumeOne());
+    MultiBatchWriteCommit(writer.request);
+
+    WriteStatusCheck(writer.status);
+    if (!writer.FinalStatus().ok()) {
+      writer.status = writer.FinalStatus();
+    }
+  } else if (writer.request->commit_lsn != 0) {
+    // When the leader fails to write WAL, all writers in the group need to cancel
+    // the write to memtable.
+    writer.ResetPendingWBCnt();
+    MultiBatchWriteCommit(writer.request);
+  } else {
+    writer.ResetPendingWBCnt();
+  }
   return writer.status;
 }
 
@@ -253,6 +278,10 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
     return Status::InvalidArgument("Sync writes has to enable WAL.");
   }
   if (two_write_queues_ && immutable_db_options_.enable_pipelined_write) {
+    return Status::NotSupported(
+        "pipelined_writes is not compatible with concurrent prepares");
+  }
+  if (two_write_queues_ && immutable_db_options_.enable_multi_batch_write) {
     return Status::NotSupported(
         "pipelined_writes is not compatible with concurrent prepares");
   }
@@ -316,11 +345,11 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
     return status;
   }
 
-  if (immutable_db_options_.enable_multi_thread_write) {
+  if (immutable_db_options_.enable_multi_batch_write) {
     std::vector<WriteBatch*> updates(1);
     updates[0] = my_batch;
-    return MultiBatchWriteImpl(write_options, std::move(updates), callback,
-                               log_used, log_ref, seq_used);
+    return MultiBatchWriteImpl(write_options, std::move(updates), callback, log_used, log_ref,
+                               seq_used);
   }
 
   if (immutable_db_options_.enable_pipelined_write) {
@@ -443,11 +472,12 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
       if (writer->CheckCallback(this)) {
         valid_batches += writer->batch_cnt;
         if (writer->ShouldWriteToMemtable()) {
-          total_count += WriteBatchInternal::Count(writer->batch);
-          parallel = parallel && !writer->batch->HasMerge();
+          total_count += WriteBatchInternal::Count(writer->multi_batch.batches[0]);
+          parallel = parallel && !writer->multi_batch.batches[0]->HasMerge();
         }
         total_byte_size = WriteBatchInternal::AppendedByteSize(
-            total_byte_size, WriteBatchInternal::ByteSize(writer->batch));
+            total_byte_size,
+            WriteBatchInternal::ByteSize(writer->multi_batch.batches[0]));
         if (writer->pre_release_callback) {
           pre_release_callback_cnt++;
         }
@@ -539,7 +569,7 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
           assert(writer->batch_cnt);
           next_sequence += writer->batch_cnt;
         } else if (writer->ShouldWriteToMemtable()) {
-          next_sequence += WriteBatchInternal::Count(writer->batch);
+          next_sequence += WriteBatchInternal::Count(writer->multi_batch.batches[0]);
         }
       }
     }
@@ -657,12 +687,13 @@ Status DBImpl::PipelinedWriteImpl(const WriteOptions& write_options,
         if (writer->CheckCallback(this)) {
           if (writer->ShouldWriteToMemtable()) {
             writer->sequence = next_sequence;
-            size_t count = WriteBatchInternal::Count(writer->batch);
+            size_t count = WriteBatchInternal::Count(writer->multi_batch.batches[0]);
             next_sequence += count;
             total_count += count;
           }
           total_byte_size = WriteBatchInternal::AppendedByteSize(
-              total_byte_size, WriteBatchInternal::ByteSize(writer->batch));
+              total_byte_size,
+              WriteBatchInternal::ByteSize(writer->multi_batch.batches[0]));
         }
       }
       if (w.disable_wal) {
@@ -857,7 +888,8 @@ Status DBImpl::WriteImplWALOnly(
   for (auto* writer : write_group) {
     if (writer->CheckCallback(this)) {
       total_byte_size = WriteBatchInternal::AppendedByteSize(
-          total_byte_size, WriteBatchInternal::ByteSize(writer->batch));
+          total_byte_size,
+          WriteBatchInternal::ByteSize(writer->multi_batch.batches[0]));
       if (writer->pre_release_callback) {
         pre_release_callback_cnt++;
       }
@@ -1093,12 +1125,12 @@ WriteBatch* DBImpl::MergeBatch(const WriteThread::WriteGroup& write_group,
   auto* leader = write_group.leader;
   assert(!leader->disable_wal);  // Same holds for all in the batch group
   if (write_group.size == 1 && !leader->CallbackFailed() &&
-      leader->batches.size() == 1 &&
-      leader->batches[0]->GetWalTerminationPoint().is_cleared()) {
+      leader->multi_batch.batches.size() == 1 &&
+      leader->multi_batch.batches[0]->GetWalTerminationPoint().is_cleared()) {
     // we simply write the first WriteBatch to WAL if the group only
     // contains one batch, that batch should be written to the WAL,
     // and the batch is not wanting to be truncated
-    merged_batch = leader->batches[0];
+    merged_batch = leader->multi_batch.batches[0];
     if (WriteBatchInternal::IsLatestPersistentState(merged_batch)) {
       *to_be_cached_state = merged_batch;
     }
@@ -1110,9 +1142,11 @@ WriteBatch* DBImpl::MergeBatch(const WriteThread::WriteGroup& write_group,
     merged_batch = tmp_batch;
     for (auto writer : write_group) {
       if (!writer->CallbackFailed()) {
-        for (auto b : writer->batches) {
-          WriteBatchInternal::Append(merged_batch, b,
-                                     /*WAL_only*/ true);
+        for (auto b : writer->multi_batch.batches) {
+          Status s = WriteBatchInternal::Append(merged_batch, b,
+                                                /*WAL_only*/ true);
+          // Always returns Status::OK.
+          assert(s.ok());
           if (WriteBatchInternal::IsLatestPersistentState(b)) {
             // We only need to cache the last of such write batch
             *to_be_cached_state = b;
@@ -1172,7 +1206,7 @@ Status DBImpl::WriteToWAL(const WriteThread::WriteGroup& write_group,
   StopWatch write_sw(env_, stats_, DB_WRITE_WAL_TIME);
   WriteBatch* merged_batch = MergeBatch(write_group, &tmp_batch_,
                                         &write_with_wal, &to_be_cached_state);
-  if (merged_batch == write_group.leader->batches[0]) {
+  if (merged_batch == write_group.leader->multi_batch.batches[0]) {
     write_group.leader->log_used = logfile_number_;
   } else if (write_with_wal > 1) {
     for (auto writer : write_group) {
@@ -1247,7 +1281,7 @@ Status DBImpl::ConcurrentWriteToWAL(const WriteThread::WriteGroup& write_group,
   // We need to lock log_write_mutex_ since logs_ and alive_log_files might be
   // pushed back concurrently
   log_write_mutex_.Lock();
-  if (merged_batch == write_group.leader->batch) {
+  if (merged_batch == write_group.leader->multi_batch.batches[0]) {
     write_group.leader->log_used = logfile_number_;
   } else if (write_with_wal > 1) {
     for (auto writer : write_group) {
@@ -1297,7 +1331,7 @@ Status DBImpl::WriteRecoverableState() {
     WriteBatchInternal::SetSequence(&cached_recoverable_state_, seq + 1);
     auto status = WriteBatchInternal::InsertInto(
         &cached_recoverable_state_, column_family_memtables_.get(),
-        &flush_scheduler_, true, 0 /*recovery_log_number*/, this,
+        &flush_scheduler_, true, 0 /*recovery_log_number*/, 0 /*log_ref*/, this,
         false /* concurrent_memtable_writes */, &next_seq, &dont_care_bool,
         seq_per_batch_);
     auto last_seq = next_seq - 1;

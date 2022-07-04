@@ -1938,9 +1938,9 @@ Status WriteBatchInternal::InsertInto(
       inserter.MaybeAdvanceSeq(true);
       continue;
     }
-    SetSequence(w->batch, inserter.sequence());
+    SetSequence(w->multi_batch.batches[0], inserter.sequence());
     inserter.set_log_number_ref(w->log_ref);
-    w->status = w->batch->Iterate(&inserter);
+    w->status = w->multi_batch.batches[0]->Iterate(&inserter);
     if (!w->status.ok()) {
       return w->status;
     }
@@ -1964,9 +1964,9 @@ Status WriteBatchInternal::InsertInto(
       sequence, memtables, flush_scheduler, ignore_missing_column_families,
       log_number, db, concurrent_memtable_writes, nullptr /*has_valid_writes*/,
       seq_per_batch, batch_per_txn);
-  SetSequence(writer->batch, sequence);
+  SetSequence(writer->multi_batch.batches[0], sequence);
   inserter.set_log_number_ref(writer->log_ref);
-  Status s = writer->batch->Iterate(&inserter);
+  Status s = writer->multi_batch.batches[0]->Iterate(&inserter);
   assert(!seq_per_batch || batch_cnt != 0);
   assert(!seq_per_batch || inserter.sequence() - sequence == batch_cnt);
   if (concurrent_memtable_writes) {
@@ -1978,13 +1978,14 @@ Status WriteBatchInternal::InsertInto(
 Status WriteBatchInternal::InsertInto(
     const WriteBatch* batch, ColumnFamilyMemTables* memtables,
     FlushScheduler* flush_scheduler, bool ignore_missing_column_families,
-    uint64_t log_number, DB* db, bool concurrent_memtable_writes,
+    uint64_t log_number, uint64_t log_ref, DB* db, bool concurrent_memtable_writes,
     SequenceNumber* next_seq, bool* has_valid_writes, bool seq_per_batch,
     bool batch_per_txn) {
   MemTableInserter inserter(Sequence(batch), memtables, flush_scheduler,
                             ignore_missing_column_families, log_number, db,
                             concurrent_memtable_writes, has_valid_writes,
                             seq_per_batch, batch_per_txn);
+  inserter.set_log_number_ref(log_ref);
   Status s = batch->Iterate(&inserter);
   if (next_seq != nullptr) {
     *next_seq = inserter.sequence();
@@ -1993,44 +1994,6 @@ Status WriteBatchInternal::InsertInto(
     inserter.PostProcess();
   }
   return s;
-}
-
-void WriteBatchInternal::AsyncInsertInto(WriteThread::Writer* writer,
-                                         SequenceNumber sequence,
-                                         ColumnFamilySet* version_set,
-                                         FlushScheduler* flush_scheduler,
-                                         bool ignore_missing_column_families,
-                                         DB* db, SafeFuncQueue* pool) {
-  auto write_group = writer->write_group;
-  auto batch_size = writer->batches.size();
-  write_group->running.fetch_add(batch_size);
-  for (size_t i = 0; i < batch_size; i++) {
-    auto f = [=]() {
-      ColumnFamilyMemTablesImpl memtables(version_set);
-      MemTableInserter inserter(
-          sequence, &memtables, flush_scheduler, ignore_missing_column_families,
-          0 /*recovering_log_number*/, db, true /*concurrent_memtable_writes*/,
-          nullptr /*has_valid_writes*/);
-      inserter.set_log_number_ref(writer->log_ref);
-      SetSequence(writer->batches[i], sequence);
-      Status s = writer->batches[i]->Iterate(&inserter);
-      if (!s.ok()) {
-        std::lock_guard<std::mutex> guard(write_group->leader->StateMutex());
-        write_group->status = s;
-      }
-      inserter.PostProcess();
-      write_group->running.fetch_sub(1);
-    };
-    if (i + 1 == batch_size) {
-      // If there is only one WriteBatch written by this thread, It shall do it
-      // by self, because this batch may be large. And every thread does the latest
-      // one by self will reduce the cost of calling `SafeFuncQueue::Push`.
-      f();
-    } else {
-      pool->Push(std::move(f));
-      sequence += WriteBatchInternal::Count(writer->batches[i]);
-    }
-  }
 }
 
 Status WriteBatchInternal::SetContents(WriteBatch* b, const Slice& contents) {

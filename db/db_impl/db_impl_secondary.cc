@@ -253,7 +253,7 @@ Status DBImplSecondary::RecoverLogFiles(
         bool has_valid_writes = false;
         status = WriteBatchInternal::InsertInto(
             &batch, column_family_memtables_.get(),
-            nullptr /* flush_scheduler */, true, log_number, this,
+            nullptr /* flush_scheduler */, true, log_number, 0, this,
             false /* concurrent_memtable_writes */, next_sequence,
             &has_valid_writes, seq_per_batch_, batch_per_txn_);
       }

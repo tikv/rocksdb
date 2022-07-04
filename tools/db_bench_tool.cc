@@ -3905,7 +3905,7 @@ class Benchmark {
       DBWithColumnFamilies* db) {
     Status s;
     if (use_multi_write_) {
-      options.enable_multi_thread_write = true;
+      options.enable_multi_batch_write = true;
     }
     // Open with column families if necessary.
     if (FLAGS_num_column_families > 1) {
