@@ -1963,6 +1963,8 @@ struct LiveFilesStorageInfoOptions {
 #endif  // !ROCKSDB_LITE
 
 struct MergeInstanceOptions {
+  // Whether to merge memtable. If set to false, memtables and WALs will be
+  // ignored.
   bool merge_memtable = false;
 };
 

@@ -943,6 +943,13 @@ class DBImpl : public DB {
       const std::vector<DB*> instances,
       std::vector<ColumnFamilyHandle*>* handles, DB** dbptr);
 
+  Status ValidateForMerge(const MergeInstanceOptions& merge_options,
+                          WriteBufferManager* write_buffer_manager);
+
+  static Status MergeDisjointInstances(
+      const MergeInstanceOptions& merge_options, DB* primary,
+      const std::vector<DB*> instances);
+
   static IOStatus CreateAndNewDirectory(
       FileSystem* fs, const std::string& dirname,
       std::unique_ptr<FSDirectory>* directory);

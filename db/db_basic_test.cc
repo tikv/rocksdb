@@ -441,8 +441,8 @@ TEST_F(DBBasicTest, FlushMultipleMemtable) {
   } while (ChangeCompactOptions());
 }
 
-TEST_F(DBBasicTest, Merge) {
-  const int files_per_instance = 1;
+TEST_F(DBBasicTest, MergeInstance) {
+  const int files_per_instance = 10;
 
   Options options;
   options.create_if_missing = true;
@@ -450,6 +450,9 @@ TEST_F(DBBasicTest, Merge) {
   options.avoid_flush_during_shutdown = true;
   options.write_buffer_manager.reset(
       new WriteBufferManager(options.db_write_buffer_size));
+  options.level0_file_num_compaction_trigger = files_per_instance * 10;
+  options.level0_slowdown_writes_trigger = files_per_instance * 10;
+  options.level0_stop_writes_trigger = files_per_instance * 10;
   FlushOptions fopts;
   fopts.allow_write_stall = true;
   MergeInstanceOptions mopts;
@@ -561,9 +564,13 @@ TEST_F(DBBasicTest, Merge) {
   DestroyDB(path, options, column_families);
 }
 
-TEST_F(DBBasicTest, MergeOverlapped) {
+TEST_F(DBBasicTest, MergeInstanceOverlapped) {
   Options options;
   options.create_if_missing = true;
+  FlushOptions fopts;
+  fopts.allow_write_stall = true;
+  WriteOptions wopts;
+  wopts.disableWAL = true;
   std::vector<ColumnFamilyDescriptor> column_families;
   column_families.push_back(
       ColumnFamilyDescriptor(ROCKSDB_NAMESPACE::kDefaultColumnFamilyName,
@@ -573,7 +580,8 @@ TEST_F(DBBasicTest, MergeOverlapped) {
 
   std::vector<DB*> dbs;
   std::vector<std::string> paths;
-  int needs_trim = 2;
+  int range_tombstone = 2;
+  int tombstone = 3;
   for (int i = 0; i < 5; ++i) {
     auto path = test::PerThreadDBPath(env_, std::to_string(i));
     DB* db;
@@ -587,13 +595,15 @@ TEST_F(DBBasicTest, MergeOverlapped) {
     ASSERT_OK(DB::Open(options, path, column_families, &handles, &db));
     dbs.push_back(db);
     paths.push_back(path);
-    WriteOptions wopts;
-    wopts.disableWAL = true;
+
     ASSERT_OK(db->Put(wopts, handles[0], std::to_string(i), std::to_string(i)));
-    ASSERT_OK(db->Flush(FlushOptions(), handles[0]));
-    if (i == needs_trim) {
+    ASSERT_OK(db->Flush(fopts, handles[0]));
+    if (i == range_tombstone) {
       ASSERT_OK(db->DeleteRange(wopts, handles[0], std::to_string(i + 1), "9"));
-      ASSERT_OK(db->Flush(FlushOptions(), handles[0]));
+      ASSERT_OK(
+          db->DeleteRange(wopts, handles[0], nullptr, std::to_string(i - 1)));
+    } else if (i == tombstone) {
+      ASSERT_OK(db->SingleDelete(wopts, handles[0], nullptr));
     }
     for (auto h : handles) {
       ASSERT_OK(db->DestroyColumnFamilyHandle(h));
@@ -604,22 +614,26 @@ TEST_F(DBBasicTest, MergeOverlapped) {
   paths.push_back(path);
   std::vector<ColumnFamilyHandle*> handles;
   DB* new_db;
-  ASSERT_NOK(DB::CreateFromDisjointInstances(MergeInstanceOptions(), options,
-                                             path, column_families, dbs,
-                                             &handles, &new_db));
-  ASSERT_OK(DestroyDB(path, options, column_families));
 
-  Slice start = std::to_string(needs_trim - 1) + "9";
-  Slice end = std::to_string(needs_trim + 1);
-  CompactRangeOptions copts;
-  copts.bottommost_level_compaction = BottommostLevelCompaction::kForce;
-  ASSERT_OK(dbs[needs_trim]->CompactRange(
-      copts, dbs[needs_trim]->DefaultColumnFamily(), nullptr, &start));
-  ASSERT_OK(dbs[needs_trim]->CompactRange(
-      copts, dbs[needs_trim]->DefaultColumnFamily(), &end, nullptr));
+  for (auto i : {range_tombstone, tombstone}) {
+    ASSERT_NOK(DB::CreateFromDisjointInstances(MergeInstanceOptions(), options,
+                                               path, column_families, dbs,
+                                               &handles, &new_db));
+    ASSERT_OK(DestroyDB(path, options, column_families));
+
+    Slice start = std::to_string(i - 1) + "9";
+    Slice end = std::to_string(i + 1);
+    CompactRangeOptions copts;
+    copts.bottommost_level_compaction = BottommostLevelCompaction::kForce;
+    ASSERT_OK(dbs[i]->CompactRange(copts, dbs[i]->DefaultColumnFamily(),
+                                   nullptr, &start));
+    ASSERT_OK(dbs[i]->CompactRange(copts, dbs[i]->DefaultColumnFamily(), &end,
+                                   nullptr));
+  }
   ASSERT_OK(DB::CreateFromDisjointInstances(MergeInstanceOptions(), options,
                                             path, column_families, dbs,
                                             &handles, &new_db));
+
   std::string result;
   for (int i = 0; i < 5; ++i) {
     ASSERT_OK(

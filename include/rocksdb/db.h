@@ -277,14 +277,39 @@ class DB {
       const CompactionServiceOptionsOverride& override_options);
 
   // Create a new DB by merging multiple disjoint DBs.
-  // Unless memtable merge is enabled, if any of the source DBs is written
-  // during the merge process, the operation will be aborted.
+  //
+  // # Tips
+  //
+  // The provided DBs must be disjoint: their internal key ranges don't overlap
+  // each other. Calling `CompactRange` on the complementary ranges can make
+  // sure user-visible key range is consistent with internal key range.
+  //
+  // To avoid triggerring L0 (or Memtable) stall condition, user can consider
+  // dynamically decreasing the corresponding limits before entering merge.
+  //
+  // WAL merge is not supported. User must write with disableWAL=true, or wait
+  // for all WALs to be retired before merging.
+  //
+  // # Safety
+  //
+  // Performing merge on DBs that are still undergoing writes results in
+  // undefined behavior.
+  //
+  // Using different implementations of user comparator results in undefined
+  // behavior as well.
+  //
   static Status CreateFromDisjointInstances(
       const MergeInstanceOptions& merge_options, const DBOptions& db_options,
       const std::string& name,
       const std::vector<ColumnFamilyDescriptor>& column_families,
       const std::vector<DB*> instances,
       std::vector<ColumnFamilyHandle*>* handles, DB** dbptr);
+
+  // Merge multiple disjoint DBs into one primary instance. For more details
+  // refer to CreateFromDisjointInstances.
+  static Status MergeDisjointInstances(
+      const MergeInstanceOptions& merge_options, DB* primary,
+      const std::vector<DB*> instances);
 
   virtual Status Resume() { return Status::NotSupported(); }
 
