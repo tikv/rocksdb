@@ -185,6 +185,7 @@ class WriteThread {
     CommitRequest* request;
     SequenceNumber sequence;  // the sequence number to use for the first key
     Status status;
+    std::mutex status_mu;
     Status callback_status;   // status returned by callback->Callback()
 
     std::aligned_storage<sizeof(std::mutex)>::type state_mutex_bytes;
