@@ -1427,6 +1427,13 @@ ROCKS_TESTS = [
         [],
     ],
     [
+        "db_merge_test",
+        "db/db_merge_test.cc",
+        "parallel",
+        [],
+        [],
+    ],
+    [
         "db_options_test",
         "db/db_options_test.cc",
         "parallel",

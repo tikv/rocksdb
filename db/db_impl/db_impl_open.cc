@@ -2064,9 +2064,11 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
       PinnableSlice smallest, largest;
       bool found = false;
       s = primary_cfds[i]->GetUserKeyRange(smallest, largest, found);
-      db_ranges.emplace_back(smallest, largest);
-      pinned_vals.push_back(std::move(smallest));
-      pinned_vals.push_back(std::move(largest));
+      if (found) {
+        db_ranges.emplace_back(smallest, largest);
+        pinned_vals.push_back(std::move(smallest));
+        pinned_vals.push_back(std::move(largest));
+      }
     }
     if (s.ok()) {
       for (auto* db : db_impls) {
@@ -2079,9 +2081,11 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
         PinnableSlice smallest, largest;
         bool found = false;
         s = cfd->GetUserKeyRange(smallest, largest, found);
-        db_ranges.emplace_back(smallest, largest);
-        pinned_vals.push_back(std::move(smallest));
-        pinned_vals.push_back(std::move(largest));
+        if (found) {
+          db_ranges.emplace_back(smallest, largest);
+          pinned_vals.push_back(std::move(smallest));
+          pinned_vals.push_back(std::move(largest));
+        }
       }
     }
     if (s.ok()) {
@@ -2182,9 +2186,16 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
           cfd->imm()->ExportMemtables(&mems);
           if (!cfd->mem()->IsEmpty()) {
             mems.push_back(cfd->mem());
+            // Only immutable memtables can be shared.
+            auto& cf_mopts = *cfd->GetLatestMutableCFOptions();
+            auto* new_mem = cfd->ConstructNewMemtable(cf_mopts, max_seq_number);
+            new_mem->Ref();
+            cfd->SetMemtable(new_mem);
+            SuperVersionContext sv_context(/* create_superversion */ true);
+            db->InstallSuperVersionAndScheduleWork(cfd, &sv_context, cf_mopts);
+            sv_context.Clean();
           }
         }
-        // TODO(tabokie): Is this really needed?
         auto* fresh_mem = primary_cfd->ConstructNewMemtable(mutable_cf_options,
                                                             max_seq_number);
         mems.push_back(fresh_mem);
