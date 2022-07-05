@@ -405,8 +405,7 @@ class VersionBuilder::Rep {
             }
             // The following check is disabled due to instance merge.
             /*
-            } else if (lhs->fd.smallest_seqno < rhs->fd.smallest_seqno) {
-              // Instance merge could create L0 files with the same seqno.
+            } else if (lhs->fd.smallest_seqno <= rhs->fd.smallest_seqno) {
               std::ostringstream oss;
               oss << "L0 file #" << lhs->fd.GetNumber() << " with seqno "
                   << lhs->fd.smallest_seqno << ' ' << lhs->fd.largest_seqno

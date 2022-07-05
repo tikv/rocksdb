@@ -276,7 +276,7 @@ class DB {
       const std::string& input, std::string* output,
       const CompactionServiceOptionsOverride& override_options);
 
-  // Create a new DB by merging multiple disjoint DBs.
+  // Merge multiple disjoint DBs into another disjoint instance.
   //
   // # Tips
   //
@@ -298,15 +298,6 @@ class DB {
   // Using different implementations of user comparator results in undefined
   // behavior as well.
   //
-  static Status CreateFromDisjointInstances(
-      const MergeInstanceOptions& merge_options, const DBOptions& db_options,
-      const std::string& name,
-      const std::vector<ColumnFamilyDescriptor>& column_families,
-      const std::vector<DB*> instances,
-      std::vector<ColumnFamilyHandle*>* handles, DB** dbptr);
-
-  // Merge multiple disjoint DBs into one primary instance. For more details
-  // refer to CreateFromDisjointInstances.
   static Status MergeDisjointInstances(
       const MergeInstanceOptions& merge_options, DB* primary,
       const std::vector<DB*> instances);

@@ -83,7 +83,7 @@ class DBMergeTest : public testing::Test {
     dbs_[db_id] = db_handles;
   }
 
-  void Open(uint32_t db_id, std::vector<uint32_t>&& cf_ids,
+  void Open(uint32_t db_id, const std::vector<uint32_t>& cf_ids,
             bool reopen = false) {
     if (dbs_.count(db_id) > 0) {
       if (reopen) {
@@ -99,7 +99,7 @@ class DBMergeTest : public testing::Test {
       }
     }
     std::vector<ColumnFamilyDescriptor> column_families =
-        GenColumnFamilyDescriptors(std::move(cf_ids));
+        GenColumnFamilyDescriptors(cf_ids);
     auto path = GenDBPath(db_id);
     DB* db = nullptr;
     if (!reopen) {
@@ -140,8 +140,7 @@ class DBMergeTest : public testing::Test {
     ASSERT_OK(DestroyDB(db_handles.path, options_));
   }
 
-  // If target doesn't exist, use CreateFromDisjointInstances.
-  // Otherwise, use MergeDisjointInstances, and cfs are ignored.
+  // cfs are ignored if target already exists
   Status Merge(const MergeInstanceOptions& mopts, std::vector<uint32_t>&& from,
                uint32_t to,
                const std::vector<uint32_t>& cfs = std::vector<uint32_t>()) {
@@ -149,24 +148,17 @@ class DBMergeTest : public testing::Test {
     for (auto db_id : from) {
       source_dbs.push_back(get_db(db_id));
     }
+    bool newly_opened = false;
     if (dbs_.count(to) == 0) {
       assert(cfs.size() > 0);
-      auto path = GenDBPath(to);
-      auto column_families = GenColumnFamilyDescriptors(cfs);
-      std::vector<ColumnFamilyHandle*> handles;
-      DB* new_db;
-      auto s = DB::CreateFromDisjointInstances(mopts, options_, path,
-                                               column_families, source_dbs,
-                                               &handles, &new_db);
-      if (s.ok()) {
-        AddDB(to, new_db, handles);
-      } else {
-        assert(DestroyDB(path, options_).ok());
-      }
-      return s;
-    } else {
-      return DB::MergeDisjointInstances(mopts, get_db(to), source_dbs);
+      Open(to, cfs);
+      newly_opened = true;
     }
+    auto s = DB::MergeDisjointInstances(mopts, get_db(to), source_dbs);
+    if (newly_opened && !s.ok()) {
+      Destroy(to);
+    }
+    return s;
   }
 
   void VerifyKeyValue(uint32_t db_id, uint32_t cf_id, std::string key,
@@ -374,10 +366,10 @@ TEST_F(DBMergeTest, TombstoneOverlappedInstance) {
 
   ASSERT_OK(get_db(2_db)->DeleteRange(wopts, get_cf(2_db, 1_cf), "0", "9"));
   ASSERT_OK(get_db(2_db)->Put(wopts, get_cf(2_db, 1_cf), "2", "v2"));
-  ASSERT_NOK(Merge(mopts, {1_db, 2_db}, 4_db, {1_cf}));
+  ASSERT_NOK(Merge(mopts, {1_db, 2_db}, 4_db, {default_cf, 1_cf}));
 
   ASSERT_OK(get_db(3_db)->SingleDelete(wopts, get_cf(3_db, 1_cf), nullptr));
-  ASSERT_NOK(Merge(mopts, {1_db, 3_db}, 4_db, {1_cf}));
+  ASSERT_NOK(Merge(mopts, {1_db, 3_db}, 4_db, {default_cf, 1_cf}));
 
   Slice start = "0";
   Slice end = "2";

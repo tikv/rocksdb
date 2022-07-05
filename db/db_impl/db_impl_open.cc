@@ -1930,82 +1930,10 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
   return s;
 }
 
-Status DB::CreateFromDisjointInstances(
-    const MergeInstanceOptions& merge_options, const DBOptions& db_options,
-    const std::string& name,
-    const std::vector<ColumnFamilyDescriptor>& column_families,
-    const std::vector<DB*> instances, std::vector<ColumnFamilyHandle*>* handles,
-    DB** dbptr) {
-  return DBImpl::CreateFromDisjointInstances(merge_options, db_options, name,
-                                             column_families, instances,
-                                             handles, dbptr);
-}
-
 Status DB::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
                                   DB* primary,
                                   const std::vector<DB*> instances) {
   return DBImpl::MergeDisjointInstances(merge_options, primary, instances);
-}
-
-Status DBImpl::CreateFromDisjointInstances(
-    const MergeInstanceOptions& merge_options, const DBOptions& db_options,
-    const std::string& name,
-    const std::vector<ColumnFamilyDescriptor>& column_families,
-    const std::vector<DB*> instances, std::vector<ColumnFamilyHandle*>* handles,
-    DB** dbptr) {
-  Status s;
-  ColumnFamilyOptions default_cf_opts;
-  bool found_default_cf = false;
-  for (auto& cf : column_families) {
-    if (cf.name == ROCKSDB_NAMESPACE::kDefaultColumnFamilyName) {
-      default_cf_opts = cf.options;
-      found_default_cf = true;
-    }
-  }
-  if (!found_default_cf) {
-    return Status::InvalidArgument(
-        "Missing descriptor for default column family.");
-  } else if (!db_options.create_if_missing) {
-    return Status::InvalidArgument(
-        "create_if_missing must be set to create a DB.");
-  }
-
-  s = DB::Open(Options(db_options, default_cf_opts), name, dbptr);
-  if (!s.ok()) {
-    return s;
-  }
-  DBImpl* new_db_impl = static_cast<DBImpl*>(*dbptr);
-  for (auto& cf : column_families) {
-    ColumnFamilyHandle* cf_handle;
-    if (s.ok()) {
-      if (cf.name != ROCKSDB_NAMESPACE::kDefaultColumnFamilyName) {
-        s = new_db_impl->CreateColumnFamily(cf.options, cf.name, &cf_handle);
-      } else {
-        auto* cfd = new_db_impl->versions_->GetColumnFamilySet()->GetDefault();
-        cf_handle =
-            new ColumnFamilyHandleImpl(cfd, new_db_impl, &new_db_impl->mutex_);
-      }
-    }
-    if (s.ok()) {
-      handles->push_back(cf_handle);
-    } else {
-      break;
-    }
-  }
-
-  if (s.ok()) {
-    s = DBImpl::MergeDisjointInstances(merge_options, *dbptr, instances);
-  }
-
-  if (!s.ok()) {
-    for (auto* h : *handles) {
-      delete h;
-    }
-    handles->clear();
-    delete *dbptr;
-    *dbptr = nullptr;
-  }
-  return s;
 }
 
 Status DBImpl::ValidateForMerge(const MergeInstanceOptions& mopts,
