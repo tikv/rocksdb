@@ -84,15 +84,25 @@ class DBMergeTest : public testing::Test {
   }
 
   void Open(uint32_t db_id, std::vector<uint32_t>&& cf_ids,
-            bool create_cf = true) {
+            bool reopen = false) {
     if (dbs_.count(db_id) > 0) {
-      Destroy(db_id);
+      if (reopen) {
+        auto& db_handles = dbs_[db_id];
+        auto* db = db_handles.db;
+        for (auto& cf : db_handles.cfs) {
+          ASSERT_OK(db->DestroyColumnFamilyHandle(cf.second));
+        }
+        delete db;
+        dbs_.erase(db_id);
+      } else {
+        Destroy(db_id);
+      }
     }
     std::vector<ColumnFamilyDescriptor> column_families =
         GenColumnFamilyDescriptors(std::move(cf_ids));
     auto path = GenDBPath(db_id);
     DB* db = nullptr;
-    if (create_cf) {
+    if (!reopen) {
       ASSERT_OK(DB::Open(options_, path, &db));
       for (auto& cf : column_families) {
         if (cf.name != "default") {
@@ -274,6 +284,15 @@ TEST_F(DBMergeTest, MergeLots) {
     }
     ASSERT_OK(get_db(9_db)->Flush(fopts, get_cf(9_db, cf)));
     ASSERT_OK(get_db(10_db)->Flush(fopts, get_cf(10_db, cf)));
+    for (auto& kv : kvs[cf]) {
+      VerifyKeyValue(9_db, cf, kv.first, kv.second);
+      VerifyKeyValue(10_db, cf, kv.first, kv.second);
+    }
+  }
+
+  Open(9_db, {default_cf, 1_cf, 2_cf}, true /*reopen*/);
+  Open(10_db, {default_cf, 1_cf, 2_cf}, true /*reopen*/);
+  for (auto cf : {default_cf, 1_cf, 2_cf}) {
     for (auto& kv : kvs[cf]) {
       VerifyKeyValue(9_db, cf, kv.first, kv.second);
       VerifyKeyValue(10_db, cf, kv.first, kv.second);

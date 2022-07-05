@@ -1954,7 +1954,6 @@ Status DBImpl::CreateFromDisjointInstances(
     const std::vector<DB*> instances, std::vector<ColumnFamilyHandle*>* handles,
     DB** dbptr) {
   Status s;
-  // Sanity checks.
   ColumnFamilyOptions default_cf_opts;
   bool found_default_cf = false;
   for (auto& cf : column_families) {
@@ -1966,17 +1965,15 @@ Status DBImpl::CreateFromDisjointInstances(
   if (!found_default_cf) {
     return Status::InvalidArgument(
         "Missing descriptor for default column family.");
-  }
-  if (!db_options.create_if_missing) {
+  } else if (!db_options.create_if_missing) {
     return Status::InvalidArgument(
         "create_if_missing must be set to create a DB.");
   }
-  // Create target DB and column families.
+
   s = DB::Open(Options(db_options, default_cf_opts), name, dbptr);
   if (!s.ok()) {
     return s;
   }
-
   DBImpl* new_db_impl = static_cast<DBImpl*>(*dbptr);
   for (auto& cf : column_families) {
     ColumnFamilyHandle* cf_handle;
@@ -1995,9 +1992,11 @@ Status DBImpl::CreateFromDisjointInstances(
       break;
     }
   }
+
   if (s.ok()) {
     s = DBImpl::MergeDisjointInstances(merge_options, *dbptr, instances);
   }
+
   if (!s.ok()) {
     for (auto* h : *handles) {
       delete h;
@@ -2012,15 +2011,15 @@ Status DBImpl::CreateFromDisjointInstances(
 Status DBImpl::ValidateForMerge(const MergeInstanceOptions& mopts,
                                 WriteBufferManager* write_buffer_manager) {
   if (two_write_queues_) {
-    return Status::NotSupported("two_write_queues == true.");
+    return Status::NotSupported("two_write_queues == true");
   }
   if (mopts.merge_memtable) {
     if (total_log_size_ > 0) {
-      return Status::InvalidArgument("DB WAL is not empty.");
+      return Status::InvalidArgument("DB WAL is not empty");
     }
     if (write_buffer_manager && write_buffer_manager != write_buffer_manager_) {
       return Status::InvalidArgument(
-          "write_buffer_manager must be shared to merge memtable.");
+          "write_buffer_manager must be shared to merge memtable");
     }
   }
   return Status::OK();
@@ -2041,7 +2040,6 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
   if (s.ok()) {
     s = primary_impl->PauseBackgroundWork();
   }
-
   autovector<DBImpl*> db_impls;
   for (size_t i = 0; s.ok() && i < instances.size(); i++) {
     auto* db_impl = static_cast<DBImpl*>(instances[i]);
@@ -2098,7 +2096,7 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
             comparator->Compare(last_largest, range.first) < 0) {
           last_largest = range.second;
         } else {
-          s = Status::InvalidArgument("Source DBs have overlapping range.");
+          s = Status::InvalidArgument("Source DBs have overlapping range");
           break;
         }
       }
@@ -2162,6 +2160,7 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
       }
     }
   }
+
   // Merge memtable.
   if (s.ok()) {
     if (merge_options.merge_memtable) {
@@ -2219,6 +2218,7 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
       primary_impl->versions_->SetLastSequence(max_seq_number);
     }
   }
+
   // Apply version edits.
   if (s.ok()) {
     InstrumentedMutexLock lock(&primary_impl->mutex_);
@@ -2234,11 +2234,13 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
       sv_context.Clean();
     }
   }
+
   // Cleaning up.
   for (auto* db : db_impls) {
     db->ContinueBackgroundWork();
   }
   primary_impl->ContinueBackgroundWork();
+
   return s;
 }
 }  // namespace ROCKSDB_NAMESPACE
