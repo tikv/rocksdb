@@ -2032,7 +2032,7 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
   }
 
   // Merge table files.
-  std::vector<VersionEdit> cf_edits;
+  autovector<VersionEdit> cf_edits;
   if (s.ok()) {
     for (auto cfd : primary_cfds) {
       cf_edits.emplace_back();
@@ -2149,18 +2149,31 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
 
   // Apply version edits.
   if (s.ok()) {
+    autovector<autovector<VersionEdit*>> edit_ptrs;
+    autovector<const MutableCFOptions*> cf_mopts;
+    for (size_t i = 0; i < primary_cfds.size(); i++) {
+      edit_ptrs.push_back({&cf_edits[i]});
+      cf_mopts.push_back(primary_cfds[i]->GetLatestMutableCFOptions());
+    }
+    auto* table_cache = primary_impl->table_cache_.get();
+    assert(table_cache != nullptr);
+    auto old_capacity = table_cache->GetCapacity();
+    // Only allow preloading 16 files.
+    // Refer to `LoadTableHandlers` for calculation details.
+    table_cache->SetCapacity((table_cache->GetUsage() + 16) * 4);
+
     InstrumentedMutexLock lock(&primary_impl->mutex_);
-    for (size_t i = 0; s.ok() && i < primary_cfds.size(); i++) {
-      auto cfd = primary_cfds[i];
-      auto& mutable_cf_options = *cfd->GetLatestMutableCFOptions();
+    s = primary_impl->versions_->LogAndApply(primary_cfds, cf_mopts, edit_ptrs,
+                                             &primary_impl->mutex_, nullptr,
+                                             false);
+    for (size_t i = 0; i < primary_cfds.size(); i++) {
       SuperVersionContext sv_context(/* create_superversion */ true);
-      s = primary_impl->versions_->LogAndApply(
-          cfd, mutable_cf_options, &cf_edits[i], &primary_impl->mutex_, nullptr,
-          false);
-      primary_impl->InstallSuperVersionAndScheduleWork(cfd, &sv_context,
-                                                       mutable_cf_options);
+      primary_impl->InstallSuperVersionAndScheduleWork(
+          primary_cfds[i], &sv_context, *cf_mopts[i]);
       sv_context.Clean();
     }
+
+    table_cache->SetCapacity(old_capacity);
   }
 
   // Cleaning up.
