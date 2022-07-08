@@ -108,6 +108,11 @@ class BlockBasedTable : public TableReader {
       size_t max_file_size_for_l0_meta_pin = 0,
       const std::string& cur_db_session_id = "", uint64_t cur_file_num = 0);
 
+  Status Clone(const ImmutableOptions& ioptions, const EnvOptions& env_options,
+               const BlockBasedTableOptions& table_options,
+               const InternalKeyComparator& internal_comparator,
+               std::unique_ptr<TableReader>& table_reader) const;
+
   bool PrefixMayMatch(const Slice& internal_key,
                       const ReadOptions& read_options,
                       const SliceTransform* options_prefix_extractor,
@@ -563,7 +568,7 @@ struct BlockBasedTable::Rep {
   const FilterPolicy* const filter_policy;
   const InternalKeyComparator& internal_comparator;
   Status status;
-  std::unique_ptr<RandomAccessFileReader> file;
+  std::shared_ptr<RandomAccessFileReader> file;
   OffsetableCacheKey base_cache_key;
   PersistentCacheOptions persistent_cache_options;
 
@@ -594,7 +599,7 @@ struct BlockBasedTable::Rep {
   // and compatible with existing code, we introduce a wrapper that allows
   // block to extract prefix without knowing if a key is internal or not.
   // null if no prefix_extractor is passed in when opening the table reader.
-  std::unique_ptr<SliceTransform> internal_prefix_transform;
+  std::shared_ptr<SliceTransform> internal_prefix_transform;
   std::shared_ptr<const SliceTransform> table_prefix_extractor;
 
   std::shared_ptr<const FragmentedRangeTombstoneList> fragmented_range_dels;

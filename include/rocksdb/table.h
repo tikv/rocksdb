@@ -36,6 +36,7 @@ class FlushBlockPolicyFactory;
 class PersistentCache;
 class RandomAccessFile;
 struct TableReaderOptions;
+struct ImmutableOptions;
 struct TableBuilderOptions;
 class TableBuilder;
 class TableFactory;
@@ -739,6 +740,16 @@ class TableFactory : public Customizable {
       std::unique_ptr<RandomAccessFileReader>&& file, uint64_t file_size,
       std::unique_ptr<TableReader>* table_reader,
       bool prefetch_index_and_filter_in_cache) const = 0;
+
+  // Clone a table reader created by this factory. The clone should be able to
+  // function even when the original reader is destroyed.
+  virtual Status CloneTableReader(
+      const ImmutableOptions& /*ioptions*/, const EnvOptions& /*env_options*/,
+      const InternalKeyComparator& /*internal_comparator*/,
+      TableReader* /*table_reader*/,
+      std::unique_ptr<TableReader>& /*cloned*/) const {
+    return Status::NotSupported();
+  }
 
   // Return a table builder to write to a file for this table type.
   //

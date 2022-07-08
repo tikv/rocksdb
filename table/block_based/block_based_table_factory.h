@@ -62,6 +62,13 @@ class BlockBasedTableFactory : public TableFactory {
       std::unique_ptr<TableReader>* table_reader,
       bool prefetch_index_and_filter_in_cache = true) const override;
 
+  using TableFactory::CloneTableReader;
+  Status CloneTableReader(const ImmutableOptions& ioptions,
+                          const EnvOptions& env_options,
+                          const InternalKeyComparator& internal_comparator,
+                          TableReader* table_reader,
+                          std::unique_ptr<TableReader>& cloned) const override;
+
   TableBuilder* NewTableBuilder(
       const TableBuilderOptions& table_builder_options,
       WritableFileWriter* file) const override;

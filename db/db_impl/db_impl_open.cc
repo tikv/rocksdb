@@ -2038,14 +2038,18 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
       cf_edits.emplace_back();
       cf_edits.back().SetColumnFamily(cfd->GetID());
     }
+    auto* primary_table_cache = primary_impl->table_cache_.get();
     for (auto db : db_impls) {
       InstrumentedMutexLock lock(&db->mutex_);
       for (size_t i = 0; s.ok() && i < primary_cfds.size(); i++) {
         auto& primary_cfd = primary_cfds[i];
+        auto* primary_table_factory =
+            primary_cfd->ioptions()->table_factory.get();
         auto name = primary_cfd->GetName();
         auto& edit = cf_edits[i];
         auto cfd = db->versions_->GetColumnFamilySet()->GetColumnFamily(name);
         assert(cfd != nullptr && !cfd->IsDropped());  // already checked before.
+        auto* table_cache = db->table_cache_.get();
         VersionStorageInfo& vsi = *cfd->current()->storage_info();
         auto& cf_paths = cfd->ioptions()->cf_paths;
         auto GetDir = [&](size_t path_id) {
@@ -2080,6 +2084,29 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
                 f->oldest_blob_file_number, f->oldest_ancester_time,
                 f->file_creation_time, f->file_checksum,
                 f->file_checksum_func_name, f->min_timestamp, f->max_timestamp);
+
+            // Transfer table cache.
+            auto file_number = f->fd.GetNumber();
+            Slice key = Slice(reinterpret_cast<const char*>(&file_number),
+                              sizeof(file_number));
+            Cache::Handle* handle = table_cache->Lookup(key);
+            if (handle != nullptr) {
+              Slice new_key =
+                  Slice(reinterpret_cast<const char*>(&target_file_number),
+                        sizeof(target_file_number));
+              std::unique_ptr<TableReader> new_reader;
+              auto clone_s = primary_table_factory->CloneTableReader(
+                  *primary_cfd->ioptions(), *primary_cfd->soptions(),
+                  primary_cfd->internal_comparator(),
+                  static_cast<TableReader*>(table_cache->Value(handle)),
+                  new_reader);
+              if (clone_s.ok() && primary_table_cache
+                                      ->Insert(new_key, new_reader.get(), 1,
+                                               table_cache->GetDeleter(handle))
+                                      .ok()) {
+                new_reader.release();
+              }
+            }
           }
         }
       }
