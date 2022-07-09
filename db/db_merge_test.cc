@@ -154,7 +154,7 @@ class DBMergeTest : public testing::Test {
       Open(to, cfs);
       newly_opened = true;
     }
-    auto s = DB::MergeDisjointInstances(mopts, get_db(to), source_dbs);
+    auto s = get_db(to)->MergeDisjointInstances(mopts, source_dbs);
     if (newly_opened && !s.ok()) {
       Destroy(to);
     }
@@ -175,9 +175,15 @@ class DBMergeTest : public testing::Test {
     }
   }
 
-  DBImpl* get_db(uint32_t db_id) { return dbs_[db_id].db; }
+  bool has_db(uint32_t db_id) { return dbs_.count(db_id) > 0; }
+
+  DBImpl* get_db(uint32_t db_id) {
+    assert(dbs_.count(db_id) == 1);
+    return dbs_[db_id].db;
+  }
 
   ColumnFamilyHandle* get_cf(uint32_t db_id, uint32_t cf_id) {
+    assert(dbs_.count(db_id) == 1);
     return dbs_[db_id].cfs[cf_id];
   }
 
@@ -186,7 +192,7 @@ class DBMergeTest : public testing::Test {
   std::unordered_map<uint32_t, DBHandles> dbs_;
 };
 
-TEST_F(DBMergeTest, MergeLots) {
+TEST_F(DBMergeTest, MultiMerge) {
   FlushOptions fopts;
   fopts.allow_write_stall = true;
   MergeInstanceOptions mopts;
@@ -288,6 +294,68 @@ TEST_F(DBMergeTest, MergeLots) {
     for (auto& kv : kvs[cf]) {
       VerifyKeyValue(9_db, cf, kv.first, kv.second);
       VerifyKeyValue(10_db, cf, kv.first, kv.second);
+    }
+  }
+}
+
+TEST_F(DBMergeTest, BinaryMerge) {
+  FlushOptions fopts;
+  fopts.allow_write_stall = true;
+  MergeInstanceOptions mopts;
+  mopts.merge_memtable = true;
+  WriteOptions wopts;
+  wopts.disableWAL = true;
+  Random rnd(301);
+
+  std::unordered_map<std::string, std::string> kvs[3];
+  std::vector<uint32_t> dbs = {0_db, 1_db, 2_db, 3_db, 4_db,
+                               5_db, 6_db, 7_db, 8_db, 9_db};
+  while (dbs.size() >= 2) {
+    for (uint32_t i = 0; i < dbs.size(); ++i) {
+      if (!has_db(dbs[i])) {
+        Open(dbs[i], {default_cf, 1_cf, 2_cf});
+      }
+      auto* db = get_db(dbs[i]);
+      uint32_t keys_per_file = 1 + (i - 5) * (i - 5);  // scatter seqno.
+      for (auto cf : {default_cf, 1_cf, 2_cf}) {
+        for (uint32_t f = 0; f < 3; ++f) {
+          std::string prefix =
+              std::to_string(cf) + std::to_string(dbs[i]) + std::to_string(f);
+          for (uint32_t k = 0; k < keys_per_file; ++k) {
+            auto keystr = prefix + "-" + std::to_string(k);
+            if (rnd.Next() % 4 == 0) {
+              ASSERT_OK(db->SingleDelete(wopts, get_cf(dbs[i], cf), keystr));
+              kvs[cf][keystr] = "NotFound";
+            } else {
+              auto value = rnd.RandomString(16);
+              ASSERT_OK(db->Put(wopts, get_cf(dbs[i], cf), keystr, value));
+              kvs[cf][keystr] = value;
+            }
+          }
+          ASSERT_OK(db->Flush(fopts, get_cf(dbs[i], cf)));
+        }
+      }
+    }
+    // merge random neighbors.
+    uint32_t src = rnd.Next() % dbs.size();
+    uint32_t dst = (src + 1) % dbs.size();
+    if ((rnd.Next() % 2 == 0 && src > 0) || dst == 0) {
+      dst = (src - 1) % dbs.size();
+    }
+    ASSERT_OK(Merge(mopts, {dbs[src]}, dbs[dst]));
+    Destroy(dbs[src]);
+    dbs.erase(dbs.begin() + src);
+  }
+  for (auto cf : {default_cf, 1_cf, 2_cf}) {
+    for (auto& kv : kvs[cf]) {
+      VerifyKeyValue(dbs[0], cf, kv.first, kv.second);
+    }
+    ASSERT_OK(get_db(dbs[0])->Flush(fopts, get_cf(dbs[0], cf)));
+  }
+  Open(dbs[0], {default_cf, 1_cf, 2_cf}, true /*reopen*/);
+  for (auto cf : {default_cf, 1_cf, 2_cf}) {
+    for (auto& kv : kvs[cf]) {
+      VerifyKeyValue(dbs[0], cf, kv.first, kv.second);
     }
   }
 }

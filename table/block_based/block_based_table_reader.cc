@@ -744,12 +744,19 @@ Status BlockBasedTable::Clone(
   rep->hash_index_allow_collision = rep_->hash_index_allow_collision;
   rep->whole_key_filtering = rep_->whole_key_filtering;
   rep->prefix_filtering = rep_->prefix_filtering;
-
+  rep->fragmented_range_dels = rep_->fragmented_range_dels;
+  rep->global_seqno = rep_->global_seqno;
+  rep->blocks_maybe_compressed = rep_->blocks_maybe_compressed;
+  rep->blocks_definitely_zstd_compressed =
+      rep_->blocks_definitely_zstd_compressed;
+  rep->index_has_first_key = rep_->index_has_first_key;
+  rep->index_key_includes_seq = rep_->index_key_includes_seq;
+  rep->index_value_is_full = rep_->index_value_is_full;
   // `internal_prefix_transform` references user prefix extractor.
   // We must make sure we hold a shared ownership to the same user prefix
   // extractor.
   if (rep_->internal_prefix_transform != nullptr) {
-    auto* transform_impl = dynamic_cast<InternalKeySliceTransform*>(
+    auto* transform_impl = static_cast<InternalKeySliceTransform*>(
         rep_->internal_prefix_transform.get());
     if (transform_impl == nullptr || transform_impl->user_prefix_extractor() !=
                                          rep_->table_prefix_extractor.get()) {
@@ -760,18 +767,10 @@ Status BlockBasedTable::Clone(
   rep->internal_prefix_transform = rep_->internal_prefix_transform;
   rep->table_prefix_extractor = rep_->table_prefix_extractor;
 
-  rep->fragmented_range_dels = rep_->fragmented_range_dels;
-  rep->global_seqno = rep_->global_seqno;
-  rep->blocks_maybe_compressed = rep_->blocks_maybe_compressed;
-  rep->blocks_definitely_zstd_compressed =
-      rep_->blocks_definitely_zstd_compressed;
-  rep->index_has_first_key = rep_->index_has_first_key;
-  rep->index_key_includes_seq = rep_->index_key_includes_seq;
-  rep->index_value_is_full = rep_->index_value_is_full;
   auto new_table = std::unique_ptr<BlockBasedTable>(
       new BlockBasedTable(rep.release(), nullptr /*block_cache_tracer*/));
 
-  // No I/O involved.
+  // Create readers. No I/O involved.
   ReadOptions ro;
   std::unique_ptr<FilePrefetchBuffer> prefetch_buffer(
       new FilePrefetchBuffer(0 /* readahead_size */, 0 /* max_readahead_size */,

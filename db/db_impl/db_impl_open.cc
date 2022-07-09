@@ -1930,22 +1930,24 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
   return s;
 }
 
-Status DB::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
-                                  DB* primary,
-                                  const std::vector<DB*> instances) {
-  return DBImpl::MergeDisjointInstances(merge_options, primary, instances);
-}
-
 Status DBImpl::ValidateForMerge(const MergeInstanceOptions& mopts,
-                                WriteBufferManager* write_buffer_manager) {
-  if (two_write_queues_) {
+                                DBImpl* rhs) {
+  if (rhs->two_write_queues_) {
     return Status::NotSupported("two_write_queues == true");
   }
+  for (auto cfd : *versions_->GetColumnFamilySet()) {
+    auto rhs_cfd =
+        rhs->versions_->GetColumnFamilySet()->GetColumnFamily(cfd->GetName());
+    if (strcmp(cfd->ioptions()->table_factory->Name(),
+               rhs_cfd->ioptions()->table_factory->Name()) != 0) {
+      return Status::InvalidArgument("table_factory must be of the same type");
+    }
+  }
   if (mopts.merge_memtable) {
-    if (total_log_size_ > 0) {
+    if (rhs->total_log_size_ > 0) {
       return Status::InvalidArgument("DB WAL is not empty");
     }
-    if (write_buffer_manager && write_buffer_manager != write_buffer_manager_) {
+    if (rhs->write_buffer_manager_ != write_buffer_manager_) {
       return Status::InvalidArgument(
           "write_buffer_manager must be shared to merge memtable");
     }
@@ -1954,42 +1956,43 @@ Status DBImpl::ValidateForMerge(const MergeInstanceOptions& mopts,
 }
 
 Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
-                                      DB* primary,
                                       const std::vector<DB*> instances) {
   Status s;
-  DBImpl* primary_impl = static_cast<DBImpl*>(primary);
-  autovector<ColumnFamilyData*> primary_cfds;
-  for (auto cfd : *primary_impl->versions_->GetColumnFamilySet()) {
+  autovector<ColumnFamilyData*> this_cfds;
+  for (auto cfd : *versions_->GetColumnFamilySet()) {
     assert(cfd != nullptr && !cfd->IsDropped());
-    primary_cfds.push_back(cfd);
+    this_cfds.push_back(cfd);
   }
 
-  s = primary_impl->ValidateForMerge(merge_options, nullptr);
-  if (s.ok()) {
-    s = primary_impl->PauseBackgroundWork();
+  // Target instance check.
+  if (two_write_queues_) {
+    return Status::NotSupported("target instance two_write_queues == true");
   }
+  s = DisableFileDeletions();
+  // Source instance check.
   autovector<DBImpl*> db_impls;
+  autovector<DBImpl*> all_db_impls{this};
   for (size_t i = 0; s.ok() && i < instances.size(); i++) {
     auto* db_impl = static_cast<DBImpl*>(instances[i]);
-    s = db_impl->ValidateForMerge(merge_options,
-                                  primary_impl->write_buffer_manager_);
+    s = ValidateForMerge(merge_options, db_impl);
     if (s.ok()) {
       db_impls.push_back(db_impl);
-      s = db_impl->PauseBackgroundWork();
+      all_db_impls.push_back(db_impl);
+      s = db_impl->DisableFileDeletions();
     }
   }
 
   // Check key range overlap.
-  for (size_t i = 0; s.ok() && i < primary_cfds.size(); i++) {
-    auto name = primary_cfds[i]->GetName();
-    auto comparator = primary_cfds[i]->user_comparator();
+  for (size_t i = 0; s.ok() && i < this_cfds.size(); i++) {
+    auto name = this_cfds[i]->GetName();
+    auto comparator = this_cfds[i]->user_comparator();
     using CfRange = std::pair<Slice, Slice>;
     std::vector<CfRange> db_ranges;
     std::vector<PinnableSlice> pinned_vals;
     {
       PinnableSlice smallest, largest;
       bool found = false;
-      s = primary_cfds[i]->GetUserKeyRange(smallest, largest, found);
+      s = this_cfds[i]->GetUserKeyRange(smallest, largest, found);
       if (found) {
         db_ranges.emplace_back(smallest, largest);
         pinned_vals.push_back(std::move(smallest));
@@ -2001,7 +2004,7 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
         auto cfd = db->versions_->GetColumnFamilySet()->GetColumnFamily(name);
         if (cfd == nullptr || cfd->IsDropped()) {
           s = Status::InvalidArgument("Column family not found in source DB: " +
-                                      primary_cfds[i]->GetName());
+                                      this_cfds[i]->GetName());
           break;
         }
         PinnableSlice smallest, largest;
@@ -2034,18 +2037,17 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
   // Merge table files.
   autovector<VersionEdit> cf_edits;
   if (s.ok()) {
-    for (auto cfd : primary_cfds) {
+    for (auto cfd : this_cfds) {
       cf_edits.emplace_back();
       cf_edits.back().SetColumnFamily(cfd->GetID());
     }
-    auto* primary_table_cache = primary_impl->table_cache_.get();
+    auto* this_table_cache = table_cache_.get();
     for (auto db : db_impls) {
       InstrumentedMutexLock lock(&db->mutex_);
-      for (size_t i = 0; s.ok() && i < primary_cfds.size(); i++) {
-        auto& primary_cfd = primary_cfds[i];
-        auto* primary_table_factory =
-            primary_cfd->ioptions()->table_factory.get();
-        auto name = primary_cfd->GetName();
+      for (size_t i = 0; s.ok() && i < this_cfds.size(); i++) {
+        auto& this_cfd = this_cfds[i];
+        auto* this_table_factory = this_cfd->ioptions()->table_factory.get();
+        auto name = this_cfd->GetName();
         auto& edit = cf_edits[i];
         auto cfd = db->versions_->GetColumnFamilySet()->GetColumnFamily(name);
         assert(cfd != nullptr && !cfd->IsDropped());  // already checked before.
@@ -2053,7 +2055,7 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
         VersionStorageInfo& vsi = *cfd->current()->storage_info();
         auto& cf_paths = cfd->ioptions()->cf_paths;
         auto GetDir = [&](size_t path_id) {
-          // Matching TableFileName() behavior
+          // Matching `TableFileName()`.
           if (path_id >= cf_paths.size()) {
             assert(false);
             return cf_paths.back().path;
@@ -2066,14 +2068,13 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
           const auto& level_files = vsi.LevelFiles(level);
           for (const auto& f : level_files) {
             assert(f);
-            uint64_t target_file_number =
-                primary_impl->versions_->FetchAddFileNumber(1);
+            uint64_t target_file_number = versions_->FetchAddFileNumber(1);
             std::string src =
                 MakeTableFileName(GetDir(f->fd.GetPathId()), f->fd.GetNumber());
-            std::string target = MakeTableFileName(
-                primary_cfd->ioptions()->cf_paths.front().path,
-                target_file_number);
-            s = primary_impl->GetEnv()->LinkFile(src, target);
+            std::string target =
+                MakeTableFileName(this_cfd->ioptions()->cf_paths.front().path,
+                                  target_file_number);
+            s = GetEnv()->LinkFile(src, target);
             if (!s.ok()) {
               break;
             }
@@ -2086,7 +2087,10 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
                 f->file_checksum_func_name, f->min_timestamp, f->max_timestamp);
 
             // Transfer table cache.
+            // We already verified that they share the same table factory. So
+            // it's safe to use this_table_factory to clone the reader.
             auto file_number = f->fd.GetNumber();
+            // Matching `GetSliceForFileNumber()`.
             Slice key = Slice(reinterpret_cast<const char*>(&file_number),
                               sizeof(file_number));
             Cache::Handle* handle = table_cache->Lookup(key);
@@ -2095,12 +2099,12 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
                   Slice(reinterpret_cast<const char*>(&target_file_number),
                         sizeof(target_file_number));
               std::unique_ptr<TableReader> new_reader;
-              auto clone_s = primary_table_factory->CloneTableReader(
-                  *primary_cfd->ioptions(), *primary_cfd->soptions(),
-                  primary_cfd->internal_comparator(),
+              auto clone_s = this_table_factory->CloneTableReader(
+                  *this_cfd->ioptions(), *this_cfd->soptions(),
+                  this_cfd->internal_comparator(),
                   static_cast<TableReader*>(table_cache->Value(handle)),
                   new_reader);
-              if (clone_s.ok() && primary_table_cache
+              if (clone_s.ok() && this_table_cache
                                       ->Insert(new_key, new_reader.get(), 1,
                                                table_cache->GetDeleter(handle))
                                       .ok()) {
@@ -2119,20 +2123,27 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
   // Merge memtable.
   if (s.ok()) {
     if (merge_options.merge_memtable) {
-      uint64_t max_seq_number = 0;
+      autovector<std::unique_ptr<WriteThread::Writer>> all_writers;
       autovector<MemTable*> to_delete;  // not used.
-      InstrumentedMutexLock lock(&primary_impl->mutex_);
-      for (auto* db : db_impls) {
+      uint64_t max_seq_number = 0;
+      uint64_t max_log_number = 0;
+      for (auto* db : all_db_impls) {
+        // Matching `IngestExternalFiles()`.
+        all_writers.emplace_back(new WriteThread::Writer());
         db->mutex_.Lock();
+        db->write_thread_.EnterUnbatched(all_writers.back().get(), &db->mutex_);
+        db->WaitForPendingWrites();
+        db->log_write_mutex_.Lock();
         max_seq_number =
             std::max(max_seq_number, db->versions_->LastSequence());
+        max_log_number = std::max(max_log_number, db->logfile_number_);
       }
-      primary_impl->versions_->SetLastAllocatedSequence(max_seq_number);
-      primary_impl->versions_->SetLastSequence(max_seq_number);
-      for (size_t i = 0; i < primary_cfds.size(); i++) {
-        auto& primary_cfd = primary_cfds[i];
-        auto name = primary_cfd->GetName();
-        auto& mutable_cf_options = *primary_cfd->GetLatestMutableCFOptions();
+      versions_->SetLastAllocatedSequence(max_seq_number);
+      versions_->SetLastSequence(max_seq_number);
+      for (size_t i = 0; i < this_cfds.size(); i++) {
+        auto& this_cfd = this_cfds[i];
+        auto name = this_cfd->GetName();
+        auto& mutable_cf_options = *this_cfd->GetLatestMutableCFOptions();
         autovector<MemTable*> mems;
         for (auto* db : db_impls) {
           auto cfd = db->versions_->GetColumnFamilySet()->GetColumnFamily(name);
@@ -2144,33 +2155,57 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
             auto& cf_mopts = *cfd->GetLatestMutableCFOptions();
             auto* new_mem = cfd->ConstructNewMemtable(cf_mopts, max_seq_number);
             new_mem->Ref();
+            cfd->mem()->SetNextLogNumber(max_log_number);
+            cfd->imm()->Add(cfd->mem(), &to_delete);
             cfd->SetMemtable(new_mem);
             SuperVersionContext sv_context(/* create_superversion */ true);
             db->InstallSuperVersionAndScheduleWork(cfd, &sv_context, cf_mopts);
             sv_context.Clean();
           }
         }
-        auto* fresh_mem = primary_cfd->ConstructNewMemtable(mutable_cf_options,
-                                                            max_seq_number);
+        auto* fresh_mem =
+            this_cfd->ConstructNewMemtable(mutable_cf_options, max_seq_number);
         mems.push_back(fresh_mem);
         for (auto mem : mems) {
           assert(mem != nullptr);
-          primary_cfd->imm()->Add(primary_cfd->mem(), &to_delete);
+          // Recovery requires the log_number of memtable is monotonic.
           mem->Ref();
-          primary_cfd->SetMemtable(mem);
+          this_cfd->mem()->SetNextLogNumber(max_log_number);
+          this_cfd->imm()->Add(this_cfd->mem(), &to_delete);
+          this_cfd->SetMemtable(mem);
         }
       }
-      for (auto* db : db_impls) {
+      for (size_t i = 0; i < all_db_impls.size(); i++) {
+        auto* db = all_db_impls[i];
+        if (max_log_number != db->logfile_number_) {
+          assert(max_log_number > db->logfile_number_);
+          // Create a new WAL so that future memtable uses the correct log
+          // number.
+          log::Writer* new_log = nullptr;
+          s = db->CreateWAL(max_log_number, 0 /*recycle_log_number*/,
+                            0 /*preallocate_block_size*/, &new_log);
+          if (s.ok()) {
+            db->logfile_number_ = max_log_number;
+            assert(new_log != nullptr);
+            db->logs_.emplace_back(max_log_number, new_log);
+            auto current = db->versions_->current_next_file_number();
+            if (current <= max_log_number) {
+              db->versions_->FetchAddFileNumber(max_log_number - current + 1);
+            }
+          }
+        }
+        db->log_write_mutex_.Unlock();
+        db->write_thread_.ExitUnbatched(all_writers[i].get());
         db->mutex_.Unlock();
       }
     } else {
-      uint64_t max_seq_number = primary_impl->versions_->LastSequence();
-      for (auto* db : db_impls) {
+      uint64_t max_seq_number = 0;
+      for (auto* db : all_db_impls) {
         max_seq_number =
             std::max(max_seq_number, db->versions_->LastSequence());
       }
-      primary_impl->versions_->SetLastAllocatedSequence(max_seq_number);
-      primary_impl->versions_->SetLastSequence(max_seq_number);
+      versions_->SetLastAllocatedSequence(max_seq_number);
+      versions_->SetLastSequence(max_seq_number);
     }
   }
 
@@ -2178,36 +2213,26 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
   if (s.ok()) {
     autovector<autovector<VersionEdit*>> edit_ptrs;
     autovector<const MutableCFOptions*> cf_mopts;
-    for (size_t i = 0; i < primary_cfds.size(); i++) {
+    for (size_t i = 0; i < this_cfds.size(); i++) {
       edit_ptrs.push_back({&cf_edits[i]});
-      cf_mopts.push_back(primary_cfds[i]->GetLatestMutableCFOptions());
+      cf_mopts.push_back(this_cfds[i]->GetLatestMutableCFOptions());
     }
-    auto* table_cache = primary_impl->table_cache_.get();
-    assert(table_cache != nullptr);
-    auto old_capacity = table_cache->GetCapacity();
-    // Only allow preloading 16 files.
-    // Refer to `LoadTableHandlers` for calculation details.
-    table_cache->SetCapacity((table_cache->GetUsage() + 16) * 4);
-
-    InstrumentedMutexLock lock(&primary_impl->mutex_);
-    s = primary_impl->versions_->LogAndApply(primary_cfds, cf_mopts, edit_ptrs,
-                                             &primary_impl->mutex_, nullptr,
-                                             false);
-    for (size_t i = 0; i < primary_cfds.size(); i++) {
+    InstrumentedMutexLock lock(&mutex_);
+    s = versions_->LogAndApply(this_cfds, cf_mopts, edit_ptrs, &mutex_,
+                               directories_.GetDbDir(), false);
+    for (size_t i = 0; i < this_cfds.size(); i++) {
       SuperVersionContext sv_context(/* create_superversion */ true);
-      primary_impl->InstallSuperVersionAndScheduleWork(
-          primary_cfds[i], &sv_context, *cf_mopts[i]);
+      InstallSuperVersionAndScheduleWork(this_cfds[i], &sv_context,
+                                         *cf_mopts[i]);
       sv_context.Clean();
     }
-
-    table_cache->SetCapacity(old_capacity);
   }
 
   // Cleaning up.
   for (auto* db : db_impls) {
-    db->ContinueBackgroundWork();
+    db->EnableFileDeletions(false /*force*/);
   }
-  primary_impl->ContinueBackgroundWork();
+  EnableFileDeletions(false /*force*/);
 
   return s;
 }

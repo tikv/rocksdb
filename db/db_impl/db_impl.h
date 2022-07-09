@@ -936,12 +936,12 @@ class DBImpl : public DB {
                      std::vector<ColumnFamilyHandle*>* handles, DB** dbptr,
                      const bool seq_per_batch, const bool batch_per_txn);
 
+  // Validate `rhs` can be merged into this DB with given merge options.
   Status ValidateForMerge(const MergeInstanceOptions& merge_options,
-                          WriteBufferManager* write_buffer_manager);
+                          DBImpl* rhs);
 
-  static Status MergeDisjointInstances(
-      const MergeInstanceOptions& merge_options, DB* primary,
-      const std::vector<DB*> instances);
+  Status MergeDisjointInstances(const MergeInstanceOptions& merge_options,
+                                const std::vector<DB*> instances) override;
 
   static IOStatus CreateAndNewDirectory(
       FileSystem* fs, const std::string& dirname,

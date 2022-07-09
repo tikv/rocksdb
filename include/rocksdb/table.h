@@ -741,8 +741,8 @@ class TableFactory : public Customizable {
       std::unique_ptr<TableReader>* table_reader,
       bool prefetch_index_and_filter_in_cache) const = 0;
 
-  // Clone a table reader created by this factory. The clone should be able to
-  // function even when the original reader is destroyed.
+  // Clone a table reader created by this type of factory. The clone can be
+  // used even when the original is destroyed.
   virtual Status CloneTableReader(
       const ImmutableOptions& /*ioptions*/, const EnvOptions& /*env_options*/,
       const InternalKeyComparator& /*internal_comparator*/,

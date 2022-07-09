@@ -627,7 +627,7 @@ Status BlockBasedTableFactory::CloneTableReader(
     const ImmutableOptions& ioptions, const EnvOptions& env_options,
     const InternalKeyComparator& internal_comparator, TableReader* table_reader,
     std::unique_ptr<TableReader>& cloned) const {
-  auto* reader_impl = dynamic_cast<BlockBasedTable*>(table_reader);
+  auto* reader_impl = static_cast<BlockBasedTable*>(table_reader);
   if (reader_impl) {
     return reader_impl->Clone(ioptions, env_options, table_options_,
                               internal_comparator, cloned);

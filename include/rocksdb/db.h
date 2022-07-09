@@ -276,7 +276,8 @@ class DB {
       const std::string& input, std::string* output,
       const CompactionServiceOptionsOverride& override_options);
 
-  // Merge multiple disjoint DBs into another disjoint instance.
+  // Merge multiple DBs into this one. All DBs must have disjoint internal
+  // keys.
   //
   // # Tips
   //
@@ -298,9 +299,14 @@ class DB {
   // Using different implementations of user comparator results in undefined
   // behavior as well.
   //
-  static Status MergeDisjointInstances(
-      const MergeInstanceOptions& merge_options, DB* primary,
-      const std::vector<DB*> instances);
+  // Concurrently apply several merge operations on the same instance can cause
+  // deadlock.
+  //
+  virtual Status MergeDisjointInstances(
+      const MergeInstanceOptions& /*merge_options*/,
+      const std::vector<DB*> /*instances*/) {
+    return Status::NotSupported();
+  }
 
   virtual Status Resume() { return Status::NotSupported(); }
 
