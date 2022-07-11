@@ -213,11 +213,12 @@ Status NewAESCTRCipherStream(EncryptionMethod method, const std::string& key,
       cipher = EVP_aes_256_ctr();
       break;
     case EncryptionMethod::kSM4_CTR:
-    // Openssl support SM4 after 1.1.1 release version.
 #if OPENSSL_VERSION_NUMBER < 0x1010100fL
-      return Status::InvalidArgument("Unsupport SM4 encryption method under OpenSSL version: " +
-                                     std::string(OPENSSL_VERSION_TEXT));
+      return Status::InvalidArgument(
+          "Unsupport SM4 encryption method under OpenSSL version: " +
+          std::string(OPENSSL_VERSION_TEXT));
 #else
+      // Openssl support SM4 after 1.1.1 release version.
       cipher = EVP_sm4_ctr();
       break;
 #endif
