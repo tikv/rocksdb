@@ -57,11 +57,11 @@ class EncryptionTest
         cipher = EVP_aes_256_ctr();
         break;
       // Openssl support SM4 after 1.1.1 release version.
-      #if OPENSSL_VERSION_NUMBER >= 0x1010100fL
-        case EncryptionMethod::kSM4_CTR:
-          cipher = EVP_sm4_ctr();
-          break;
-      #endif
+#if OPENSSL_VERSION_NUMBER >= 0x1010100fL
+      case EncryptionMethod::kSM4_CTR:
+        cipher = EVP_sm4_ctr();
+        break;
+#endif
       default:
         assert(false);
     }

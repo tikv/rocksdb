@@ -58,11 +58,11 @@ class AESCTRCipherStream : public BlockAccessCipherStream {
 
   size_t BlockSize() override {
     // Openssl support SM4 after 1.1.1 release version.
-    #if OPENSSL_VERSION_NUMBER >= 0x1010100fL
-      if (EVP_CIPHER_nid(cipher_) == NID_sm4_ctr) {
-        return SM4_BLOCK_SIZE;
-      }
-    #endif
+#if OPENSSL_VERSION_NUMBER >= 0x1010100fL
+    if (EVP_CIPHER_nid(cipher_) == NID_sm4_ctr) {
+      return SM4_BLOCK_SIZE;
+    }
+#endif
     return AES_BLOCK_SIZE;  // 16
   }
 
