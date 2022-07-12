@@ -166,8 +166,8 @@ void FlushJob::RecordFlushIOStats() {
       ThreadStatus::FLUSH_BYTES_WRITTEN, IOSTATS(bytes_written));
   IOSTATS_RESET(bytes_written);
 }
-void FlushJob::PickMemTable(SequenceNumber* earliest_seqno = nullptr,
-                            SequenceNumber* largest_seqno = nullptr) {
+void FlushJob::PickMemTable(SequenceNumber* earliest_seqno,
+                            SequenceNumber* largest_seqno) {
   db_mutex_->AssertHeld();
   assert(!pick_memtable_called);
   pick_memtable_called = true;

@@ -850,6 +850,9 @@ void DBImpl::NotifyOnFlushBegin(ColumnFamilyData* cfd, FileMetaData* file_meta,
     info.job_id = job_id;
     info.triggered_writes_slowdown = triggered_writes_slowdown;
     info.triggered_writes_stop = triggered_writes_stop;
+    // This sequence number is actually smaller than or equal to the sequence
+    // number
+    // of any key that be inserted into the flushed memtable.
     info.smallest_seqno = earliest_seqno;
     info.largest_seqno = largest_seqno;
     info.flush_reason = cfd->GetFlushReason();
