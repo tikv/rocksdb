@@ -2143,7 +2143,6 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
       for (size_t i = 0; i < this_cfds.size(); i++) {
         auto& this_cfd = this_cfds[i];
         auto name = this_cfd->GetName();
-        auto& mutable_cf_options = *this_cfd->GetLatestMutableCFOptions();
         autovector<MemTable*> mems;
         for (auto* db : db_impls) {
           auto cfd = db->versions_->GetColumnFamilySet()->GetColumnFamily(name);
@@ -2163,17 +2162,13 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
             sv_context.Clean();
           }
         }
-        auto* fresh_mem =
-            this_cfd->ConstructNewMemtable(mutable_cf_options, max_seq_number);
-        mems.push_back(fresh_mem);
         for (auto mem : mems) {
           assert(mem != nullptr);
           // Recovery requires the log_number of memtable is monotonic.
           mem->Ref();
-          this_cfd->mem()->SetNextLogNumber(max_log_number);
-          this_cfd->imm()->Add(this_cfd->mem(), &to_delete);
-          this_cfd->SetMemtable(mem);
+          this_cfd->imm()->Add(mem, &to_delete);
         }
+        this_cfd->mem()->SetNextLogNumber(max_log_number);
       }
       for (size_t i = 0; i < all_db_impls.size(); i++) {
         auto* db = all_db_impls[i];
