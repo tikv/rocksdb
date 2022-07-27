@@ -1040,6 +1040,11 @@ Status DBImpl::SetDBOptions(
         MaybeScheduleFlushOrCompaction();
       }
 
+      if (new_options.max_log_file_size != mutable_db_options_.max_log_file_size ||
+          new_options.keep_log_file_num != mutable_db_options_.keep_log_file_num) {
+        immutable_db_options_.info_log.get()->UpdateLogControlParams(mutable_db_options_);
+      }
+
       if (new_options.stats_dump_period_sec !=
           mutable_db_options_.stats_dump_period_sec) {
         if (thread_dump_stats_) {

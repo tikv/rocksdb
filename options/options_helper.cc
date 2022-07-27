@@ -63,9 +63,9 @@ DBOptions BuildDBOptions(const ImmutableDBOptions& immutable_db_options,
   options.strict_bytes_per_sync = mutable_db_options.strict_bytes_per_sync;
   options.max_subcompactions = mutable_db_options.max_subcompactions;
   options.max_background_flushes = mutable_db_options.max_background_flushes;
-  options.max_log_file_size = immutable_db_options.max_log_file_size;
+  options.max_log_file_size = mutable_db_options.max_log_file_size;
   options.log_file_time_to_roll = immutable_db_options.log_file_time_to_roll;
-  options.keep_log_file_num = immutable_db_options.keep_log_file_num;
+  options.keep_log_file_num = mutable_db_options.keep_log_file_num;
   options.recycle_log_file_num = immutable_db_options.recycle_log_file_num;
   options.max_manifest_file_size = immutable_db_options.max_manifest_file_size;
   options.table_cache_numshardbits =
@@ -1522,7 +1522,8 @@ std::unordered_map<std::string, OptionTypeInfo>
           OptionVerificationType::kNormal, false, 0}},
         {"keep_log_file_num",
          {offsetof(struct DBOptions, keep_log_file_num), OptionType::kSizeT,
-          OptionVerificationType::kNormal, false, 0}},
+          OptionVerificationType::kNormal, true,
+          offsetof(struct MutableDBOptions, keep_log_file_num)}},
         {"recycle_log_file_num",
          {offsetof(struct DBOptions, recycle_log_file_num), OptionType::kSizeT,
           OptionVerificationType::kNormal, false, 0}},
@@ -1534,7 +1535,8 @@ std::unordered_map<std::string, OptionTypeInfo>
           OptionType::kSizeT, OptionVerificationType::kNormal, false, 0}},
         {"max_log_file_size",
          {offsetof(struct DBOptions, max_log_file_size), OptionType::kSizeT,
-          OptionVerificationType::kNormal, false, 0}},
+          OptionVerificationType::kNormal, true,
+          offsetof(struct MutableDBOptions, max_log_file_size)}},
         {"db_log_dir",
          {offsetof(struct DBOptions, db_log_dir), OptionType::kString,
           OptionVerificationType::kNormal, false, 0}},

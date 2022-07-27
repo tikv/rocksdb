@@ -1031,6 +1031,7 @@ class Logger {
   }
 
   // If you're adding methods here, remember to add them to LoggerWrapper too.
+  virtual void UpdateLogControlParams(MutableDBOptions& /* mutable_db_options */) {}
 
  protected:
   virtual Status CloseImpl();
@@ -1577,6 +1578,9 @@ class LoggerWrapper : public Logger {
   }
   void SetInfoLogLevel(const InfoLogLevel log_level) override {
     return target_->SetInfoLogLevel(log_level);
+  }
+  virtual void UpdateLogControlParams(MutableDBOptions& mutable_db_options) override {
+    return target_->UpdateLogControlParams(mutable_db_options);
   }
 
  private:

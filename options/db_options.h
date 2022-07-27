@@ -33,9 +33,7 @@ struct ImmutableDBOptions {
   std::vector<DbPath> db_paths;
   std::string db_log_dir;
   std::string wal_dir;
-  size_t max_log_file_size;
   size_t log_file_time_to_roll;
-  size_t keep_log_file_num;
   size_t recycle_log_file_num;
   uint64_t max_manifest_file_size;
   int table_cache_numshardbits;
@@ -108,6 +106,8 @@ struct MutableDBOptions {
   bool strict_bytes_per_sync;
   size_t compaction_readahead_size;
   int max_background_flushes;
+  size_t max_log_file_size;
+  size_t keep_log_file_num;
 };
 
 }  // namespace rocksdb

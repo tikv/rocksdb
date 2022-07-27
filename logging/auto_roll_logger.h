@@ -67,6 +67,12 @@ class AutoRollLogger : public Logger {
     }
   }
 
+  void UpdateLogControlParams(MutableDBOptions& mutable_db_options) override {
+    MutexLock l(&mutex_);
+    kMaxLogFileSize = mutable_db_options.max_log_file_size;
+    kKeepLogFileNum = mutable_db_options.keep_log_file_num;
+  }
+
   virtual ~AutoRollLogger() {
     if (logger_ && !closed_) {
       logger_->Close();
@@ -117,9 +123,9 @@ class AutoRollLogger : public Logger {
   std::shared_ptr<Logger> logger_;
   // current status of the logger
   Status status_;
-  const size_t kMaxLogFileSize;
+  size_t kMaxLogFileSize;
   const size_t kLogFileTimeToRoll;
-  const size_t kKeepLogFileNum;
+  size_t kKeepLogFileNum;
   // header information
   std::list<std::string> headers_;
   // List of all existing info log files. Used for enforcing number of
