@@ -1963,9 +1963,9 @@ struct LiveFilesStorageInfoOptions {
 #endif  // !ROCKSDB_LITE
 
 struct MergeInstanceOptions {
-  // Whether to merge memtable. If set to false, memtables and WALs will be
-  // ignored.
-  bool merge_memtable = false;
+  // Whether or not writes to source DBs are still allowed after the merge.
+  // Some optimizations are possible only with this flag set to false.
+  bool allow_source_write = true;
 };
 
 }  // namespace ROCKSDB_NAMESPACE

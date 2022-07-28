@@ -162,16 +162,27 @@ class DBMergeTest : public testing::Test {
   }
 
   void VerifyKeyValue(uint32_t db_id, uint32_t cf_id, std::string key,
-                      std::string value) {
+                      std::string value,
+                      const ReadOptions& ropts = ReadOptions()) {
     std::string ret;
     if (value == "NotFound") {
       assert(get_db(db_id)
-                 ->Get(ReadOptions(), get_cf(db_id, cf_id), key, &ret)
+                 ->Get(ropts, get_cf(db_id, cf_id), key, &ret)
                  .IsNotFound());
     } else {
-      ASSERT_OK(
-          get_db(db_id)->Get(ReadOptions(), get_cf(db_id, cf_id), key, &ret));
+      ASSERT_OK(get_db(db_id)->Get(ropts, get_cf(db_id, cf_id), key, &ret));
       ASSERT_EQ(value, ret);
+    }
+  }
+
+  int Property(uint32_t db_id, const std::string& name) {
+    std::string property;
+    int result;
+    if (get_db(db_id)->GetProperty(name, &property) &&
+        sscanf(property.c_str(), "%d", &result) == 1) {
+      return result;
+    } else {
+      return -1;
     }
   }
 
@@ -196,7 +207,6 @@ TEST_F(DBMergeTest, MultiMerge) {
   FlushOptions fopts;
   fopts.allow_write_stall = true;
   MergeInstanceOptions mopts;
-  mopts.merge_memtable = true;
   WriteOptions wopts;
   wopts.disableWAL = true;
   Random rnd(301);
@@ -302,7 +312,6 @@ TEST_F(DBMergeTest, BinaryMerge) {
   FlushOptions fopts;
   fopts.allow_write_stall = true;
   MergeInstanceOptions mopts;
-  mopts.merge_memtable = true;
   WriteOptions wopts;
   wopts.disableWAL = true;
   Random rnd(301);
@@ -364,7 +373,6 @@ TEST_F(DBMergeTest, KeyOverlappedInstance) {
   FlushOptions fopts;
   fopts.allow_write_stall = true;
   MergeInstanceOptions mopts;
-  mopts.merge_memtable = false;  // check memtable even if disabled.
   WriteOptions wopts;
   wopts.disableWAL = true;
   CompactRangeOptions copts;
@@ -418,7 +426,6 @@ TEST_F(DBMergeTest, TombstoneOverlappedInstance) {
   WriteOptions wopts;
   wopts.disableWAL = true;
   MergeInstanceOptions mopts;
-  mopts.merge_memtable = false;  // check memtable even if disabled.
   CompactRangeOptions copts;
   copts.bottommost_level_compaction = BottommostLevelCompaction::kForce;
 
@@ -450,7 +457,6 @@ TEST_F(DBMergeTest, TombstoneOverlappedInstance) {
   end = "3";
   ASSERT_OK(
       get_db(3_db)->CompactRange(copts, get_cf(3_db, 1_cf), nullptr, &end));
-  mopts.merge_memtable = true;
   ASSERT_OK(Merge(mopts, {1_db, 2_db, 3_db}, 4_db, {default_cf, 1_cf}));
 
   VerifyKeyValue(4_db, 1_cf, "1", "v1");
@@ -462,7 +468,6 @@ TEST_F(DBMergeTest, WithWAL) {
   WriteOptions wopts;
   wopts.disableWAL = false;
   MergeInstanceOptions mopts;
-  mopts.merge_memtable = true;
   FlushOptions fopts;
   fopts.allow_write_stall = true;
 
@@ -470,11 +475,6 @@ TEST_F(DBMergeTest, WithWAL) {
   Open(2_db, {default_cf, 1_cf});
   ASSERT_OK(get_db(1_db)->Put(wopts, get_cf(1_db, 1_cf), "1", "v1"));
   ASSERT_OK(get_db(2_db)->Put(wopts, get_cf(2_db, 1_cf), "2", "v2"));
-
-  // Ignore WAL and memtable.
-  ASSERT_OK(Merge(MergeInstanceOptions(), {1_db}, 2_db));
-  VerifyKeyValue(2_db, 1_cf, "2", "v2");
-  VerifyKeyValue(2_db, 1_cf, "1", "NotFound");
 
   ASSERT_NOK(Merge(mopts, {1_db, 2_db}, 3_db, {default_cf, 1_cf}));
 
@@ -488,7 +488,6 @@ TEST_F(DBMergeTest, MemtableIsolation) {
   WriteOptions wopts;
   wopts.disableWAL = true;
   MergeInstanceOptions mopts;
-  mopts.merge_memtable = true;
 
   Open(1_db, {default_cf});
   Open(2_db, {default_cf});
@@ -496,11 +495,78 @@ TEST_F(DBMergeTest, MemtableIsolation) {
   ASSERT_OK(Merge(mopts, {1_db}, 2_db, {default_cf}));
   VerifyKeyValue(2_db, default_cf, "1", "v1");
   ASSERT_OK(get_db(1_db)->Put(wopts, get_cf(1_db, default_cf), "1", "v2"));
-  // Increase the seqno of 2_db.
+  // Increase the seqno of 2_db so that snapshot might include new writes.
   ASSERT_OK(get_db(2_db)->Put(wopts, get_cf(2_db, default_cf), "2", "v"));
   ASSERT_OK(get_db(2_db)->Put(wopts, get_cf(2_db, default_cf), "2", "v"));
   // Check merged DB is not affected by source DB writes.
   VerifyKeyValue(2_db, default_cf, "1", "v1");
+}
+
+TEST_F(DBMergeTest, CacheReuse) {
+  BlockBasedTableOptions table_options;
+  // Otherwise the reader will not attempt to read cache first.
+  table_options.cache_index_and_filter_blocks = true;
+  options_.table_factory.reset(NewBlockBasedTableFactory(table_options));
+  WriteOptions wopts;
+  wopts.disableWAL = true;
+  ReadOptions ropts;
+  ropts.fill_cache = true;
+
+  Open(1_db, {default_cf});
+  Open(2_db, {default_cf});
+  ASSERT_OK(get_db(1_db)->Put(wopts, get_cf(1_db, default_cf), "1", "v1"));
+  ASSERT_OK(get_db(2_db)->Put(wopts, get_cf(2_db, default_cf), "2", "v1"));
+  for (auto db : {1_db, 2_db}) {
+    ASSERT_OK(get_db(db)->Flush(FlushOptions(), get_cf(db, default_cf)));
+  }
+  VerifyKeyValue(1_db, default_cf, "1", "v1", ropts);
+  VerifyKeyValue(2_db, default_cf, "2", "v1", ropts);
+  ropts.read_tier = ReadTier::kBlockCacheTier;
+  VerifyKeyValue(1_db, default_cf, "1", "v1", ropts);
+  VerifyKeyValue(2_db, default_cf, "2", "v1", ropts);
+
+  ASSERT_OK(Merge(MergeInstanceOptions(), {1_db, 2_db}, 3_db, {default_cf}));
+
+  ropts.read_tier = ReadTier::kBlockCacheTier;
+  VerifyKeyValue(3_db, default_cf, "1", "v1", ropts);
+  VerifyKeyValue(3_db, default_cf, "2", "v1", ropts);
+}
+
+TEST_F(DBMergeTest, ConcurrentFlush) {
+  WriteOptions wopts;
+  wopts.disableWAL = true;
+
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->SetCallBack(
+      "DBImpl::MergeDisjointInstances:AfterMergeMemtable::1",
+      [&](void* /*arg*/) {
+        for (auto db : {1_db, 2_db}) {
+          ASSERT_OK(get_db(db)->Flush(FlushOptions(), get_cf(db, default_cf)));
+        }
+      });
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->EnableProcessing();
+
+  Open(1_db, {default_cf});
+  Open(2_db, {default_cf});
+  Open(3_db, {default_cf});
+  ASSERT_OK(get_db(3_db)->PauseBackgroundWork());
+
+  // Put some to memtable.
+  ASSERT_OK(get_db(1_db)->Put(wopts, get_cf(1_db, default_cf), "1", "v1"));
+  ASSERT_OK(get_db(2_db)->Put(wopts, get_cf(2_db, default_cf), "2", "v1"));
+  ASSERT_EQ(Property(1_db, "rocksdb.num-files-at-level0"), 0);
+  ASSERT_EQ(Property(2_db, "rocksdb.num-files-at-level0"), 0);
+
+  ASSERT_OK(Merge(MergeInstanceOptions(), {1_db, 2_db}, 3_db, {default_cf}));
+  ASSERT_EQ(Property(1_db, "rocksdb.num-files-at-level0"), 1);
+  ASSERT_EQ(Property(2_db, "rocksdb.num-files-at-level0"), 1);
+  ASSERT_EQ(Property(3_db, "rocksdb.num-files-at-level0"), 0);
+
+  VerifyKeyValue(3_db, default_cf, "1", "v1");
+  VerifyKeyValue(3_db, default_cf, "2", "v1");
+
+  ASSERT_OK(get_db(3_db)->ContinueBackgroundWork());
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->DisableProcessing();
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->ClearAllCallBacks();
 }
 
 }  // namespace ROCKSDB_NAMESPACE

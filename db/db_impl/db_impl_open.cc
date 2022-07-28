@@ -1930,8 +1930,7 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
   return s;
 }
 
-Status DBImpl::ValidateForMerge(const MergeInstanceOptions& mopts,
-                                DBImpl* rhs) {
+Status DBImpl::ValidateForMerge(DBImpl* rhs) {
   if (rhs->two_write_queues_) {
     return Status::NotSupported("two_write_queues == true");
   }
@@ -1943,14 +1942,12 @@ Status DBImpl::ValidateForMerge(const MergeInstanceOptions& mopts,
       return Status::InvalidArgument("table_factory must be of the same type");
     }
   }
-  if (mopts.merge_memtable) {
-    if (rhs->total_log_size_ > 0) {
-      return Status::InvalidArgument("DB WAL is not empty");
-    }
-    if (rhs->write_buffer_manager_ != write_buffer_manager_) {
-      return Status::InvalidArgument(
-          "write_buffer_manager must be shared to merge memtable");
-    }
+  if (rhs->total_log_size_ > 0) {
+    return Status::InvalidArgument("DB WAL is not empty");
+  }
+  if (rhs->write_buffer_manager_ != write_buffer_manager_) {
+    return Status::InvalidArgument(
+        "write_buffer_manager must be shared to merge memtable");
   }
   return Status::OK();
 }
@@ -1972,17 +1969,27 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
   if (!s.ok()) {
     return s;
   }
-  // Source instance check.
   autovector<DBImpl*> db_impls;
   autovector<DBImpl*> all_db_impls{this};
+  // List of source super versions by cf.
+  autovector<autovector<SuperVersion*>> cf_super_versions;
   std::shared_ptr<void> _defer(nullptr, [&](...) {
     for (auto* db_impl : all_db_impls) {
       db_impl->EnableFileDeletions(false /*force*/);
     }
+    for (auto& db_super_versions : cf_super_versions) {
+      for (auto* super_version : db_super_versions) {
+        assert(super_version != nullptr);
+        if (super_version->Unref()) {
+          super_version->Cleanup();
+        }
+      }
+    }
   });
+  // Source instance check.
   for (size_t i = 0; i < instances.size(); i++) {
     auto* db_impl = static_cast<DBImpl*>(instances[i]);
-    s = ValidateForMerge(merge_options, db_impl);
+    s = ValidateForMerge(db_impl);
     if (s.ok()) {
       s = db_impl->DisableFileDeletions();
     }
@@ -2047,26 +2054,118 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
     }
   }
 
+  // Merge memtable.
+  // Also acquire a version snapshot here (SuperVersion) to prevent a memtable
+  // being captured again as a L0 file later.
+  assert(s.ok());
+  autovector<std::unique_ptr<WriteThread::Writer>> all_writers;
+  autovector<MemTable*> to_delete;  // not used.
+  uint64_t max_seq_number = 0;
+  uint64_t max_log_number = 0;
+  for (auto* db : all_db_impls) {
+    // Matching `IngestExternalFiles()`.
+    all_writers.emplace_back(new WriteThread::Writer());
+    db->mutex_.Lock();
+    db->write_thread_.EnterUnbatched(all_writers.back().get(), &db->mutex_);
+    db->WaitForPendingWrites();
+    db->log_write_mutex_.Lock();
+    max_seq_number = std::max(max_seq_number, db->versions_->LastSequence());
+    max_log_number = std::max(max_log_number, db->logfile_number_);
+  }
+  versions_->SetLastAllocatedSequence(max_seq_number);
+  versions_->SetLastSequence(max_seq_number);
+  for (size_t cf_i = 0; cf_i < this_cfds.size(); cf_i++) {
+    cf_super_versions.emplace_back();
+    assert(cf_super_versions.size() == cf_i + 1);
+    auto* this_cfd = this_cfds[cf_i];
+    auto name = this_cfd->GetName();
+    autovector<MemTable*> mems;
+    for (auto* db : db_impls) {
+      auto cfd = db->versions_->GetColumnFamilySet()->GetColumnFamily(name);
+      assert(cfd != nullptr && !cfd->IsDropped());
+      if (!cfd->mem()->IsEmpty()) {
+        // Freeze memtable. Only immutable memtables can be shared.
+        auto& cf_mopts = *cfd->GetLatestMutableCFOptions();
+        auto* new_mem = cfd->ConstructNewMemtable(cf_mopts, max_seq_number);
+        new_mem->Ref();
+        cfd->imm()->Add(cfd->mem(), &to_delete);
+#ifndef ROCKSDB_LITE
+        MemTableInfo memtable_info;
+        memtable_info.cf_name = name;
+        memtable_info.first_seqno = cfd->mem()->GetFirstSequenceNumber();
+        memtable_info.earliest_seqno = cfd->mem()->GetEarliestSequenceNumber();
+        memtable_info.num_entries = cfd->mem()->num_entries();
+        memtable_info.num_deletes = cfd->mem()->num_deletes();
+        db->NotifyOnMemTableSealed(cfd, memtable_info);
+#endif  // ROCKSDB_LITE
+        cfd->SetMemtable(new_mem);
+        SuperVersionContext sv_context(/* create_superversion */ true);
+        db->InstallSuperVersionAndScheduleWork(cfd, &sv_context, cf_mopts);
+        sv_context.Clean();
+      }
+      assert(cfd->mem()->IsEmpty());
+      cfd->mem()->SetNextLogNumber(max_log_number);
+      cfd->imm()->ExportMemtables(&mems);
+      // Acquire super version.
+      auto* super_version = cfd->GetSuperVersion()->Ref();
+      cf_super_versions[cf_i].push_back(super_version);
+    }
+    for (auto mem : mems) {
+      assert(mem != nullptr);
+      mem->Ref();
+      // Recovery requires the log_number of memtable is monotonic.
+      mem->SetNextLogNumber(max_log_number);
+      this_cfd->imm()->Add(mem, &to_delete);
+    }
+    this_cfd->mem()->SetNextLogNumber(max_log_number);
+  }
+  for (size_t i = 0; i < all_db_impls.size(); i++) {
+    auto* db = all_db_impls[i];
+    bool allow_write_after_merge = (i == 0 || merge_options.allow_source_write);
+    if (s.ok() && max_log_number != db->logfile_number_ &&
+        allow_write_after_merge) {
+      assert(max_log_number > db->logfile_number_);
+      // Create a new WAL so that future memtable uses the correct log
+      // number.
+      log::Writer* new_log = nullptr;
+      s = db->CreateWAL(max_log_number, 0 /*recycle_log_number*/,
+                        0 /*preallocate_block_size*/, &new_log);
+      if (s.ok()) {
+        db->logfile_number_ = max_log_number;
+        assert(new_log != nullptr);
+        db->logs_.emplace_back(max_log_number, new_log);
+        auto current = db->versions_->current_next_file_number();
+        if (current <= max_log_number) {
+          db->versions_->FetchAddFileNumber(max_log_number - current + 1);
+        }
+      }
+    }
+    db->log_write_mutex_.Unlock();
+    db->write_thread_.ExitUnbatched(all_writers[i].get());
+    db->mutex_.Unlock();
+  }
+  if (!s.ok()) {
+    return s;
+  }
+
+  TEST_SYNC_POINT("DBImpl::MergeDisjointInstances:AfterMergeMemtable::1");
+
   // Merge table files.
   assert(s.ok());
   autovector<VersionEdit> cf_edits;
-  for (auto cfd : this_cfds) {
-    cf_edits.emplace_back();
-    cf_edits.back().SetColumnFamily(cfd->GetID());
-  }
   auto* this_table_cache = table_cache_.get();
-  for (auto db : db_impls) {
-    InstrumentedMutexLock lock(&db->mutex_);
-    for (size_t i = 0; i < this_cfds.size(); i++) {
-      auto& this_cfd = this_cfds[i];
-      auto* this_table_factory = this_cfd->ioptions()->table_factory.get();
-      auto name = this_cfd->GetName();
-      auto& edit = cf_edits[i];
-      auto cfd = db->versions_->GetColumnFamilySet()->GetColumnFamily(name);
-      assert(cfd != nullptr && !cfd->IsDropped());  // already checked before.
+  for (size_t cf_i = 0; cf_i < this_cfds.size(); cf_i++) {
+    auto* this_cfd = this_cfds[cf_i];
+    auto* this_table_factory = this_cfd->ioptions()->table_factory.get();
+    cf_edits.emplace_back();
+    cf_edits.back().SetColumnFamily(this_cfd->GetID());
+    auto& edit = cf_edits[cf_i];
+    for (size_t db_i = 0; db_i < db_impls.size(); db_i++) {
+      auto* super_version = cf_super_versions[cf_i][db_i];
+      auto* db = db_impls[db_i];
       auto* table_cache = db->table_cache_.get();
-      VersionStorageInfo& vsi = *cfd->current()->storage_info();
-      auto& cf_paths = cfd->ioptions()->cf_paths;
+      VersionStorageInfo& vsi = *super_version->current->storage_info();
+      auto& cf_paths = super_version->cfd->ioptions()->cf_paths;
       auto GetDir = [&](size_t path_id) {
         // Matching `TableFileName()`.
         if (path_id >= cf_paths.size()) {
@@ -2076,7 +2175,6 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
           return cf_paths[path_id].path;
         }
       };
-
       for (int level = 0; level < vsi.num_levels(); ++level) {
         const auto& level_files = vsi.LevelFiles(level);
         for (const auto& f : level_files) {
@@ -2126,89 +2224,6 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
         }
       }
     }
-  }
-
-  // Merge memtable.
-  assert(s.ok());
-  if (merge_options.merge_memtable) {
-    autovector<std::unique_ptr<WriteThread::Writer>> all_writers;
-    autovector<MemTable*> to_delete;  // not used.
-    uint64_t max_seq_number = 0;
-    uint64_t max_log_number = 0;
-    for (auto* db : all_db_impls) {
-      // Matching `IngestExternalFiles()`.
-      all_writers.emplace_back(new WriteThread::Writer());
-      db->mutex_.Lock();
-      db->write_thread_.EnterUnbatched(all_writers.back().get(), &db->mutex_);
-      db->WaitForPendingWrites();
-      db->log_write_mutex_.Lock();
-      max_seq_number = std::max(max_seq_number, db->versions_->LastSequence());
-      max_log_number = std::max(max_log_number, db->logfile_number_);
-    }
-    versions_->SetLastAllocatedSequence(max_seq_number);
-    versions_->SetLastSequence(max_seq_number);
-    for (size_t i = 0; i < this_cfds.size(); i++) {
-      auto& this_cfd = this_cfds[i];
-      auto name = this_cfd->GetName();
-      autovector<MemTable*> mems;
-      for (auto* db : db_impls) {
-        auto cfd = db->versions_->GetColumnFamilySet()->GetColumnFamily(name);
-        assert(cfd != nullptr && !cfd->IsDropped());
-        cfd->imm()->ExportMemtables(&mems);
-        if (!cfd->mem()->IsEmpty()) {
-          mems.push_back(cfd->mem());
-          // Only immutable memtables can be shared.
-          auto& cf_mopts = *cfd->GetLatestMutableCFOptions();
-          auto* new_mem = cfd->ConstructNewMemtable(cf_mopts, max_seq_number);
-          new_mem->Ref();
-          cfd->mem()->SetNextLogNumber(max_log_number);
-          cfd->imm()->Add(cfd->mem(), &to_delete);
-          cfd->SetMemtable(new_mem);
-          SuperVersionContext sv_context(/* create_superversion */ true);
-          db->InstallSuperVersionAndScheduleWork(cfd, &sv_context, cf_mopts);
-          sv_context.Clean();
-        }
-      }
-      for (auto mem : mems) {
-        assert(mem != nullptr);
-        // Recovery requires the log_number of memtable is monotonic.
-        mem->Ref();
-        this_cfd->imm()->Add(mem, &to_delete);
-      }
-      this_cfd->mem()->SetNextLogNumber(max_log_number);
-    }
-    for (size_t i = 0; i < all_db_impls.size(); i++) {
-      auto* db = all_db_impls[i];
-      if (max_log_number != db->logfile_number_) {
-        assert(max_log_number > db->logfile_number_);
-        // Create a new WAL so that future memtable uses the correct log
-        // number.
-        log::Writer* new_log = nullptr;
-        s = db->CreateWAL(max_log_number, 0 /*recycle_log_number*/,
-                          0 /*preallocate_block_size*/, &new_log);
-        if (s.ok()) {
-          db->logfile_number_ = max_log_number;
-          assert(new_log != nullptr);
-          db->logs_.emplace_back(max_log_number, new_log);
-          auto current = db->versions_->current_next_file_number();
-          if (current <= max_log_number) {
-            db->versions_->FetchAddFileNumber(max_log_number - current + 1);
-          }
-        } else {
-          return s;
-        }
-      }
-      db->log_write_mutex_.Unlock();
-      db->write_thread_.ExitUnbatched(all_writers[i].get());
-      db->mutex_.Unlock();
-    }
-  } else {
-    uint64_t max_seq_number = 0;
-    for (auto* db : all_db_impls) {
-      max_seq_number = std::max(max_seq_number, db->versions_->LastSequence());
-    }
-    versions_->SetLastAllocatedSequence(max_seq_number);
-    versions_->SetLastSequence(max_seq_number);
   }
 
   // Apply version edits.
