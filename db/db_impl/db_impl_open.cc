@@ -1930,7 +1930,8 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
   return s;
 }
 
-Status DBImpl::ValidateForMerge(DBImpl* rhs) {
+Status DBImpl::ValidateForMerge(const MergeInstanceOptions& mopts,
+                                DBImpl* rhs) {
   if (rhs->two_write_queues_) {
     return Status::NotSupported("two_write_queues == true");
   }
@@ -1942,12 +1943,14 @@ Status DBImpl::ValidateForMerge(DBImpl* rhs) {
       return Status::InvalidArgument("table_factory must be of the same type");
     }
   }
-  if (rhs->total_log_size_ > 0) {
-    return Status::InvalidArgument("DB WAL is not empty");
-  }
-  if (rhs->write_buffer_manager_ != write_buffer_manager_) {
-    return Status::InvalidArgument(
-        "write_buffer_manager must be shared to merge memtable");
+  if (mopts.merge_memtable) {
+    if (rhs->total_log_size_ > 0) {
+      return Status::InvalidArgument("DB WAL is not empty");
+    }
+    if (rhs->write_buffer_manager_ != write_buffer_manager_) {
+      return Status::InvalidArgument(
+          "write_buffer_manager must be shared to merge memtable");
+    }
   }
   return Status::OK();
 }
@@ -1965,18 +1968,11 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
   if (two_write_queues_) {
     return Status::NotSupported("target instance two_write_queues == true");
   }
-  s = DisableFileDeletions();
-  if (!s.ok()) {
-    return s;
-  }
   autovector<DBImpl*> db_impls;
   autovector<DBImpl*> all_db_impls{this};
   // List of source super versions by cf.
   autovector<autovector<SuperVersion*>> cf_super_versions;
   std::shared_ptr<void> _defer(nullptr, [&](...) {
-    for (auto* db_impl : all_db_impls) {
-      db_impl->EnableFileDeletions(false /*force*/);
-    }
     for (auto& db_super_versions : cf_super_versions) {
       for (auto* super_version : db_super_versions) {
         assert(super_version != nullptr);
@@ -1989,10 +1985,7 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
   // Source instance check.
   for (size_t i = 0; i < instances.size(); i++) {
     auto* db_impl = static_cast<DBImpl*>(instances[i]);
-    s = ValidateForMerge(db_impl);
-    if (s.ok()) {
-      s = db_impl->DisableFileDeletions();
-    }
+    s = ValidateForMerge(merge_options, db_impl);
     if (s.ok()) {
       db_impls.push_back(db_impl);
       all_db_impls.push_back(db_impl);
@@ -2054,9 +2047,8 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
     }
   }
 
-  // Merge memtable.
-  // Also acquire a version snapshot here (SuperVersion) to prevent a memtable
-  // being captured again as a L0 file later.
+  // Acquire version snapshots (SuperVersion).
+  // Do memtable merge if needed.
   assert(s.ok());
   autovector<std::unique_ptr<WriteThread::Writer>> all_writers;
   autovector<MemTable*> to_delete;  // not used.
@@ -2083,29 +2075,32 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
     for (auto* db : db_impls) {
       auto cfd = db->versions_->GetColumnFamilySet()->GetColumnFamily(name);
       assert(cfd != nullptr && !cfd->IsDropped());
-      if (!cfd->mem()->IsEmpty()) {
-        // Freeze memtable. Only immutable memtables can be shared.
-        auto& cf_mopts = *cfd->GetLatestMutableCFOptions();
-        auto* new_mem = cfd->ConstructNewMemtable(cf_mopts, max_seq_number);
-        new_mem->Ref();
-        cfd->imm()->Add(cfd->mem(), &to_delete);
+      if (merge_options.merge_memtable) {
+        if (!cfd->mem()->IsEmpty()) {
+          // Freeze memtable. Only immutable memtables can be shared.
+          auto& cf_mopts = *cfd->GetLatestMutableCFOptions();
+          auto* new_mem = cfd->ConstructNewMemtable(cf_mopts, max_seq_number);
+          new_mem->Ref();
+          cfd->imm()->Add(cfd->mem(), &to_delete);
 #ifndef ROCKSDB_LITE
-        MemTableInfo memtable_info;
-        memtable_info.cf_name = name;
-        memtable_info.first_seqno = cfd->mem()->GetFirstSequenceNumber();
-        memtable_info.earliest_seqno = cfd->mem()->GetEarliestSequenceNumber();
-        memtable_info.num_entries = cfd->mem()->num_entries();
-        memtable_info.num_deletes = cfd->mem()->num_deletes();
-        db->NotifyOnMemTableSealed(cfd, memtable_info);
+          MemTableInfo memtable_info;
+          memtable_info.cf_name = name;
+          memtable_info.first_seqno = cfd->mem()->GetFirstSequenceNumber();
+          memtable_info.earliest_seqno =
+              cfd->mem()->GetEarliestSequenceNumber();
+          memtable_info.num_entries = cfd->mem()->num_entries();
+          memtable_info.num_deletes = cfd->mem()->num_deletes();
+          db->NotifyOnMemTableSealed(cfd, memtable_info);
 #endif  // ROCKSDB_LITE
-        cfd->SetMemtable(new_mem);
-        SuperVersionContext sv_context(/* create_superversion */ true);
-        db->InstallSuperVersionAndScheduleWork(cfd, &sv_context, cf_mopts);
-        sv_context.Clean();
+          cfd->SetMemtable(new_mem);
+          SuperVersionContext sv_context(/* create_superversion */ true);
+          db->InstallSuperVersionAndScheduleWork(cfd, &sv_context, cf_mopts);
+          sv_context.Clean();
+        }
+        assert(cfd->mem()->IsEmpty());
+        cfd->mem()->SetNextLogNumber(max_log_number);
+        cfd->imm()->ExportMemtables(&mems);
       }
-      assert(cfd->mem()->IsEmpty());
-      cfd->mem()->SetNextLogNumber(max_log_number);
-      cfd->imm()->ExportMemtables(&mems);
       // Acquire super version.
       auto* super_version = cfd->GetSuperVersion()->Ref();
       cf_super_versions[cf_i].push_back(super_version);
@@ -2121,9 +2116,9 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
   }
   for (size_t i = 0; i < all_db_impls.size(); i++) {
     auto* db = all_db_impls[i];
-    bool allow_write_after_merge = (i == 0 || merge_options.allow_source_write);
-    if (s.ok() && max_log_number != db->logfile_number_ &&
-        allow_write_after_merge) {
+    bool check_log_number = (i == 0 || merge_options.allow_source_write) &&
+                            merge_options.merge_memtable;
+    if (s.ok() && check_log_number && max_log_number != db->logfile_number_) {
       assert(max_log_number > db->logfile_number_);
       // Create a new WAL so that future memtable uses the correct log
       // number.
@@ -2148,7 +2143,7 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
     return s;
   }
 
-  TEST_SYNC_POINT("DBImpl::MergeDisjointInstances:AfterMergeMemtable::1");
+  TEST_SYNC_POINT("DBImpl::MergeDisjointInstances:AfterMergeMemtable:1");
 
   // Merge table files.
   assert(s.ok());

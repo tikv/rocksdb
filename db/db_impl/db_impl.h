@@ -936,8 +936,9 @@ class DBImpl : public DB {
                      std::vector<ColumnFamilyHandle*>* handles, DB** dbptr,
                      const bool seq_per_batch, const bool batch_per_txn);
 
-  // Validate `rhs` can be merged into this DB.
-  Status ValidateForMerge(DBImpl* rhs);
+  // Validate `rhs` can be merged into this DB with given merge options.
+  Status ValidateForMerge(const MergeInstanceOptions& merge_options,
+                          DBImpl* rhs);
 
   Status MergeDisjointInstances(const MergeInstanceOptions& merge_options,
                                 const std::vector<DB*> instances) override;
