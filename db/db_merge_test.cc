@@ -586,6 +586,27 @@ TEST_F(DBMergeTest, ConcurrentFlush) {
   ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->ClearAllCallBacks();
 }
 
+TEST_F(DBMergeTest, MissingCF) {
+  WriteOptions wopts;
+  wopts.disableWAL = true;
+  MergeInstanceOptions mopts;
+  mopts.merge_memtable = true;
+
+  Open(1_db, {default_cf, 1_cf});
+  Open(2_db, {default_cf, 2_cf});
+  Open(3_db, {default_cf, 3_cf});
+  ASSERT_OK(get_db(1_db)->Put(wopts, get_cf(1_db, 1_cf), "key", "v1"));
+  ASSERT_OK(get_db(2_db)->Put(wopts, get_cf(2_db, 2_cf), "key", "v2"));
+  ASSERT_OK(get_db(3_db)->Put(wopts, get_cf(3_db, 3_cf), "key", "v3"));
+
+  ASSERT_OK(
+      Merge(mopts, {1_db, 2_db, 3_db}, 4_db, {default_cf, 1_cf, 2_cf, 3_cf}));
+
+  VerifyKeyValue(4_db, 1_cf, "key", "v1");
+  VerifyKeyValue(4_db, 2_cf, "key", "v2");
+  VerifyKeyValue(4_db, 3_cf, "key", "v3");
+}
+
 }  // namespace ROCKSDB_NAMESPACE
 
 int main(int argc, char** argv) {

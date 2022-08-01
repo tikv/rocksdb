@@ -1938,9 +1938,12 @@ Status DBImpl::ValidateForMerge(const MergeInstanceOptions& mopts,
   for (auto cfd : *versions_->GetColumnFamilySet()) {
     auto rhs_cfd =
         rhs->versions_->GetColumnFamilySet()->GetColumnFamily(cfd->GetName());
-    if (strcmp(cfd->ioptions()->table_factory->Name(),
-               rhs_cfd->ioptions()->table_factory->Name()) != 0) {
-      return Status::InvalidArgument("table_factory must be of the same type");
+    if (rhs_cfd != nullptr) {
+      if (strcmp(cfd->ioptions()->table_factory->Name(),
+                 rhs_cfd->ioptions()->table_factory->Name()) != 0) {
+        return Status::InvalidArgument(
+            "table_factory must be of the same type");
+      }
     }
   }
   if (mopts.merge_memtable) {
@@ -1970,13 +1973,13 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
   }
   autovector<DBImpl*> db_impls;
   autovector<DBImpl*> all_db_impls{this};
-  // List of source super versions by cf.
+  // List of source super versions by cf. nullptr if the cf is missing from a
+  // specific db.
   autovector<autovector<SuperVersion*>> cf_super_versions;
   std::shared_ptr<void> _defer(nullptr, [&](...) {
     for (auto& db_super_versions : cf_super_versions) {
       for (auto* super_version : db_super_versions) {
-        assert(super_version != nullptr);
-        if (super_version->Unref()) {
+        if (super_version != nullptr && super_version->Unref()) {
           super_version->Cleanup();
         }
       }
@@ -2018,8 +2021,7 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
     for (auto* db : db_impls) {
       auto cfd = db->versions_->GetColumnFamilySet()->GetColumnFamily(name);
       if (cfd == nullptr || cfd->IsDropped()) {
-        return Status::InvalidArgument(
-            "Column family not found in source DB: " + this_cfds[i]->GetName());
+        continue;
       }
       PinnableSlice smallest, largest;
       bool found = false;
@@ -2055,7 +2057,7 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
   uint64_t max_seq_number = 0;
   uint64_t max_log_number = 0;
   for (auto* db : all_db_impls) {
-    // Matching `IngestExternalFiles()`.
+    // Block writes.
     all_writers.emplace_back(new WriteThread::Writer());
     db->mutex_.Lock();
     db->write_thread_.EnterUnbatched(all_writers.back().get(), &db->mutex_);
@@ -2074,7 +2076,10 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
     autovector<MemTable*> mems;
     for (auto* db : db_impls) {
       auto cfd = db->versions_->GetColumnFamilySet()->GetColumnFamily(name);
-      assert(cfd != nullptr && !cfd->IsDropped());
+      if (cfd == nullptr || cfd->IsDropped()) {
+        cf_super_versions[cf_i].push_back(nullptr);
+        continue;
+      }
       if (merge_options.merge_memtable) {
         if (!cfd->mem()->IsEmpty()) {
           // Freeze memtable. Only immutable memtables can be shared.
@@ -2157,6 +2162,9 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
     auto& edit = cf_edits[cf_i];
     for (size_t db_i = 0; db_i < db_impls.size(); db_i++) {
       auto* super_version = cf_super_versions[cf_i][db_i];
+      if (super_version == nullptr) {
+        continue;
+      }
       auto* db = db_impls[db_i];
       auto* table_cache = db->table_cache_.get();
       VersionStorageInfo& vsi = *super_version->current->storage_info();
