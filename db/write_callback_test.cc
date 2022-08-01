@@ -145,7 +145,7 @@ TEST_F(WriteCallbackTest, WriteWithCallbackTest) {
               if (options.enable_pipelined_write && options.two_write_queues) {
                 continue;
               }
-              if (options.enable_multi_batch_write && options.two_write_queues) {
+              if (options.enable_pipelined_commit && options.two_write_queues) {
                 continue;
               }
 
@@ -156,7 +156,7 @@ TEST_F(WriteCallbackTest, WriteWithCallbackTest) {
               if (options.unordered_write && options.enable_pipelined_write) {
                 continue;
               }
-              if (options.unordered_write && options.enable_multi_batch_write) {
+              if (options.unordered_write && options.enable_pipelined_commit) {
                 continue;
               }
 

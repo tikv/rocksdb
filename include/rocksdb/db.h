@@ -384,11 +384,6 @@ class DB {
     return Write(options, updates, nullptr);
   }
 
-  virtual Status MultiBatchWrite(const WriteOptions& /*options*/,
-                                 std::vector<WriteBatch*>&& /*updates*/) {
-    return Status::NotSupported();
-  }
-
   // If the database contains an entry for "key" store the
   // corresponding value in *value and return OK.
   //
