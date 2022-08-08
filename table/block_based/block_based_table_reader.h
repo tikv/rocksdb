@@ -111,7 +111,7 @@ class BlockBasedTable : public TableReader {
   Status Clone(const ImmutableOptions& ioptions, const EnvOptions& env_options,
                const BlockBasedTableOptions& table_options,
                const InternalKeyComparator& internal_comparator,
-               std::unique_ptr<TableReader>& table_reader) const;
+               std::unique_ptr<TableReader>* table_reader) const;
 
   bool PrefixMayMatch(const Slice& internal_key,
                       const ReadOptions& read_options,

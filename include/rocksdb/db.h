@@ -304,7 +304,7 @@ class DB {
   //
   virtual Status MergeDisjointInstances(
       const MergeInstanceOptions& /*merge_options*/,
-      const std::vector<DB*> /*instances*/) {
+      const std::vector<DB*>& /*instances*/) {
     return Status::NotSupported();
   }
 

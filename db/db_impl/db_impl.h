@@ -941,7 +941,7 @@ class DBImpl : public DB {
                           DBImpl* rhs);
 
   Status MergeDisjointInstances(const MergeInstanceOptions& merge_options,
-                                const std::vector<DB*> instances) override;
+                                const std::vector<DB*>& instances) override;
 
   static IOStatus CreateAndNewDirectory(
       FileSystem* fs, const std::string& dirname,

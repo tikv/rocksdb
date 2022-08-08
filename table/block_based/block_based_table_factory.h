@@ -67,7 +67,7 @@ class BlockBasedTableFactory : public TableFactory {
                           const EnvOptions& env_options,
                           const InternalKeyComparator& internal_comparator,
                           TableReader* table_reader,
-                          std::unique_ptr<TableReader>& cloned) const override;
+                          std::unique_ptr<TableReader>* cloned) const override;
 
   TableBuilder* NewTableBuilder(
       const TableBuilderOptions& table_builder_options,

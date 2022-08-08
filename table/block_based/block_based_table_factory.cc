@@ -29,6 +29,7 @@
 #include "table/block_based/block_based_table_builder.h"
 #include "table/block_based/block_based_table_reader.h"
 #include "table/format.h"
+#include "util/cast_util.h"
 #include "util/mutexlock.h"
 #include "util/string_util.h"
 
@@ -626,14 +627,12 @@ Status BlockBasedTableFactory::NewTableReader(
 Status BlockBasedTableFactory::CloneTableReader(
     const ImmutableOptions& ioptions, const EnvOptions& env_options,
     const InternalKeyComparator& internal_comparator, TableReader* table_reader,
-    std::unique_ptr<TableReader>& cloned) const {
-  auto* reader_impl = static_cast<BlockBasedTable*>(table_reader);
-  if (reader_impl) {
-    return reader_impl->Clone(ioptions, env_options, table_options_,
-                              internal_comparator, cloned);
-  } else {
-    return Status::InvalidArgument("Not a BlockBasedTable.");
-  }
+    std::unique_ptr<TableReader>* cloned) const {
+  assert(cloned != nullptr);
+  auto* reader_impl = static_cast_with_check<BlockBasedTable>(table_reader);
+  assert(reader_impl != nullptr);
+  return reader_impl->Clone(ioptions, env_options, table_options_,
+                            internal_comparator, cloned);
 }
 
 TableBuilder* BlockBasedTableFactory::NewTableBuilder(

@@ -725,7 +725,8 @@ Status BlockBasedTable::Clone(
     const ImmutableOptions& ioptions, const EnvOptions& env_options,
     const BlockBasedTableOptions& table_options,
     const InternalKeyComparator& internal_comparator,
-    std::unique_ptr<TableReader>& table_reader) const {
+    std::unique_ptr<TableReader>* table_reader) const {
+  table_reader->reset();
   Status s;
   auto rep = std::unique_ptr<BlockBasedTable::Rep>(new BlockBasedTable::Rep(
       ioptions, env_options, table_options, internal_comparator,
@@ -756,7 +757,7 @@ Status BlockBasedTable::Clone(
   // We must make sure we hold a shared ownership to the same user prefix
   // extractor.
   if (rep_->internal_prefix_transform != nullptr) {
-    auto* transform_impl = static_cast<InternalKeySliceTransform*>(
+    auto* transform_impl = static_cast_with_check<InternalKeySliceTransform>(
         rep_->internal_prefix_transform.get());
     if (transform_impl == nullptr || transform_impl->user_prefix_extractor() !=
                                          rep_->table_prefix_extractor.get()) {
@@ -800,7 +801,8 @@ Status BlockBasedTable::Clone(
     }
   }
 
-  table_reader = std::move(new_table);
+  assert(s.ok());
+  *table_reader = std::move(new_table);
   return s;
 }
 

@@ -1176,9 +1176,10 @@ Status ColumnFamilyData::RangesOverlapWithMemtables(
   return status;
 }
 
-Status ColumnFamilyData::GetMemtablesUserKeyRange(PinnableSlice& smallest,
-                                                  PinnableSlice& largest,
-                                                  bool& found) {
+Status ColumnFamilyData::GetMemtablesUserKeyRange(PinnableSlice* smallest,
+                                                  PinnableSlice* largest,
+                                                  bool* found) {
+  assert(smallest && largest && found);
   Status s;
   auto* ucmp = user_comparator();
   Arena arena;
@@ -1193,18 +1194,18 @@ Status ColumnFamilyData::GetMemtablesUserKeyRange(PinnableSlice& smallest,
   if (memtable_iter->Valid()) {
     s = ParseInternalKey(memtable_iter->key(), &ikey, false);
     if (s.ok()) {
-      if (!found || ucmp->Compare(ikey.user_key, smallest) < 0) {
-        smallest.PinSelf(ikey.user_key);
+      if (!(*found) || ucmp->Compare(ikey.user_key, *smallest) < 0) {
+        smallest->PinSelf(ikey.user_key);
       }
       memtable_iter->SeekToLast();
       assert(memtable_iter->Valid());
       s = ParseInternalKey(memtable_iter->key(), &ikey, false);
       if (s.ok()) {
-        if (!found || ucmp->Compare(largest, ikey.user_key) < 0) {
-          largest.PinSelf(ikey.user_key);
+        if (!(*found) || ucmp->Compare(*largest, ikey.user_key) < 0) {
+          largest->PinSelf(ikey.user_key);
         }
       }
-      found = true;
+      *found = true;
     }
   }
 
@@ -1218,16 +1219,16 @@ Status ColumnFamilyData::GetMemtablesUserKeyRange(PinnableSlice& smallest,
         iter->SeekToFirst();
         if (iter->Valid()) {
           Slice start = iter->start_key();
-          if (!found || ucmp->Compare(start, smallest) < 0) {
-            smallest.PinSelf(start);
+          if (!(*found) || ucmp->Compare(start, *smallest) < 0) {
+            smallest->PinSelf(start);
           }
           iter->SeekToLast();
           assert(iter->Valid());
           Slice end = iter->end_key();
-          if (!found || ucmp->Compare(largest, end) < 0) {
-            largest.PinSelf(end);
+          if (!(*found) || ucmp->Compare(*largest, end) < 0) {
+            largest->PinSelf(end);
           }
-          found = true;
+          *found = true;
         }
       }
     }
@@ -1236,8 +1237,9 @@ Status ColumnFamilyData::GetMemtablesUserKeyRange(PinnableSlice& smallest,
   return s;
 }
 
-Status ColumnFamilyData::GetUserKeyRange(PinnableSlice& smallest,
-                                         PinnableSlice& largest, bool& found) {
+Status ColumnFamilyData::GetUserKeyRange(PinnableSlice* smallest,
+                                         PinnableSlice* largest, bool* found) {
+  assert(smallest && largest && found);
   Status s = GetMemtablesUserKeyRange(smallest, largest, found);
   if (!s.ok()) {
     return s;
@@ -1248,26 +1250,26 @@ Status ColumnFamilyData::GetUserKeyRange(PinnableSlice& smallest,
   for (const auto& f : vsi.LevelFiles(0)) {
     Slice start = f->smallest.user_key();
     Slice end = f->largest.user_key();
-    if (!found || ucmp->Compare(start, smallest) < 0) {
-      smallest.PinSelf(start);
+    if (!(*found) || ucmp->Compare(start, *smallest) < 0) {
+      smallest->PinSelf(start);
     }
-    if (!found || ucmp->Compare(largest, end) < 0) {
-      largest.PinSelf(end);
+    if (!(*found) || ucmp->Compare(*largest, end) < 0) {
+      largest->PinSelf(end);
     }
-    found = true;
+    *found = true;
   }
   for (int level = 1; level < vsi.num_levels(); ++level) {
     const auto& level_files = vsi.LevelFiles(level);
     if (level_files.size() > 0) {
       Slice start = level_files.front()->smallest.user_key();
       Slice end = level_files.back()->largest.user_key();
-      if (!found || ucmp->Compare(start, smallest) < 0) {
-        smallest.PinSelf(start);
+      if (!(*found) || ucmp->Compare(start, *smallest) < 0) {
+        smallest->PinSelf(start);
       }
-      if (!found || ucmp->Compare(largest, end) < 0) {
-        largest.PinSelf(end);
+      if (!(*found) || ucmp->Compare(*largest, end) < 0) {
+        largest->PinSelf(end);
       }
-      found = true;
+      *found = true;
     }
   }
   return s;

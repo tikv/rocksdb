@@ -1,0 +1,368 @@
+//  Copyright (c) 2011-present, Facebook, Inc.  All rights reserved.
+//  This source code is licensed under both the GPLv2 (found in the
+//  COPYING file in the root directory) and Apache 2.0 License
+//  (found in the LICENSE.Apache file in the root directory).
+//
+// Copyright (c) 2011 The LevelDB Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file. See the AUTHORS file for names of contributors.
+
+#include "db/db_impl/db_impl.h"
+
+namespace ROCKSDB_NAMESPACE {
+Status DBImpl::ValidateForMerge(const MergeInstanceOptions& mopts,
+                                DBImpl* rhs) {
+  if (rhs->two_write_queues_) {
+    return Status::NotSupported("two_write_queues == true");
+  }
+  for (auto cfd : *versions_->GetColumnFamilySet()) {
+    auto rhs_cfd =
+        rhs->versions_->GetColumnFamilySet()->GetColumnFamily(cfd->GetName());
+    if (rhs_cfd != nullptr) {
+      if (strcmp(cfd->ioptions()->table_factory->Name(),
+                 rhs_cfd->ioptions()->table_factory->Name()) != 0) {
+        return Status::InvalidArgument(
+            "table_factory must be of the same type");
+      }
+    }
+  }
+  if (mopts.merge_memtable) {
+    if (rhs->total_log_size_ > 0) {
+      return Status::InvalidArgument("DB WAL is not empty");
+    }
+    if (rhs->write_buffer_manager_ != write_buffer_manager_) {
+      return Status::InvalidArgument(
+          "write_buffer_manager must be shared to merge memtable");
+    }
+  }
+  return Status::OK();
+}
+
+Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
+                                      const std::vector<DB*>& instances) {
+  Status s;
+  autovector<ColumnFamilyData*> this_cfds;
+  for (auto cfd : *versions_->GetColumnFamilySet()) {
+    assert(cfd != nullptr);
+    if (!cfd->IsDropped()) {
+      this_cfds.push_back(cfd);
+    }
+  }
+  const size_t num_cfs = this_cfds.size();
+
+  // # Sanity checks
+  // Check target instance (`this`).
+  if (two_write_queues_) {
+    return Status::NotSupported("target instance two_write_queues == true");
+  }
+  autovector<DBImpl*> db_impls;
+  autovector<DBImpl*> all_db_impls{this};
+  // A list of source db super versions grouped by cf. nullptr if the cf is
+  // missing.
+  autovector<autovector<SuperVersion*>> cf_db_super_versions;
+  std::shared_ptr<void> _defer(nullptr, [&](...) {
+    for (auto& db_super_versions : cf_db_super_versions) {
+      for (auto* super_version : db_super_versions) {
+        if (super_version != nullptr && super_version->Unref()) {
+          super_version->Cleanup();
+        }
+      }
+    }
+  });
+  // Check source instances.
+  for (size_t i = 0; i < instances.size(); i++) {
+    auto* db_impl = static_cast<DBImpl*>(instances[i]);
+    s = ValidateForMerge(merge_options, db_impl);
+    if (s.ok()) {
+      db_impls.push_back(db_impl);
+      all_db_impls.push_back(db_impl);
+    } else {
+      return s;
+    }
+  }
+
+  // # Internal key range check
+  assert(s.ok());
+  for (auto* this_cfd : this_cfds) {
+    auto& name = this_cfd->GetName();
+    auto* comparator = this_cfd->user_comparator();
+    using CfRange = std::pair<Slice, Slice>;
+    std::vector<CfRange> db_ranges;
+    std::vector<PinnableSlice> pinned_vals;  // hold temporary slice.
+    {
+      PinnableSlice smallest, largest;
+      bool found = false;
+      s = this_cfd->GetUserKeyRange(&smallest, &largest, &found);
+      if (!s.ok()) {
+        return s;
+      }
+      if (found) {
+        db_ranges.emplace_back(smallest, largest);
+        pinned_vals.push_back(std::move(smallest));
+        pinned_vals.push_back(std::move(largest));
+      }
+    }
+    for (auto* db : db_impls) {
+      auto cfd = db->versions_->GetColumnFamilySet()->GetColumnFamily(name);
+      if (cfd == nullptr || cfd->IsDropped()) {
+        continue;
+      }
+      PinnableSlice smallest, largest;
+      bool found = false;
+      s = cfd->GetUserKeyRange(&smallest, &largest, &found);
+      if (!s.ok()) {
+        return s;
+      }
+      if (found) {
+        db_ranges.emplace_back(smallest, largest);
+        pinned_vals.push_back(std::move(smallest));
+        pinned_vals.push_back(std::move(largest));
+      }
+    }
+    std::sort(db_ranges.begin(), db_ranges.end(), [=](CfRange a, CfRange b) {
+      return comparator->Compare(a.first, b.first) < 0;
+    });
+    Slice last_largest;
+    for (auto& range : db_ranges) {
+      if (last_largest.size() == 0 ||
+          comparator->Compare(last_largest, range.first) < 0) {
+        last_largest = range.second;
+      } else {
+        return Status::InvalidArgument("Source DBs have overlapping range");
+      }
+    }
+  }
+
+  // # Handle transient states
+  //
+  // - Acquire snapshots of table files (`SuperVersion`).
+  //
+  // - Do memtable merge if needed. We do this together with acquiring snapshot
+  //   to avoid the case where a memtable is flushed shortly after being
+  //   merged, and the resulting L0 data is merged again as a table file.
+  assert(s.ok());
+  autovector<std::unique_ptr<WriteThread::Writer>> all_writers;
+  autovector<MemTable*> to_delete;  // not used.
+  // Key-value freshness is determined by its sequence number. To avoid
+  // incoming writes being shadowed by history data from other instances, we
+  // must increment target instance's sequence number to be larger than all
+  // source data. See [A].
+  uint64_t max_seq_number = 0;
+  // RocksDB's recovery is heavily dependent on the one-on-one mapping between
+  // memtable and WAL (even when WAL is empty). Each memtable keeps a record of
+  // `next_log_number` to mark its position within a series of WALs. This
+  // counter must be monotonic. We work around this issue by setting the
+  // counters of all involved memtables to the same maximum value. See [B].
+  uint64_t max_log_number = 0;
+  for (auto* db : all_db_impls) {
+    // Block writes.
+    all_writers.emplace_back(new WriteThread::Writer());
+    db->mutex_.Lock();
+    db->write_thread_.EnterUnbatched(all_writers.back().get(), &db->mutex_);
+    db->WaitForPendingWrites();
+    db->log_write_mutex_.Lock();
+    max_seq_number = std::max(max_seq_number, db->versions_->LastSequence());
+    max_log_number = std::max(max_log_number, db->logfile_number_);
+  }
+  // [A] Bump sequence number.
+  versions_->SetLastAllocatedSequence(max_seq_number);
+  versions_->SetLastSequence(max_seq_number);
+  cf_db_super_versions.resize(num_cfs);
+  for (size_t cf_i = 0; cf_i < num_cfs; cf_i++) {
+    cf_db_super_versions[cf_i].resize(db_impls.size());
+    auto* this_cfd = this_cfds[cf_i];
+    auto& cf_name = this_cfd->GetName();
+    autovector<MemTable*> mems;
+    for (size_t db_i = 0; db_i < db_impls.size(); db_i++) {
+      auto& db = db_impls[db_i];
+      auto cfd = db->versions_->GetColumnFamilySet()->GetColumnFamily(cf_name);
+      if (cfd == nullptr || cfd->IsDropped()) {
+        cf_db_super_versions[cf_i][db_i] = nullptr;
+        continue;
+      }
+      if (merge_options.merge_memtable) {
+        if (!cfd->mem()->IsEmpty()) {
+          // Freeze memtable. Only immutable memtables can be shared.
+          auto& cf_mopts = *cfd->GetLatestMutableCFOptions();
+          auto* new_mem = cfd->ConstructNewMemtable(cf_mopts, max_seq_number);
+          new_mem->Ref();
+          cfd->imm()->Add(cfd->mem(), &to_delete);
+#ifndef ROCKSDB_LITE
+          MemTableInfo memtable_info;
+          memtable_info.cf_name = cf_name;
+          memtable_info.first_seqno = cfd->mem()->GetFirstSequenceNumber();
+          memtable_info.earliest_seqno =
+              cfd->mem()->GetEarliestSequenceNumber();
+          memtable_info.num_entries = cfd->mem()->num_entries();
+          memtable_info.num_deletes = cfd->mem()->num_deletes();
+          db->NotifyOnMemTableSealed(cfd, memtable_info);
+#endif  // ROCKSDB_LITE
+          cfd->SetMemtable(new_mem);
+          SuperVersionContext sv_context(/* create_superversion */ true);
+          db->InstallSuperVersionAndScheduleWork(cfd, &sv_context, cf_mopts);
+          sv_context.Clean();
+        }
+        assert(cfd->mem()->IsEmpty());
+        // [B] Bump log number. Even though it's not shared, it must still be
+        // larger than other shared immutable memtables.
+        cfd->mem()->SetNextLogNumber(max_log_number);
+        cfd->imm()->ExportMemtables(&mems);
+      }
+      // Acquire super version.
+      cf_db_super_versions[cf_i][db_i] = cfd->GetSuperVersion()->Ref();
+    }
+    for (auto mem : mems) {
+      assert(mem != nullptr);
+      mem->Ref();
+      // [B] Bump log number.
+      mem->SetNextLogNumber(max_log_number);
+      this_cfd->imm()->Add(mem, &to_delete);
+    }
+    this_cfd->mem()->SetNextLogNumber(max_log_number);
+  }
+  for (size_t i = 0; i < all_db_impls.size(); i++) {
+    auto* db = all_db_impls[i];
+    bool check_log_number = (i == 0 || merge_options.allow_source_write) &&
+                            merge_options.merge_memtable;
+    if (check_log_number && max_log_number != db->logfile_number_) {
+      assert(max_log_number > db->logfile_number_);
+      // [B] Create a new WAL so that future memtable will use the correct log
+      // number as well.
+      log::Writer* new_log = nullptr;
+      s = db->CreateWAL(max_log_number, 0 /*recycle_log_number*/,
+                        0 /*preallocate_block_size*/, &new_log);
+      if (!s.ok()) {
+        return s;
+      }
+      db->logfile_number_ = max_log_number;
+      assert(new_log != nullptr);
+      db->logs_.emplace_back(max_log_number, new_log);
+      auto current = db->versions_->current_next_file_number();
+      if (current <= max_log_number) {
+        db->versions_->FetchAddFileNumber(max_log_number - current + 1);
+      }
+    }
+    // Unblock writes.
+    db->log_write_mutex_.Unlock();
+    db->write_thread_.ExitUnbatched(all_writers[i].get());
+    db->mutex_.Unlock();
+  }
+
+  TEST_SYNC_POINT("DBImpl::MergeDisjointInstances:AfterMergeMemtable:1");
+
+  // # Merge table files
+  assert(s.ok());
+  autovector<VersionEdit> cf_edits;
+  cf_edits.resize(num_cfs);
+  auto* this_table_cache = table_cache_.get();
+  for (size_t cf_i = 0; cf_i < num_cfs; cf_i++) {
+    auto* this_cfd = this_cfds[cf_i];
+    auto* this_table_factory = this_cfd->ioptions()->table_factory.get();
+    auto& edit = cf_edits[cf_i];
+    edit.SetColumnFamily(this_cfd->GetID());
+    for (size_t db_i = 0; db_i < db_impls.size(); db_i++) {
+      auto* super_version = cf_db_super_versions[cf_i][db_i];
+      if (super_version == nullptr) {
+        continue;
+      }
+      auto* db = db_impls[db_i];
+      auto* table_cache = db->table_cache_.get();
+      VersionStorageInfo& vsi = *super_version->current->storage_info();
+      auto& cf_paths = super_version->cfd->ioptions()->cf_paths;
+      auto SourcePath = [&](size_t path_id) {
+        // Matching `TableFileName()`.
+        if (path_id >= cf_paths.size()) {
+          assert(false);
+          return cf_paths.back().path;
+        } else {
+          return cf_paths[path_id].path;
+        }
+      };
+      const auto& target_path = this_cfd->ioptions()->cf_paths.front().path;
+      const uint64_t target_path_id = 0;
+      for (int level = 0; level < vsi.num_levels(); ++level) {
+        for (const auto& f : vsi.LevelFiles(level)) {
+          assert(f != nullptr);
+          const uint64_t source_file_number = f->fd.GetNumber();
+          const uint64_t target_file_number = versions_->FetchAddFileNumber(1);
+          std::string src = MakeTableFileName(SourcePath(f->fd.GetPathId()),
+                                              source_file_number);
+          std::string target =
+              MakeTableFileName(target_path, target_file_number);
+          s = GetEnv()->LinkFile(src, target);
+          if (!s.ok()) {
+            return s;
+          }
+          edit.AddFile(
+              level, target_file_number, target_path_id, f->fd.GetFileSize(),
+              f->smallest, f->largest, f->fd.smallest_seqno,
+              f->fd.largest_seqno, f->marked_for_compaction, f->temperature,
+              f->oldest_blob_file_number, f->oldest_ancester_time,
+              f->file_creation_time, f->file_checksum,
+              f->file_checksum_func_name, f->min_timestamp, f->max_timestamp);
+
+          // Copy cached table readers.
+          // Because the cache key prefix is stored in table reader, once the
+          // old reader is copied, the target instance will be able to read
+          // blocks cached by source instances (given they share the same block
+          // cache) via the same cache key.
+          // If the block cache is not shared, we can also retrieve blocks on
+          // our own using the file reader copied from source instances.
+          auto CacheKey = [](const uint64_t& file_number) {
+            // Matching `GetSliceForFileNumber()` in table_cache.cc.
+            return Slice(reinterpret_cast<const char*>(&file_number),
+                         sizeof(file_number));
+          };
+          Cache::Handle* handle =
+              table_cache->Lookup(CacheKey(source_file_number));
+          if (handle != nullptr) {
+            std::unique_ptr<TableReader> new_reader;
+            // We already verified that they share the same table factory. So
+            // it's safe to use this_table_factory to clone the reader.
+            auto clone_s = this_table_factory->CloneTableReader(
+                *this_cfd->ioptions(), *this_cfd->soptions(),
+                this_cfd->internal_comparator(),
+                static_cast<TableReader*>(table_cache->Value(handle)),
+                &new_reader);
+            if (clone_s.ok()) {
+              assert(new_reader != nullptr);
+              auto insert_s = this_table_cache->Insert(
+                  CacheKey(target_file_number), new_reader.get(), 1,
+                  table_cache->GetDeleter(handle));
+              if (insert_s.ok()) {
+                new_reader.release();
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // # Apply version edits
+  assert(s.ok());
+  {
+    autovector<autovector<VersionEdit*>> edit_ptrs;
+    autovector<const MutableCFOptions*> cf_mopts;
+    for (size_t i = 0; i < num_cfs; i++) {
+      edit_ptrs.push_back({&cf_edits[i]});
+      cf_mopts.push_back(this_cfds[i]->GetLatestMutableCFOptions());
+    }
+    InstrumentedMutexLock lock(&mutex_);
+    s = versions_->LogAndApply(this_cfds, cf_mopts, edit_ptrs, &mutex_,
+                               directories_.GetDbDir(), false);
+    if (!s.ok()) {
+      return s;
+    }
+    for (size_t i = 0; i < num_cfs; i++) {
+      SuperVersionContext sv_context(/* create_superversion */ true);
+      InstallSuperVersionAndScheduleWork(this_cfds[i], &sv_context,
+                                         *cf_mopts[i]);
+      sv_context.Clean();
+    }
+  }
+
+  assert(s.ok());
+  return s;
+}
+}  // namespace ROCKSDB_NAMESPACE

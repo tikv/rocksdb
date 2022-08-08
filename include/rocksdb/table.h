@@ -747,7 +747,7 @@ class TableFactory : public Customizable {
       const ImmutableOptions& /*ioptions*/, const EnvOptions& /*env_options*/,
       const InternalKeyComparator& /*internal_comparator*/,
       TableReader* /*table_reader*/,
-      std::unique_ptr<TableReader>& /*cloned*/) const {
+      std::unique_ptr<TableReader>* /*cloned*/) const {
     return Status::NotSupported();
   }
 
