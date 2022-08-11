@@ -123,10 +123,10 @@ DBOptions SanitizeOptions(const std::string& dbname, const DBOptions& src) {
 
   // multi thread write do not support two-write-que or write in 2PC
   if (result.two_write_queues || result.allow_2pc) {
-    result.enable_multi_batch_write = false;
+    result.enable_pipelined_commit = false;
   }
 
-  if (result.enable_multi_batch_write) {
+  if (result.enable_pipelined_commit) {
     result.enable_pipelined_write = false;
     result.allow_concurrent_memtable_write = true;
   }
@@ -873,7 +873,7 @@ Status DBImpl::RecoverLogFiles(const std::vector<uint64_t>& log_numbers,
       bool has_valid_writes = false;
       status = WriteBatchInternal::InsertInto(
           &batch, column_family_memtables_.get(), &flush_scheduler_, true,
-          log_number, 0, this, false /* concurrent_memtable_writes */,
+          log_number, this, false /* concurrent_memtable_writes */,
           next_sequence, &has_valid_writes, seq_per_batch_, batch_per_txn_);
       MaybeIgnoreError(&status);
       if (!status.ok()) {

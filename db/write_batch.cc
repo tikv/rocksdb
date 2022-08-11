@@ -1938,9 +1938,9 @@ Status WriteBatchInternal::InsertInto(
       inserter.MaybeAdvanceSeq(true);
       continue;
     }
-    SetSequence(w->multi_batch.batches[0], inserter.sequence());
+    SetSequence(w->batch, inserter.sequence());
     inserter.set_log_number_ref(w->log_ref);
-    w->status = w->multi_batch.batches[0]->Iterate(&inserter);
+    w->status = w->batch->Iterate(&inserter);
     if (!w->status.ok()) {
       return w->status;
     }
@@ -1964,9 +1964,9 @@ Status WriteBatchInternal::InsertInto(
       sequence, memtables, flush_scheduler, ignore_missing_column_families,
       log_number, db, concurrent_memtable_writes, nullptr /*has_valid_writes*/,
       seq_per_batch, batch_per_txn);
-  SetSequence(writer->multi_batch.batches[0], sequence);
+  SetSequence(writer->batch, sequence);
   inserter.set_log_number_ref(writer->log_ref);
-  Status s = writer->multi_batch.batches[0]->Iterate(&inserter);
+  Status s = writer->batch->Iterate(&inserter);
   assert(!seq_per_batch || batch_cnt != 0);
   assert(!seq_per_batch || inserter.sequence() - sequence == batch_cnt);
   if (concurrent_memtable_writes) {
@@ -1978,14 +1978,13 @@ Status WriteBatchInternal::InsertInto(
 Status WriteBatchInternal::InsertInto(
     const WriteBatch* batch, ColumnFamilyMemTables* memtables,
     FlushScheduler* flush_scheduler, bool ignore_missing_column_families,
-    uint64_t log_number, uint64_t log_ref, DB* db, bool concurrent_memtable_writes,
+    uint64_t log_number, DB* db, bool concurrent_memtable_writes,
     SequenceNumber* next_seq, bool* has_valid_writes, bool seq_per_batch,
     bool batch_per_txn) {
   MemTableInserter inserter(Sequence(batch), memtables, flush_scheduler,
                             ignore_missing_column_families, log_number, db,
                             concurrent_memtable_writes, has_valid_writes,
                             seq_per_batch, batch_per_txn);
-  inserter.set_log_number_ref(log_ref);
   Status s = batch->Iterate(&inserter);
   if (next_seq != nullptr) {
     *next_seq = inserter.sequence();
