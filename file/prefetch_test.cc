@@ -169,6 +169,7 @@ TEST_P(PrefetchTest, Basic) {
     for (iter->SeekToFirst(); iter->Valid(); iter->Next()) {
       num_keys++;
     }
+    ASSERT_EQ(num_keys, kNumKeys);
   }
 
   // Make sure prefetch is called only if file system support prefetch.
@@ -767,6 +768,7 @@ TEST_P(PrefetchTest1, DBIterLevelReadAhead) {
     for (iter->SeekToFirst(); iter->Valid(); iter->Next()) {
       num_keys++;
     }
+    ASSERT_EQ(num_keys, 5 * kNumKeys);
 
     ASSERT_GT(buff_prefetch_count, 0);
     buff_prefetch_count = 0;

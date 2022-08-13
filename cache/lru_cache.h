@@ -72,7 +72,7 @@ struct LRUHandle {
   // The number of external refs to this entry. The cache itself is not counted.
   uint32_t refs;
 
-  enum Flags : uint8_t {
+  enum Flags : uint16_t {
     // Whether this entry is referenced by the hash table.
     IN_CACHE = (1 << 0),
     // Whether this entry is high priority entry.
@@ -87,9 +87,13 @@ struct LRUHandle {
     IS_PENDING = (1 << 5),
     // Has the item been promoted from a lower tier
     IS_PROMOTED = (1 << 6),
+    // Whether this entry is low priority entry.
+    IS_LOW_PRI = (1 << 7),
+    // Whether this entry is in low-pri pool.
+    IN_LOW_PRI_POOL = (1 << 8),
   };
 
-  uint8_t flags;
+  uint16_t flags;
 
 #ifdef __SANITIZE_THREAD__
   // TSAN can report a false data race on flags, where one thread is writing
@@ -120,6 +124,8 @@ struct LRUHandle {
   bool InCache() const { return flags & IN_CACHE; }
   bool IsHighPri() const { return flags & IS_HIGH_PRI; }
   bool InHighPriPool() const { return flags & IN_HIGH_PRI_POOL; }
+  bool IsLowPri() const { return flags & IS_LOW_PRI; }
+  bool InLowPriPool() const { return flags & IN_LOW_PRI_POOL; }
   bool HasHit() const { return flags & HAS_HIT; }
   bool IsSecondaryCacheCompatible() const {
 #ifdef __SANITIZE_THREAD__
@@ -142,8 +148,13 @@ struct LRUHandle {
   void SetPriority(Cache::Priority priority) {
     if (priority == Cache::Priority::HIGH) {
       flags |= IS_HIGH_PRI;
+      flags &= ~IS_LOW_PRI;
+    } else if (priority == Cache::Priority::LOW) {
+      flags &= ~IS_HIGH_PRI;
+      flags |= IS_LOW_PRI;
     } else {
       flags &= ~IS_HIGH_PRI;
+      flags &= ~IS_LOW_PRI;
     }
   }
 
@@ -152,6 +163,14 @@ struct LRUHandle {
       flags |= IN_HIGH_PRI_POOL;
     } else {
       flags &= ~IN_HIGH_PRI_POOL;
+    }
+  }
+
+  void SetInLowPriPool(bool in_low_pri_pool) {
+    if (in_low_pri_pool) {
+      flags |= IN_LOW_PRI_POOL;
+    } else {
+      flags &= ~IN_LOW_PRI_POOL;
     }
   }
 
@@ -283,7 +302,8 @@ class LRUHandleTable {
 class ALIGN_AS(CACHE_LINE_SIZE) LRUCacheShard final : public CacheShard {
  public:
   LRUCacheShard(size_t capacity, bool strict_capacity_limit,
-                double high_pri_pool_ratio, bool use_adaptive_mutex,
+                double high_pri_pool_ratio, double low_pri_pool_ratio,
+                bool use_adaptive_mutex,
                 CacheMetadataChargePolicy metadata_charge_policy,
                 int max_upper_hash_bits,
                 const std::shared_ptr<SecondaryCache>& secondary_cache);
@@ -299,6 +319,9 @@ class ALIGN_AS(CACHE_LINE_SIZE) LRUCacheShard final : public CacheShard {
 
   // Set percentage of capacity reserved for high-pri cache entries.
   void SetHighPriorityPoolRatio(double high_pri_pool_ratio);
+
+  // Set percentage of capacity reserved for low-pri cache entries.
+  void SetLowPriorityPoolRatio(double low_pri_pool_ratio);
 
   // Like Cache methods, but with an extra "hash" parameter.
   virtual Status Insert(const Slice& key, uint32_t hash, void* value,
@@ -352,14 +375,18 @@ class ALIGN_AS(CACHE_LINE_SIZE) LRUCacheShard final : public CacheShard {
 
   virtual std::string GetPrintableOptions() const override;
 
-  void TEST_GetLRUList(LRUHandle** lru, LRUHandle** lru_low_pri);
+  void TEST_GetLRUList(LRUHandle** lru, LRUHandle** lru_low_pri,
+                       LRUHandle** lru_bottom_pri);
 
-  //  Retrieves number of elements in LRU, for unit test purpose only
-  //  not threadsafe
+  // Retrieves number of elements in LRU, for unit test purpose only.
+  // Not threadsafe.
   size_t TEST_GetLRUSize();
 
-  //  Retrieves high pri pool ratio
+  // Retrieves high pri pool ratio
   double GetHighPriPoolRatio();
+
+  // Retrieves low pri pool ratio
+  double GetLowPriPoolRatio();
 
  private:
   friend class LRUCache;
@@ -398,6 +425,9 @@ class ALIGN_AS(CACHE_LINE_SIZE) LRUCacheShard final : public CacheShard {
   // Memory size for entries in high-pri pool.
   size_t high_pri_pool_usage_;
 
+  // Memory size for entries in low-pri pool.
+  size_t low_pri_pool_usage_;
+
   // Whether to reject insertion if cache reaches its full capacity.
   bool strict_capacity_limit_;
 
@@ -408,6 +438,13 @@ class ALIGN_AS(CACHE_LINE_SIZE) LRUCacheShard final : public CacheShard {
   // Remember the value to avoid recomputing each time.
   double high_pri_pool_capacity_;
 
+  // Ratio of capacity reserved for low priority cache entries.
+  double low_pri_pool_ratio_;
+
+  // Low-pri pool size, equals to capacity * low_pri_pool_ratio.
+  // Remember the value to avoid recomputing each time.
+  double low_pri_pool_capacity_;
+
   // Dummy head of LRU list.
   // lru.prev is newest entry, lru.next is oldest entry.
   // LRU contains items which can be evicted, ie reference only by cache
@@ -415,6 +452,9 @@ class ALIGN_AS(CACHE_LINE_SIZE) LRUCacheShard final : public CacheShard {
 
   // Pointer to head of low-pri pool in LRU list.
   LRUHandle* lru_low_pri_;
+
+  // Pointer to head of bottom-pri pool in LRU list.
+  LRUHandle* lru_bottom_pri_;
 
   // ------------^^^^^^^^^^^^^-----------
   // Not frequently modified data members
@@ -450,7 +490,7 @@ class LRUCache
     : public ShardedCache {
  public:
   LRUCache(size_t capacity, int num_shard_bits, bool strict_capacity_limit,
-           double high_pri_pool_ratio,
+           double high_pri_pool_ratio, double low_pri_pool_ratio,
            std::shared_ptr<MemoryAllocator> memory_allocator = nullptr,
            bool use_adaptive_mutex = kDefaultToAdaptiveMutex,
            CacheMetadataChargePolicy metadata_charge_policy =
