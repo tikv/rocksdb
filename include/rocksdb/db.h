@@ -547,15 +547,26 @@ class DB {
   }
 
   virtual Status MultiBatchWrite(const WriteOptions& /*options*/,
-                                 std::vector<WriteBatch*>&& /*updates*/) {
+                                 std::vector<WriteBatch*>&& /*updates*/,
+                                 uint64_t* /*seq*/) {
     return Status::NotSupported();
   }
 
+<<<<<<< HEAD
   // If the column family specified by "column_family" contains an entry for
   // "key", return the corresponding value in "*value". If the entry is a plain
   // key-value, return the value as-is; if it is a wide-column entity, return
   // the value of its default anonymous column (see kDefaultWideColumnName) if
   // any, or an empty value otherwise.
+=======
+  virtual Status MultiBatchWrite(const WriteOptions& options,
+                                 std::vector<WriteBatch*>&& updates) {
+    return MultiBatchWrite(options, std::move(updates), nullptr);
+  }
+
+  // If the database contains an entry for "key" store the
+  // corresponding value in *value and return OK.
+>>>>>>> 3cd757c0e (Expose seqno for multi-batch-write (#307))
   //
   // If timestamp is enabled and a non-null timestamp pointer is passed in,
   // timestamp is returned.
