@@ -1166,6 +1166,7 @@ enum RepFactory {
   kPrefixHash,
   kVectorRep,
   kHashLinkedList,
+  kAdaptiveRadixTree,
 };
 
 static enum RepFactory StringToRepFactory(const char* ctype) {
@@ -1179,6 +1180,9 @@ static enum RepFactory StringToRepFactory(const char* ctype) {
     return kVectorRep;
   else if (!strcasecmp(ctype, "hash_linkedlist"))
     return kHashLinkedList;
+  else if (!strcasecmp(ctype, "art")) {
+    return kAdaptiveRadixTree;
+  }
 
   fprintf(stdout, "Cannot parse memreptable %s\n", ctype);
   return kSkipList;
@@ -2265,6 +2269,8 @@ class Benchmark {
       case kHashLinkedList:
         fprintf(stdout, "Memtablerep: hash_linkedlist\n");
         break;
+      case kAdaptiveRadixTree:
+        fprintf(stdout, "Memtablerep: adaptive_radix_tree\n");
     }
     fprintf(stdout, "Perf Level: %d\n", FLAGS_perf_level);
 
@@ -3464,6 +3470,12 @@ class Benchmark {
         options.memtable_factory.reset(
           new VectorRepFactory
         );
+        break;
+      case kAdaptiveRadixTree:
+        options.memtable_factory.reset(new AdaptiveRadixTreeFactory());
+        options.enable_pipelined_write = true;
+        options.enable_pipelined_commit = false;
+        options.allow_concurrent_memtable_write = false;
         break;
 #else
       default:

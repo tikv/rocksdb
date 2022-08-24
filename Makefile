@@ -430,6 +430,7 @@ TESTS = \
 	crc32c_test \
 	coding_test \
 	inlineskiplist_test \
+	art_test \
 	encryption_test \
 	env_basic_test \
 	env_test \
@@ -1421,6 +1422,9 @@ data_block_hash_index_test: table/block_based/data_block_hash_index_test.o $(LIB
 	$(AM_LINK)
 
 inlineskiplist_test: memtable/inlineskiplist_test.o $(LIBOBJECTS) $(TESTHARNESS)
+	$(AM_LINK)
+
+art_test: memtable/art_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
 skiplist_test: memtable/skiplist_test.o $(LIBOBJECTS) $(TESTHARNESS)

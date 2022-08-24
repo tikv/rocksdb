@@ -186,6 +186,8 @@ cpp_library(
         "memory/concurrent_arena.cc",
         "memory/jemalloc_nodump_allocator.cc",
         "memtable/alloc_tracker.cc",
+        "memtable/art.cc",
+        "memtable/artrep.cc",
         "memtable/hash_linklist_rep.cc",
         "memtable/hash_skiplist_rep.cc",
         "memtable/skiplistrep.cc",
@@ -1251,6 +1253,13 @@ ROCKS_TESTS = [
     [
         "skiplist_test",
         "memtable/skiplist_test.cc",
+        "serial",
+        [],
+        [],
+    ],
+    [
+        "art_test",
+        "memtable/art_test.cc",
         "serial",
         [],
         [],

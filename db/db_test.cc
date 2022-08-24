@@ -1021,18 +1021,15 @@ TEST_F(DBTest, FailMoreDbPaths) {
 
 void CheckColumnFamilyMeta(const ColumnFamilyMetaData& cf_meta) {
   uint64_t cf_size = 0;
-  uint64_t cf_csize = 0;
   size_t file_count = 0;
   for (auto level_meta : cf_meta.levels) {
     uint64_t level_size = 0;
-    uint64_t level_csize = 0;
     file_count += level_meta.files.size();
     for (auto file_meta : level_meta.files) {
       level_size += file_meta.size;
     }
     ASSERT_EQ(level_meta.size, level_size);
     cf_size += level_size;
-    cf_csize += level_csize;
   }
   ASSERT_EQ(cf_meta.file_count, file_count);
   ASSERT_EQ(cf_meta.size, cf_size);

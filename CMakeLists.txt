@@ -576,6 +576,8 @@ set(SOURCES
         memtable/hash_linklist_rep.cc
         memtable/hash_skiplist_rep.cc
         memtable/skiplistrep.cc
+        memtable/artrep.cc
+        memtable/art.cc
         memtable/vectorrep.cc
         memtable/write_buffer_manager.cc
         monitoring/histogram.cc
@@ -973,6 +975,7 @@ if(WITH_TESTS)
         memory/arena_test.cc
         memtable/inlineskiplist_test.cc
         memtable/skiplist_test.cc
+        memtable/art_test.cc
         memtable/write_buffer_manager_test.cc
         monitoring/histogram_test.cc
         monitoring/iostats_context_test.cc

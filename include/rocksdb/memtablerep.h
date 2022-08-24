@@ -323,6 +323,24 @@ private:
   const size_t lookahead_;
 };
 
+// This uses an adaptive radix tree to store keys, which is similar to trie,
+// but optimize for memory use.
+class AdaptiveRadixTreeFactory : public MemTableRepFactory {
+ public:
+  explicit AdaptiveRadixTreeFactory() {}
+  virtual ~AdaptiveRadixTreeFactory() {}
+
+  using MemTableRepFactory::CreateMemTableRep;
+  MemTableRep* CreateMemTableRep(const MemTableRep::KeyComparator&, Allocator*,
+                                 const SliceTransform*,
+                                 Logger* logger) override;
+  const char* Name() const override { return "AdaptiveRadixTreeFactory"; }
+
+  bool IsInsertConcurrentlySupported() const override { return false; }
+
+  bool CanHandleDuplicatedKey() const override { return false; }
+};
+
 #ifndef ROCKSDB_LITE
 // This creates MemTableReps that are backed by an std::vector. On iteration,
 // the vector is sorted. This is useful for workloads where iteration is very
