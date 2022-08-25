@@ -1,6 +1,8 @@
 # Rocksdb Change Log
 
 ## Unreleased
+### Bug Fixes
+* Fixed bug where `FlushWAL(true /* sync */)` (used by `GetLiveFilesStorageInfo()`, which is used by checkpoint and backup) could cause parallel writes at the tail of a WAL file to never be synced.
 
 ### Bug Fixes
 
