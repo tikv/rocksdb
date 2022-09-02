@@ -177,9 +177,21 @@ void DBImpl::FindObsoleteFiles(JobContext* job_context, bool force,
       }
     }
   }
+  mutex_.Unlock();
+  FindObsoleteLogFiles(job_context);
+  mutex_.Lock();
+  if (job_context->HaveSomethingToDelete()) {
+    ++pending_purge_obsolete_files_;
+    if (doing_the_full_scan) {
+      versions_->AddLiveFiles(&job_context->sst_live);
+    }
+  }
+}
 
-  // logs_ is empty when called during recovery, in which case there can't yet
-  // be any tracked obsolete logs
+void DBImpl::FindObsoleteLogFiles(JobContext* job_context) {
+  // logs_ is empty when called during recovery, in which case there can't
+  // yet be any tracked obsolete logs
+  InstrumentedMutexLock l(&log_write_mutex_);
   if (!alive_log_files_.empty() && !logs_.empty()) {
     uint64_t min_log_number = job_context->log_number;
     size_t num_alive_log_files = alive_log_files_.size();
@@ -201,13 +213,8 @@ void DBImpl::FindObsoleteFiles(JobContext* job_context, bool force,
       }
       job_context->size_log_to_delete += earliest.size;
       total_log_size_ -= earliest.size;
-      if (two_write_queues_) {
-        log_write_mutex_.Lock();
-      }
       alive_log_files_.pop_front();
-      if (two_write_queues_) {
-        log_write_mutex_.Unlock();
-      }
+
       // Current log should always stay alive since it can't have
       // number < MinLogNumber().
       assert(alive_log_files_.size());
@@ -220,10 +227,7 @@ void DBImpl::FindObsoleteFiles(JobContext* job_context, bool force,
         continue;
       }
       logs_to_free_.push_back(log.ReleaseWriter());
-      {
-        InstrumentedMutexLock wl(&log_write_mutex_);
-        logs_.pop_front();
-      }
+      logs_.pop_front();
     }
     // Current log cannot be obsolete.
     assert(!logs_.empty());
@@ -234,12 +238,6 @@ void DBImpl::FindObsoleteFiles(JobContext* job_context, bool force,
   job_context->logs_to_free = logs_to_free_;
   job_context->log_recycle_files.assign(log_recycle_files_.begin(),
                                         log_recycle_files_.end());
-  if (job_context->HaveSomethingToDelete()) {
-    ++pending_purge_obsolete_files_;
-    if (doing_the_full_scan) {
-      versions_->AddLiveFiles(&job_context->sst_live);
-    }
-  }
   logs_to_free_.clear();
 }
 

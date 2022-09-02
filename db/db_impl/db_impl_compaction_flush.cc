@@ -80,7 +80,7 @@ bool DBImpl::RequestCompactionToken(ColumnFamilyData* cfd, bool force,
 
 Status DBImpl::SyncClosedLogs(JobContext* job_context) {
   TEST_SYNC_POINT("DBImpl::SyncClosedLogs:Start");
-  mutex_.AssertHeld();
+  InstrumentedMutexLock l(&log_write_mutex_);
   autovector<log::Writer*, 1> logs_to_sync;
   uint64_t current_log_number = logfile_number_;
   while (logs_.front().number < current_log_number &&
@@ -97,7 +97,7 @@ Status DBImpl::SyncClosedLogs(JobContext* job_context) {
 
   Status s;
   if (!logs_to_sync.empty()) {
-    mutex_.Unlock();
+    log_write_mutex_.Unlock();
 
     for (log::Writer* log : logs_to_sync) {
       ROCKS_LOG_INFO(immutable_db_options_.info_log,
@@ -119,13 +119,12 @@ Status DBImpl::SyncClosedLogs(JobContext* job_context) {
       s = directories_.GetWalDir()->Fsync();
     }
 
-    mutex_.Lock();
+    log_write_mutex_.Lock();
 
     // "number <= current_log_number - 1" is equivalent to
     // "number < current_log_number".
     MarkLogsSynced(current_log_number - 1, true, s);
     if (!s.ok()) {
-      error_handler_.SetBGError(s, BackgroundErrorReason::kFlush);
       TEST_SYNC_POINT("DBImpl::SyncClosedLogs:Failed");
       return s;
     }
@@ -174,8 +173,13 @@ Status DBImpl::FlushMemTableToOutputFile(
     // the host crashes after flushing and before WAL is persistent, the
     // flushed SST may contain data from write batches whose updates to
     // other column families are missing.
-    // SyncClosedLogs() may unlock and re-lock the db_mutex.
+    // We must release mutex_ before calling `SyncClosedLogs` because it
+    // may be blocked waiting other thread to complete the operation of
+    // synchronizing log file.
+    // SyncClosedLogs() may unlock and re-lock the log_write_mutex.
+    mutex_.Unlock();
     s = SyncClosedLogs(job_context);
+    mutex_.Lock();
   } else {
     TEST_SYNC_POINT("DBImpl::SyncClosedLogs:Skip");
   }
@@ -357,7 +361,9 @@ Status DBImpl::AtomicFlushMemTablesToOutputFiles(
   if (logfile_number_ > 0) {
     // TODO (yanqin) investigate whether we should sync the closed logs for
     // single column family case.
+    mutex_.Unlock();
     s = SyncClosedLogs(job_context);
+    mutex_.Lock();
   }
 
   // exec_status stores the execution status of flush_jobs as
@@ -1988,7 +1994,8 @@ DBImpl::BGJobLimits DBImpl::GetBGJobLimits(int max_background_flushes,
   }
   if (!parallelize_compactions) {
     // throttle background compactions until we deem necessary
-    res.max_compactions = std::max(1, std::min(base_background_compactions, res.max_compactions));
+    res.max_compactions =
+        std::max(1, std::min(base_background_compactions, res.max_compactions));
   }
   return res;
 }

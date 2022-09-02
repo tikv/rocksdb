@@ -550,6 +550,8 @@ class DBImpl : public DB {
   void FindObsoleteFiles(JobContext* job_context, bool force,
                          bool no_full_scan = false);
 
+  void FindObsoleteLogFiles(JobContext* job_context);
+
   // Diffs the files listed in filenames and those that do not
   // belong to live files are possibly removed. Also, removes all the
   // files in sst_delete_files and log_delete_files.
@@ -933,10 +935,12 @@ class DBImpl : public DB {
 
   // only used for dynamically adjusting max_total_wal_size. it is a sum of
   // [write_buffer_size * max_write_buffer_number] over all column families
-  uint64_t max_total_in_memory_state_;
+  std::atomic<uint64_t> max_total_in_memory_state_;
+
+  std::atomic<uint64_t> max_total_wal_size_;
   // If true, we have only one (default) column family. We use this to optimize
   // some code-paths
-  bool single_column_family_mode_;
+  std::atomic<bool> single_column_family_mode_;
 
   // The options to access storage files
   const EnvOptions env_options_;
@@ -1128,6 +1132,14 @@ class DBImpl : public DB {
         delete m;
       }
     }
+  };
+
+  struct LogContext {
+    explicit LogContext(bool need_sync = false)
+        : need_log_sync(need_sync), need_log_dir_sync(need_sync) {}
+    bool need_log_sync;
+    bool need_log_dir_sync;
+    log::Writer* writer;
   };
 
   struct LogFileNumberSize {
@@ -1400,8 +1412,8 @@ class DBImpl : public DB {
   Status HandleWriteBufferFull(WriteContext* write_context);
 
   // REQUIRES: mutex locked
-  Status PreprocessWrite(const WriteOptions& write_options, bool* need_log_sync,
-                         WriteContext* write_context);
+  Status PreprocessWrite(const WriteOptions& write_options,
+                         LogContext* log_context, WriteContext* write_context);
 
   WriteBatch* MergeBatch(const WriteThread::WriteGroup& write_group,
                          WriteBatch* tmp_batch, size_t* write_with_wal,
@@ -1606,12 +1618,11 @@ class DBImpl : public DB {
   // Lock over the persistent DB state.  Non-nullptr iff successfully acquired.
   FileLock* db_lock_;
 
-  // In addition to mutex_, log_write_mutex_ protected writes to stats_history_
+  // In addition to mutex_, stats_history_mutex_ protected writes to stats_history_
   InstrumentedMutex stats_history_mutex_;
-  // In addition to mutex_, log_write_mutex_ protected writes to logs_ and
-  // logfile_number_. With two_write_queues it also protects alive_log_files_,
-  // and log_empty_. Refer to the definition of each variable below for more
-  // details.
+  // In addition to mutex_, log_write_mutex_ protected access to logs_,
+  // logfile_number_, alive_log_files_ and log_empty_.
+  // Refer to the definition of each variable below for more details.
   // Note: to avoid dealock, if needed to acquire both log_write_mutex_ and
   // mutex_, the order should be first mutex_ and then log_write_mutex_.
   InstrumentedMutex log_write_mutex_;
@@ -1660,11 +1671,10 @@ class DBImpl : public DB {
   std::deque<LogFileNumberSize> alive_log_files_;
   // Log files that aren't fully synced, and the current log file.
   // Synchronization:
-  //  - push_back() is done from write_thread_ with locked mutex_ and
-  //  log_write_mutex_
+  //  - push_back() is done from write_thread_ with locked log_write_mutex_
   //  - pop_front() is done from any thread with locked mutex_ and
   //  log_write_mutex_
-  //  - reads are done with either locked mutex_ or log_write_mutex_
+  //  - reads are done with locked log_write_mutex_
   //  - back() and items with getting_synced=true are not popped,
   //  - The same thread that sets getting_synced=true will reset it.
   //  - it follows that the object referred by back() can be safely read from
@@ -1686,7 +1696,7 @@ class DBImpl : public DB {
   std::atomic<uint64_t> total_log_size_;
 
   // If this is non-empty, we need to delete these log files in background
-  // threads. Protected by db mutex.
+  // threads. Protected by db log_write_mutex_.
   autovector<log::Writer*> logs_to_free_;
 
   bool is_snapshot_supported_;
