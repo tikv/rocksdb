@@ -532,7 +532,8 @@ uint64_t Compaction::OutputFilePreallocationSize() const {
 std::unique_ptr<CompactionFilter> Compaction::CreateCompactionFilter(
     const Slice* start, const Slice* end) const {
   if (!cfd_->ioptions()->compaction_filter_factory) {
-    return nullptr;
+    assert(0);
+    //return nullptr;
   }
 
   if (!cfd_->ioptions()
