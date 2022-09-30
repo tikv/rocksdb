@@ -326,6 +326,18 @@ class MockRandomAccessFile : public FSRandomAccessFile {
     }
   }
 
+  async_result AsyncRead(uint64_t offset, size_t n, const IOOptions& options,
+                         Slice* result, char* scratch,
+                         IODebugContext* dbg) const override {
+    (void)offset;
+    (void)n;
+    (void)options;
+    (void)result;
+    (void)scratch;
+    (void)dbg;
+    throw "Not implemented";
+  }
+
  private:
   MemFile* file_;
   bool use_direct_io_;
@@ -393,6 +405,21 @@ class MockWritableFile : public FSWritableFile {
       bytes_written += bytes;
     }
     return IOStatus::OK();
+  }
+  async_result AsyncAppend(const Slice& data, const IOOptions& options,
+                           IODebugContext* dbg) override {
+    (void)data;
+    (void)options;
+    (void)dbg;
+    throw "Not implemented";
+  }
+  async_result AsyncAppend(const Slice& data, const IOOptions& options,
+                           const DataVerificationInfo& /* verification_info */,
+                           IODebugContext* dbg) override {
+    (void)data;
+    (void)options;
+    (void)dbg;
+    throw "Not implemented";
   }
 
   using FSWritableFile::PositionedAppend;

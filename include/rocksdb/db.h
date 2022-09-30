@@ -17,6 +17,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "rocksdb/async_result.h"
 #include "rocksdb/iterator.h"
 #include "rocksdb/listener.h"
 #include "rocksdb/metadata.h"
@@ -370,6 +371,16 @@ class DB {
     return Put(options, DefaultColumnFamily(), key, ts, value);
   }
 
+  virtual async_result AsyncPut(const WriteOptions& options,
+                                ColumnFamilyHandle* column_family,
+                                const Slice& key, const Slice& value) {
+    (void)options;
+    (void)column_family;
+    (void)key;
+    (void)value;
+    co_return Status::NotSupported("AsyncPut() not implemented.");
+  }
+
   // Remove the database entry (if any) for "key".  Returns OK on
   // success, and a non-OK status on error.  It is not an error if "key"
   // did not exist in the database.
@@ -488,6 +499,13 @@ class DB {
     return MultiBatchWrite(options, std::move(updates), nullptr);
   }
 
+  virtual async_result AsyncWrite(const WriteOptions& options,
+                                  WriteBatch* updates) {
+    (void)options;
+    (void)updates;
+    co_return Status::NotSupported("AsyncWrite() not implemented.");
+  }
+
   // If the database contains an entry for "key" store the
   // corresponding value in *value and return OK.
   //
@@ -516,6 +534,21 @@ class DB {
   virtual Status Get(const ReadOptions& options, const Slice& key,
                      std::string* value) {
     return Get(options, DefaultColumnFamily(), key, value);
+  }
+
+  virtual async_result AsyncGet(const ReadOptions& options,
+                                ColumnFamilyHandle* column_family,
+                                const Slice& key, PinnableSlice* value,
+                                std::string* timestamp) {
+    assert(options.verify_checksums || column_family != nullptr ||
+           key != nullptr || value != nullptr || timestamp != nullptr);
+    (void)options;
+    (void)column_family;
+    (void)key;
+    (void)value;
+    (void)timestamp;
+    co_return Status::NotSupported(
+        "AsyncGet() that returns timestamp is not implemented.");
   }
 
   // Get() methods that return timestamp. Derived DB classes don't need to worry
@@ -588,6 +621,16 @@ class DB {
         keys, values);
   }
 
+  virtual async_result AsyncMultiGet(const ReadOptions& options,
+                                     const std::vector<Slice>& keys,
+                                     std::vector<std::string>* values) {
+    std::vector<ColumnFamilyHandle*> cf(keys.size(), DefaultColumnFamily());
+    auto r = AsyncMultiGet(options, cf, keys, values, nullptr);
+    co_await r;
+    (void)cf;  // used after co_await, avoid to destruct
+    co_return r.results();
+  }
+
   virtual std::vector<Status> MultiGet(
       const ReadOptions& /*options*/,
       const std::vector<ColumnFamilyHandle*>& /*column_family*/,
@@ -605,6 +648,16 @@ class DB {
         options,
         std::vector<ColumnFamilyHandle*>(keys.size(), DefaultColumnFamily()),
         keys, values, timestamps);
+  }
+  virtual async_result AsyncMultiGet(
+      const ReadOptions& /*options*/,
+      const std::vector<ColumnFamilyHandle*>& /*column_family*/,
+      const std::vector<Slice>& keys, std::vector<std::string>* /*values*/,
+      std::vector<std::string>* /*timestamps*/) {
+    co_return std::vector<Status>(
+        keys.size(),
+        Status::NotSupported(
+            "AsyncMultiGet() returning timestamps not implemented."));
   }
 
   // Overloaded MultiGet API that improves performance by batching operations
@@ -1384,12 +1437,18 @@ class DB {
   virtual Status FlushWAL(bool /*sync*/) {
     return Status::NotSupported("FlushWAL not implemented");
   }
+  virtual async_result AsyncFlushWAL(bool /*sync*/) {
+    co_return Status::NotSupported("FlushWAL not implemented");
+  }
   // Sync the wal. Note that Write() followed by SyncWAL() is not exactly the
   // same as Write() with sync=true: in the latter case the changes won't be
   // visible until the sync is done.
   // Currently only works if allow_mmap_writes = false in Options.
   virtual Status SyncWAL() = 0;
 
+  virtual async_result AsSyncWAL() {
+    co_return Status::NotSupported("AsSyncWAL not implemented");
+  }
   // Lock the WAL. Also flushes the WAL after locking.
   virtual Status LockWAL() {
     return Status::NotSupported("LockWAL not implemented");

@@ -217,6 +217,19 @@ class StringSink : public FSWritableFile {
     contents_.append(slice.data(), slice.size());
     return IOStatus::OK();
   }
+  async_result AsyncAppend(const Slice& slice, const IOOptions& /*opts*/,
+                           IODebugContext* /*dbg*/) override {
+    (void)slice;
+    throw "Not implemented";
+  }
+  async_result AsyncAppend(const Slice& data, const IOOptions& options,
+                           const DataVerificationInfo& /* verification_info */,
+                           IODebugContext* dbg) override {
+    (void)data;
+    (void)options;
+    (void)dbg;
+    throw "Not implemented";
+  }
   void Drop(size_t bytes) {
     if (reader_contents_ != nullptr) {
       contents_.resize(contents_.size() - bytes);
@@ -317,6 +330,19 @@ class OverwritingStringSink : public FSWritableFile {
     contents_.append(slice.data(), slice.size());
     return IOStatus::OK();
   }
+  async_result AsyncAppend(const Slice& slice, const IOOptions& /*opts*/,
+                           IODebugContext* /*dbg*/) override {
+    (void)slice;
+    throw "Not implemented";
+  }
+  async_result AsyncAppend(const Slice& data, const IOOptions& options,
+                           const DataVerificationInfo& /* verification_info */,
+                           IODebugContext* dbg) override {
+    (void)data;
+    (void)options;
+    (void)dbg;
+    throw "Not implemented";
+  }
   void Drop(size_t bytes) {
     contents_.resize(contents_.size() - bytes);
     if (last_flush_ > contents_.size()) last_flush_ = contents_.size();
@@ -369,6 +395,18 @@ class StringSource : public FSRandomAccessFile {
       *result = Slice(&contents_[static_cast<size_t>(offset)], n);
     }
     return IOStatus::OK();
+  }
+
+  async_result AsyncRead(uint64_t offset, size_t n, const IOOptions& options,
+                         Slice* result, char* scratch,
+                         IODebugContext* dbg) const override {
+    (void)offset;
+    (void)n;
+    (void)options;
+    (void)result;
+    (void)scratch;
+    (void)dbg;
+    throw "Not implemented";
   }
 
   size_t GetUniqueId(char* id, size_t max_size) const override {
@@ -588,6 +626,25 @@ class StringFS : public FileSystemWrapper {
                     IODebugContext* /*dbg*/) override {
       contents_->append(slice.data(), slice.size());
       return IOStatus::OK();
+    }
+
+    virtual async_result AsyncAppend(const Slice& data,
+                                     const IOOptions& options,
+                                     IODebugContext* dbg) {
+      (void)data;
+      (void)options;
+      (void)dbg;
+      throw "not implemented";
+    }
+
+    virtual async_result AsyncAppend(
+        const Slice& data, const IOOptions& opts,
+        const DataVerificationInfo& /* verification_info */,
+        IODebugContext* dbg) override {
+      (void)data;
+      (void)opts;
+      (void)dbg;
+      throw "not implemented";
     }
 
    private:

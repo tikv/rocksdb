@@ -65,6 +65,17 @@ class TestFSWritableFile : public FSWritableFile {
   virtual ~TestFSWritableFile();
   virtual IOStatus Append(const Slice& data, const IOOptions&,
                           IODebugContext*) override;
+  async_result AsyncAppend(const Slice& data, const IOOptions&,
+                                   IODebugContext*) override {
+    (void)data;
+    throw "Not implemented";
+  }
+  async_result AsyncAppend(const Slice& data, const IOOptions& /*options*/,
+                           const DataVerificationInfo& /*verification_info*/,
+                           IODebugContext* /*dbg*/) override {
+    (void)data;
+    throw "Not implemented";
+  }
   virtual IOStatus Append(const Slice& data, const IOOptions& options,
                           const DataVerificationInfo& verification_info,
                           IODebugContext* dbg) override;
@@ -138,8 +149,22 @@ class TestFSRandomAccessFile : public FSRandomAccessFile {
   IOStatus Read(uint64_t offset, size_t n, const IOOptions& options,
                 Slice* result, char* scratch,
                 IODebugContext* dbg) const override;
+
+  async_result AsyncRead(uint64_t offset, size_t n, const IOOptions& options,
+                         Slice* result, char* scratch,
+                         IODebugContext* dbg) const override {
+    (void)offset;
+    (void)n;
+    (void)options;
+    (void)result;
+    (void)scratch;
+    (void)dbg;
+    throw "Not implemented";
+  }
+
   IOStatus MultiRead(FSReadRequest* reqs, size_t num_reqs,
                      const IOOptions& options, IODebugContext* dbg) override;
+
   size_t GetRequiredBufferAlignment() const override {
     return target_->GetRequiredBufferAlignment();
   }

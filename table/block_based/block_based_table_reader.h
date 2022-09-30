@@ -14,6 +14,7 @@
 #include "cache/cache_key.h"
 #include "db/range_tombstone_fragmenter.h"
 #include "file/filename.h"
+#include "rocksdb/async_result.h"
 #include "rocksdb/slice_transform.h"
 #include "rocksdb/table_properties.h"
 #include "table/block_based/block.h"
@@ -135,6 +136,11 @@ class BlockBasedTable : public TableReader {
   Status Get(const ReadOptions& readOptions, const Slice& key,
              GetContext* get_context, const SliceTransform* prefix_extractor,
              bool skip_filters = false) override;
+
+  async_result AsyncGet(const ReadOptions& readOptions, const Slice& key,
+                        GetContext* get_context,
+                        const SliceTransform* prefix_extractor,
+                        bool skip_filters = false) override;
 
   void MultiGet(const ReadOptions& readOptions,
                 const MultiGetContext::Range* mget_range,
@@ -274,6 +280,14 @@ class BlockBasedTable : public TableReader {
       BlockCacheLookupContext* lookup_context, Status s,
       FilePrefetchBuffer* prefetch_buffer, bool for_compaction = false) const;
 
+  template <typename TBlockIter>
+  async_result AsyncNewDataBlockIterator(
+      const ReadOptions& ro, const BlockHandle& block_handle,
+      TBlockIter* input_iter, BlockType block_type, GetContext* get_context,
+      BlockCacheLookupContext* lookup_context, Status s,
+      TBlockIter** result_iterator, FilePrefetchBuffer* prefetch_buffer,
+      bool for_compaction = false) const;
+
   // input_iter: if it is not null, update this one and return it as Iterator
   template <typename TBlockIter>
   TBlockIter* NewDataBlockIterator(const ReadOptions& ro,
@@ -348,6 +362,15 @@ class BlockBasedTable : public TableReader {
       GetContext* get_context, BlockCacheLookupContext* lookup_context,
       BlockContents* contents) const;
 
+  template <typename TBlocklike>
+  async_result AsyncMaybeReadBlockAndLoadToCache(
+      FilePrefetchBuffer* prefetch_buffer, const ReadOptions& ro,
+      const BlockHandle& handle, const UncompressionDict& uncompression_dict,
+      const bool wait, const bool for_compaction,
+      CachableEntry<TBlocklike>* block_entry, BlockType block_type,
+      GetContext* get_context, BlockCacheLookupContext* lookup_context,
+      BlockContents* contents) const;
+
   // Similar to the above, with one crucial difference: it will retrieve the
   // block from the file even if there are no caches configured (assuming the
   // read options allow I/O).
@@ -360,6 +383,14 @@ class BlockBasedTable : public TableReader {
                        BlockCacheLookupContext* lookup_context,
                        bool for_compaction, bool use_cache,
                        bool wait_for_cache) const;
+
+  template <typename TBlocklike>
+  async_result AsyncRetrieveBlock(
+      FilePrefetchBuffer* prefetch_buffer, const ReadOptions& ro,
+      const BlockHandle& handle, const UncompressionDict& uncompression_dict,
+      CachableEntry<TBlocklike>* block_entry, BlockType block_type,
+      GetContext* get_context, BlockCacheLookupContext* lookup_context,
+      bool for_compaction, bool use_cache, bool wait_for_cache) const;
 
   void RetrieveMultipleBlocks(
       const ReadOptions& options, const MultiGetRange* batch,
