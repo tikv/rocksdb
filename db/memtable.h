@@ -403,7 +403,7 @@ class MemTable {
   // If the largest sequence number could not be determined,
   // 0 will be returned.
   SequenceNumber GetLargestSequenceNumber() {
-    return largest_seqno_.load(std::memory_order_acquire);
+    return largest_seqno_.load(std::memory_order_relaxed);
   }
 
   // DB's latest sequence ID when the memtable is created. This number
