@@ -1,5 +1,12 @@
 # Rocksdb Change Log
 ## Unreleased
+### Bug Fixes
+* Fix a race condition in WAL size tracking which is caused by an unsafe iterator access after container is changed.
+* Fix unprotected concurrent accesses to `WritableFileWriter::filesize_` by `DB::SyncWAL()` and `DB::Put()` in two write queue mode.
+* Fix a bug in WAL tracking. Before this PR (#10087), calling `SyncWAL()` on the only WAL file of the db will not log the event in MANIFEST, thus allowing a subsequent `DB::Open` even if the WAL file is missing or corrupted.
+* Fixed a possible corruption for users of `manual_wal_flush` and/or `FlushWAL(true /* sync */)`, together with `track_and_verify_wals_in_manifest == true`. For those users, losing unsynced data (e.g., due to power loss) could make future DB opens fail with a `Status::Corruption` complaining about missing WAL data.
+* Fix a bug in which backup/checkpoint can include a WAL deleted by RocksDB.
+
 ### Public API changes
 * Remove ReadOptions::iter_start_seqnum which has been deprecated.
 * Remove DBOptions::preserved_deletes and DB::SetPreserveDeletesSequenceNumber().
@@ -10,6 +17,11 @@
 
 ## New Features
 * Improved the SstDumpTool to read the comparator from table properties and use it to read the SST File.
+* Add an extra sanity check in `GetSortedWalFiles()` (also used by `GetLiveFilesStorageInfo()`, `BackupEngine`, and `Checkpoint`) to reduce risk of successfully created backup or checkpoint failing to open because of missing WAL file.
+
+## Behavior Changes
+* For track_and_verify_wals_in_manifest, revert to the original behavior before #10087: syncing of live WAL file is not tracked, and we track only the synced sizes of **closed** WALs. (PR #10330).
+* DB::Write does not hold global `mutex_` if this db instance does not need to switch wal and mem-table (#7516).
 
 ## 6.29.5 (03/29/2022)
 ### Bug Fixes
@@ -274,8 +286,6 @@ Note: The next release will be major release 7.0. See https://github.com/faceboo
 * BackupEngineOptions::sync (default true) now applies to restoring backups in addition to creating backups. This could slow down restores, but ensures they are fully persisted before returning OK. (Consider increasing max_background_operations to improve performance.)
 
 ## 6.23.0 (2021-07-16)
-### Behavior Changes
-* Obsolete keys in the bottommost level that were preserved for a snapshot will now be cleaned upon snapshot release in all cases. This form of compaction (snapshot release triggered compaction) previously had an artificial limitation that multiple tombstones needed to be present.
 ### Bug Fixes
 * Blob file checksums are now printed in hexadecimal format when using the `manifest_dump` `ldb` command.
 * `GetLiveFilesMetaData()` now populates the `temperature`, `oldest_ancester_time`, and `file_creation_time` fields of its `LiveFileMetaData` results when the information is available. Previously these fields always contained zero indicating unknown.

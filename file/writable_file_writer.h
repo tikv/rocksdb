@@ -141,7 +141,8 @@ class WritableFileWriter {
   size_t max_buffer_size_;
   // Actually written data size can be used for truncate
   // not counting padding data
-  uint64_t filesize_;
+  std::atomic<uint64_t> filesize_;
+  std::atomic<uint64_t> flushed_size_;
 #ifndef ROCKSDB_LITE
   // This is necessary when we use unbuffered access
   // and writes must happen on aligned offsets
@@ -176,6 +177,7 @@ class WritableFileWriter {
         buf_(),
         max_buffer_size_(options.writable_file_max_buffer_size),
         filesize_(0),
+        flushed_size_(0),
 #ifndef ROCKSDB_LITE
         next_write_offset_(0),
 #endif  // ROCKSDB_LITE
@@ -245,7 +247,17 @@ class WritableFileWriter {
   // returns NotSupported status.
   IOStatus SyncWithoutFlush(bool use_fsync);
 
-  uint64_t GetFileSize() const { return filesize_; }
+  uint64_t GetFileSize() const {
+    return filesize_.load(std::memory_order_acquire);
+  }
+
+  // Returns the size of data flushed to the underlying `FSWritableFile`.
+  // Expected to match `writable_file()->GetFileSize()`.
+  // The return value can serve as a lower-bound for the amount of data synced
+  // by a future call to `SyncWithoutFlush()`.
+  uint64_t GetFlushedSize() const {
+    return flushed_size_.load(std::memory_order_acquire);
+  }
 
   IOStatus InvalidateCache(size_t offset, size_t length) {
     return writable_file_->InvalidateCache(offset, length);

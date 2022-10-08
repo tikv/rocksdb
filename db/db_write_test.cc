@@ -31,8 +31,25 @@ class DBWriteTest : public DBTestBase, public testing::WithParamInterface<int> {
   void Open() { DBTestBase::Reopen(GetOptions()); }
 };
 
+TEST_P(DBWriteTest, WriteEmptyBatch) {
+  Options options = GetOptions();
+  options.write_buffer_size = 65536;
+  Reopen(options);
+  WriteOptions write_options;
+  WriteBatch batch;
+  Random rnd(301);
+  // Trigger a flush so that we will enter `WaitForPendingWrites`.
+  for (auto i = 0; i < 10; i++) {
+    batch.Clear();
+    ASSERT_OK(dbfull()->Write(write_options, &batch));
+    ASSERT_OK(batch.Put(std::to_string(i), rnd.RandomString(10240)));
+    ASSERT_OK(dbfull()->Write(write_options, &batch));
+  }
+}
+
 // It is invalid to do sync write while disabling WAL.
 TEST_P(DBWriteTest, SyncAndDisableWAL) {
+  Reopen(GetOptions());
   WriteOptions write_options;
   write_options.sync = true;
   write_options.disableWAL = true;
@@ -332,6 +349,41 @@ TEST_P(DBWriteTest, ManualWalFlushInEffect) {
   ASSERT_TRUE(options.manual_wal_flush != dbfull()->TEST_WALBufferIsEmpty());
   ASSERT_TRUE(dbfull()->FlushWAL(false).ok());
   ASSERT_TRUE(dbfull()->TEST_WALBufferIsEmpty());
+}
+
+TEST_P(DBWriteTest, UnflushedPutRaceWithTrackedWalSync) {
+  // Repro race condition bug where unflushed WAL data extended the synced size
+  // recorded to MANIFEST despite being unrecoverable.
+  Options options = GetOptions();
+  std::unique_ptr<FaultInjectionTestEnv> fault_env(
+      new FaultInjectionTestEnv(env_));
+  options.env = fault_env.get();
+  options.manual_wal_flush = true;
+  options.track_and_verify_wals_in_manifest = true;
+  Reopen(options);
+
+  ASSERT_OK(Put("key1", "val1"));
+
+  SyncPoint::GetInstance()->SetCallBack(
+      "DBImpl::SyncWAL:Begin",
+      [this](void* /* arg */) { ASSERT_OK(Put("key2", "val2")); });
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->EnableProcessing();
+
+  ASSERT_OK(db_->FlushWAL(true /* sync */));
+
+  // Ensure callback ran.
+  ASSERT_EQ("val2", Get("key2"));
+
+  Close();
+
+  // Simulate full loss of unsynced data. This drops "key2" -> "val2" from the
+  // DB WAL.
+  fault_env->DropUnsyncedFileData();
+
+  Reopen(options);
+
+  // Need to close before `fault_env` goes out of scope.
+  Close();
 }
 
 TEST_P(DBWriteTest, IOErrorOnWALWriteTriggersReadOnlyMode) {
