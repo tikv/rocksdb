@@ -201,6 +201,8 @@ void FlushJob::PickMemTable(SequenceNumber* earliest_seqno,
   if (largest_seqno != nullptr) {
     *largest_seqno = mems_.back()->GetLargestSequenceNumber();
   }
+  assert(earliest_seqno == nullptr || largest_seqno == nullptr ||
+         *earliest_seqno <= *largest_seqno);
 }
 
 Status FlushJob::Run(LogsWithPrepTracker* prep_tracker, FileMetaData* file_meta,
