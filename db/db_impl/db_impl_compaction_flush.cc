@@ -516,7 +516,7 @@ Status DBImpl::AtomicFlushMemTablesToOutputFiles(
     pick_status.push_back(false);
   }
 
-  std::vector<SequenceNumber> earliest_seqnos(num_cfs, kMaxSequenceNumber);
+  std::vector<SequenceNumber> earliest_seqnos(num_cfs, 0);
   std::vector<SequenceNumber> largest_seqnos(num_cfs, 0);
   if (s.ok()) {
     for (int i = 0; i != num_cfs; ++i) {
