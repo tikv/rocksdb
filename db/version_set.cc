@@ -2134,7 +2134,7 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
   }
 }
 
-async_result Version::AsyncGet(const ReadOptions& read_options,
+Async_future Version::AsyncGet(const ReadOptions& read_options,
                                const LookupKey& k, PinnableSlice* value,
                                std::string* timestamp, Status* status,
                                MergeContext* merge_context,

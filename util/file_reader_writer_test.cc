@@ -40,7 +40,7 @@ TEST_F(WritableFileWriterTest, RangeSync) {
       return IOStatus::OK();
     }
     using FSWritableFile::AsyncAppend;
-    virtual async_result AsyncAppend(const Slice& data,
+    virtual Async_future AsyncAppend(const Slice& data,
                                      const IOOptions& options,
                                      IODebugContext* dbg) override {
       (void)data;
@@ -154,7 +154,7 @@ TEST_F(WritableFileWriterTest, IncrementalBuffer) {
       return IOStatus::OK();
     }
     using FSWritableFile::AsyncAppend;
-    virtual async_result AsyncAppend(const Slice& data,
+    virtual Async_future AsyncAppend(const Slice& data,
                                      const IOOptions& options,
                                      IODebugContext* dbg) override {
       (void)data;
@@ -453,7 +453,7 @@ TEST_F(WritableFileWriterTest, AppendStatusReturn) {
       return IOStatus::OK();
     }
     using FSWritableFile::AsyncAppend;
-    async_result AsyncAppend(const Slice& data, const IOOptions& options,
+    Async_future AsyncAppend(const Slice& data, const IOOptions& options,
                              IODebugContext* dbg) override {
       (void)data;
       (void)options;
@@ -839,7 +839,7 @@ TEST_F(DBWritableFileWriterTest, IOErrorNotification) {
     }
 
     using FSWritableFile::AsyncAppend;
-    virtual async_result AsyncAppend(const Slice& data,
+    virtual Async_future AsyncAppend(const Slice& data,
                                      const IOOptions& options,
                                      IODebugContext* dbg) override {
       (void)data;

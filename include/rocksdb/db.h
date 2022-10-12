@@ -17,7 +17,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "rocksdb/async_result.h"
+#include "rocksdb/async_future.h"
 #include "rocksdb/iterator.h"
 #include "rocksdb/listener.h"
 #include "rocksdb/metadata.h"
@@ -371,7 +371,7 @@ class DB {
     return Put(options, DefaultColumnFamily(), key, ts, value);
   }
 
-  virtual async_result AsyncPut(const WriteOptions& options,
+  virtual Async_future AsyncPut(const WriteOptions& options,
                                 ColumnFamilyHandle* column_family,
                                 const Slice& key, const Slice& value) {
     (void)options;
@@ -499,7 +499,7 @@ class DB {
     return MultiBatchWrite(options, std::move(updates), nullptr);
   }
 
-  virtual async_result AsyncWrite(const WriteOptions& options,
+  virtual Async_future AsyncWrite(const WriteOptions& options,
                                   WriteBatch* updates) {
     (void)options;
     (void)updates;
@@ -536,7 +536,7 @@ class DB {
     return Get(options, DefaultColumnFamily(), key, value);
   }
 
-  virtual async_result AsyncGet(const ReadOptions& options,
+  virtual Async_future AsyncGet(const ReadOptions& options,
                                 ColumnFamilyHandle* column_family,
                                 const Slice& key, PinnableSlice* value,
                                 std::string* timestamp) {
@@ -621,7 +621,7 @@ class DB {
         keys, values);
   }
 
-  virtual async_result AsyncMultiGet(const ReadOptions& options,
+  virtual Async_future AsyncMultiGet(const ReadOptions& options,
                                      const std::vector<Slice>& keys,
                                      std::vector<std::string>* values) {
     std::vector<ColumnFamilyHandle*> cf(keys.size(), DefaultColumnFamily());
@@ -649,7 +649,7 @@ class DB {
         std::vector<ColumnFamilyHandle*>(keys.size(), DefaultColumnFamily()),
         keys, values, timestamps);
   }
-  virtual async_result AsyncMultiGet(
+  virtual Async_future AsyncMultiGet(
       const ReadOptions& /*options*/,
       const std::vector<ColumnFamilyHandle*>& /*column_family*/,
       const std::vector<Slice>& keys, std::vector<std::string>* /*values*/,
@@ -1437,7 +1437,7 @@ class DB {
   virtual Status FlushWAL(bool /*sync*/) {
     return Status::NotSupported("FlushWAL not implemented");
   }
-  virtual async_result AsyncFlushWAL(bool /*sync*/) {
+  virtual Async_future AsyncFlushWAL(bool /*sync*/) {
     co_return Status::NotSupported("FlushWAL not implemented");
   }
   // Sync the wal. Note that Write() followed by SyncWAL() is not exactly the
@@ -1446,7 +1446,7 @@ class DB {
   // Currently only works if allow_mmap_writes = false in Options.
   virtual Status SyncWAL() = 0;
 
-  virtual async_result AsSyncWAL() {
+  virtual Async_future AsSyncWAL() {
     co_return Status::NotSupported("AsSyncWAL not implemented");
   }
   // Lock the WAL. Also flushes the WAL after locking.

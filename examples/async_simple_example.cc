@@ -13,7 +13,7 @@
 #include "rocksdb/options.h"
 
 using ROCKSDB_NAMESPACE::DB;
-using ROCKSDB_NAMESPACE::async_result;
+using ROCKSDB_NAMESPACE::Async_future;
 using ROCKSDB_NAMESPACE::ReadTier;
 using ROCKSDB_NAMESPACE::FilePage;
 using ROCKSDB_NAMESPACE::IOUringOptions;
@@ -41,10 +41,10 @@ class Async {
     }
 
     m_io_uring_options = std::make_unique<IOUringOptions>(
-      [this](FilePage* data, int fd, uint64_t off, IOUringOptions::Ops op) -> async_result {
+      [this](FilePage* data, int fd, uint64_t off, IOUringOptions::Ops op) -> Async_future {
         (void)op;
 
-        async_result a_result(true, data);
+        Async_future a_result(true, data);
 
         auto sqe = io_uring_get_sqe(m_io_uring.get());
 
@@ -111,7 +111,7 @@ class Async {
    } while (m_shutdown.load(std::memory_order_relaxed) > 0);
   }
 
-  async_result get(const std::string &k, std::string &value) {
+  Async_future get(const std::string &k, std::string &value) {
     m_shutdown.fetch_add(1, std::memory_order_seq_cst);
 
     auto v = new (std::nothrow) PinnableSlice();
@@ -139,7 +139,7 @@ class Async {
   }
 
  private:
-  using Promise = async_result::promise_type;
+  using Promise = Async_future::promise_type;
 
   static void on_resume(Promise* promise) {
     auto h{std::coroutine_handle<Promise>::from_promise(*promise)};

@@ -19,7 +19,7 @@
 #include <vector>
 
 #include "rocksdb/advanced_options.h"
-#include "rocksdb/async_result.h"
+#include "rocksdb/async_future.h"
 #include "rocksdb/comparator.h"
 #include "rocksdb/compression_type.h"
 #include "rocksdb/customizable.h"
@@ -1451,16 +1451,16 @@ struct IOUringOptions {
   }
 
   IOUringOptions(
-      std::function<async_result(FilePage*, int, uint64_t, Ops)>&& deleg)
+      std::function<Async_future(FilePage*, int, uint64_t, Ops)>&& deleg)
       : ioring{nullptr},
         sqe_count{0},
         delegate{std::forward<
-            std::function<async_result(FilePage*, int, uint64_t, Ops)>>(
+            std::function<Async_future(FilePage*, int, uint64_t, Ops)>>(
             deleg)} {}
 
   struct io_uring* ioring;
   std::atomic<int> sqe_count;
-  std::function<async_result(FilePage*, int, uint64_t, Ops)> delegate;
+  std::function<Async_future(FilePage*, int, uint64_t, Ops)> delegate;
 
 };
 

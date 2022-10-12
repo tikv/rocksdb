@@ -48,7 +48,7 @@
 #include "monitoring/instrumented_mutex.h"
 #include "options/db_options.h"
 #include "port/port.h"
-#include "rocksdb/async_result.h"
+#include "rocksdb/async_future.h"
 #include "rocksdb/env.h"
 #include "rocksdb/file_checksum.h"
 #include "table/get_context.h"
@@ -782,7 +782,7 @@ class Version {
            SequenceNumber* seq = nullptr, ReadCallback* callback = nullptr,
            bool* is_blob = nullptr, bool do_merge = true);
 
-  async_result AsyncGet(
+  Async_future AsyncGet(
 	   const ReadOptions&, const LookupKey& key, PinnableSlice* value,
 	   std::string* timestamp, Status* status, MergeContext* merge_context,
 	   SequenceNumber* max_covering_tombstone_seq,

@@ -18,7 +18,7 @@
 #include "db/range_del_aggregator.h"
 #include "options/cf_options.h"
 #include "port/port.h"
-#include "rocksdb/async_result.h"
+#include "rocksdb/async_future.h"
 #include "rocksdb/cache.h"
 #include "rocksdb/env.h"
 #include "rocksdb/options.h"
@@ -99,7 +99,7 @@ class TableCache {
       HistogramImpl* file_read_hist = nullptr, bool skip_filters = false,
       int level = -1, size_t max_file_size_for_l0_meta_pin = 0);
 
-  async_result AsyncGet(const ReadOptions& options,
+  Async_future AsyncGet(const ReadOptions& options,
                         const InternalKeyComparator& internal_comparator,
                         const FileMetaData& file_meta, const Slice& k,
                         GetContext* get_context,

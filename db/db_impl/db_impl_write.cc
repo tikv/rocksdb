@@ -14,7 +14,7 @@
 #include "logging/logging.h"
 #include "monitoring/perf_context_imp.h"
 #include "options/options_helper.h"
-#include "rocksdb/async_result.h"
+#include "rocksdb/async_future.h"
 #include "test_util/sync_point.h"
 #include "util/cast_util.h"
 
@@ -113,7 +113,7 @@ Status DBImpl::Write(const WriteOptions& write_options, WriteBatch* my_batch,
                    /*disable_memtable=*/false, seq);
 }
 
-async_result DBImpl::AsyncWrite(const WriteOptions& write_options,
+Async_future DBImpl::AsyncWrite(const WriteOptions& write_options,
                                 WriteBatch* my_batch) {
   auto result = AsyncWriteImpl(write_options, my_batch, nullptr, nullptr);
   co_await result;
@@ -784,7 +784,7 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
   return status;
 }
 
-async_result DBImpl::AsyncWriteImpl(const WriteOptions& write_options,
+Async_future DBImpl::AsyncWriteImpl(const WriteOptions& write_options,
                                     WriteBatch* my_batch,
                                     WriteCallback* callback, uint64_t* log_used,
                                     uint64_t log_ref, bool disable_memtable,
@@ -1393,7 +1393,7 @@ Status DBImpl::PipelinedWriteImpl(const WriteOptions& write_options,
   return w.FinalStatus();
 }
 
-async_result DBImpl::AsyncPipelinedWriteImpl(
+Async_future DBImpl::AsyncPipelinedWriteImpl(
     const WriteOptions& write_options, WriteBatch* my_batch,
     WriteCallback* callback, uint64_t* log_used, uint64_t log_ref,
     bool disable_memtable, uint64_t* seq_used) {
@@ -1794,7 +1794,7 @@ Status DBImpl::WriteImplWALOnly(
   return status;
 }
 
-async_result DBImpl::AsyncWriteImplWALOnly(
+Async_future DBImpl::AsyncWriteImplWALOnly(
     WriteThread* write_thread, const WriteOptions& write_options,
     WriteBatch* my_batch, WriteCallback* callback, uint64_t* log_used,
     const uint64_t log_ref, uint64_t* seq_used, const size_t sub_batch_cnt,
@@ -2240,7 +2240,7 @@ IOStatus DBImpl::WriteToWAL(const WriteBatch& merged_batch,
   return io_s;
 }
 
-async_result DBImpl::AsyncWriteToWAL(const WriteBatch& merged_batch,
+Async_future DBImpl::AsyncWriteToWAL(const WriteBatch& merged_batch,
                                      log::Writer* log_writer,
                                      uint64_t* log_used, uint64_t* log_size) {
   assert(log_size != nullptr);
@@ -2367,7 +2367,7 @@ IOStatus DBImpl::WriteToWAL(const WriteThread::WriteGroup& write_group,
   return io_s;
 }
 
-async_result DBImpl::AsyncWriteToWAL(const WriteThread::WriteGroup& write_group,
+Async_future DBImpl::AsyncWriteToWAL(const WriteThread::WriteGroup& write_group,
                                      log::Writer* log_writer,
                                      uint64_t* log_used, bool need_log_sync,
                                      bool need_log_dir_sync,
@@ -2497,7 +2497,7 @@ IOStatus DBImpl::ConcurrentWriteToWAL(
   return io_s;
 }
 
-async_result DBImpl::AsyncConcurrentWriteToWAL(
+Async_future DBImpl::AsyncConcurrentWriteToWAL(
     const WriteThread::WriteGroup& write_group, uint64_t* log_used,
     SequenceNumber* last_sequence, size_t seq_inc) {
   IOStatus io_s;
@@ -3343,7 +3343,7 @@ Status DB::Put(const WriteOptions& opt, ColumnFamilyHandle* column_family,
   return Write(opt, &batch);
 }
 
-async_result DBImpl::AsyncPut(const WriteOptions& opt,
+Async_future DBImpl::AsyncPut(const WriteOptions& opt,
                               ColumnFamilyHandle* column_family,
                               const Slice& key, const Slice& value) {
 

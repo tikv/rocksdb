@@ -28,7 +28,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "rocksdb/async_result.h"
+#include "rocksdb/async_future.h"
 #include "rocksdb/customizable.h"
 #include "rocksdb/env.h"
 #include "rocksdb/io_status.h"
@@ -757,7 +757,7 @@ class FSRandomAccessFile {
                         Slice* result, char* scratch,
                         IODebugContext* dbg) const = 0;
 
-  virtual async_result AsyncRead(uint64_t offset, size_t n,
+  virtual Async_future AsyncRead(uint64_t offset, size_t n,
                                  const IOOptions& options, Slice* result,
                                  char* scratch, IODebugContext* dbg) const = 0;
 
@@ -866,7 +866,7 @@ class FSWritableFile {
   virtual IOStatus Append(const Slice& data, const IOOptions& options,
                           IODebugContext* dbg) = 0;
 
-  virtual async_result AsyncAppend(const Slice& data, const IOOptions& options,
+  virtual Async_future AsyncAppend(const Slice& data, const IOOptions& options,
                                    IODebugContext* dbg) = 0;
 
   // Append data with verification information.
@@ -884,7 +884,7 @@ class FSWritableFile {
     return Append(data, options, dbg);
   }
 
-  virtual async_result AsyncAppend(
+  virtual Async_future AsyncAppend(
       const Slice& data, const IOOptions& options,
       const DataVerificationInfo& verification_info,
       IODebugContext* dbg) {
@@ -920,7 +920,7 @@ class FSWritableFile {
     return IOStatus::NotSupported("PositionedAppend");
   }
 
-  virtual async_result AsyncPositionedAppend(const Slice& /* data */,
+  virtual Async_future AsyncPositionedAppend(const Slice& /* data */,
                                              uint64_t /* offset */,
                                              const IOOptions& /*options*/,
                                              IODebugContext* /*dbg*/) {
@@ -943,7 +943,7 @@ class FSWritableFile {
     return IOStatus::NotSupported("PositionedAppend");
   }
 
-  virtual async_result AsyncPositionedAppend(
+  virtual Async_future AsyncPositionedAppend(
       const Slice& /* data */, uint64_t /* offset */,
       const IOOptions& /*options*/,
       const DataVerificationInfo& /* verification_info */,
@@ -963,7 +963,7 @@ class FSWritableFile {
   virtual IOStatus Flush(const IOOptions& options, IODebugContext* dbg) = 0;
   virtual IOStatus Sync(const IOOptions& options,
                         IODebugContext* dbg) = 0;  // sync data
-  virtual async_result AsSync(const IOOptions& options, IODebugContext* dbg) {
+  virtual Async_future AsSync(const IOOptions& options, IODebugContext* dbg) {
     (void)options;
     (void)dbg;
     co_return IOStatus::NotSupported("AsSync");
@@ -979,7 +979,7 @@ class FSWritableFile {
     return Sync(options, dbg);
   }
 
-  virtual async_result AsFsync(const IOOptions& options, IODebugContext* dbg) {
+  virtual Async_future AsFsync(const IOOptions& options, IODebugContext* dbg) {
     auto result = AsSync(options, dbg);
     co_await result;
     co_return result.io_result();
@@ -1057,7 +1057,7 @@ class FSWritableFile {
     return IOStatus::OK();
   }
 
-  virtual async_result AsRangeSync(uint64_t /*offset*/, uint64_t /*nbytes*/,
+  virtual Async_future AsRangeSync(uint64_t /*offset*/, uint64_t /*nbytes*/,
                                    const IOOptions& options,
                                    IODebugContext* dbg) {
     if (strict_bytes_per_sync_) {
@@ -1512,7 +1512,7 @@ class FSRandomAccessFileWrapper : public FSRandomAccessFile {
     return target_->Read(offset, n, options, result, scratch, dbg);
   }
 
-  async_result AsyncRead(uint64_t offset, size_t n, const IOOptions& options,
+  Async_future AsyncRead(uint64_t offset, size_t n, const IOOptions& options,
                          Slice* result, char* scratch,
                          IODebugContext* dbg) const override {
     return target_->AsyncRead(offset, n, options, result, scratch, dbg);
@@ -1572,13 +1572,13 @@ class FSWritableFileWrapper : public FSWritableFile {
                   IODebugContext* dbg) override {
     return target_->Append(data, options, verification_info, dbg);
   }
-  async_result AsyncAppend(const Slice& data, const IOOptions& options,
+  Async_future AsyncAppend(const Slice& data, const IOOptions& options,
                            IODebugContext* dbg) override {
     auto result = target_->AsyncAppend(data, options, dbg);
     co_await result;
     co_return result.io_result();
   }
-  async_result AsyncAppend(const Slice& data, const IOOptions& options,
+  Async_future AsyncAppend(const Slice& data, const IOOptions& options,
                            const DataVerificationInfo& verification_info,
                            IODebugContext* dbg) override {
     auto result = target_->AsyncAppend(data, options, verification_info, dbg);

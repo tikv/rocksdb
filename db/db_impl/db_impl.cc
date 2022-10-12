@@ -1348,7 +1348,7 @@ Status DBImpl::FlushWAL(bool sync) {
   return SyncWAL();
 }
 
-async_result DBImpl::AsyncFlushWAL(bool sync) {
+Async_future DBImpl::AsyncFlushWAL(bool sync) {
   if (manual_wal_flush_) {
     IOStatus io_s;
     {
@@ -1478,7 +1478,7 @@ Status DBImpl::ApplyWALToManifest(VersionEdit* synced_wals) {
   return status;
 }
 
-async_result DBImpl::AsSyncWAL() {
+Async_future DBImpl::AsSyncWAL() {
   autovector<log::Writer*, 1> logs_to_sync;
   bool need_log_dir_sync;
   uint64_t current_log_number;
@@ -1859,7 +1859,7 @@ Status DBImpl::Get(const ReadOptions& read_options,
   return GetImpl(read_options, key, get_impl_options);
 }
 
-async_result DBImpl::AsyncGet(const ReadOptions& read_options,
+Async_future DBImpl::AsyncGet(const ReadOptions& read_options,
                               ColumnFamilyHandle* column_family,
                               const Slice& key, PinnableSlice* value,
                               std::string* timestamp) {
@@ -2089,7 +2089,7 @@ Status DBImpl::GetImpl(const ReadOptions& read_options, const Slice& key,
   return s;
 }
 
-async_result DBImpl::AsyncGetImpl(const ReadOptions& read_options, const Slice& key,
+Async_future DBImpl::AsyncGetImpl(const ReadOptions& read_options, const Slice& key,
                        GetImplOptions& get_impl_options) {
   assert(get_impl_options.value != nullptr ||
          get_impl_options.merge_operands != nullptr);
@@ -2507,7 +2507,7 @@ std::vector<Status> DBImpl::MultiGet(
   return stat_list;
 }
 
-async_result DBImpl::AsyncMultiGet(
+Async_future DBImpl::AsyncMultiGet(
     const ReadOptions& read_options,
     const std::vector<ColumnFamilyHandle*>& column_family,
     const std::vector<Slice>& keys, std::vector<std::string>* values,
@@ -2640,7 +2640,7 @@ async_result DBImpl::AsyncMultiGet(
           /*key_exists=*/nullptr,
           /*seq=*/nullptr, read_callback);
       co_await r;
-      (void)r;  // hold async_result after await
+      (void)r;  // hold Async_future after await
       value->assign(pinnable_val.data(), pinnable_val.size());
       RecordTick(stats_, MEMTABLE_MISS);
     }

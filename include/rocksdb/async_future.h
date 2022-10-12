@@ -32,12 +32,12 @@ struct ret_back {
   std::vector<Status> results_;
 };
 
-struct async_result {
+struct Async_future {
   struct promise_type {
-    async_result get_return_object() {
+    Async_future get_return_object() {
       auto h = std::coroutine_handle<promise_type>::from_promise(*this);
       ret_back_promise = new ret_back{};
-      return async_result(h, *ret_back_promise);
+      return Async_future(h, *ret_back_promise);
     }
 
     auto initial_suspend() { return std::suspend_never{}; }
@@ -77,17 +77,17 @@ struct async_result {
     ret_back* ret_back_promise;
   };
 
-  async_result() : ret_back_(nullptr), async_(false) {}
+  Async_future() : ret_back_(nullptr), async_(false) {}
 
-  async_result(bool async, FilePage* context)
+  Async_future(bool async, FilePage* context)
       : ret_back_(nullptr), async_(async), context_{context} {}
 
-  async_result(std::coroutine_handle<promise_type> h, ret_back& ret_back)
+  Async_future(std::coroutine_handle<promise_type> h, ret_back& ret_back)
       : h_{h} {
     ret_back_ = &ret_back;
   }
 
-  ~async_result() {
+  ~Async_future() {
     delete ret_back_;
     ret_back_ = nullptr;
   }
@@ -125,7 +125,7 @@ struct file_page {
 
   ~file_page() { free(iov); }
 
-  async_result::promise_type* promise;
+  Async_future::promise_type* promise;
   struct iovec* iov;
   int pages_;
 };

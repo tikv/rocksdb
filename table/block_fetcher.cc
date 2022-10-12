@@ -330,7 +330,7 @@ IOStatus BlockFetcher::ReadBlockContents() {
   return io_status_;
 }
 
-async_result BlockFetcher::AsyncReadBlockContents() {
+Async_future BlockFetcher::AsyncReadBlockContents() {
   if (TryGetUncompressBlockFromPersistentCache()) {
     compression_type_ = kNoCompression;
 #ifndef NDEBUG

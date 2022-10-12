@@ -195,7 +195,7 @@ class PosixRandomAccessFile : public FSRandomAccessFile {
                         Slice* result, char* scratch,
                         IODebugContext* dbg) const override;
 
-  virtual async_result AsyncRead(uint64_t offset, size_t n,
+  virtual Async_future AsyncRead(uint64_t offset, size_t n,
                                  const IOOptions& opts, Slice* result,
                                  char* scratch,
                                  IODebugContext* dbg) const override;
@@ -248,14 +248,14 @@ class PosixWritableFile : public FSWritableFile {
   virtual IOStatus Close(const IOOptions& opts, IODebugContext* dbg) override;
   virtual IOStatus Append(const Slice& data, const IOOptions& opts,
                           IODebugContext* dbg) override;
-  virtual async_result AsyncAppend(const Slice& data, const IOOptions& opts,
+  virtual Async_future AsyncAppend(const Slice& data, const IOOptions& opts,
                                    IODebugContext* dbg) override;
   virtual IOStatus Append(const Slice& data, const IOOptions& opts,
                           const DataVerificationInfo& /* verification_info */,
                           IODebugContext* dbg) override {
     return Append(data, opts, dbg);
   }
-  virtual async_result AsyncAppend(
+  virtual Async_future AsyncAppend(
       const Slice& data, const IOOptions& opts,
       const DataVerificationInfo& /* verification_info */,
       IODebugContext* dbg) override {
@@ -266,7 +266,7 @@ class PosixWritableFile : public FSWritableFile {
   virtual IOStatus PositionedAppend(const Slice& data, uint64_t offset,
                                     const IOOptions& opts,
                                     IODebugContext* dbg) override;
-  virtual async_result AsyncPositionedAppend(const Slice& data, uint64_t offset,
+  virtual Async_future AsyncPositionedAppend(const Slice& data, uint64_t offset,
                                              const IOOptions& opts,
                                              IODebugContext* dbg) override;
   virtual IOStatus PositionedAppend(
@@ -275,7 +275,7 @@ class PosixWritableFile : public FSWritableFile {
       IODebugContext* dbg) override {
     return PositionedAppend(data, offset, opts, dbg);
   }
-  virtual async_result AsyncPositionedAppend(
+  virtual Async_future AsyncPositionedAppend(
       const Slice& data, uint64_t offset, const IOOptions& opts,
       const DataVerificationInfo& /* verification_info */,
       IODebugContext* dbg) override {
@@ -285,10 +285,10 @@ class PosixWritableFile : public FSWritableFile {
   }
   virtual IOStatus Flush(const IOOptions& opts, IODebugContext* dbg) override;
   virtual IOStatus Sync(const IOOptions& opts, IODebugContext* dbg) override;
-  virtual async_result AsSync(const IOOptions& opts,
+  virtual Async_future AsSync(const IOOptions& opts,
                               IODebugContext* dbg) override;
   virtual IOStatus Fsync(const IOOptions& opts, IODebugContext* dbg) override;
-  virtual async_result AsFsync(const IOOptions& opts,
+  virtual Async_future AsFsync(const IOOptions& opts,
                                IODebugContext* dbg) override;
   virtual bool IsSyncThreadSafe() const override;
   virtual bool use_direct_io() const override { return use_direct_io_; }
@@ -328,7 +328,7 @@ class PosixMmapReadableFile : public FSRandomAccessFile {
                         Slice* result, char* scratch,
                         IODebugContext* dbg) const override;
 
-  async_result AsyncRead(uint64_t offset, size_t n, const IOOptions& options,
+  Async_future AsyncRead(uint64_t offset, size_t n, const IOOptions& options,
                          Slice* result, char* scratch,
                          IODebugContext* dbg) const override {
     (void)offset;
@@ -385,7 +385,7 @@ class PosixMmapFile : public FSWritableFile {
   virtual IOStatus Close(const IOOptions& opts, IODebugContext* dbg) override;
   virtual IOStatus Append(const Slice& data, const IOOptions& opts,
                           IODebugContext* dbg) override;
-  virtual async_result AsyncAppend(const Slice& data, const IOOptions& opts,
+  virtual Async_future AsyncAppend(const Slice& data, const IOOptions& opts,
                                    IODebugContext* dbg) override {
     (void)data;
     (void)opts;
@@ -397,7 +397,7 @@ class PosixMmapFile : public FSWritableFile {
                           IODebugContext* dbg) override {
     return Append(data, opts, dbg);
   }
-  virtual async_result AsyncAppend(
+  virtual Async_future AsyncAppend(
       const Slice& data, const IOOptions& opts,
       const DataVerificationInfo& /* verification_info */,
       IODebugContext* dbg) override {

@@ -14,7 +14,7 @@
 #include "db/version_edit.h"
 #include "env/file_system_tracer.h"
 #include "port/port.h"
-#include "rocksdb/async_result.h"
+#include "rocksdb/async_future.h"
 #include "rocksdb/file_checksum.h"
 #include "rocksdb/file_system.h"
 #include "rocksdb/io_status.h"
@@ -239,13 +239,13 @@ class WritableFileWriter {
 
   IOStatus Flush();
 
-  async_result AsyncFlush();
+  Async_future AsyncFlush();
 
   IOStatus Close();
 
   IOStatus Sync(bool use_fsync);
 
-  async_result AsSync(bool use_fsync);
+  Async_future AsSync(bool use_fsync);
 
   // Sync only the data that was already Flush()ed. Safe to call concurrently
   // with Append() and Flush(). If !writable_file_->IsSyncThreadSafe(),
@@ -256,7 +256,7 @@ class WritableFileWriter {
     return filesize_.load(std::memory_order_acquire);
   }
 
-  async_result AsSyncWithoutFlush(bool use_fsync);
+  Async_future AsSyncWithoutFlush(bool use_fsync);
 
   // Returns the size of data flushed to the underlying `FSWritableFile`.
   // Expected to match `writable_file()->GetFileSize()`.
@@ -290,18 +290,18 @@ class WritableFileWriter {
   // DMA such as in Direct I/O mode
 #ifndef ROCKSDB_LITE
   IOStatus WriteDirect();
-  async_result AsyncWriteDirect();
+  Async_future AsyncWriteDirect();
   IOStatus WriteDirectWithChecksum();
-  async_result AsyncWriteDirectWithChecksum();
+  Async_future AsyncWriteDirectWithChecksum();
 #endif  // !ROCKSDB_LITE
   // Normal write
   IOStatus WriteBuffered(const char* data, size_t size);
-  async_result AsyncWriteBuffered(const char* data, size_t size);
+  Async_future AsyncWriteBuffered(const char* data, size_t size);
   IOStatus WriteBufferedWithChecksum(const char* data, size_t size);
-  async_result AsyncWriteBufferedWithChecksum(const char* data, size_t size);
+  Async_future AsyncWriteBufferedWithChecksum(const char* data, size_t size);
   IOStatus RangeSync(uint64_t offset, uint64_t nbytes);
-  async_result AsRangeSync(uint64_t offset, uint64_t nbytes);
+  Async_future AsRangeSync(uint64_t offset, uint64_t nbytes);
   IOStatus SyncInternal(bool use_fsync);
-  async_result AsSyncInternal(bool use_fsync);
+  Async_future AsSyncInternal(bool use_fsync);
 };
 }  // namespace ROCKSDB_NAMESPACE

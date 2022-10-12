@@ -39,7 +39,7 @@ Writer::~Writer() {
 
 IOStatus Writer::WriteBuffer() { return dest_->Flush(); }
 
-async_result Writer::AsyncWriteBuffer() {
+Async_future Writer::AsyncWriteBuffer() {
   auto result = dest_->AsyncFlush();
   co_await result;
   co_return result.io_result();
@@ -118,7 +118,7 @@ IOStatus Writer::AddRecord(const Slice& slice) {
   return s;
 }
 
-async_result Writer::AsyncAddRecord(const Slice& slice) {
+Async_future Writer::AsyncAddRecord(const Slice& slice) {
   const char* ptr = slice.data();
   size_t left = slice.size();
 

@@ -115,7 +115,7 @@ Status ReadBlockFromFile(
 }
 
 template <typename TBlocklike>
-async_result AsyncReadBlockFromFile(
+Async_future AsyncReadBlockFromFile(
     RandomAccessFileReader* file, FilePrefetchBuffer* prefetch_buffer,
     const Footer& footer, const ReadOptions& options, const BlockHandle& handle,
     std::unique_ptr<TBlocklike>* result, const ImmutableOptions& ioptions,
@@ -1633,7 +1633,7 @@ Status BlockBasedTable::MaybeReadBlockAndLoadToCache(
 }
 
 template <typename TBlocklike>
-async_result BlockBasedTable::AsyncMaybeReadBlockAndLoadToCache(
+Async_future BlockBasedTable::AsyncMaybeReadBlockAndLoadToCache(
 		FilePrefetchBuffer* prefetch_buffer, const ReadOptions& ro,
     const BlockHandle& handle, const UncompressionDict& uncompression_dict,
     const bool wait, const bool for_compaction,
@@ -2184,7 +2184,7 @@ Status BlockBasedTable::RetrieveBlock(
 }
 
 template <typename TBlocklike>
-async_result BlockBasedTable::AsyncRetrieveBlock(
+Async_future BlockBasedTable::AsyncRetrieveBlock(
     FilePrefetchBuffer* prefetch_buffer, const ReadOptions& ro,
     const BlockHandle& handle, const UncompressionDict& uncompression_dict,
     CachableEntry<TBlocklike>* block_entry, BlockType block_type,
@@ -2767,7 +2767,7 @@ Status BlockBasedTable::Get(const ReadOptions& read_options, const Slice& key,
   return s;
 }
 
-async_result BlockBasedTable::AsyncGet(const ReadOptions& read_options,
+Async_future BlockBasedTable::AsyncGet(const ReadOptions& read_options,
                                        const Slice& key,
                                        GetContext* get_context,
                                        const SliceTransform* prefix_extractor,

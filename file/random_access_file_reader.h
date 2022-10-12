@@ -14,7 +14,7 @@
 
 #include "env/file_system_tracer.h"
 #include "port/port.h"
-#include "rocksdb/async_result.h"
+#include "rocksdb/async_future.h"
 #include "rocksdb/file_system.h"
 #include "rocksdb/listener.h"
 #include "rocksdb/options.h"
@@ -144,7 +144,7 @@ class RandomAccessFileReader {
                 char* scratch, AlignedBuf* aligned_buf,
                 bool for_compaction = false) const;
 
-  async_result AsyncRead(const IOOptions& opts, uint64_t offset, size_t n,
+  Async_future AsyncRead(const IOOptions& opts, uint64_t offset, size_t n,
                          Slice* result, char* scratch, AlignedBuf* aligned_buf,
                          bool for_compaction = false) const;
 

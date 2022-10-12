@@ -23,7 +23,7 @@
 
 #include "db/db_impl/db_impl.h"
 #include "file/filename.h"
-#include "rocksdb/async_result.h"
+#include "rocksdb/async_future.h"
 #include "rocksdb/cache.h"
 #include "rocksdb/compaction_filter.h"
 #include "rocksdb/convenience.h"

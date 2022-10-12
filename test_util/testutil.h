@@ -217,12 +217,12 @@ class StringSink : public FSWritableFile {
     contents_.append(slice.data(), slice.size());
     return IOStatus::OK();
   }
-  async_result AsyncAppend(const Slice& slice, const IOOptions& /*opts*/,
+  Async_future AsyncAppend(const Slice& slice, const IOOptions& /*opts*/,
                            IODebugContext* /*dbg*/) override {
     (void)slice;
     throw "Not implemented";
   }
-  async_result AsyncAppend(const Slice& data, const IOOptions& options,
+  Async_future AsyncAppend(const Slice& data, const IOOptions& options,
                            const DataVerificationInfo& /* verification_info */,
                            IODebugContext* dbg) override {
     (void)data;
@@ -330,12 +330,12 @@ class OverwritingStringSink : public FSWritableFile {
     contents_.append(slice.data(), slice.size());
     return IOStatus::OK();
   }
-  async_result AsyncAppend(const Slice& slice, const IOOptions& /*opts*/,
+  Async_future AsyncAppend(const Slice& slice, const IOOptions& /*opts*/,
                            IODebugContext* /*dbg*/) override {
     (void)slice;
     throw "Not implemented";
   }
-  async_result AsyncAppend(const Slice& data, const IOOptions& options,
+  Async_future AsyncAppend(const Slice& data, const IOOptions& options,
                            const DataVerificationInfo& /* verification_info */,
                            IODebugContext* dbg) override {
     (void)data;
@@ -397,7 +397,7 @@ class StringSource : public FSRandomAccessFile {
     return IOStatus::OK();
   }
 
-  async_result AsyncRead(uint64_t offset, size_t n, const IOOptions& options,
+  Async_future AsyncRead(uint64_t offset, size_t n, const IOOptions& options,
                          Slice* result, char* scratch,
                          IODebugContext* dbg) const override {
     (void)offset;
@@ -628,7 +628,7 @@ class StringFS : public FileSystemWrapper {
       return IOStatus::OK();
     }
 
-    virtual async_result AsyncAppend(const Slice& data,
+    virtual Async_future AsyncAppend(const Slice& data,
                                      const IOOptions& options,
                                      IODebugContext* dbg) {
       (void)data;
@@ -637,7 +637,7 @@ class StringFS : public FileSystemWrapper {
       throw "not implemented";
     }
 
-    virtual async_result AsyncAppend(
+    virtual Async_future AsyncAppend(
         const Slice& data, const IOOptions& opts,
         const DataVerificationInfo& /* verification_info */,
         IODebugContext* dbg) override {

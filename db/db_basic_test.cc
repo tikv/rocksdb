@@ -3938,7 +3938,7 @@ class DBBasicTestWithAsyncIO : public DBAsyncTestBase {
 
   void shutdown() { shutDown_ = true; }
 
-  bool RunAsyncTest(std::function<async_result(DBAsyncTestBase*)> test_func) {
+  bool RunAsyncTest(std::function<Async_future(DBAsyncTestBase*)> test_func) {
     bool success = false;
 
     auto r = test_func(this);
@@ -3967,8 +3967,8 @@ class DBBasicTestWithAsyncIO : public DBAsyncTestBase {
   }
 
  private:
-  static void OnResume(async_result::promise_type* promise) {
-    auto h = std::coroutine_handle<async_result::promise_type>::from_promise(
+  static void OnResume(Async_future::promise_type* promise) {
+    auto h = std::coroutine_handle<Async_future::promise_type>::from_promise(
         *promise);
     h.resume();
   }
@@ -3983,16 +3983,16 @@ class DBBasicTestWithAsyncIO : public DBAsyncTestBase {
   std::atomic<bool> shutDown_;
 };
 
-static async_result SimpleAsyncGetTest(DBAsyncTestBase* testBase) {
+static Async_future SimpleAsyncGetTest(DBAsyncTestBase* testBase) {
   auto io_uring = dynamic_cast<DBBasicTestWithAsyncIO*>(testBase)->io_uring();
   auto io_uring_option =
       testBase->test_delegation()
           ? new IOUringOptions(
                 [io_uring](FilePage* data, int fd, uint64_t offset,
-                           IOUringOptions::Ops op) -> async_result {
+                           IOUringOptions::Ops op) -> Async_future {
                   (void)op;
 
-                  async_result a_result(true, data);
+                  Async_future a_result(true, data);
                   auto sqe = io_uring_get_sqe(io_uring);
                   if (sqe == nullptr) {
                     // submission queue is full
@@ -4034,16 +4034,16 @@ static async_result SimpleAsyncGetTest(DBAsyncTestBase* testBase) {
   }
 }
 
-static async_result SimpleAsyncMultiGetTest(DBAsyncTestBase* testBase) {
+static Async_future SimpleAsyncMultiGetTest(DBAsyncTestBase* testBase) {
   auto io_uring = dynamic_cast<DBBasicTestWithAsyncIO*>(testBase)->io_uring();
   auto io_uring_option =
       testBase->test_delegation()
           ? new IOUringOptions(
                 [io_uring](FilePage* data, int fd, uint64_t offset,
-                           IOUringOptions::Ops op) -> async_result {
+                           IOUringOptions::Ops op) -> Async_future {
                   (void)op;
 
-                  async_result a_result(true, data);
+                  Async_future a_result(true, data);
                   auto sqe = io_uring_get_sqe(io_uring);
                   if (sqe == nullptr) {
                     // submission queue is full

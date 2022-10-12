@@ -105,7 +105,7 @@ TBlockIter* BlockBasedTable::NewDataBlockIterator(
 }
 
 template <typename TBlockIter>
-async_result BlockBasedTable::AsyncNewDataBlockIterator(
+Async_future BlockBasedTable::AsyncNewDataBlockIterator(
     const ReadOptions& ro, const BlockHandle& handle, TBlockIter* input_iter,
     BlockType block_type, GetContext* get_context,
     BlockCacheLookupContext* lookup_context, Status s,

@@ -285,7 +285,7 @@ IOStatus RandomAccessFileReader::Read(const IOOptions& opts, uint64_t offset,
   return io_s;
 }
 
-async_result RandomAccessFileReader::AsyncRead(const IOOptions& opts,
+Async_future RandomAccessFileReader::AsyncRead(const IOOptions& opts,
                                                uint64_t offset, size_t n,
                                                Slice* result, char* scratch,
                                                AlignedBuf* aligned_buf,

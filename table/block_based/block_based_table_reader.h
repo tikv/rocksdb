@@ -14,7 +14,7 @@
 #include "cache/cache_key.h"
 #include "db/range_tombstone_fragmenter.h"
 #include "file/filename.h"
-#include "rocksdb/async_result.h"
+#include "rocksdb/async_future.h"
 #include "rocksdb/slice_transform.h"
 #include "rocksdb/table_properties.h"
 #include "table/block_based/block.h"
@@ -137,7 +137,7 @@ class BlockBasedTable : public TableReader {
              GetContext* get_context, const SliceTransform* prefix_extractor,
              bool skip_filters = false) override;
 
-  async_result AsyncGet(const ReadOptions& readOptions, const Slice& key,
+  Async_future AsyncGet(const ReadOptions& readOptions, const Slice& key,
                         GetContext* get_context,
                         const SliceTransform* prefix_extractor,
                         bool skip_filters = false) override;
@@ -281,7 +281,7 @@ class BlockBasedTable : public TableReader {
       FilePrefetchBuffer* prefetch_buffer, bool for_compaction = false) const;
 
   template <typename TBlockIter>
-  async_result AsyncNewDataBlockIterator(
+  Async_future AsyncNewDataBlockIterator(
       const ReadOptions& ro, const BlockHandle& block_handle,
       TBlockIter* input_iter, BlockType block_type, GetContext* get_context,
       BlockCacheLookupContext* lookup_context, Status s,
@@ -363,7 +363,7 @@ class BlockBasedTable : public TableReader {
       BlockContents* contents) const;
 
   template <typename TBlocklike>
-  async_result AsyncMaybeReadBlockAndLoadToCache(
+  Async_future AsyncMaybeReadBlockAndLoadToCache(
       FilePrefetchBuffer* prefetch_buffer, const ReadOptions& ro,
       const BlockHandle& handle, const UncompressionDict& uncompression_dict,
       const bool wait, const bool for_compaction,
@@ -385,7 +385,7 @@ class BlockBasedTable : public TableReader {
                        bool wait_for_cache) const;
 
   template <typename TBlocklike>
-  async_result AsyncRetrieveBlock(
+  Async_future AsyncRetrieveBlock(
       FilePrefetchBuffer* prefetch_buffer, const ReadOptions& ro,
       const BlockHandle& handle, const UncompressionDict& uncompression_dict,
       CachableEntry<TBlocklike>* block_entry, BlockType block_type,
