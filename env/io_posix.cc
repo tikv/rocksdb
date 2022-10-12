@@ -49,6 +49,8 @@
 
 namespace ROCKSDB_NAMESPACE {
 
+constexpr int ASYNC_PAGE_SIZE{4096};
+
 std::string IOErrorMsg(const std::string& context,
                        const std::string& file_name) {
   if (file_name.empty()) {
@@ -123,15 +125,17 @@ bool PosixWrite(int fd, const char* buf, size_t nbyte) {
 
 async_result AsyncPosixWrite(const IOOptions& opts, int fd, const char* buf,
                              size_t nbyte) {
-  static const int PageSize = 4096;
-  int pages = (int)std::ceil((float)nbyte / PageSize);
-  int last_page_size = nbyte % PageSize;
-  int page_size = PageSize;
-  file_page* data = new file_page(pages);
+  int pages = (int)std::ceil((float)nbyte / ASYNC_PAGE_SIZE);
+  int last_page_size = nbyte % ASYNC_PAGE_SIZE;
+  int page_size = ASYNC_PAGE_SIZE;
+  auto data = new file_page(pages);
   char* no_const_buf = const_cast<char*>(buf);
-  for (int i = 0; i < pages; i++) {
+
+  for (int i = 0; i < pages; ++i) {
     data->iov[i].iov_base = no_const_buf + i * page_size;
-    if (i == pages - 1 && last_page_size != 0) page_size = last_page_size;
+    if (i == pages - 1 && last_page_size != 0) {
+      page_size = last_page_size;
+    }
     data->iov[i].iov_len = page_size;
   }
 
@@ -177,15 +181,17 @@ bool PosixPositionedWrite(int fd, const char* buf, size_t nbyte, off_t offset) {
 async_result AsyncPosixPositionedWrite(const IOOptions& opts, int fd,
                                        const char* buf, size_t nbyte,
                                        off_t offset) {
-  static const int PageSize = 4096;
-  int pages = (int)std::ceil((float)nbyte / PageSize);
-  int last_page_size = nbyte % PageSize;
-  int page_size = PageSize;
+  int pages = (int)std::ceil((float)nbyte / ASYNC_PAGE_SIZE);
+  int last_page_size = nbyte % ASYNC_PAGE_SIZE;
+  int page_size = ASYNC_PAGE_SIZE;
   file_page* data = new file_page(pages);
   char* no_const_buf = const_cast<char*>(buf);
+
   for (int i = 0; i < pages; i++) {
     data->iov[i].iov_base = no_const_buf + i * page_size;
-    if (i == pages - 1 && last_page_size != 0) page_size = last_page_size;
+    if (i == pages - 1 && last_page_size != 0) {
+      page_size = last_page_size;
+    }
     data->iov[i].iov_len = page_size;
   }
 
@@ -679,44 +685,65 @@ async_result PosixRandomAccessFile::AsyncRead(uint64_t offset, size_t n,
     assert(IsSectorAligned(scratch, GetRequiredBufferAlignment()));
   }
 
-  static const int PageSize = 4096;
-  IOStatus s;
-  int pages = (int)std::ceil((float)n / PageSize);
-  int last_page_size = n % PageSize;
-  int page_size = PageSize;
-  auto data = std::make_unique<FilePage>(pages);
+  int n_pages = n / ASYNC_PAGE_SIZE;
+  const int last_page_size = n % ASYNC_PAGE_SIZE;
 
-  for (int i = 0; i < pages; i++) {
-    data->iov[i].iov_base = scratch + i * page_size;
-    if (i == pages - 1 && last_page_size != 0) page_size = last_page_size;
-    data->iov[i].iov_len = page_size;
+  if (last_page_size > 0) {
+    ++n_pages;
+  }
+
+  auto ptr{scratch};
+  auto data{std::make_unique<FilePage>(n_pages)};
+  auto iov{&data->iov[0]};
+
+  for (int i{}; i < n_pages; ++i, ptr += (i * ASYNC_PAGE_SIZE), ++iov) {
+    iov->iov_base = ptr;
+    iov->iov_len = ASYNC_PAGE_SIZE;
+  }
+
+  if (last_page_size != 0) {
+    assert(n_pages > 0);
+
+    iov = &data->iov[n_pages - 1];
+    iov->iov_len = last_page_size;
+    // FIXME: Valgring complains about:
+    // "Conditional jump or move depends on uninitialised value(s)"
+    std::memset(iov->iov_base, 0x0, iov->iov_len);
   }
 
   if (opts.io_uring_option->ioring != nullptr) {
-    async_result a_result(true, data.get());
-    auto sqe = io_uring_get_sqe(opts.io_uring_option->ioring);
+    auto sqe{io_uring_get_sqe(opts.io_uring_option->ioring)};
+
     if (sqe == nullptr) {
-      // submission queue is full
-      co_return IOStatus::IOError(Status::SubCode::kIOUringSqeFull, Slice());
+      /* Submission queue is full. */
+      const auto error{Status::SubCode::kIOUringSqeFull};
+
+      co_return IOStatus::IOError(error, Slice());
     }
 
-    io_uring_prep_readv(sqe, fd_, data->iov, pages, offset);
+    io_uring_prep_readv(sqe, fd_, data->iov, n_pages, offset);
     io_uring_sqe_set_data(sqe, data.get());
-    auto ret = io_uring_submit(opts.io_uring_option->ioring);
+
+    const auto ret = io_uring_submit(opts.io_uring_option->ioring);
+
     if (ret < 0) {
-      co_return IOStatus::IOError(Status::SubCode::kIOUringSubmitError,
-                                  strerror(-ret));
+      const auto error{Status::SubCode::kIOUringSubmitError};
+
+      co_return IOStatus::IOError(error, strerror(-ret));
     }
 
-    co_await a_result;
+    co_await async_result{true, data.get()};
+
   } else {
-    co_await opts.io_uring_option->delegate(data.get(), fd_, offset,
-                                            IOUringOptions::Ops::Read);
+    const auto op{IOUringOptions::Ops::Read};
+    auto delegate{opts.io_uring_option->delegate};
+
+    co_await delegate(data.get(), fd_, offset, op);
   }
 
   *result = Slice(scratch, n);
-  co_return IOStatus::OK();
 
+  co_return IOStatus::OK();
 }
 
 IOStatus PosixRandomAccessFile::MultiRead(FSReadRequest* reqs,
