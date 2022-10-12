@@ -71,6 +71,7 @@ class BlockFetcher {
   }
 
   IOStatus ReadBlockContents();
+  Async_future AsyncReadBlockContents();
   inline CompressionType get_compression_type() const {
     return compression_type_;
   }

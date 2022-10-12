@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <liburing.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -18,6 +19,7 @@
 #include <vector>
 
 #include "rocksdb/advanced_options.h"
+#include "rocksdb/async_future.h"
 #include "rocksdb/comparator.h"
 #include "rocksdb/compression_type.h"
 #include "rocksdb/customizable.h"
@@ -1441,6 +1443,27 @@ enum ReadTier {
   kMemtableTier = 0x3     // data in memtable. used for memtable-only iterators.
 };
 
+struct IOUringOptions {
+  enum class Ops { Read, Write };
+
+  IOUringOptions(struct io_uring* ring) : ioring{ring}, sqe_count{0} {
+    assert(ring != nullptr);
+  }
+
+  IOUringOptions(
+      std::function<Async_future(FilePage*, int, uint64_t, Ops)>&& deleg)
+      : ioring{nullptr},
+        sqe_count{0},
+        delegate{std::forward<
+            std::function<Async_future(FilePage*, int, uint64_t, Ops)>>(
+            deleg)} {}
+
+  struct io_uring* ioring;
+  std::atomic<int> sqe_count;
+  std::function<Async_future(FilePage*, int, uint64_t, Ops)> delegate;
+
+};
+
 // Options that control read operations
 struct ReadOptions {
   // If "snapshot" is non-nullptr, read as of the supplied snapshot
@@ -1635,6 +1658,9 @@ struct ReadOptions {
   // Default: false
   bool adaptive_readahead;
 
+  //
+  IOUringOptions* io_uring_option;
+
   ReadOptions();
   ReadOptions(bool cksum, bool cache);
 };
@@ -1696,13 +1722,17 @@ struct WriteOptions {
   // Default: false
   bool memtable_insert_hint_per_batch;
 
+  //
+  const IOUringOptions* io_uring_option;
+
   WriteOptions()
       : sync(false),
         disableWAL(false),
         ignore_missing_column_families(false),
         no_slowdown(false),
         low_pri(false),
-        memtable_insert_hint_per_batch(false) {}
+        memtable_insert_hint_per_batch(false),
+	io_uring_option{nullptr} {}
 };
 
 // Options that control flush operations
