@@ -14,6 +14,7 @@
 
 #include "env/file_system_tracer.h"
 #include "port/port.h"
+#include "rocksdb/async_future.h"
 #include "rocksdb/file_system.h"
 #include "rocksdb/listener.h"
 #include "rocksdb/options.h"
@@ -142,6 +143,10 @@ class RandomAccessFileReader {
   IOStatus Read(const IOOptions& opts, uint64_t offset, size_t n, Slice* result,
                 char* scratch, AlignedBuf* aligned_buf,
                 bool for_compaction = false) const;
+
+  Async_future AsyncRead(const IOOptions& opts, uint64_t offset, size_t n,
+                         Slice* result, char* scratch, AlignedBuf* aligned_buf,
+                         bool for_compaction = false) const;
 
   // REQUIRES:
   // num_reqs > 0, reqs do not overlap, and offsets in reqs are increasing.

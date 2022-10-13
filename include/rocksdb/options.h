@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <liburing.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -18,6 +19,7 @@
 #include <vector>
 
 #include "rocksdb/advanced_options.h"
+#include "rocksdb/async_future.h"
 #include "rocksdb/comparator.h"
 #include "rocksdb/compression_type.h"
 #include "rocksdb/customizable.h"
@@ -1635,6 +1637,9 @@ struct ReadOptions {
   // Default: false
   bool adaptive_readahead;
 
+  // IOUring callback for async API.
+  std::shared_ptr<Async_future::Submit_queue> submit_queue;
+
   ReadOptions();
   ReadOptions(bool cksum, bool cache);
 };
@@ -1696,13 +1701,17 @@ struct WriteOptions {
   // Default: false
   bool memtable_insert_hint_per_batch;
 
+  // IOUring callback for async API.
+  std::shared_ptr<Async_future::Submit_queue> submit_queue;
+
   WriteOptions()
       : sync(false),
         disableWAL(false),
         ignore_missing_column_families(false),
         no_slowdown(false),
         low_pri(false),
-        memtable_insert_hint_per_batch(false) {}
+        memtable_insert_hint_per_batch(false),
+	submit_queue{} {}
 };
 
 // Options that control flush operations

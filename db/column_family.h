@@ -211,6 +211,9 @@ struct SuperVersion {
   // should be called outside the mutex
   SuperVersion() = default;
   ~SuperVersion();
+
+  uint32_t GetRef() const;
+
   SuperVersion* Ref();
   // If Unref() returns true, Cleanup() should be called with mutex held
   // before deleting this SuperVersion.
@@ -274,7 +277,9 @@ class ColumnFamilyData {
   // Ref() can only be called from a context where the caller can guarantee
   // that ColumnFamilyData is alive (while holding a non-zero ref already,
   // holding a DB mutex, or as the leader in a write batch group).
-  void Ref() { refs_.fetch_add(1); }
+  void Ref() {
+    refs_.fetch_add(1);
+  }
 
   // UnrefAndTryDelete() decreases the reference count and do free if needed,
   // return true if this is freed else false, UnrefAndTryDelete() can only
@@ -440,7 +445,7 @@ class ColumnFamilyData {
   // Try to return SuperVersion back to thread local storage. Return true on
   // success and false on failure. It fails when the thread local storage
   // contains anything other than SuperVersion::kSVInUse flag.
-  bool ReturnThreadLocalSuperVersion(SuperVersion* sv);
+  bool ReturnThreadLocalSuperVersion(DBImpl* db, SuperVersion* sv);
   // thread-safe
   uint64_t GetSuperVersionNumber() const {
     return super_version_number_.load();

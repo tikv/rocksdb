@@ -23,6 +23,7 @@
 
 #include "db/db_impl/db_impl.h"
 #include "file/filename.h"
+#include "rocksdb/async_future.h"
 #include "rocksdb/cache.h"
 #include "rocksdb/compaction_filter.h"
 #include "rocksdb/convenience.h"
@@ -829,6 +830,41 @@ class CacheWrapper : public Cache {
 
  protected:
   std::shared_ptr<Cache> target_;
+};
+
+class DBAsyncTestBase : public testing::Test {
+ public:
+  DBAsyncTestBase(const std::string path) {
+    Env* env = Env::Default();
+    env->SetBackgroundThreads(1, Env::LOW);
+    env->SetBackgroundThreads(1, Env::HIGH);
+    dbname_ = test::PerThreadDBPath(env, path);
+    Options options;
+    options.create_if_missing = true;
+    options.env = env;
+    auto s = DB::Open(options, dbname_, &db_);
+    std::cout << "Open:" << s.ToString() << "\n";
+  }
+
+  ~DBAsyncTestBase() {
+    db_->Close();
+    delete db_;
+    db_ = nullptr;
+  }
+
+  // if set to true, IO_URING handling logic is delegated to lambda passed by
+  // caller.
+  bool test_delegation() { return test_delegation_; }
+  void set_test_delegation(bool test_delegation) {
+    test_delegation_ = test_delegation;
+  }
+
+  DB* db() { return db_; }
+
+ private:
+  std::string dbname_;
+  DB* db_;
+  bool test_delegation_ = false;
 };
 
 class DBTestBase : public testing::Test {
