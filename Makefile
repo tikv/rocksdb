@@ -22,6 +22,8 @@ MACHINE ?= $(shell uname -m)
 ARFLAGS = ${EXTRA_ARFLAGS} rs
 STRIPFLAGS = -S -x
 
+CXXFLAGS += -fcoroutines
+
 # Transform parallel LOG output into something more readable.
 perl_command = perl -n \
   -e '@a=split("\t",$$_,-1); $$t=$$a[8];'				\
@@ -46,7 +48,7 @@ quoted_perl_command = $(subst ','\'',$(perl_command))
 # `make install`
 
 # Set the default DEBUG_LEVEL to 1
-DEBUG_LEVEL?=1
+DEBUG_LEVEL?=2
 
 # LIB_MODE says whether or not to use/build "shared" or "static" libraries.
 # Mode "static" means to link against static libraries (.a)
@@ -69,7 +71,7 @@ else ifneq ($(filter shared_lib install-shared, $(MAKECMDGOALS)),)
 	DEBUG_LEVEL=0
 	LIB_MODE=shared
 else ifneq ($(filter static_lib install-static, $(MAKECMDGOALS)),)
-	DEBUG_LEVEL=0
+	DEBUG_LEVEL=2
 	LIB_MODE=static
 else ifneq ($(filter jtest rocksdbjava%, $(MAKECMDGOALS)),)
 	OBJ_DIR=jl
@@ -145,7 +147,7 @@ ifeq ($(DEBUG_LEVEL),0)
 OPT += -DNDEBUG
 
 ifneq ($(USE_RTTI), 1)
-	CXXFLAGS += -fno-rtti
+	# CXXFLAGS += -fno-rtti
 else
 	CXXFLAGS += -DROCKSDB_USE_RTTI
 endif
@@ -153,7 +155,7 @@ else
 ifneq ($(USE_RTTI), 0)
 	CXXFLAGS += -DROCKSDB_USE_RTTI
 else
-	CXXFLAGS += -fno-rtti
+	# CXXFLAGS += -fno-rtti
 endif
 
 ifdef ASSERT_STATUS_CHECKED

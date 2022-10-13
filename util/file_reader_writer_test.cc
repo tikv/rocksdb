@@ -39,6 +39,16 @@ TEST_F(WritableFileWriterTest, RangeSync) {
       size_ += data.size();
       return IOStatus::OK();
     }
+    using FSWritableFile::AsyncAppend;
+    virtual Async_future AsyncAppend(const Slice& data,
+                                     const IOOptions& options,
+                                     IODebugContext* dbg) override {
+      (void)data;
+      (void)options;
+      (void)dbg;
+      throw "Not implemented";
+    }
+
     IOStatus Truncate(uint64_t /*size*/, const IOOptions& /*options*/,
                       IODebugContext* /*dbg*/) override {
       return IOStatus::OK();
@@ -143,6 +153,16 @@ TEST_F(WritableFileWriterTest, IncrementalBuffer) {
       size_ += data.size();
       return IOStatus::OK();
     }
+    using FSWritableFile::AsyncAppend;
+    virtual Async_future AsyncAppend(const Slice& data,
+                                     const IOOptions& options,
+                                     IODebugContext* dbg) override {
+      (void)data;
+      (void)options;
+      (void)dbg;
+      throw "Not implemented";
+    }
+
     using FSWritableFile::PositionedAppend;
     IOStatus PositionedAppend(const Slice& data, uint64_t pos,
                               const IOOptions& /*options*/,
@@ -432,6 +452,15 @@ TEST_F(WritableFileWriterTest, AppendStatusReturn) {
       }
       return IOStatus::OK();
     }
+    using FSWritableFile::AsyncAppend;
+    Async_future AsyncAppend(const Slice& data, const IOOptions& options,
+                             IODebugContext* dbg) override {
+      (void)data;
+      (void)options;
+      (void)dbg;
+      throw "Not implemented";
+    }
+
     IOStatus Close(const IOOptions& /*options*/,
                    IODebugContext* /*dbg*/) override {
       return IOStatus::OK();
@@ -807,6 +836,16 @@ TEST_F(DBWritableFileWriterTest, IOErrorNotification) {
         return IOStatus::IOError("Fake IO error");
       }
       return IOStatus::OK();
+    }
+
+    using FSWritableFile::AsyncAppend;
+    virtual Async_future AsyncAppend(const Slice& data,
+                                     const IOOptions& options,
+                                     IODebugContext* dbg) override {
+      (void)data;
+      (void)options;
+      (void)dbg;
+      throw "Not implemented";
     }
 
     using FSWritableFile::PositionedAppend;

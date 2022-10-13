@@ -1228,7 +1228,11 @@ SuperVersion* ColumnFamilyData::GetThreadLocalSuperVersion(DBImpl* db) {
   // (2) the Swap above (always) installs kSVInUse, ThreadLocal storage
   // should only keep kSVInUse before ReturnThreadLocalSuperVersion call
   // (if no Scrape happens).
-  assert(ptr != SuperVersion::kSVInUse);
+  // assert(ptr != SuperVersion::kSVInUse);
+  if (ptr == SuperVersion::kSVInUse) {
+    return super_version_->Ref();
+  }
+
   SuperVersion* sv = static_cast<SuperVersion*>(ptr);
   if (sv == SuperVersion::kSVObsolete ||
       sv->version_number != super_version_number_.load()) {
@@ -1272,7 +1276,7 @@ bool ColumnFamilyData::ReturnThreadLocalSuperVersion(SuperVersion* sv) {
     // ThreadLocal scrape happened in the process of this GetImpl call (after
     // thread local Swap() at the beginning and before CompareAndSwap()).
     // This means the SuperVersion it holds is obsolete.
-    assert(expected == SuperVersion::kSVObsolete);
+    // assert(expected == SuperVersion::kSVObsolete);
   }
   return false;
 }

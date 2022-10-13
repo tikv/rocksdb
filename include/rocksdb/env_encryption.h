@@ -9,6 +9,7 @@
 
 #include <string>
 
+#include "rocksdb/async_future.h"
 #include "rocksdb/customizable.h"
 #include "rocksdb/env.h"
 #include "rocksdb/file_system.h"
@@ -265,6 +266,18 @@ class EncryptedRandomAccessFile : public FSRandomAccessFile {
                 Slice* result, char* scratch,
                 IODebugContext* dbg) const override;
 
+  Async_future AsyncRead(uint64_t offset, size_t n, const IOOptions& options,
+                         Slice* result, char* scratch,
+                         IODebugContext* dbg) const override {
+    (void)offset;
+    (void)n;
+    (void)options;
+    (void)result;
+    (void)scratch;
+    (void)dbg;
+    throw "Not implemented";
+  }
+
   // Readahead the file starting from offset by n bytes for caching.
   IOStatus Prefetch(uint64_t offset, size_t n, const IOOptions& options,
                     IODebugContext* dbg) override;
@@ -323,6 +336,22 @@ class EncryptedWritableFile : public FSWritableFile {
   using FSWritableFile::Append;
   IOStatus Append(const Slice& data, const IOOptions& options,
                   IODebugContext* dbg) override;
+  Async_future AsyncAppend(const Slice& data, const IOOptions& options,
+                           IODebugContext* dbg) override {
+    (void)data;
+    (void)options;
+    (void)dbg;
+    throw "Not implemented";
+  };
+
+  Async_future AsyncAppend(const Slice& data, const IOOptions& options,
+                           const DataVerificationInfo& /* verification_info */,
+                           IODebugContext* dbg) override {
+    (void)data;
+    (void)options;
+    (void)dbg;
+    throw "Not implemented";
+  }
 
   using FSWritableFile::PositionedAppend;
   IOStatus PositionedAppend(const Slice& data, uint64_t offset,

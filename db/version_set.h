@@ -48,6 +48,7 @@
 #include "monitoring/instrumented_mutex.h"
 #include "options/db_options.h"
 #include "port/port.h"
+#include "rocksdb/async_future.h"
 #include "rocksdb/env.h"
 #include "rocksdb/file_checksum.h"
 #include "table/get_context.h"
@@ -780,6 +781,15 @@ class Version {
            bool* value_found = nullptr, bool* key_exists = nullptr,
            SequenceNumber* seq = nullptr, ReadCallback* callback = nullptr,
            bool* is_blob = nullptr, bool do_merge = true);
+
+  Async_future AsyncGet(
+	   const ReadOptions&, const LookupKey& key, PinnableSlice* value,
+	   std::string* timestamp, Status* status, MergeContext* merge_context,
+	   SequenceNumber* max_covering_tombstone_seq,
+	   PinnedIteratorsManager* pinned_iters_mgr,
+	   bool* value_found = nullptr, bool* key_exists = nullptr,
+	   SequenceNumber* seq = nullptr, ReadCallback* callback = nullptr,
+	   bool* is_blob = nullptr, bool do_merge = true);
 
   void MultiGet(const ReadOptions&, MultiGetRange* range,
                 ReadCallback* callback = nullptr);
