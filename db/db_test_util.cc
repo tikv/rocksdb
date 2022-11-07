@@ -555,8 +555,8 @@ Options DBTestBase::GetOptions(
       options.enable_pipelined_write = true;
       break;
     }
-    case kCommitPipeline: {
-      options.enable_pipelined_commit = true;
+    case kMultiBatchWrite: {
+      options.enable_multi_batch_write = true;
       options.enable_pipelined_write = false;
       options.two_write_queues = false;
       break;
@@ -790,10 +790,6 @@ Status DBTestBase::SingleDelete(const std::string& k) {
 
 Status DBTestBase::SingleDelete(int cf, const std::string& k) {
   return db_->SingleDelete(WriteOptions(), handles_[cf], k);
-}
-
-bool DBTestBase::SetPreserveDeletesSequenceNumber(SequenceNumber sn) {
-  return db_->SetPreserveDeletesSequenceNumber(sn);
 }
 
 std::string DBTestBase::Get(const std::string& k, const Snapshot* snapshot) {

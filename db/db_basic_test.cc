@@ -3703,6 +3703,29 @@ TEST_F(DBBasicTest, VerifyFileChecksums) {
   Reopen(options);
   ASSERT_TRUE(db_->VerifyFileChecksums(ReadOptions()).IsInvalidArgument());
 }
+
+// TODO: re-enable after we provide finer-grained control for WAL tracking to
+// meet the needs of different use cases, durability levels and recovery modes.
+TEST_F(DBBasicTest, DISABLED_ManualWalSync) {
+  Options options = CurrentOptions();
+  options.track_and_verify_wals_in_manifest = true;
+  options.wal_recovery_mode = WALRecoveryMode::kAbsoluteConsistency;
+  DestroyAndReopen(options);
+
+  ASSERT_OK(Put("x", "y"));
+  // This does not create a new WAL.
+  ASSERT_OK(db_->SyncWAL());
+  EXPECT_FALSE(dbfull()->GetVersionSet()->GetWalSet().GetWals().empty());
+
+  std::unique_ptr<LogFile> wal;
+  Status s = db_->GetCurrentWalFile(&wal);
+  ASSERT_OK(s);
+  Close();
+
+  EXPECT_OK(env_->DeleteFile(LogFileName(dbname_, wal->LogNumber())));
+
+  ASSERT_TRUE(TryReopen(options).IsCorruption());
+}
 #endif  // !ROCKSDB_LITE
 
 // A test class for intercepting random reads and injecting artificial

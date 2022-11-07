@@ -646,7 +646,8 @@ TEST_F(VersionStorageInfoTest, ForcedBlobGC) {
 class VersionStorageInfoTimestampTest : public VersionStorageInfoTestBase {
  public:
   VersionStorageInfoTimestampTest()
-      : VersionStorageInfoTestBase(test::ComparatorWithU64Ts()) {}
+      : VersionStorageInfoTestBase(test::BytewiseComparatorWithU64TsWrapper()) {
+  }
   ~VersionStorageInfoTimestampTest() override {}
   std::string Timestamp(uint64_t ts) const {
     std::string ret;
@@ -1749,6 +1750,7 @@ TEST_F(VersionSetTest, WalCreateAfterClose) {
 
 TEST_F(VersionSetTest, AddWalWithSmallerSize) {
   NewDB();
+  assert(versions_);
 
   constexpr WalNumber kLogNumber = 10;
   constexpr uint64_t kSizeInBytes = 111;
@@ -1761,6 +1763,9 @@ TEST_F(VersionSetTest, AddWalWithSmallerSize) {
 
     ASSERT_OK(LogAndApplyToDefaultCF(edit));
   }
+  // Copy for future comparison.
+  const std::map<WalNumber, WalMetadata> wals1 =
+      versions_->GetWalSet().GetWals();
 
   {
     // Add the same WAL with smaller synced size.
@@ -1769,13 +1774,11 @@ TEST_F(VersionSetTest, AddWalWithSmallerSize) {
     edit.AddWal(kLogNumber, wal);
 
     Status s = LogAndApplyToDefaultCF(edit);
-    ASSERT_TRUE(s.IsCorruption());
-    ASSERT_TRUE(
-        s.ToString().find(
-            "WAL 10 must not have smaller synced size than previous one") !=
-        std::string::npos)
-        << s.ToString();
+    ASSERT_OK(s);
   }
+  const std::map<WalNumber, WalMetadata> wals2 =
+      versions_->GetWalSet().GetWals();
+  ASSERT_EQ(wals1, wals2);
 }
 
 TEST_F(VersionSetTest, DeleteWalsBeforeNonExistingWalNumber) {
@@ -1912,7 +1915,7 @@ class VersionSetWithTimestampTest : public VersionSetTest {
   void SetUp() override {
     NewDB();
     Options options;
-    options.comparator = test::ComparatorWithU64Ts();
+    options.comparator = test::BytewiseComparatorWithU64TsWrapper();
     cfd_ = CreateColumnFamily(kNewCfName, options);
     EXPECT_NE(nullptr, cfd_);
     EXPECT_NE(nullptr, cfd_->GetLatestMutableCFOptions());

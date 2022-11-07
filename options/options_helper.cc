@@ -139,8 +139,8 @@ DBOptions BuildDBOptions(const ImmutableDBOptions& immutable_db_options,
   options.enable_thread_tracking = immutable_db_options.enable_thread_tracking;
   options.delayed_write_rate = mutable_db_options.delayed_write_rate;
   options.enable_pipelined_write = immutable_db_options.enable_pipelined_write;
-  options.enable_pipelined_commit =
-      immutable_db_options.enable_pipelined_commit;
+  options.enable_multi_batch_write =
+      immutable_db_options.enable_multi_batch_write;
   options.unordered_write = immutable_db_options.unordered_write;
   options.allow_concurrent_memtable_write =
       immutable_db_options.allow_concurrent_memtable_write;
@@ -169,10 +169,7 @@ DBOptions BuildDBOptions(const ImmutableDBOptions& immutable_db_options,
       immutable_db_options.avoid_flush_during_recovery;
   options.avoid_flush_during_shutdown =
       mutable_db_options.avoid_flush_during_shutdown;
-  options.allow_ingest_behind =
-      immutable_db_options.allow_ingest_behind;
-  options.preserve_deletes =
-      immutable_db_options.preserve_deletes;
+  options.allow_ingest_behind = immutable_db_options.allow_ingest_behind;
   options.two_write_queues = immutable_db_options.two_write_queues;
   options.manual_wal_flush = immutable_db_options.manual_wal_flush;
   options.atomic_flush = immutable_db_options.atomic_flush;

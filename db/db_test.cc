@@ -2867,6 +2867,11 @@ class ModelDB : public DB {
     }
     return Write(o, &batch);
   }
+  Status Put(const WriteOptions& /*o*/, ColumnFamilyHandle* /*cf*/,
+             const Slice& /*k*/, const Slice& /*ts*/,
+             const Slice& /*v*/) override {
+    return Status::NotSupported();
+  }
   using DB::Close;
   Status Close() override { return Status::OK(); }
   using DB::Delete;
@@ -2879,6 +2884,10 @@ class ModelDB : public DB {
     }
     return Write(o, &batch);
   }
+  Status Delete(const WriteOptions& /*o*/, ColumnFamilyHandle* /*cf*/,
+                const Slice& /*key*/, const Slice& /*ts*/) override {
+    return Status::NotSupported();
+  }
   using DB::SingleDelete;
   Status SingleDelete(const WriteOptions& o, ColumnFamilyHandle* cf,
                       const Slice& key) override {
@@ -2888,6 +2897,10 @@ class ModelDB : public DB {
       return s;
     }
     return Write(o, &batch);
+  }
+  Status SingleDelete(const WriteOptions& /*o*/, ColumnFamilyHandle* /*cf*/,
+                      const Slice& /*key*/, const Slice& /*ts*/) override {
+    return Status::NotSupported();
   }
   using DB::Merge;
   Status Merge(const WriteOptions& o, ColumnFamilyHandle* cf, const Slice& k,
@@ -3007,7 +3020,9 @@ class ModelDB : public DB {
     delete reinterpret_cast<const ModelSnapshot*>(snapshot);
   }
 
-  Status Write(const WriteOptions& /*options*/, WriteBatch* batch) override {
+  using DB::Write;
+  Status Write(const WriteOptions& /*options*/, WriteBatch* batch,
+               uint64_t* /*seq*/) override {
     class Handler : public WriteBatch::Handler {
      public:
       KVMap* map_;
@@ -3203,10 +3218,6 @@ class ModelDB : public DB {
   }
 
   SequenceNumber GetLatestSequenceNumber() const override { return 0; }
-
-  bool SetPreserveDeletesSequenceNumber(SequenceNumber /*seqnum*/) override {
-    return true;
-  }
 
   Status IncreaseFullHistoryTsLow(ColumnFamilyHandle* /*cf*/,
                                   std::string /*ts_low*/) override {

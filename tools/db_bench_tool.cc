@@ -1569,6 +1569,9 @@ DEFINE_string(
     encryption_method, "",
     "If non-empty, enable encryption with the specific encryption method.");
 
+DEFINE_bool(track_and_verify_wals_in_manifest, false,
+            "If true, enable WAL tracking in the MANIFEST");
+
 namespace ROCKSDB_NAMESPACE {
 namespace {
 static Status CreateMemTableRepFactory(
@@ -1609,6 +1612,60 @@ struct ReportFileOpCounters {
   std::atomic<int> append_counter_;
   std::atomic<uint64_t> bytes_read_;
   std::atomic<uint64_t> bytes_written_;
+};
+
+class WriteBatchVec {
+ public:
+  explicit WriteBatchVec(uint32_t max_batch_size)
+      : max_batch_size_(max_batch_size), current_(0) {}
+  ~WriteBatchVec() {
+    for (auto w : batches_) {
+      delete w;
+    }
+  }
+  void Clear() {
+    for (size_t i = 0; i <= current_ && i < batches_.size(); i++) {
+      batches_[i]->Clear();
+    }
+    current_ = 0;
+  }
+
+  Status Put(const Slice& key, const Slice& value) {
+    if (current_ < batches_.size() &&
+        batches_[current_]->Count() < max_batch_size_) {
+      return batches_[current_]->Put(key, value);
+    } else if (current_ + 1 >= batches_.size()) {
+      batches_.push_back(new WriteBatch);
+    }
+    if (current_ + 1 < batches_.size()) {
+      current_ += 1;
+    }
+    return batches_[current_]->Put(key, value);
+  }
+
+  std::vector<WriteBatch*> GetWriteBatch() const {
+    std::vector<WriteBatch*> batches;
+    for (size_t i = 0; i < batches_.size(); i++) {
+      if (i > current_) {
+        break;
+      }
+      batches.push_back(batches_[i]);
+    }
+    return batches;
+  }
+
+  uint32_t Count() const {
+    uint32_t count = 0;
+    for (size_t i = 0; i <= current_ && i < batches_.size(); i++) {
+      count += batches_[i]->Count();
+    }
+    return count;
+  }
+
+ private:
+  uint32_t max_batch_size_;
+  size_t current_;
+  std::vector<WriteBatch*> batches_;
 };
 
 // A special Env to records and report file operations in db_bench
@@ -4388,8 +4445,11 @@ class Benchmark {
         fprintf(stderr, "Only 64 bits timestamps are supported.\n");
         exit(1);
       }
-      options.comparator = ROCKSDB_NAMESPACE::test::ComparatorWithU64Ts();
+      options.comparator = test::BytewiseComparatorWithU64TsWrapper();
     }
+
+    options.track_and_verify_wals_in_manifest =
+        FLAGS_track_and_verify_wals_in_manifest;
 
     // Integrated BlobDB
     options.enable_blob_files = FLAGS_enable_blob_files;
@@ -4550,7 +4610,7 @@ class Benchmark {
     uint64_t open_start = FLAGS_report_open_timing ? FLAGS_env->NowNanos() : 0;
     Status s;
     if (use_multi_write_) {
-      options.enable_pipelined_commit = true;
+      options.enable_multi_batch_write = true;
     }
     // Open with column families if necessary.
     if (FLAGS_num_column_families > 1) {
@@ -4827,7 +4887,8 @@ class Benchmark {
 
     RandomGenerator gen;
     WriteBatch batch(/*reserved_bytes=*/0, /*max_bytes=*/0,
-                     user_timestamp_size_);
+                     /*protection_bytes_per_key=*/0, user_timestamp_size_);
+    WriteBatchVec batches(32);
     Status s;
     int64_t bytes = 0;
 
@@ -4941,6 +5002,7 @@ class Benchmark {
       size_t id = thread->rand.Next() % num_key_gens;
       DBWithColumnFamilies* db_with_cfh = SelectDBWithCfh(id);
       batch.Clear();
+      batches.Clear();
       int64_t batch_bytes = 0;
 
       for (int64_t j = 0; j < entries_per_batch_; j++) {
@@ -5056,7 +5118,9 @@ class Benchmark {
         } else {
           val = gen.Generate();
         }
-        if (use_blob_db_) {
+        if (use_multi_write_) {
+          batches.Put(key, val);
+        } else if (use_blob_db_) {
 #ifndef ROCKSDB_LITE
           // Stacked BlobDB
           blob_db::BlobDB* blobdb =
@@ -5157,14 +5221,18 @@ class Benchmark {
       }
       if (user_timestamp_size_ > 0) {
         Slice user_ts = mock_app_clock_->Allocate(ts_guard.get());
-        s = batch.AssignTimestamp(user_ts);
+        s = batch.UpdateTimestamps(
+            user_ts, [this](uint32_t) { return user_timestamp_size_; });
         if (!s.ok()) {
           fprintf(stderr, "assign timestamp to write batch: %s\n",
                   s.ToString().c_str());
           ErrorExit();
         }
       }
-      if (!use_blob_db_) {
+      if (use_multi_write_) {
+        s = db_with_cfh->db->MultiBatchWrite(write_options_,
+                                             batches.GetWriteBatch());
+      } else if (!use_blob_db_) {
         // Not stacked BlobDB
         s = db_with_cfh->db->Write(write_options_, &batch);
       }
@@ -6557,7 +6625,7 @@ class Benchmark {
 
   void DoDelete(ThreadState* thread, bool seq) {
     WriteBatch batch(/*reserved_bytes=*/0, /*max_bytes=*/0,
-                     user_timestamp_size_);
+                     /*protection_bytes_per_key=*/0, user_timestamp_size_);
     Duration duration(seq ? 0 : FLAGS_duration, deletes_);
     int64_t i = 0;
     std::unique_ptr<const char[]> key_guard;
@@ -6579,7 +6647,8 @@ class Benchmark {
       Status s;
       if (user_timestamp_size_ > 0) {
         ts = mock_app_clock_->Allocate(ts_guard.get());
-        s = batch.AssignTimestamp(ts);
+        s = batch.UpdateTimestamps(
+            ts, [this](uint32_t) { return user_timestamp_size_; });
         if (!s.ok()) {
           fprintf(stderr, "assign timestamp: %s\n", s.ToString().c_str());
           ErrorExit();
@@ -6673,17 +6742,17 @@ class Benchmark {
       Slice ts;
       if (user_timestamp_size_ > 0) {
         ts = mock_app_clock_->Allocate(ts_guard.get());
-        write_options_.timestamp = &ts;
       }
       if (write_merge == kWrite) {
-        s = db->Put(write_options_, key, val);
+        if (user_timestamp_size_ == 0) {
+          s = db->Put(write_options_, key, val);
+        } else {
+          s = db->Put(write_options_, key, ts, val);
+        }
       } else {
         s = db->Merge(write_options_, key, val);
       }
       // Restore write_options_
-      if (user_timestamp_size_ > 0) {
-        write_options_.timestamp = nullptr;
-      }
       written++;
 
       if (!s.ok()) {
@@ -6757,7 +6826,7 @@ class Benchmark {
     std::string keys[3];
 
     WriteBatch batch(/*reserved_bytes=*/0, /*max_bytes=*/0,
-                     user_timestamp_size_);
+                     /*protection_bytes_per_key=*/0, user_timestamp_size_);
     Status s;
     for (int i = 0; i < 3; i++) {
       keys[i] = key.ToString() + suffixes[i];
@@ -6768,7 +6837,8 @@ class Benchmark {
     if (user_timestamp_size_ > 0) {
       ts_guard.reset(new char[user_timestamp_size_]);
       Slice ts = mock_app_clock_->Allocate(ts_guard.get());
-      s = batch.AssignTimestamp(ts);
+      s = batch.UpdateTimestamps(
+          ts, [this](uint32_t) { return user_timestamp_size_; });
       if (!s.ok()) {
         fprintf(stderr, "assign timestamp to batch: %s\n",
                 s.ToString().c_str());
@@ -6788,7 +6858,8 @@ class Benchmark {
     std::string suffixes[3] = {"1", "2", "0"};
     std::string keys[3];
 
-    WriteBatch batch(0, 0, user_timestamp_size_);
+    WriteBatch batch(0, 0, /*protection_bytes_per_key=*/0,
+                     user_timestamp_size_);
     Status s;
     for (int i = 0; i < 3; i++) {
       keys[i] = key.ToString() + suffixes[i];
@@ -6799,7 +6870,8 @@ class Benchmark {
     if (user_timestamp_size_ > 0) {
       ts_guard.reset(new char[user_timestamp_size_]);
       Slice ts = mock_app_clock_->Allocate(ts_guard.get());
-      s = batch.AssignTimestamp(ts);
+      s = batch.UpdateTimestamps(
+          ts, [this](uint32_t) { return user_timestamp_size_; });
       if (!s.ok()) {
         fprintf(stderr, "assign timestamp to batch: %s\n",
                 s.ToString().c_str());
@@ -6988,12 +7060,13 @@ class Benchmark {
       } else  if (put_weight > 0) {
         // then do all the corresponding number of puts
         // for all the gets we have done earlier
-        Slice ts;
+        Status s;
         if (user_timestamp_size_ > 0) {
-          ts = mock_app_clock_->Allocate(ts_guard.get());
-          write_options_.timestamp = &ts;
+          Slice ts = mock_app_clock_->Allocate(ts_guard.get());
+          s = db->Put(write_options_, key, ts, gen.Generate());
+        } else {
+          s = db->Put(write_options_, key, gen.Generate());
         }
-        Status s = db->Put(write_options_, key, gen.Generate());
         if (!s.ok()) {
           fprintf(stderr, "put error: %s\n", s.ToString().c_str());
           ErrorExit();
@@ -7054,11 +7127,13 @@ class Benchmark {
       }
 
       Slice val = gen.Generate();
+      Status s;
       if (user_timestamp_size_ > 0) {
         ts = mock_app_clock_->Allocate(ts_guard.get());
-        write_options_.timestamp = &ts;
+        s = db->Put(write_options_, key, ts, val);
+      } else {
+        s = db->Put(write_options_, key, val);
       }
-      Status s = db->Put(write_options_, key, val);
       if (!s.ok()) {
         fprintf(stderr, "put error: %s\n", s.ToString().c_str());
         exit(1);
@@ -7121,12 +7196,13 @@ class Benchmark {
         xor_operator.XOR(nullptr, value, &new_value);
       }
 
+      Status s;
       if (user_timestamp_size_ > 0) {
         ts = mock_app_clock_->Allocate(ts_guard.get());
-        write_options_.timestamp = &ts;
+        s = db->Put(write_options_, key, ts, Slice(new_value));
+      } else {
+        s = db->Put(write_options_, key, Slice(new_value));
       }
-
-      Status s = db->Put(write_options_, key, Slice(new_value));
       if (!s.ok()) {
         fprintf(stderr, "put error: %s\n", s.ToString().c_str());
         ErrorExit();
@@ -7187,13 +7263,14 @@ class Benchmark {
       }
       value.append(operand.data(), operand.size());
 
+      Status s;
       if (user_timestamp_size_ > 0) {
         ts = mock_app_clock_->Allocate(ts_guard.get());
-        write_options_.timestamp = &ts;
+        s = db->Put(write_options_, key, ts, value);
+      } else {
+        // Write back to the database
+        s = db->Put(write_options_, key, value);
       }
-
-      // Write back to the database
-      Status s = db->Put(write_options_, key, value);
       if (!s.ok()) {
         fprintf(stderr, "put error: %s\n", s.ToString().c_str());
         ErrorExit();
@@ -7573,12 +7650,12 @@ class Benchmark {
     DB* db = SelectDB(thread);
     for (int64_t i = 0; i < FLAGS_numdistinct; i++) {
       GenerateKeyFromInt(i * max_counter, FLAGS_num, &key);
-      Slice ts;
       if (user_timestamp_size_ > 0) {
-        ts = mock_app_clock_->Allocate(ts_guard.get());
-        write_options_.timestamp = &ts;
+        Slice ts = mock_app_clock_->Allocate(ts_guard.get());
+        s = db->Put(write_options_, key, ts, gen.Generate());
+      } else {
+        s = db->Put(write_options_, key, gen.Generate());
       }
-      s = db->Put(write_options_, key, gen.Generate());
       if (!s.ok()) {
         fprintf(stderr, "Operation failed: %s\n", s.ToString().c_str());
         exit(1);
@@ -7597,22 +7674,24 @@ class Benchmark {
                                 static_cast<int64_t>(0));
       GenerateKeyFromInt(key_id * max_counter + counters[key_id], FLAGS_num,
                          &key);
-      Slice ts;
       if (user_timestamp_size_ > 0) {
-        ts = mock_app_clock_->Allocate(ts_guard.get());
-        write_options_.timestamp = &ts;
+        Slice ts = mock_app_clock_->Allocate(ts_guard.get());
+        s = FLAGS_use_single_deletes ? db->SingleDelete(write_options_, key, ts)
+                                     : db->Delete(write_options_, key, ts);
+      } else {
+        s = FLAGS_use_single_deletes ? db->SingleDelete(write_options_, key)
+                                     : db->Delete(write_options_, key);
       }
-      s = FLAGS_use_single_deletes ? db->SingleDelete(write_options_, key)
-                                   : db->Delete(write_options_, key);
       if (s.ok()) {
         counters[key_id] = (counters[key_id] + 1) % max_counter;
         GenerateKeyFromInt(key_id * max_counter + counters[key_id], FLAGS_num,
                            &key);
         if (user_timestamp_size_ > 0) {
-          ts = mock_app_clock_->Allocate(ts_guard.get());
-          write_options_.timestamp = &ts;
+          Slice ts = mock_app_clock_->Allocate(ts_guard.get());
+          s = db->Put(write_options_, key, ts, Slice());
+        } else {
+          s = db->Put(write_options_, key, Slice());
         }
-        s = db->Put(write_options_, key, Slice());
       }
 
       if (!s.ok()) {
@@ -8206,6 +8285,8 @@ int db_bench_tool(int argc, char** argv) {
       method = ROCKSDB_NAMESPACE::encryption::EncryptionMethod::kAES192_CTR;
     } else if (!strcasecmp(FLAGS_encryption_method.c_str(), "AES256CTR")) {
       method = ROCKSDB_NAMESPACE::encryption::EncryptionMethod::kAES256_CTR;
+    } else if (!strcasecmp(FLAGS_encryption_method.c_str(), "SM4CTR")) {
+      method = ROCKSDB_NAMESPACE::encryption::EncryptionMethod::kSM4_CTR;
     }
     if (method == ROCKSDB_NAMESPACE::encryption::EncryptionMethod::kUnknown) {
       fprintf(stderr, "Unknown encryption method %s\n",

@@ -866,7 +866,7 @@ class DBTestBase : public testing::Test {
     kConcurrentSkipList = 28,
     kPipelinedWrite = 29,
     kConcurrentWALWrites = 30,
-    kCommitPipeline = 31,
+    kMultiBatchWrite = 31,
     kDirectIO,
     kLevelSubcompactions,
     kBlockBasedTableWithIndexRestartInterval,
@@ -1023,8 +1023,6 @@ class DBTestBase : public testing::Test {
   Status SingleDelete(const std::string& k);
 
   Status SingleDelete(int cf, const std::string& k);
-
-  bool SetPreserveDeletesSequenceNumber(SequenceNumber sn);
 
   std::string Get(const std::string& k, const Snapshot* snapshot = nullptr);
 

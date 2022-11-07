@@ -390,9 +390,16 @@ class DB {
   virtual Status Put(const WriteOptions& options,
                      ColumnFamilyHandle* column_family, const Slice& key,
                      const Slice& value) = 0;
+  virtual Status Put(const WriteOptions& options,
+                     ColumnFamilyHandle* column_family, const Slice& key,
+                     const Slice& ts, const Slice& value) = 0;
   virtual Status Put(const WriteOptions& options, const Slice& key,
                      const Slice& value) {
     return Put(options, DefaultColumnFamily(), key, value);
+  }
+  virtual Status Put(const WriteOptions& options, const Slice& key,
+                     const Slice& ts, const Slice& value) {
+    return Put(options, DefaultColumnFamily(), key, ts, value);
   }
 
   // Remove the database entry (if any) for "key".  Returns OK on
@@ -402,8 +409,15 @@ class DB {
   virtual Status Delete(const WriteOptions& options,
                         ColumnFamilyHandle* column_family,
                         const Slice& key) = 0;
+  virtual Status Delete(const WriteOptions& options,
+                        ColumnFamilyHandle* column_family, const Slice& key,
+                        const Slice& ts) = 0;
   virtual Status Delete(const WriteOptions& options, const Slice& key) {
     return Delete(options, DefaultColumnFamily(), key);
+  }
+  virtual Status Delete(const WriteOptions& options, const Slice& key,
+                        const Slice& ts) {
+    return Delete(options, DefaultColumnFamily(), key, ts);
   }
 
   // Remove the database entry for "key". Requires that the key exists
@@ -425,8 +439,15 @@ class DB {
   virtual Status SingleDelete(const WriteOptions& options,
                               ColumnFamilyHandle* column_family,
                               const Slice& key) = 0;
+  virtual Status SingleDelete(const WriteOptions& options,
+                              ColumnFamilyHandle* column_family,
+                              const Slice& key, const Slice& ts) = 0;
   virtual Status SingleDelete(const WriteOptions& options, const Slice& key) {
     return SingleDelete(options, DefaultColumnFamily(), key);
+  }
+  virtual Status SingleDelete(const WriteOptions& options, const Slice& key,
+                              const Slice& ts) {
+    return SingleDelete(options, DefaultColumnFamily(), key, ts);
   }
 
   // Removes the database entries in the range ["begin_key", "end_key"), i.e.,
@@ -450,6 +471,13 @@ class DB {
   virtual Status DeleteRange(const WriteOptions& options,
                              ColumnFamilyHandle* column_family,
                              const Slice& begin_key, const Slice& end_key);
+  virtual Status DeleteRange(const WriteOptions& /*options*/,
+                             ColumnFamilyHandle* /*column_family*/,
+                             const Slice& /*begin_key*/,
+                             const Slice& /*end_key*/, const Slice& /*ts*/) {
+    return Status::NotSupported(
+        "DeleteRange does not support user-defined timestamp yet");
+  }
 
   // Merge the database entry for "key" with "value".  Returns OK on success,
   // and a non-OK status on error. The semantics of this operation is
@@ -462,13 +490,35 @@ class DB {
                        const Slice& value) {
     return Merge(options, DefaultColumnFamily(), key, value);
   }
+  virtual Status Merge(const WriteOptions& /*options*/,
+                       ColumnFamilyHandle* /*column_family*/,
+                       const Slice& /*key*/, const Slice& /*ts*/,
+                       const Slice& /*value*/) {
+    return Status::NotSupported(
+        "Merge does not support user-defined timestamp yet");
+  }
 
   // Apply the specified updates to the database.
   // If `updates` contains no update, WAL will still be synced if
   // options.sync=true.
   // Returns OK on success, non-OK on failure.
   // Note: consider setting options.sync = true.
-  virtual Status Write(const WriteOptions& options, WriteBatch* updates) = 0;
+  virtual Status Write(const WriteOptions& options, WriteBatch* updates,
+                       uint64_t* seq) = 0;
+  virtual Status Write(const WriteOptions& options, WriteBatch* updates) {
+    return Write(options, updates, nullptr);
+  }
+
+  virtual Status MultiBatchWrite(const WriteOptions& /*options*/,
+                                 std::vector<WriteBatch*>&& /*updates*/,
+                                 uint64_t* /*seq*/) {
+    return Status::NotSupported();
+  }
+
+  virtual Status MultiBatchWrite(const WriteOptions& options,
+                                 std::vector<WriteBatch*>&& updates) {
+    return MultiBatchWrite(options, std::move(updates), nullptr);
+  }
 
   // If the database contains an entry for "key" store the
   // corresponding value in *value and return OK.
@@ -1384,14 +1434,6 @@ class DB {
 
   // The sequence number of the most recent transaction.
   virtual SequenceNumber GetLatestSequenceNumber() const = 0;
-
-  // Instructs DB to preserve deletes with sequence numbers >= passed seqnum.
-  // Has no effect if DBOptions.preserve_deletes is set to false.
-  // This function assumes that user calls this function with monotonically
-  // increasing seqnums (otherwise we can't guarantee that a particular delete
-  // hasn't been already processed); returns true if the value was successfully
-  // updated, false if user attempted to call if with seqnum <= current value.
-  virtual bool SetPreserveDeletesSequenceNumber(SequenceNumber seqnum) = 0;
 
   // Prevent file deletions. Compactions will continue to occur,
   // but no obsolete files will be deleted. Calling this multiple

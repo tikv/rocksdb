@@ -319,8 +319,8 @@ static std::unordered_map<std::string, OptionTypeInfo>
          {offsetof(struct ImmutableDBOptions, enable_pipelined_write),
           OptionType::kBoolean, OptionVerificationType::kNormal,
           OptionTypeFlags::kNone}},
-        {"enable_pipelined_commit",
-         {offsetof(struct ImmutableDBOptions, enable_pipelined_commit),
+        {"enable_multi_batch_write",
+         {offsetof(struct ImmutableDBOptions, enable_multi_batch_write),
           OptionType::kBoolean, OptionVerificationType::kNormal,
           OptionTypeFlags::kNone}},
         {"unordered_write",
@@ -374,8 +374,7 @@ static std::unordered_map<std::string, OptionTypeInfo>
           OptionType::kBoolean, OptionVerificationType::kNormal,
           OptionTypeFlags::kNone}},
         {"preserve_deletes",
-         {offsetof(struct ImmutableDBOptions, preserve_deletes),
-          OptionType::kBoolean, OptionVerificationType::kNormal,
+         {0, OptionType::kBoolean, OptionVerificationType::kDeprecated,
           OptionTypeFlags::kNone}},
         {"concurrent_prepare",  // Deprecated by two_write_queues
          {0, OptionType::kBoolean, OptionVerificationType::kDeprecated,
@@ -708,7 +707,7 @@ ImmutableDBOptions::ImmutableDBOptions(const DBOptions& options)
       enable_thread_tracking(options.enable_thread_tracking),
       enable_pipelined_write(options.enable_pipelined_write),
       unordered_write(options.unordered_write),
-      enable_pipelined_commit(options.enable_pipelined_commit),
+      enable_multi_batch_write(options.enable_multi_batch_write),
       allow_concurrent_memtable_write(options.allow_concurrent_memtable_write),
       enable_write_thread_adaptive_yield(
           options.enable_write_thread_adaptive_yield),
@@ -727,7 +726,6 @@ ImmutableDBOptions::ImmutableDBOptions(const DBOptions& options)
       dump_malloc_stats(options.dump_malloc_stats),
       avoid_flush_during_recovery(options.avoid_flush_during_recovery),
       allow_ingest_behind(options.allow_ingest_behind),
-      preserve_deletes(options.preserve_deletes),
       two_write_queues(options.two_write_queues),
       manual_wal_flush(options.manual_wal_flush),
       atomic_flush(options.atomic_flush),
@@ -862,8 +860,8 @@ void ImmutableDBOptions::Dump(Logger* log) const {
                    enable_pipelined_write);
   ROCKS_LOG_HEADER(log, "                 Options.unordered_write: %d",
                    unordered_write);
-  ROCKS_LOG_HEADER(log, "              Options.enable_pipelined_commit: %d",
-                   enable_pipelined_commit);
+  ROCKS_LOG_HEADER(log, "              Options.enable_multi_batch_write: %d",
+                   enable_multi_batch_write);
   ROCKS_LOG_HEADER(log, "        Options.allow_concurrent_memtable_write: %d",
                    allow_concurrent_memtable_write);
   ROCKS_LOG_HEADER(log, "     Options.enable_write_thread_adaptive_yield: %d",
@@ -892,8 +890,6 @@ void ImmutableDBOptions::Dump(Logger* log) const {
                    avoid_flush_during_recovery);
   ROCKS_LOG_HEADER(log, "            Options.allow_ingest_behind: %d",
                    allow_ingest_behind);
-  ROCKS_LOG_HEADER(log, "            Options.preserve_deletes: %d",
-                   preserve_deletes);
   ROCKS_LOG_HEADER(log, "            Options.two_write_queues: %d",
                    two_write_queues);
   ROCKS_LOG_HEADER(log, "            Options.manual_wal_flush: %d",

@@ -502,11 +502,17 @@ struct DBOptions {
   bool flush_verify_memtable_count = true;
 
   // If true, the log numbers and sizes of the synced WALs are tracked
-  // in MANIFEST, then during DB recovery, if a synced WAL is missing
+  // in MANIFEST. During DB recovery, if a synced WAL is missing
   // from disk, or the WAL's size does not match the recorded size in
   // MANIFEST, an error will be reported and the recovery will be aborted.
   //
+  // This is one additional protection against WAL corruption besides the
+  // per-WAL-entry checksum.
+  //
   // Note that this option does not work with secondary instance.
+  // Currently, only syncing closed WALs are tracked. Calling `DB::SyncWAL()`,
+  // etc. or writing with `WriteOptions::sync=true` to sync the live WAL is not
+  // tracked for performance/efficiency reasons.
   //
   // Default: false
   bool track_and_verify_wals_in_manifest = false;
@@ -1093,11 +1099,18 @@ struct DBOptions {
   // to the head of the queue becomes write batch group leader and responsible
   // for writing to WAL.
   //
-  // If enable_pipelined_commit is true, RocksDB will apply WriteBatch to
-  // memtable out of order but commit them in order.
+  // If enable_multi_batch_write is true, RocksDB will apply WriteBatch to
+  // memtable out of order but commit them in order. (We borrow the idea from
+  // https://github.com/cockroachdb/pebble/blob/master/docs/rocksdb.md#commit-pipeline.
+  // On this basis, we split the WriteBatch into smaller-grained WriteBatch
+  // vector,
+  // and when the WriteBatch sizes of multiple writers are not balanced, writers
+  // that finish first need to help the front writer finish writing the
+  // remaining
+  // WriteBatch to increase cpu usage and reduce overall latency).
   //
   // Default: false
-  bool enable_pipelined_commit = false;
+  bool enable_multi_batch_write = false;
 
   // If true, allow multi-writers to update mem tables in parallel.
   // Only some memtable_factory-s support concurrent writes; currently it
@@ -1224,11 +1237,6 @@ struct DBOptions {
   // DEFAULT: false
   // Immutable.
   bool allow_ingest_behind = false;
-
-  // Deprecated, will be removed in a future release.
-  // Please try using user-defined timestamp instead.
-  // DEFAULT: false
-  bool preserve_deletes = false;
 
   // If enabled it uses two queues for writes, one for the ones with
   // disable_memtable and one for the ones that also write to memtable. This
@@ -1576,11 +1584,6 @@ struct ReadOptions {
   // Default: empty (every table will be scanned)
   std::function<bool(const TableProperties&)> table_filter;
 
-  // Deprecated, will be removed in a future release.
-  // Please try using user-defined timestamp instead.
-  // Default: 0 (don't filter by seqnum, return user keys)
-  SequenceNumber iter_start_seqnum;
-
   // Timestamp of operation. Read should return the latest data visible to the
   // specified timestamp. All timestamps of the same database must be of the
   // same length and format. The user is responsible for providing a customized
@@ -1693,25 +1696,13 @@ struct WriteOptions {
   // Default: false
   bool memtable_insert_hint_per_batch;
 
-  // Timestamp of write operation, e.g. Put. All timestamps of the same
-  // database must share the same length and format. The user is also
-  // responsible for providing a customized compare function via Comparator to
-  // order <key, timestamp> tuples. If the user wants to enable timestamp, then
-  // all write operations must be associated with timestamp because RocksDB, as
-  // a single-node storage engine currently has no knowledge of global time,
-  // thus has to rely on the application.
-  // The user-specified timestamp feature is still under active development,
-  // and the API is subject to change.
-  const Slice* timestamp;
-
   WriteOptions()
       : sync(false),
         disableWAL(false),
         ignore_missing_column_families(false),
         no_slowdown(false),
         low_pri(false),
-        memtable_insert_hint_per_batch(false),
-        timestamp(nullptr) {}
+        memtable_insert_hint_per_batch(false) {}
 };
 
 // Options that control flush operations
@@ -1793,7 +1784,7 @@ struct CompactRangeOptions {
   uint32_t max_subcompactions = 0;
   // Set user-defined timestamp low bound, the data with older timestamp than
   // low bound maybe GCed by compaction. Default: nullptr
-  Slice* full_history_ts_low = nullptr;
+  const Slice* full_history_ts_low = nullptr;
 
   // Allows cancellation of an in-progress manual compaction.
   //

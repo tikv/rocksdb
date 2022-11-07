@@ -19,6 +19,7 @@
 #include "rocksdb/sst_file_manager.h"
 #include "rocksdb/types.h"
 #include "rocksdb/utilities/object_registry.h"
+#include "test_util/testutil.h"
 #include "util/cast_util.h"
 #include "utilities/backupable/backupable_db_impl.h"
 #include "utilities/fault_injection_fs.h"
@@ -513,9 +514,10 @@ void StressTest::PreloadDbAndReopenAsReadOnly(int64_t number_of_keys,
           if (FLAGS_user_timestamp_size > 0) {
             ts_str = NowNanosStr();
             ts = ts_str;
-            write_opts.timestamp = &ts;
+            s = db_->Put(write_opts, cfh, key, ts, v);
+          } else {
+            s = db_->Put(write_opts, cfh, key, v);
           }
-          s = db_->Put(write_opts, cfh, key, v);
         } else {
 #ifndef ROCKSDB_LITE
           Transaction* txn;
@@ -881,7 +883,6 @@ void StressTest::OperateDb(ThreadState* thread) {
         read_opts.timestamp = &read_ts;
         write_ts_str = NowNanosStr();
         write_ts = write_ts_str;
-        write_opts.timestamp = &write_ts;
       }
 
       int prob_op = thread->rand.Uniform(100);
@@ -2855,7 +2856,7 @@ void StressTest::Reopen(ThreadState* thread) {
 
 void StressTest::CheckAndSetOptionsForUserTimestamp() {
   assert(FLAGS_user_timestamp_size > 0);
-  const Comparator* const cmp = test::ComparatorWithU64Ts();
+  const Comparator* const cmp = test::BytewiseComparatorWithU64TsWrapper();
   assert(cmp);
   if (FLAGS_user_timestamp_size != cmp->timestamp_size()) {
     fprintf(stderr,

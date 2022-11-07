@@ -61,8 +61,6 @@ Status DBImplSecondary::Recover(
     default_cf_handle_ = new ColumnFamilyHandleImpl(
         versions_->GetColumnFamilySet()->GetDefault(), this, &mutex_);
     default_cf_internal_stats_ = default_cf_handle_->cfd()->internal_stats();
-    single_column_family_mode_ =
-        versions_->GetColumnFamilySet()->NumberOfColumnFamilies() == 1;
 
     std::unordered_set<ColumnFamilyData*> cfds_changed;
     s = FindAndRecoverLogFiles(&cfds_changed, &job_context);
@@ -270,7 +268,7 @@ Status DBImplSecondary::RecoverLogFiles(
         status = WriteBatchInternal::InsertInto(
             &batch, column_family_memtables_.get(),
             nullptr /* flush_scheduler */, nullptr /* trim_history_scheduler*/,
-            true, log_number, this, false /* concurrent_memtable_writes */,
+            true, log_number, 0, this, false /* concurrent_memtable_writes */,
             next_sequence, &has_valid_writes, seq_per_batch_, batch_per_txn_);
       }
       // If column family was not found, it might mean that the WAL write
@@ -339,6 +337,14 @@ Status DBImplSecondary::GetImpl(const ReadOptions& read_options,
   StopWatch sw(immutable_db_options_.clock, stats_, DB_GET);
   PERF_TIMER_GUARD(get_snapshot_time);
 
+  assert(column_family);
+  const Comparator* ucmp = column_family->GetComparator();
+  assert(ucmp);
+  if (ucmp->timestamp_size() || read_options.timestamp) {
+    // TODO: support timestamp
+    return Status::NotSupported();
+  }
+
   auto cfh = static_cast<ColumnFamilyHandleImpl*>(column_family);
   ColumnFamilyData* cfd = cfh->cfd();
   if (tracer_) {
@@ -405,6 +411,15 @@ Iterator* DBImplSecondary::NewIterator(const ReadOptions& read_options,
     return NewErrorIterator(Status::NotSupported(
         "ReadTier::kPersistedData is not yet supported in iterators."));
   }
+
+  assert(column_family);
+  const Comparator* ucmp = column_family->GetComparator();
+  assert(ucmp);
+  if (ucmp->timestamp_size() || read_options.timestamp) {
+    // TODO: support timestamp
+    return NewErrorIterator(Status::NotSupported());
+  }
+
   Iterator* result = nullptr;
   auto cfh = static_cast_with_check<ColumnFamilyHandleImpl>(column_family);
   auto cfd = cfh->cfd();
@@ -460,6 +475,20 @@ Status DBImplSecondary::NewIterators(
   ReadCallback* read_callback = nullptr;  // No read callback provided.
   if (iterators == nullptr) {
     return Status::InvalidArgument("iterators not allowed to be nullptr");
+  }
+  if (read_options.timestamp) {
+    // TODO: support timestamp
+    return Status::NotSupported();
+  } else {
+    for (auto* cf : column_families) {
+      assert(cf);
+      const Comparator* ucmp = cf->GetComparator();
+      assert(ucmp);
+      if (ucmp->timestamp_size()) {
+        // TODO: support timestamp
+        return Status::NotSupported();
+      }
+    }
   }
   iterators->clear();
   iterators->reserve(column_families.size());

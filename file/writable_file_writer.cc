@@ -154,7 +154,8 @@ IOStatus WritableFileWriter::Append(const Slice& data,
 
   TEST_KILL_RANDOM("WritableFileWriter::Append:1");
   if (s.ok()) {
-    filesize_ += data.size();
+    uint64_t cur_size = filesize_.load(std::memory_order_acquire);
+    filesize_.store(cur_size + data.size(), std::memory_order_release);
   }
   return s;
 }
@@ -181,7 +182,8 @@ IOStatus WritableFileWriter::Pad(const size_t pad_bytes) {
     cap = buf_.Capacity() - buf_.CurrentSize();
   }
   pending_sync_ = true;
-  filesize_ += pad_bytes;
+  uint64_t cur_size = filesize_.load(std::memory_order_acquire);
+  filesize_.store(cur_size + pad_bytes, std::memory_order_release);
   if (perform_data_verification_) {
     buffered_data_crc32c_checksum_ =
         crc32c::Extend(buffered_data_crc32c_checksum_,
@@ -215,14 +217,15 @@ IOStatus WritableFileWriter::Close() {
         start_ts = FileOperationInfo::StartNow();
       }
 #endif
-      interim = writable_file_->Truncate(filesize_, IOOptions(), nullptr);
+      uint64_t filesz = filesize_.load(std::memory_order_acquire);
+      interim = writable_file_->Truncate(filesz, IOOptions(), nullptr);
 #ifndef ROCKSDB_LITE
       if (ShouldNotifyListeners()) {
         auto finish_ts = FileOperationInfo::FinishNow();
         NotifyOnFileTruncateFinish(start_ts, finish_ts, s);
         if (!interim.ok()) {
           NotifyOnIOError(interim, FileOperationType::kTruncate, file_name(),
-                          filesize_);
+                          filesz);
         }
       }
 #endif
@@ -354,8 +357,9 @@ IOStatus WritableFileWriter::Flush() {
     const uint64_t kBytesNotSyncRange =
         1024 * 1024;                                // recent 1MB is not synced.
     const uint64_t kBytesAlignWhenSync = 4 * 1024;  // Align 4KB.
-    if (filesize_ > kBytesNotSyncRange) {
-      uint64_t offset_sync_to = filesize_ - kBytesNotSyncRange;
+    uint64_t cur_size = filesize_.load(std::memory_order_acquire);
+    if (cur_size > kBytesNotSyncRange) {
+      uint64_t offset_sync_to = cur_size - kBytesNotSyncRange;
       offset_sync_to -= offset_sync_to % kBytesAlignWhenSync;
       assert(offset_sync_to >= last_sync_size_);
       if (offset_sync_to > 0 &&
@@ -551,6 +555,8 @@ IOStatus WritableFileWriter::WriteBuffered(const char* data, size_t size) {
 
     left -= allowed;
     src += allowed;
+    uint64_t cur_size = flushed_size_.load(std::memory_order_acquire);
+    flushed_size_.store(cur_size + allowed, std::memory_order_release);
   }
   buf_.Size(0);
   buffered_data_crc32c_checksum_ = 0;
@@ -638,6 +644,8 @@ IOStatus WritableFileWriter::WriteBufferedWithChecksum(const char* data,
   // the corresponding checksum value
   buf_.Size(0);
   buffered_data_crc32c_checksum_ = 0;
+  uint64_t cur_size = flushed_size_.load(std::memory_order_acquire);
+  flushed_size_.store(cur_size + left, std::memory_order_release);
   return s;
 }
 
@@ -740,6 +748,8 @@ IOStatus WritableFileWriter::WriteDirect() {
     left -= size;
     src += size;
     write_offset += size;
+    uint64_t cur_size = flushed_size_.load(std::memory_order_acquire);
+    flushed_size_.store(cur_size + size, std::memory_order_release);
     assert((next_write_offset_ % alignment) == 0);
   }
 
@@ -836,6 +846,8 @@ IOStatus WritableFileWriter::WriteDirectWithChecksum() {
 
   IOSTATS_ADD(bytes_written, left);
   assert((next_write_offset_ % alignment) == 0);
+  uint64_t cur_size = flushed_size_.load(std::memory_order_acquire);
+  flushed_size_.store(cur_size + left, std::memory_order_release);
 
   if (s.ok()) {
     // Move the tail to the beginning of the buffer

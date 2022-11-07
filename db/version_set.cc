@@ -3108,13 +3108,9 @@ void VersionStorageInfo::SetFinalized() {
     assert(MaxBytesForLevel(level) >= max_bytes_prev_level);
     max_bytes_prev_level = MaxBytesForLevel(level);
   }
-  int num_empty_non_l0_level = 0;
   for (int level = 0; level < num_levels(); level++) {
     assert(LevelFiles(level).size() == 0 ||
            LevelFiles(level).size() == LevelFilesBrief(level).num_files);
-    if (level > 0 && NumLevelBytes(level) > 0) {
-      num_empty_non_l0_level++;
-    }
     if (LevelFiles(level).size() > 0) {
       assert(level < num_non_empty_levels());
     }
@@ -3319,7 +3315,8 @@ void VersionStorageInfo::ComputeBottommostFilesMarkedForCompaction() {
   bottommost_files_mark_threshold_ = kMaxSequenceNumber;
   for (auto& level_and_file : bottommost_files_) {
     if (!level_and_file.second->being_compacted &&
-        level_and_file.second->fd.largest_seqno != 0) {
+        level_and_file.second->fd.largest_seqno != 0 &&
+        level_and_file.second->num_deletions > 1) {
       // largest_seqno might be nonzero due to containing the final key in an
       // earlier compaction, whose seqnum we didn't zero out. Multiple deletions
       // ensures the file really contains deleted or overwritten keys.
@@ -3911,6 +3908,26 @@ void Version::AddLiveFiles(std::vector<uint64_t>* live_table_files,
 
     live_blob_files->emplace_back(meta->GetBlobFileNumber());
   }
+}
+
+void Version::RemoveLiveFiles(
+    std::vector<ObsoleteFileInfo>& sst_delete_candidates,
+    std::vector<ObsoleteBlobFileInfo>& blob_delete_candidates) const {
+  for (ObsoleteFileInfo& fi : sst_delete_candidates) {
+    if (!fi.only_delete_metadata &&
+        storage_info()->GetFileLocation(fi.metadata->fd.GetNumber()) !=
+            VersionStorageInfo::FileLocation::Invalid()) {
+      fi.only_delete_metadata = true;
+    }
+  }
+
+  blob_delete_candidates.erase(
+      std::remove_if(
+          blob_delete_candidates.begin(), blob_delete_candidates.end(),
+          [this](ObsoleteBlobFileInfo& x) {
+            return storage_info()->GetBlobFileMetaData(x.GetBlobFileNumber());
+          }),
+      blob_delete_candidates.end());
 }
 
 std::string Version::DebugString(bool hex, bool print_stats) const {
@@ -5672,6 +5689,38 @@ uint64_t VersionSet::ApproximateSize(Version* v, const FdWithKeyRange& f,
   return table_cache->ApproximateSize(
       start, end, f.file_metadata->fd, caller, icmp,
       v->GetMutableCFOptions().prefix_extractor);
+}
+
+void VersionSet::RemoveLiveFiles(
+    std::vector<ObsoleteFileInfo>& sst_delete_candidates,
+    std::vector<ObsoleteBlobFileInfo>& blob_delete_candidates) const {
+  assert(column_family_set_);
+  for (auto cfd : *column_family_set_) {
+    assert(cfd);
+    if (!cfd->initialized()) {
+      continue;
+    }
+
+    auto* current = cfd->current();
+    bool found_current = false;
+
+    Version* const dummy_versions = cfd->dummy_versions();
+    assert(dummy_versions);
+
+    for (Version* v = dummy_versions->next_; v != dummy_versions;
+         v = v->next_) {
+      v->RemoveLiveFiles(sst_delete_candidates, blob_delete_candidates);
+      if (v == current) {
+        found_current = true;
+      }
+    }
+
+    if (!found_current && current != nullptr) {
+      // Should never happen unless it is a bug.
+      assert(false);
+      current->RemoveLiveFiles(sst_delete_candidates, blob_delete_candidates);
+    }
+  }
 }
 
 void VersionSet::AddLiveFiles(std::vector<uint64_t>* live_table_files,
