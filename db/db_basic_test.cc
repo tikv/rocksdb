@@ -3957,7 +3957,7 @@ class DBBasicTestWithAsyncIO : public DBAsyncTestBase {
       if (ret == 0 && cqe->res >= 0) {
         Async_future::IO_ctx* rdata = (Async_future::IO_ctx*)io_uring_cqe_get_data(cqe);
 
-        OnResume(rdata->promise);
+        OnResume(rdata->m_promise);
         io_uring_cqe_seen(io_uring_.get(), cqe);
 
         if (shutDown_.load(std::memory_order_relaxed)) break;
@@ -4000,7 +4000,7 @@ static Async_future SimpleAsyncGetTest(DBAsyncTestBase* testBase) {
                         rocksdb::Status::SubCode::kIOUringSqeFull);
                   }
 
-                  io_uring_prep_readv(sqe, fd, data->iov, data->pages_, offset);
+                  io_uring_prep_readv(sqe, fd, data->m_iov.data(), data->m_iov.size(), offset);
                   io_uring_sqe_set_data(sqe, data);
                   auto ret = io_uring_submit(io_uring);
                   if (ret < 0) {
@@ -4051,7 +4051,7 @@ static Async_future SimpleAsyncMultiGetTest(DBAsyncTestBase* testBase) {
                         rocksdb::Status::SubCode::kIOUringSqeFull);
                   }
 
-                  io_uring_prep_readv(sqe, fd, data->iov, data->pages_, offset);
+                  io_uring_prep_readv(sqe, fd, data->m_iov.data(), data->m_iov.size(), offset);
                   io_uring_sqe_set_data(sqe, data);
                   auto ret = io_uring_submit(io_uring);
                   if (ret < 0) {
@@ -4077,7 +4077,7 @@ static Async_future SimpleAsyncMultiGetTest(DBAsyncTestBase* testBase) {
   dynamic_cast<DBBasicTestWithAsyncIO*>(testBase)->shutdown();
   delete io_uring_option;
 
-  auto statuses = asyncResult.results();
+  auto statuses = asyncResult.statuses();
 
   if (statuses.size() != 2 || values.size() != 2) {
     co_return Status::NotFound();
