@@ -154,8 +154,8 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
   // counter must be monotonic. We work around this issue by setting the
   // counters of all involved memtables to the same maximum value. See [B].
   uint64_t max_log_number = 0;
+  // Block writes.
   for (auto* db : all_db_impls) {
-    // Block writes.
     all_writers.emplace_back(new WriteThread::Writer());
     db->mutex_.Lock();
     db->write_thread_.EnterUnbatched(all_writers.back().get(), &db->mutex_);
@@ -203,8 +203,9 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
           sv_context.Clean();
         }
         assert(cfd->mem()->IsEmpty());
-        // [B] Bump log number. Even though it's not shared, it must still be
-        // larger than other shared immutable memtables.
+        // [B] Bump log number for active memtable. Even though it's not
+        // shared, it must still be larger than other shared immutable
+        // memtables.
         cfd->mem()->SetNextLogNumber(max_log_number);
         cfd->imm()->ExportMemtables(&mems);
       }
@@ -214,7 +215,7 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
     for (auto mem : mems) {
       assert(mem != nullptr);
       mem->Ref();
-      // [B] Bump log number.
+      // [B] Bump log number for shared memtables.
       mem->SetNextLogNumber(max_log_number);
       this_cfd->imm()->Add(mem, &to_delete);
     }
