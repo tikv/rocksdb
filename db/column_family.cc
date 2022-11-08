@@ -1188,25 +1188,20 @@ Status ColumnFamilyData::GetMemtablesUserKeyRange(PinnableSlice* smallest,
   MergeIteratorBuilder merge_iter_builder(&internal_comparator_, &arena);
   merge_iter_builder.AddIterator(mem_->NewIterator(read_opts, &arena));
   imm_.current()->AddIterators(read_opts, &merge_iter_builder);
-  ScopedArenaIterator memtable_iter(merge_iter_builder.Finish());
-  ParsedInternalKey ikey;
-  memtable_iter->SeekToFirst();
-  if (memtable_iter->Valid()) {
-    s = ParseInternalKey(memtable_iter->key(), &ikey, false);
-    if (s.ok()) {
-      if (!(*found) || ucmp->Compare(ikey.user_key, *smallest) < 0) {
-        smallest->PinSelf(ikey.user_key);
-      }
-      memtable_iter->SeekToLast();
-      assert(memtable_iter->Valid());
-      s = ParseInternalKey(memtable_iter->key(), &ikey, false);
-      if (s.ok()) {
-        if (!(*found) || ucmp->Compare(*largest, ikey.user_key) < 0) {
-          largest->PinSelf(ikey.user_key);
-        }
-      }
-      *found = true;
+  ScopedArenaIterator mem_iter(merge_iter_builder.Finish());
+  mem_iter->SeekToFirst();
+  if (mem_iter->Valid()) {
+    auto ukey = mem_iter->user_key();
+    if (!(*found) || ucmp->Compare(ukey, *smallest) < 0) {
+      smallest->PinSelf(ukey);
     }
+    mem_iter->SeekToLast();
+    assert(mem_iter->Valid());
+    ukey = mem_iter->user_key();
+    if (!(*found) || ucmp->Compare(*largest, ukey) < 0) {
+      largest->PinSelf(ukey);
+    }
+    *found = true;
   }
 
   if (s.ok()) {
@@ -1218,15 +1213,17 @@ Status ColumnFamilyData::GetMemtablesUserKeyRange(PinnableSlice* smallest,
       if (iter != nullptr) {
         iter->SeekToFirst();
         if (iter->Valid()) {
-          Slice start = iter->start_key();
-          if (!(*found) || ucmp->Compare(start, *smallest) < 0) {
-            smallest->PinSelf(start);
+          // It's already a user key.
+          auto ukey = iter->start_key();
+          if (!(*found) || ucmp->Compare(ukey, *smallest) < 0) {
+            smallest->PinSelf(ukey);
           }
           iter->SeekToLast();
           assert(iter->Valid());
-          Slice end = iter->end_key();
-          if (!(*found) || ucmp->Compare(*largest, end) < 0) {
-            largest->PinSelf(end);
+          // Get the end_key of all tombstones.
+          ukey = iter->end_key();
+          if (!(*found) || ucmp->Compare(*largest, ukey) < 0) {
+            largest->PinSelf(ukey);
           }
           *found = true;
         }
@@ -1240,6 +1237,9 @@ Status ColumnFamilyData::GetMemtablesUserKeyRange(PinnableSlice* smallest,
 Status ColumnFamilyData::GetUserKeyRange(PinnableSlice* smallest,
                                          PinnableSlice* largest, bool* found) {
   assert(smallest && largest && found);
+  if (ioptions_.compaction_style != CompactionStyle::kCompactionStyleLevel) {
+    return Status::NotSupported("Unexpected compaction style");
+  }
   Status s = GetMemtablesUserKeyRange(smallest, largest, found);
   if (!s.ok()) {
     return s;

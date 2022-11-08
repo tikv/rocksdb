@@ -13,6 +13,8 @@
 #include "db/db_test_util.h"
 #include "port/stack_trace.h"
 
+#include <iostream>
+
 namespace ROCKSDB_NAMESPACE {
 
 const uint32_t default_cf = 0;
@@ -45,6 +47,15 @@ class DBMergeTest : public testing::Test {
   }
 
   ~DBMergeTest() { DestroyAll(); }
+
+  void IsOverlapError(Status s) {
+    ASSERT_EQ(s.ToString(),
+              "Invalid argument: Source DBs have overlapping range");
+  }
+
+  void IsWALNotEmpty(Status s) {
+    ASSERT_EQ(s.ToString(), "Invalid argument: DB WAL is not empty");
+  }
 
   // 0 for default cf.
   std::vector<ColumnFamilyDescriptor> GenColumnFamilyDescriptors(
@@ -390,8 +401,8 @@ TEST_F(DBMergeTest, KeyOverlappedInstance) {
   Destroy(3_db);
 
   ASSERT_OK(get_db(2_db)->Put(wopts, get_cf(2_db, 1_cf), "3", "v3"));
-  ASSERT_NOK(Merge(mopts, {1_db, 2_db}, 3_db, {default_cf, 1_cf}));
-  ASSERT_NOK(Merge(mopts, {1_db}, 2_db, {default_cf, 1_cf}));
+  IsOverlapError(Merge(mopts, {1_db, 2_db}, 3_db, {default_cf, 1_cf}));
+  IsOverlapError(Merge(mopts, {1_db}, 2_db, {default_cf, 1_cf}));
 
   // Skip overlapped cf.
   ASSERT_OK(Merge(mopts, {1_db, 2_db}, 3_db, {default_cf}));
@@ -399,22 +410,22 @@ TEST_F(DBMergeTest, KeyOverlappedInstance) {
 
   // Only flush one.
   ASSERT_OK(get_db(2_db)->Flush(fopts, get_cf(2_db, 1_cf)));
-  ASSERT_NOK(Merge(mopts, {1_db, 2_db}, 3_db, {default_cf, 1_cf}));
-  ASSERT_NOK(Merge(mopts, {1_db}, 2_db, {default_cf, 1_cf}));
+  IsOverlapError(Merge(mopts, {1_db, 2_db}, 3_db, {default_cf, 1_cf}));
+  IsOverlapError(Merge(mopts, {1_db}, 2_db, {default_cf, 1_cf}));
 
   // Both flushed.
   ASSERT_OK(get_db(1_db)->Flush(fopts, get_cf(1_db, 1_cf)));
-  ASSERT_NOK(Merge(mopts, {1_db, 2_db}, 3_db, {default_cf, 1_cf}));
-  ASSERT_NOK(Merge(mopts, {1_db}, 2_db, {default_cf, 1_cf}));
+  IsOverlapError(Merge(mopts, {1_db, 2_db}, 3_db, {default_cf, 1_cf}));
+  IsOverlapError(Merge(mopts, {1_db}, 2_db, {default_cf, 1_cf}));
 
   // Delete in memory.
   ASSERT_OK(get_db(1_db)->SingleDelete(wopts, get_cf(1_db, 1_cf), "1"));
-  ASSERT_NOK(Merge(mopts, {1_db, 2_db}, 3_db, {default_cf, 1_cf}));
-  ASSERT_NOK(Merge(mopts, {1_db}, 2_db, {default_cf, 1_cf}));
+  IsOverlapError(Merge(mopts, {1_db, 2_db}, 3_db, {default_cf, 1_cf}));
+  IsOverlapError(Merge(mopts, {1_db}, 2_db, {default_cf, 1_cf}));
 
   ASSERT_OK(get_db(1_db)->Flush(fopts, get_cf(1_db, 1_cf)));
-  ASSERT_NOK(Merge(mopts, {1_db, 2_db}, 3_db, {default_cf, 1_cf}));
-  ASSERT_NOK(Merge(mopts, {1_db}, 2_db, {default_cf, 1_cf}));
+  IsOverlapError(Merge(mopts, {1_db, 2_db}, 3_db, {default_cf, 1_cf}));
+  IsOverlapError(Merge(mopts, {1_db}, 2_db, {default_cf, 1_cf}));
 
   ASSERT_OK(
       get_db(1_db)->CompactRange(copts, get_cf(1_db, 1_cf), nullptr, nullptr));
@@ -436,19 +447,28 @@ TEST_F(DBMergeTest, TombstoneOverlappedInstance) {
   Open(1_db, {default_cf, 1_cf});
   Open(2_db, {default_cf, 1_cf});
   Open(3_db, {default_cf, 1_cf});
+  Open(4_db, {default_cf, 1_cf});
   ASSERT_OK(get_db(1_db)->Put(wopts, get_cf(1_db, 1_cf), "1", "v1"));
   ASSERT_OK(get_db(2_db)->Put(wopts, get_cf(2_db, 1_cf), "2", "v2"));
   ASSERT_OK(get_db(3_db)->Put(wopts, get_cf(3_db, 1_cf), "3", "v3"));
+  ASSERT_OK(get_db(4_db)->Put(wopts, get_cf(4_db, 1_cf), "4", "v4"));
 
-  ASSERT_OK(Merge(mopts, {1_db, 2_db, 3_db}, 4_db, {default_cf, 1_cf}));
-  Destroy(4_db);
+  ASSERT_OK(Merge(mopts, {1_db, 2_db, 3_db, 4_db}, 0_db, {default_cf, 1_cf}));
+  Destroy(0_db);
 
+  // Lower bound overlap.
   ASSERT_OK(get_db(2_db)->DeleteRange(wopts, get_cf(2_db, 1_cf), "0", "9"));
   ASSERT_OK(get_db(2_db)->Put(wopts, get_cf(2_db, 1_cf), "2", "v2"));
-  ASSERT_NOK(Merge(mopts, {1_db, 2_db}, 4_db, {default_cf, 1_cf}));
+  IsOverlapError(Merge(mopts, {1_db, 2_db}, 0_db, {default_cf, 1_cf}));
 
-  ASSERT_OK(get_db(3_db)->SingleDelete(wopts, get_cf(3_db, 1_cf), nullptr));
-  ASSERT_NOK(Merge(mopts, {1_db, 3_db}, 4_db, {default_cf, 1_cf}));
+  // Upper bound overlap.
+  ASSERT_OK(get_db(3_db)->DeleteRange(wopts, get_cf(3_db, 1_cf), "0", "9"));
+  ASSERT_OK(get_db(3_db)->Put(wopts, get_cf(3_db, 1_cf), "3", "v3"));
+  IsOverlapError(Merge(mopts, {3_db, 4_db}, 0_db, {default_cf, 1_cf}));
+
+  // nullptr is an empty key.
+  ASSERT_OK(get_db(4_db)->SingleDelete(wopts, get_cf(4_db, 1_cf), nullptr));
+  IsOverlapError(Merge(mopts, {1_db, 4_db}, 0_db, {default_cf, 1_cf}));
 
   Slice start = "0";
   Slice end = "2";
@@ -458,15 +478,27 @@ TEST_F(DBMergeTest, TombstoneOverlappedInstance) {
   end = "99";
   ASSERT_OK(
       get_db(2_db)->CompactRange(copts, get_cf(2_db, 1_cf), &start, &end));
+
+  start = "0";
   end = "3";
   ASSERT_OK(
-      get_db(3_db)->CompactRange(copts, get_cf(3_db, 1_cf), nullptr, &end));
-  mopts.merge_memtable = true;
-  ASSERT_OK(Merge(mopts, {1_db, 2_db, 3_db}, 4_db, {default_cf, 1_cf}));
+      get_db(3_db)->CompactRange(copts, get_cf(3_db, 1_cf), &start, &end));
+  start = "33";
+  end = "99";
+  ASSERT_OK(
+      get_db(3_db)->CompactRange(copts, get_cf(3_db, 1_cf), &start, &end));
 
-  VerifyKeyValue(4_db, 1_cf, "1", "v1");
-  VerifyKeyValue(4_db, 1_cf, "2", "v2");
-  VerifyKeyValue(4_db, 1_cf, "3", "v3");
+  end = "4";
+  ASSERT_OK(
+      get_db(4_db)->CompactRange(copts, get_cf(4_db, 1_cf), nullptr, &end));
+
+  mopts.merge_memtable = true;
+  ASSERT_OK(Merge(mopts, {1_db, 2_db, 3_db, 4_db}, 0_db, {default_cf, 1_cf}));
+
+  VerifyKeyValue(0_db, 1_cf, "1", "v1");
+  VerifyKeyValue(0_db, 1_cf, "2", "v2");
+  VerifyKeyValue(0_db, 1_cf, "3", "v3");
+  VerifyKeyValue(0_db, 1_cf, "4", "v4");
 }
 
 TEST_F(DBMergeTest, WithWAL) {
@@ -488,7 +520,7 @@ TEST_F(DBMergeTest, WithWAL) {
   VerifyKeyValue(2_db, 1_cf, "1", "NotFound");
 
   mopts.merge_memtable = true;
-  ASSERT_NOK(Merge(mopts, {1_db, 2_db}, 3_db, {default_cf, 1_cf}));
+  IsWALNotEmpty(Merge(mopts, {1_db, 2_db}, 3_db, {default_cf, 1_cf}));
 
   for (auto db : {1_db, 2_db}) {
     ASSERT_OK(get_db(db)->Flush(fopts, get_cf(db, 1_cf)));
