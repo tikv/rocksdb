@@ -10,6 +10,28 @@
 #include "db/db_impl/db_impl.h"
 
 namespace ROCKSDB_NAMESPACE {
+
+/// A RAII-style helper used to block DB writes.
+class WriteBlocker {
+ public:
+  WriteBlocker(DBImpl* db) : db_(db), writer_(new WriteThread::Writer()) {
+    db_->mutex_.Lock();
+    db_->write_thread_.EnterUnbatched(writer_.get(), &db_->mutex_);
+    db_->WaitForPendingWrites();
+    db_->log_write_mutex_.Lock();
+  }
+
+  ~WriteBlocker() {
+    db_->log_write_mutex_.Unlock();
+    db_->write_thread_.ExitUnbatched(writer_.get());
+    db_->mutex_.Unlock();
+  }
+
+ private:
+  DBImpl* db_;
+  std::unique_ptr<WriteThread::Writer> writer_;
+};
+
 Status DBImpl::ValidateForMerge(const MergeInstanceOptions& mopts,
                                 DBImpl* rhs) {
   if (rhs->two_write_queues_) {
@@ -81,6 +103,12 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
     }
   }
 
+  // Block all writes.
+  autovector<std::unique_ptr<WriteBlocker>> write_blockers;
+  for (auto* db : all_db_impls) {
+    write_blockers.emplace_back(new WriteBlocker(db));
+  }
+
   // # Internal key range check
   assert(s.ok());
   for (auto* this_cfd : this_cfds) {
@@ -141,7 +169,6 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
   //   to avoid the case where a memtable is flushed shortly after being
   //   merged, and the resulting L0 data is merged again as a table file.
   assert(s.ok());
-  autovector<std::unique_ptr<WriteThread::Writer>> all_writers;
   autovector<MemTable*> to_delete;  // not used.
   // Key-value freshness is determined by its sequence number. To avoid
   // incoming writes being shadowed by history data from other instances, we
@@ -154,13 +181,7 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
   // counter must be monotonic. We work around this issue by setting the
   // counters of all involved memtables to the same maximum value. See [B].
   uint64_t max_log_number = 0;
-  // Block writes.
   for (auto* db : all_db_impls) {
-    all_writers.emplace_back(new WriteThread::Writer());
-    db->mutex_.Lock();
-    db->write_thread_.EnterUnbatched(all_writers.back().get(), &db->mutex_);
-    db->WaitForPendingWrites();
-    db->log_write_mutex_.Lock();
     max_seq_number = std::max(max_seq_number, db->versions_->LastSequence());
     max_log_number = std::max(max_log_number, db->logfile_number_);
   }
@@ -180,6 +201,7 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
         cf_db_super_versions[cf_i][db_i] = nullptr;
         continue;
       }
+
       if (merge_options.merge_memtable) {
         if (!cfd->mem()->IsEmpty()) {
           // Freeze memtable. Only immutable memtables can be shared.
@@ -203,12 +225,14 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
           sv_context.Clean();
         }
         assert(cfd->mem()->IsEmpty());
+
         // [B] Bump log number for active memtable. Even though it's not
         // shared, it must still be larger than other shared immutable
         // memtables.
         cfd->mem()->SetNextLogNumber(max_log_number);
         cfd->imm()->ExportMemtables(&mems);
       }
+
       // Acquire super version.
       cf_db_super_versions[cf_i][db_i] = cfd->GetSuperVersion()->Ref();
     }
@@ -243,11 +267,10 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
         db->versions_->FetchAddFileNumber(max_log_number - current + 1);
       }
     }
-    // Unblock writes.
-    db->log_write_mutex_.Unlock();
-    db->write_thread_.ExitUnbatched(all_writers[i].get());
-    db->mutex_.Unlock();
   }
+
+  // Unblock writes.
+  write_blockers.clear();
 
   TEST_SYNC_POINT("DBImpl::MergeDisjointInstances:AfterMergeMemtable:1");
 

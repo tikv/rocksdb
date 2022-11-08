@@ -86,6 +86,7 @@ class WriteCallback;
 struct JobContext;
 struct ExternalSstFileInfo;
 struct MemTableInfo;
+class WriteBlocker;
 
 // Class to maintain directories for all database paths other than main one.
 class Directories {
@@ -1428,6 +1429,7 @@ class DBImpl : public DB {
   friend class WriteBatchWithIndex;
   friend class WriteUnpreparedTxnDB;
   friend class WriteUnpreparedTxn;
+  friend class WriteBlocker;
 
 #ifndef ROCKSDB_LITE
   friend class ForwardIterator;
