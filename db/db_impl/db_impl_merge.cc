@@ -114,9 +114,8 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
   for (auto* this_cfd : this_cfds) {
     auto& name = this_cfd->GetName();
     auto* comparator = this_cfd->user_comparator();
-    using CfRange = std::pair<Slice, Slice>;
+    using CfRange = std::pair<PinnableSlice, PinnableSlice>;
     std::vector<CfRange> db_ranges;
-    std::vector<PinnableSlice> pinned_vals;  // hold temporary slice.
     {
       PinnableSlice smallest, largest;
       bool found = false;
@@ -125,9 +124,8 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
         return s;
       }
       if (found) {
-        db_ranges.emplace_back(smallest, largest);
-        pinned_vals.push_back(std::move(smallest));
-        pinned_vals.push_back(std::move(largest));
+        db_ranges.emplace_back(
+            std::make_pair(std::move(smallest), std::move(largest)));
       }
     }
     for (auto* db : db_impls) {
@@ -142,14 +140,14 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
         return s;
       }
       if (found) {
-        db_ranges.emplace_back(smallest, largest);
-        pinned_vals.push_back(std::move(smallest));
-        pinned_vals.push_back(std::move(largest));
+        db_ranges.emplace_back(
+            std::make_pair(std::move(smallest), std::move(largest)));
       }
     }
-    std::sort(db_ranges.begin(), db_ranges.end(), [=](CfRange a, CfRange b) {
-      return comparator->Compare(a.first, b.first) < 0;
-    });
+    std::sort(db_ranges.begin(), db_ranges.end(),
+              [=](const CfRange& a, const CfRange& b) {
+                return comparator->Compare(a.first, b.first) < 0;
+              });
     Slice last_largest;
     for (auto& range : db_ranges) {
       if (last_largest.size() == 0 ||
