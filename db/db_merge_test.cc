@@ -13,8 +13,6 @@
 #include "db/db_test_util.h"
 #include "port/stack_trace.h"
 
-#include <iostream>
-
 namespace ROCKSDB_NAMESPACE {
 
 const uint32_t default_cf = 0;
