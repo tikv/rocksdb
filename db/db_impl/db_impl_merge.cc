@@ -18,11 +18,9 @@ class WriteBlocker {
     db_->mutex_.Lock();
     db_->write_thread_.EnterUnbatched(writer_.get(), &db_->mutex_);
     db_->WaitForPendingWrites();
-    db_->log_write_mutex_.Lock();
   }
 
   ~WriteBlocker() {
-    db_->log_write_mutex_.Unlock();
     db_->write_thread_.ExitUnbatched(writer_.get());
     db_->mutex_.Unlock();
   }
@@ -116,32 +114,27 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
     auto* comparator = this_cfd->user_comparator();
     using CfRange = std::pair<PinnableSlice, PinnableSlice>;
     std::vector<CfRange> db_ranges;
-    {
+    auto process_cf = [&](ColumnFamilyData* cfd, Status* status) {
+      assert(cfd && status && status->ok());
       PinnableSlice smallest, largest;
       bool found = false;
-      s = this_cfd->GetUserKeyRange(&smallest, &largest, &found);
-      if (!s.ok()) {
-        return s;
-      }
-      if (found) {
+      *status = cfd->GetUserKeyRange(&smallest, &largest, &found);
+      if (status->ok() && found) {
         db_ranges.emplace_back(
             std::make_pair(std::move(smallest), std::move(largest)));
       }
+    };
+    process_cf(this_cfd, &s);
+    if (!s.ok()) {
+      return s;
     }
     for (auto* db : db_impls) {
       auto cfd = db->versions_->GetColumnFamilySet()->GetColumnFamily(name);
-      if (cfd == nullptr || cfd->IsDropped()) {
-        continue;
-      }
-      PinnableSlice smallest, largest;
-      bool found = false;
-      s = cfd->GetUserKeyRange(&smallest, &largest, &found);
-      if (!s.ok()) {
-        return s;
-      }
-      if (found) {
-        db_ranges.emplace_back(
-            std::make_pair(std::move(smallest), std::move(largest)));
+      if (cfd && !cfd->IsDropped()) {
+        process_cf(cfd, &s);
+        if (!s.ok()) {
+          return s;
+        }
       }
     }
     std::sort(db_ranges.begin(), db_ranges.end(),
@@ -202,25 +195,12 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
 
       if (merge_options.merge_memtable) {
         if (!cfd->mem()->IsEmpty()) {
-          // Freeze memtable. Only immutable memtables can be shared.
-          auto& cf_mopts = *cfd->GetLatestMutableCFOptions();
-          auto* new_mem = cfd->ConstructNewMemtable(cf_mopts, max_seq_number);
-          new_mem->Ref();
-          cfd->imm()->Add(cfd->mem(), &to_delete);
-#ifndef ROCKSDB_LITE
-          MemTableInfo memtable_info;
-          memtable_info.cf_name = cf_name;
-          memtable_info.first_seqno = cfd->mem()->GetFirstSequenceNumber();
-          memtable_info.earliest_seqno =
-              cfd->mem()->GetEarliestSequenceNumber();
-          memtable_info.num_entries = cfd->mem()->num_entries();
-          memtable_info.num_deletes = cfd->mem()->num_deletes();
-          db->NotifyOnMemTableSealed(cfd, memtable_info);
-#endif  // ROCKSDB_LITE
-          cfd->SetMemtable(new_mem);
-          SuperVersionContext sv_context(/* create_superversion */ true);
-          db->InstallSuperVersionAndScheduleWork(cfd, &sv_context, cf_mopts);
-          sv_context.Clean();
+          WriteContext write_context;
+          assert(log_empty_);
+          s = SwitchMemtable(cfd, &write_context);
+          if (!s.ok()) {
+            return s;
+          }
         }
         assert(cfd->mem()->IsEmpty());
 
