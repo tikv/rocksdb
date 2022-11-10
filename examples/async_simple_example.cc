@@ -85,10 +85,6 @@ class Async {
     io_uring_queue_exit(m_io_uring.get());
   }
 
-  io_uring* get_io_uring() {
-    return this->m_io_uring.get();
-  }
-
   void set_shutdown() {
     m_shutdown.fetch_sub(1, std::memory_order_seq_cst);
   }
@@ -107,7 +103,7 @@ class Async {
 
         io_uring_cqe_seen(m_io_uring.get(), cqe);
       }
-   } while (m_shutdown.load(std::memory_order_relaxed) > 0);
+    } while (m_shutdown.load(std::memory_order_relaxed) > 0);
   }
 
   Async_future get(const std::string &k, std::string &value) {
