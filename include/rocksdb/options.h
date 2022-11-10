@@ -1446,22 +1446,18 @@ enum ReadTier {
 struct IOUringOptions {
   enum class Ops { Read, Write };
 
-  IOUringOptions(struct io_uring* ring) : ioring{ring}, sqe_count{0} {
-    assert(ring != nullptr);
+  explicit IOUringOptions(io_uring* iouring) : m_iouring{iouring} {
+    assert(m_iouring != nullptr);
   }
 
-  IOUringOptions(
-      std::function<Async_future(Async_future::IO_ctx*, int, uint64_t, Ops)>&& deleg)
-      : ioring{nullptr},
-        sqe_count{0},
-        delegate{std::forward<
+  explicit IOUringOptions(
+      std::function<Async_future(Async_future::IO_ctx*, int, uint64_t, Ops)>&& delegate)
+      : m_delegate{std::forward<
             std::function<Async_future(Async_future::IO_ctx*, int, uint64_t, Ops)>>(
-            deleg)} {}
+            delegate)} {}
 
-  struct io_uring* ioring;
-  std::atomic<int> sqe_count;
-  std::function<Async_future(Async_future::IO_ctx*, int, uint64_t, Ops)> delegate;
-
+  io_uring* m_iouring{};
+  std::function<Async_future(Async_future::IO_ctx*, int, uint64_t, Ops)> m_delegate{};
 };
 
 // Options that control read operations
