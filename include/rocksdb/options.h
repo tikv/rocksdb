@@ -1443,21 +1443,24 @@ enum ReadTier {
   kMemtableTier = 0x3     // data in memtable. used for memtable-only iterators.
 };
 
+/** IOUring callback for Async API. */
 struct IOUringOptions {
+  using FH = int;
+  using IO_ctx = Async_future::IO_ctx;
+
   enum class Ops { Read, Write };
+
+  using FnMut = std::function<Async_future(IO_ctx*, FH, off_t, Ops)>;
 
   explicit IOUringOptions(io_uring* iouring) : m_iouring{iouring} {
     assert(m_iouring != nullptr);
   }
 
-  explicit IOUringOptions(
-      std::function<Async_future(Async_future::IO_ctx*, int, uint64_t, Ops)>&& delegate)
-      : m_delegate{std::forward<
-            std::function<Async_future(Async_future::IO_ctx*, int, uint64_t, Ops)>>(
-            delegate)} {}
+  explicit IOUringOptions(FnMut&& delegate)
+        : m_delegate{std::forward<FnMut>(delegate)} {}
 
+  FnMut m_delegate{};
   io_uring* m_iouring{};
-  std::function<Async_future(Async_future::IO_ctx*, int, uint64_t, Ops)> m_delegate{};
 };
 
 // Options that control read operations
@@ -1654,7 +1657,7 @@ struct ReadOptions {
   // Default: false
   bool adaptive_readahead;
 
-  //
+  // IOUring callback for async API.
   IOUringOptions* io_uring_option;
 
   ReadOptions();
@@ -1718,7 +1721,7 @@ struct WriteOptions {
   // Default: false
   bool memtable_insert_hint_per_batch;
 
-  //
+  // IOUring callback for async API.
   const IOUringOptions* io_uring_option;
 
   WriteOptions()
