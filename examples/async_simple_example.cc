@@ -15,7 +15,7 @@
 using ROCKSDB_NAMESPACE::DB;
 using ROCKSDB_NAMESPACE::Async_future;
 using ROCKSDB_NAMESPACE::ReadTier;
-using ROCKSDB_NAMESPACE::IOUringOptions;
+using ROCKSDB_NAMESPACE::IOUringOption;
 using ROCKSDB_NAMESPACE::Options;
 using ROCKSDB_NAMESPACE::PinnableSlice;
 using ROCKSDB_NAMESPACE::ReadOptions;
@@ -39,8 +39,8 @@ class Async {
         throw "io_uring_queue_init failed";
     }
 
-    m_io_uring_options = std::make_unique<IOUringOptions>(
-      [this](Async_future::IO_ctx* ctx, int fd, uint64_t off, IOUringOptions::Ops op) -> Async_future {
+    m_io_uring_options = std::make_unique<IOUringOption>(
+      [this](Async_future::IO_ctx* ctx, int fd, uint64_t off, IOUringOption::Ops op) -> Async_future {
         (void)op;
 
         Async_future a_result(true, ctx);
@@ -149,7 +149,7 @@ class Async {
   ReadOptions m_options;
   std::atomic<int> m_shutdown{};
   std::unique_ptr<io_uring> m_io_uring;
-  std::unique_ptr<IOUringOptions> m_io_uring_options{};
+  std::unique_ptr<IOUringOption> m_io_uring_options{};
 };
 
 

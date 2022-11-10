@@ -107,7 +107,7 @@ struct IOOptions {
   bool force_dir_fsync;
 
   //
-  IOUringOptions* io_uring_option;
+  IOUringOption* io_uring_option;
 
   IOOptions() : IOOptions(false) {}
 

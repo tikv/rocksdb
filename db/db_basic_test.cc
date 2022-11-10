@@ -3987,9 +3987,9 @@ static Async_future SimpleAsyncGetTest(DBAsyncTestBase* testBase) {
   auto io_uring = dynamic_cast<DBBasicTestWithAsyncIO*>(testBase)->io_uring();
   auto io_uring_option =
       testBase->test_delegation()
-          ? new IOUringOptions(
+          ? new IOUringOption(
                 [io_uring](Async_future::IO_ctx* data, int fd, uint64_t offset,
-                           IOUringOptions::Ops op) -> Async_future {
+                           IOUringOption::Ops op) -> Async_future {
                   (void)op;
 
                   Async_future a_result(true, data);
@@ -4012,7 +4012,7 @@ static Async_future SimpleAsyncGetTest(DBAsyncTestBase* testBase) {
                   co_await a_result;
                   co_return rocksdb::IOStatus::OK();
                 })
-          : new IOUringOptions(
+          : new IOUringOption(
                 dynamic_cast<DBBasicTestWithAsyncIO*>(testBase)->io_uring());
   ReadOptions options;
   options.io_uring_option = io_uring_option;
@@ -4038,9 +4038,9 @@ static Async_future SimpleAsyncMultiGetTest(DBAsyncTestBase* testBase) {
   auto io_uring = dynamic_cast<DBBasicTestWithAsyncIO*>(testBase)->io_uring();
   auto io_uring_option =
       testBase->test_delegation()
-          ? new IOUringOptions(
+          ? new IOUringOption(
                 [io_uring](Async_future::IO_ctx* data, int fd, uint64_t offset,
-                           IOUringOptions::Ops op) -> Async_future {
+                           IOUringOption::Ops op) -> Async_future {
                   (void)op;
 
                   Async_future a_result(true, data);
@@ -4063,7 +4063,7 @@ static Async_future SimpleAsyncMultiGetTest(DBAsyncTestBase* testBase) {
                   co_await a_result;
                   co_return rocksdb::IOStatus::OK();
                 })
-          : new IOUringOptions(
+          : new IOUringOption(
                 dynamic_cast<DBBasicTestWithAsyncIO*>(testBase)->io_uring());
   ReadOptions options;
   options.io_uring_option = io_uring_option;

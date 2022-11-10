@@ -148,7 +148,7 @@ Async_future AsyncPosixWrite(const IOOptions& opts, int fd, const char* buf,
     io_uring_submit(opts.io_uring_option->m_iouring);
     co_await a_result;
   } else {
-    opts.io_uring_option->m_delegate(nullptr, fd, 0, IOUringOptions::Ops::Write);
+    opts.io_uring_option->m_delegate(nullptr, fd, 0, IOUringOption::Ops::Write);
   }
 
   co_return true;
@@ -204,7 +204,7 @@ Async_future AsyncPosixPositionedWrite(const IOOptions& opts, int fd,
     io_uring_submit(opts.io_uring_option->m_iouring);
     co_await a_result;
   } else {
-    opts.io_uring_option->m_delegate(nullptr, fd, offset, IOUringOptions::Ops::Write);
+    opts.io_uring_option->m_delegate(nullptr, fd, offset, IOUringOption::Ops::Write);
   }
 
   co_return true;
@@ -735,7 +735,7 @@ Async_future PosixRandomAccessFile::AsyncRead(uint64_t offset, size_t n,
     co_await Async_future{true, ctx.get()};
 
   } else {
-    const auto op{IOUringOptions::Ops::Read};
+    const auto op{IOUringOption::Ops::Read};
     auto delegate{opts.io_uring_option->m_delegate};
 
     co_await delegate(ctx.get(), fd_, offset, op);

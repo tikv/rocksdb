@@ -1444,7 +1444,7 @@ enum ReadTier {
 };
 
 /** IOUring callback for Async API. */
-struct IOUringOptions {
+struct IOUringOption {
   using FH = int;
   using IO_ctx = Async_future::IO_ctx;
 
@@ -1452,11 +1452,11 @@ struct IOUringOptions {
 
   using FnMut = std::function<Async_future(IO_ctx*, FH, off_t, Ops)>;
 
-  explicit IOUringOptions(io_uring* iouring) : m_iouring{iouring} {
+  explicit IOUringOption(io_uring* iouring) : m_iouring{iouring} {
     assert(m_iouring != nullptr);
   }
 
-  explicit IOUringOptions(FnMut&& delegate)
+  explicit IOUringOption(FnMut&& delegate)
         : m_delegate{std::forward<FnMut>(delegate)} {}
 
   FnMut m_delegate{};
@@ -1658,7 +1658,7 @@ struct ReadOptions {
   bool adaptive_readahead;
 
   // IOUring callback for async API.
-  IOUringOptions* io_uring_option;
+  IOUringOption* io_uring_option;
 
   ReadOptions();
   ReadOptions(bool cksum, bool cache);
@@ -1722,7 +1722,7 @@ struct WriteOptions {
   bool memtable_insert_hint_per_batch;
 
   // IOUring callback for async API.
-  const IOUringOptions* io_uring_option;
+  const IOUringOption* io_uring_option;
 
   WriteOptions()
       : sync(false),
