@@ -91,7 +91,7 @@ struct Async_future {
   };
 
   Async_future() = default;
-  Async_future(Async_future&&) = delete;
+  Async_future(Async_future&&) = default;
   Async_future(const Async_future&) = delete;
   Async_future& operator()(Async_future&&) = delete;
   Async_future& operator()(const Async_future&) = delete;
