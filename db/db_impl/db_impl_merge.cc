@@ -114,24 +114,24 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
     auto* comparator = this_cfd->user_comparator();
     using CfRange = std::pair<PinnableSlice, PinnableSlice>;
     std::vector<CfRange> db_ranges;
-    auto process_cf = [&](ColumnFamilyData* cfd, Status* status) {
-      assert(cfd && status && status->ok());
+    auto process_cf = [&](ColumnFamilyData* cfd) {
+      assert(cfd && s.ok());
       PinnableSlice smallest, largest;
       bool found = false;
-      *status = cfd->GetUserKeyRange(&smallest, &largest, &found);
-      if (status->ok() && found) {
+      s = cfd->GetUserKeyRange(&smallest, &largest, &found);
+      if (s.ok() && found) {
         db_ranges.emplace_back(
             std::make_pair(std::move(smallest), std::move(largest)));
       }
     };
-    process_cf(this_cfd, &s);
+    process_cf(this_cfd);
     if (!s.ok()) {
       return s;
     }
     for (auto* db : db_impls) {
       auto cfd = db->versions_->GetColumnFamilySet()->GetColumnFamily(name);
       if (cfd && !cfd->IsDropped()) {
-        process_cf(cfd, &s);
+        process_cf(cfd);
         if (!s.ok()) {
           return s;
         }

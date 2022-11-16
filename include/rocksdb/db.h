@@ -291,6 +291,9 @@ class DB {
   // WAL merge is not supported. User must write with disableWAL=true, or wait
   // for all WALs to be retired before merging.
   //
+  // To have the best performance, use the same `block_cache` and
+  // `prefix_extractor` in DB options.
+  //
   // # Safety
   //
   // Performing merge on DBs that are still undergoing writes results in
