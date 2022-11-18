@@ -113,7 +113,7 @@ struct Async_future {
 
   Async_future() = default;
   Async_future(Async_future&&) = default;
-  Async_future(const Async_future&) = delete;
+  Async_future(const Async_future&) = default;
   Async_future& operator()(Async_future&&) = delete;
   Async_future& operator()(const Async_future&) = delete;
 
@@ -138,7 +138,8 @@ struct Async_future {
     }
   }
 
-  void await_suspend(Handle_type h) {
+  template <typename H>
+  void await_suspend(H h) {
     if (!m_async) { 
       m_h.promise().m_prev = &h.promise();
     } else {
