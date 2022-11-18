@@ -128,6 +128,7 @@ Async_future AsyncPosixWrite(const IOOptions& opts, int fd, const char* buf,
   int pages = (int)std::ceil((float)nbyte / ASYNC_PAGE_SIZE);
   int last_page_size = nbyte % ASYNC_PAGE_SIZE;
   int page_size = ASYNC_PAGE_SIZE;
+  // Will be deleted by the io_uring completion routine.
   auto ctx = new Async_future::IO_ctx(pages);
   char* no_const_buf = const_cast<char*>(buf);
 
@@ -148,7 +149,8 @@ Async_future AsyncPosixWrite(const IOOptions& opts, int fd, const char* buf,
     io_uring_submit(opts.submit_queue->m_iouring);
     co_await a_result;
   } else {
-    opts.submit_queue->m_delegate(nullptr, fd, 0, Submit_queue::Ops::Write);
+    using Ops = Async_future::Submit_queue::Ops;
+    opts.submit_queue->m_delegate(ctx, fd, 0, Ops::Write);
   }
 
   co_return true;
@@ -184,6 +186,7 @@ Async_future AsyncPosixPositionedWrite(const IOOptions& opts, int fd,
   int pages = (int)std::ceil((float)nbyte / ASYNC_PAGE_SIZE);
   int last_page_size = nbyte % ASYNC_PAGE_SIZE;
   int page_size = ASYNC_PAGE_SIZE;
+  // Will be deleted by the io_uring completion routine.
   auto ctx = new Async_future::IO_ctx(pages);
   char* no_const_buf = const_cast<char*>(buf);
 
@@ -204,7 +207,8 @@ Async_future AsyncPosixPositionedWrite(const IOOptions& opts, int fd,
     io_uring_submit(opts.submit_queue->m_iouring);
     co_await a_result;
   } else {
-    opts.submit_queue->m_delegate(nullptr, fd, offset, Submit_queue::Ops::Write);
+    using Ops = Async_future::Submit_queue::Ops;
+    opts.submit_queue->m_delegate(ctx, fd, offset, Ops::Write);
   }
 
   co_return true;
@@ -693,7 +697,8 @@ Async_future PosixRandomAccessFile::AsyncRead(uint64_t offset, size_t n,
   }
 
   auto ptr{scratch};
-  auto ctx{std::make_unique<Async_future::IO_ctx>(n_pages)};
+  // Will be deleted by the io_uring completion routine.
+  auto ctx = new Async_future::IO_ctx(n_pages);
   auto iov{&ctx->m_iov[0]};
 
   for (int i{}; i < n_pages; ++i, ptr += (i * ASYNC_PAGE_SIZE), ++iov) {
@@ -722,7 +727,7 @@ Async_future PosixRandomAccessFile::AsyncRead(uint64_t offset, size_t n,
     }
 
     io_uring_prep_readv(sqe, fd_, ctx->m_iov.data(), ctx->m_iov.size(), offset);
-    io_uring_sqe_set_data(sqe, ctx.get());
+    io_uring_sqe_set_data(sqe, ctx);
 
     const auto ret = io_uring_submit(opts.submit_queue->m_iouring);
 
@@ -732,13 +737,13 @@ Async_future PosixRandomAccessFile::AsyncRead(uint64_t offset, size_t n,
       co_return IOStatus::IOError(error, strerror(-ret));
     }
 
-    co_await Async_future{true, ctx.get()};
+    co_await Async_future{true, ctx};
 
   } else {
-    const auto op{Submit_queue::Ops::Read};
+    using Ops = Async_future::Submit_queue::Ops;
     auto delegate{opts.submit_queue->m_delegate};
 
-    co_await delegate(ctx.get(), fd_, offset, op);
+    co_await delegate(ctx, fd_, offset, Ops::Read);
   }
 
   *result = Slice(scratch, n);
