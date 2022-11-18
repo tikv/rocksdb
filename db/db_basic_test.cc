@@ -3985,11 +3985,11 @@ class DBBasicTestWithAsyncIO : public DBAsyncTestBase {
 
 static Async_future SimpleAsyncGetTest(DBAsyncTestBase* testBase) {
   auto io_uring = dynamic_cast<DBBasicTestWithAsyncIO*>(testBase)->io_uring();
-  auto io_uring_option =
+  auto submit_queue =
       testBase->test_delegation()
-          ? new IOUringOption(
+          ? std::make_shared<Submit_queue>(
                 [io_uring](Async_future::IO_ctx* data, int fd, uint64_t offset,
-                           IOUringOption::Ops op) -> Async_future {
+                           Submit_queue::Ops op) -> Async_future {
                   (void)op;
 
                   Async_future a_result(true, data);
@@ -4012,10 +4012,10 @@ static Async_future SimpleAsyncGetTest(DBAsyncTestBase* testBase) {
                   co_await a_result;
                   co_return rocksdb::IOStatus::OK();
                 })
-          : new IOUringOption(
+          : std::make_shared<Submit_queue>(
                 dynamic_cast<DBBasicTestWithAsyncIO*>(testBase)->io_uring());
   ReadOptions options;
-  options.io_uring_option = io_uring_option;
+  options.submit_queue = submit_queue;
   options.read_tier = kPersistedTier;
   options.verify_checksums = true;
   PinnableSlice* v = new PinnableSlice();
@@ -4023,7 +4023,6 @@ static Async_future SimpleAsyncGetTest(DBAsyncTestBase* testBase) {
       options, testBase->db()->DefaultColumnFamily(), "bar", v, nullptr);
   co_await asyncResult;
   dynamic_cast<DBBasicTestWithAsyncIO*>(testBase)->shutdown();
-  delete io_uring_option;
 
   auto r = v->ToString();
   delete v;
@@ -4036,11 +4035,11 @@ static Async_future SimpleAsyncGetTest(DBAsyncTestBase* testBase) {
 
 static Async_future SimpleAsyncMultiGetTest(DBAsyncTestBase* testBase) {
   auto io_uring = dynamic_cast<DBBasicTestWithAsyncIO*>(testBase)->io_uring();
-  auto io_uring_option =
+  auto submit_queue =
       testBase->test_delegation()
-          ? new IOUringOption(
+          ? std::make_shared<Submit_queue>(
                 [io_uring](Async_future::IO_ctx* data, int fd, uint64_t offset,
-                           IOUringOption::Ops op) -> Async_future {
+                           Submit_queue::Ops op) -> Async_future {
                   (void)op;
 
                   Async_future a_result(true, data);
@@ -4063,10 +4062,10 @@ static Async_future SimpleAsyncMultiGetTest(DBAsyncTestBase* testBase) {
                   co_await a_result;
                   co_return rocksdb::IOStatus::OK();
                 })
-          : new IOUringOption(
+          : std::make_shared<Submit_queue>(
                 dynamic_cast<DBBasicTestWithAsyncIO*>(testBase)->io_uring());
   ReadOptions options;
-  options.io_uring_option = io_uring_option;
+  options.submit_queue = submit_queue;
   options.read_tier = kPersistedTier;
   options.verify_checksums = true;
   std::vector<std::string> values;
@@ -4075,7 +4074,6 @@ static Async_future SimpleAsyncMultiGetTest(DBAsyncTestBase* testBase) {
   co_await asyncResult;
   (void)keys;  // hold keys after coroutine
   dynamic_cast<DBBasicTestWithAsyncIO*>(testBase)->shutdown();
-  delete io_uring_option;
 
   auto statuses = asyncResult.statuses();
 

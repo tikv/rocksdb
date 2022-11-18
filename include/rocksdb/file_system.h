@@ -107,7 +107,7 @@ struct IOOptions {
   bool force_dir_fsync;
 
   //
-  IOUringOption* io_uring_option;
+  std::shared_ptr<Async_future::Submit_queue> submit_queue;
 
   IOOptions() : IOOptions(false) {}
 
@@ -116,7 +116,7 @@ struct IOOptions {
         prio(IOPriority::kIOLow),
         type(IOType::kUnknown),
         force_dir_fsync(force_dir_fsync_),
-	io_uring_option(nullptr) {}
+	submit_queue() {}
 };
 
 struct DirFsyncOptions {

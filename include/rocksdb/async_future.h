@@ -9,6 +9,7 @@
 #include <sys/uio.h>
 
 #include <coroutine>
+#include <functional>
 #include <iostream>
 #include <memory>
 #include <variant>
@@ -90,6 +91,26 @@ struct Async_future {
     std::vector<iovec> m_iov{};
   };
 
+  /** IOUring callback for Async API. */
+  struct Submit_queue {
+    using FH = int;
+    using IO_ctx = Async_future::IO_ctx;
+
+    enum class Ops { Read, Write };
+
+    using FnMut = std::function<Async_future(IO_ctx*, FH, off_t, Ops)>;
+
+    explicit Submit_queue(io_uring* iouring) : m_iouring{iouring} {
+      assert(m_iouring != nullptr);
+    }
+
+    explicit Submit_queue(FnMut&& delegate)
+          : m_delegate{std::forward<FnMut>(delegate)} {}
+
+    FnMut m_delegate{};
+    io_uring* m_iouring{};
+  };
+
   Async_future() = default;
   Async_future(Async_future&&) = default;
   Async_future(const Async_future&) = delete;
@@ -162,6 +183,4 @@ private:
 };
 
 }// namespace ROCKSDB_NAMESPACE
-
-
 

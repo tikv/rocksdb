@@ -141,14 +141,14 @@ Async_future AsyncPosixWrite(const IOOptions& opts, int fd, const char* buf,
 
   Async_future a_result(true, ctx);
 
-  if (opts.io_uring_option->m_iouring != nullptr) {
-    auto sqe = io_uring_get_sqe(opts.io_uring_option->m_iouring);
+  if (opts.submit_queue->m_iouring != nullptr) {
+    auto sqe = io_uring_get_sqe(opts.submit_queue->m_iouring);
     io_uring_prep_writev(sqe, fd, ctx->m_iov.data(), ctx->m_iov.size(), 0);
     io_uring_sqe_set_data(sqe, ctx);
-    io_uring_submit(opts.io_uring_option->m_iouring);
+    io_uring_submit(opts.submit_queue->m_iouring);
     co_await a_result;
   } else {
-    opts.io_uring_option->m_delegate(nullptr, fd, 0, IOUringOption::Ops::Write);
+    opts.submit_queue->m_delegate(nullptr, fd, 0, Submit_queue::Ops::Write);
   }
 
   co_return true;
@@ -197,14 +197,14 @@ Async_future AsyncPosixPositionedWrite(const IOOptions& opts, int fd,
 
   Async_future a_result(true, ctx);
 
-  if (opts.io_uring_option->m_iouring != nullptr) {
-    auto sqe = io_uring_get_sqe(opts.io_uring_option->m_iouring);
+  if (opts.submit_queue->m_iouring != nullptr) {
+    auto sqe = io_uring_get_sqe(opts.submit_queue->m_iouring);
     io_uring_prep_writev(sqe, fd, ctx->m_iov.data(), ctx->m_iov.size(), offset);
     io_uring_sqe_set_data(sqe, ctx);
-    io_uring_submit(opts.io_uring_option->m_iouring);
+    io_uring_submit(opts.submit_queue->m_iouring);
     co_await a_result;
   } else {
-    opts.io_uring_option->m_delegate(nullptr, fd, offset, IOUringOption::Ops::Write);
+    opts.submit_queue->m_delegate(nullptr, fd, offset, Submit_queue::Ops::Write);
   }
 
   co_return true;
@@ -677,7 +677,7 @@ Async_future PosixRandomAccessFile::AsyncRead(uint64_t offset, size_t n,
                                               const IOOptions& opts,
                                               Slice* result, char* scratch,
                                               IODebugContext* /*dbg*/) const {
-  assert(opts.io_uring_option != nullptr);
+  assert(opts.submit_queue != nullptr);
 
   if (use_direct_io()) {
     assert(IsSectorAligned(offset, GetRequiredBufferAlignment()));
@@ -711,8 +711,8 @@ Async_future PosixRandomAccessFile::AsyncRead(uint64_t offset, size_t n,
     std::memset(iov->iov_base, 0x0, iov->iov_len);
   }
 
-  if (opts.io_uring_option->m_iouring != nullptr) {
-    auto sqe{io_uring_get_sqe(opts.io_uring_option->m_iouring)};
+  if (opts.submit_queue->m_iouring != nullptr) {
+    auto sqe{io_uring_get_sqe(opts.submit_queue->m_iouring)};
 
     if (sqe == nullptr) {
       /* Submission queue is full. */
@@ -724,7 +724,7 @@ Async_future PosixRandomAccessFile::AsyncRead(uint64_t offset, size_t n,
     io_uring_prep_readv(sqe, fd_, ctx->m_iov.data(), ctx->m_iov.size(), offset);
     io_uring_sqe_set_data(sqe, ctx.get());
 
-    const auto ret = io_uring_submit(opts.io_uring_option->m_iouring);
+    const auto ret = io_uring_submit(opts.submit_queue->m_iouring);
 
     if (ret < 0) {
       const auto error{Status::SubCode::kIOUringSubmitError};
@@ -735,8 +735,8 @@ Async_future PosixRandomAccessFile::AsyncRead(uint64_t offset, size_t n,
     co_await Async_future{true, ctx.get()};
 
   } else {
-    const auto op{IOUringOption::Ops::Read};
-    auto delegate{opts.io_uring_option->m_delegate};
+    const auto op{Submit_queue::Ops::Read};
+    auto delegate{opts.submit_queue->m_delegate};
 
     co_await delegate(ctx.get(), fd_, offset, op);
   }

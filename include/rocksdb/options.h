@@ -1443,26 +1443,6 @@ enum ReadTier {
   kMemtableTier = 0x3     // data in memtable. used for memtable-only iterators.
 };
 
-/** IOUring callback for Async API. */
-struct IOUringOption {
-  using FH = int;
-  using IO_ctx = Async_future::IO_ctx;
-
-  enum class Ops { Read, Write };
-
-  using FnMut = std::function<Async_future(IO_ctx*, FH, off_t, Ops)>;
-
-  explicit IOUringOption(io_uring* iouring) : m_iouring{iouring} {
-    assert(m_iouring != nullptr);
-  }
-
-  explicit IOUringOption(FnMut&& delegate)
-        : m_delegate{std::forward<FnMut>(delegate)} {}
-
-  FnMut m_delegate{};
-  io_uring* m_iouring{};
-};
-
 // Options that control read operations
 struct ReadOptions {
   // If "snapshot" is non-nullptr, read as of the supplied snapshot
@@ -1658,7 +1638,7 @@ struct ReadOptions {
   bool adaptive_readahead;
 
   // IOUring callback for async API.
-  IOUringOption* io_uring_option;
+  std::shared_ptr<Async_future::Submit_queue> submit_queue;
 
   ReadOptions();
   ReadOptions(bool cksum, bool cache);
@@ -1722,7 +1702,7 @@ struct WriteOptions {
   bool memtable_insert_hint_per_batch;
 
   // IOUring callback for async API.
-  const IOUringOption* io_uring_option;
+  std::shared_ptr<Async_future::Submit_queue> submit_queue;
 
   WriteOptions()
       : sync(false),
@@ -1731,7 +1711,7 @@ struct WriteOptions {
         no_slowdown(false),
         low_pri(false),
         memtable_insert_hint_per_batch(false),
-	io_uring_option{nullptr} {}
+	submit_queue{} {}
 };
 
 // Options that control flush operations
