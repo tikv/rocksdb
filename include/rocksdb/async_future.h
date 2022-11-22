@@ -51,7 +51,7 @@ struct [[nodiscard]] Async_future {
       m_result = new(std::nothrow) Return_type{};
       assert(m_result != nullptr);
 
-      std::cout << __FILE__ << ":" << __LINE__ << ":" << m_result << "\n";
+      // std::cout << __FILE__ << ":" << __LINE__ << ":" << m_result << "\n";
 
       return Async_future(h, m_result);
     }
@@ -110,7 +110,8 @@ struct [[nodiscard]] Async_future {
 
   Async_future() = default;
   Async_future(const Async_future&) = default;
-  Async_future& operator()(const Async_future&) = delete;
+  Async_future& operator=(Async_future&&) = delete;
+  Async_future& operator=(const Async_future&) = delete;
 
   Async_future(Async_future&& rhs)
       : m_h(rhs.m_h),
@@ -119,7 +120,7 @@ struct [[nodiscard]] Async_future {
         m_result(rhs.m_result) {
     rhs.m_ctx = nullptr;
     rhs.m_result = nullptr;
-    std::cout << __FILE__ << ":" << __LINE__ << "\n";
+    // std::cout << __FILE__ << ":" << __LINE__ << "\n";
   }
 
   Async_future(bool async, IO_ctx* ctx)
@@ -133,21 +134,6 @@ struct [[nodiscard]] Async_future {
   ~Async_future() {
     delete m_result;
     m_result = nullptr;
-  }
-
-  Async_future& operator=(Async_future&& rhs) {
-    if (this != &rhs) {
-      m_h = rhs.m_h;
-      m_ctx = rhs.m_ctx;
-      m_async = rhs.m_async;
-      m_result = rhs.m_result;
-
-      rhs.m_ctx = nullptr;
-      rhs.m_result = nullptr;
-
-      std::cout << __FILE__ << ":" << __LINE__ << "\n";
-    }
-    return *this;
   }
 
   bool await_ready() const noexcept {
