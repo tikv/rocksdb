@@ -43,7 +43,6 @@ class Async {
       [this](Async_future::IO_ctx* ctx, int fd, uint64_t off, Submit_queue::Ops op) -> Async_future {
         (void)op;
 
-        Async_future a_result(true, ctx);
 
         auto sqe = io_uring_get_sqe(m_io_uring.get());
 
@@ -65,7 +64,7 @@ class Async {
         std::cout << __LINE__ << " io_uring co_await" << std::endl;
         std::cout.flush();
 
-        co_await a_result;
+        co_await Async_future(true, ctx);
 
         std::cout << __LINE__ << " io_uring after co_await" << std::endl;
         std::cout.flush();

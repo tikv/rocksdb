@@ -3987,9 +3987,9 @@ static Async_future SimpleAsyncGetTest(DBAsyncTestBase* testBase) {
   auto io_uring = dynamic_cast<DBBasicTestWithAsyncIO*>(testBase)->io_uring();
   auto submit_queue =
       testBase->test_delegation()
-          ? std::make_shared<Submit_queue>(
+          ? std::make_shared<Async_future::Submit_queue>(
                 [io_uring](Async_future::IO_ctx* data, int fd, uint64_t offset,
-                           Submit_queue::Ops op) -> Async_future {
+                           Async_future::Submit_queue::Ops op) -> Async_future {
                   (void)op;
 
                   Async_future a_result(true, data);
@@ -4012,7 +4012,7 @@ static Async_future SimpleAsyncGetTest(DBAsyncTestBase* testBase) {
                   co_await a_result;
                   co_return rocksdb::IOStatus::OK();
                 })
-          : std::make_shared<Submit_queue>(
+          : std::make_shared<Async_future::Submit_queue>(
                 dynamic_cast<DBBasicTestWithAsyncIO*>(testBase)->io_uring());
   ReadOptions options;
   options.submit_queue = submit_queue;
@@ -4037,9 +4037,9 @@ static Async_future SimpleAsyncMultiGetTest(DBAsyncTestBase* testBase) {
   auto io_uring = dynamic_cast<DBBasicTestWithAsyncIO*>(testBase)->io_uring();
   auto submit_queue =
       testBase->test_delegation()
-          ? std::make_shared<Submit_queue>(
+          ? std::make_shared<Async_future::Submit_queue>(
                 [io_uring](Async_future::IO_ctx* data, int fd, uint64_t offset,
-                           Submit_queue::Ops op) -> Async_future {
+                           Async_future::Submit_queue::Ops op) -> Async_future {
                   (void)op;
 
                   Async_future a_result(true, data);
@@ -4062,7 +4062,7 @@ static Async_future SimpleAsyncMultiGetTest(DBAsyncTestBase* testBase) {
                   co_await a_result;
                   co_return rocksdb::IOStatus::OK();
                 })
-          : std::make_shared<Submit_queue>(
+          : std::make_shared<Async_future::Submit_queue>(
                 dynamic_cast<DBBasicTestWithAsyncIO*>(testBase)->io_uring());
   ReadOptions options;
   options.submit_queue = submit_queue;

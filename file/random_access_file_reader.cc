@@ -293,7 +293,7 @@ Async_future RandomAccessFileReader::AsyncRead(const IOOptions& opts,
   (void)aligned_buf;
 
   TEST_SYNC_POINT_CALLBACK("RandomAccessFileReader::Read", nullptr);
-  Status io_s;
+  IOStatus io_s;
   uint64_t elapsed = 0;
   {
     StopWatch sw(clock_, stats_, hist_type_,
@@ -341,7 +341,7 @@ Async_future RandomAccessFileReader::AsyncRead(const IOOptions& opts,
           auto a_result = file_->AsyncRead(aligned_offset + buf.CurrentSize(), allowed, opts,
                              &tmp, buf.Destination(), nullptr);
           co_await a_result;
-          io_s = a_result.status();
+          io_s = a_result.io_result();
         }
         if (ShouldNotifyListeners()) {
           auto finish_ts = FileOperationInfo::FinishNow();
@@ -403,7 +403,7 @@ Async_future RandomAccessFileReader::AsyncRead(const IOOptions& opts,
           auto a_result = file_->AsyncRead(offset + pos, allowed, opts,
                                            &tmp_result, scratch + pos, nullptr);
           co_await a_result;
-          io_s = a_result.status();
+          io_s = a_result.io_result();
         }
 #ifndef ROCKSDB_LITE
         if (ShouldNotifyListeners()) {

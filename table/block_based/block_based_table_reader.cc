@@ -1705,7 +1705,7 @@ Async_future BlockBasedTable::AsyncMaybeReadBlockAndLoadToCache(
 
         auto a_result = block_fetcher.AsyncReadBlockContents();
         co_await a_result;
-        s = a_result.status();
+        s = a_result.io_result();
 
         s = block_fetcher.ReadBlockContents();
         raw_block_comp_type = block_fetcher.get_compression_type();

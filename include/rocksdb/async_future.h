@@ -18,17 +18,25 @@
 #include "io_status.h"
 #include "rocksdb/status.h"
 
+struct RustFutureIOStatus;
+
 namespace ROCKSDB_NAMESPACE {
 
-struct Async_future {
+struct [[nodiscard]] Async_future {
   struct promise_type;
 
   using Promise_type = promise_type;
-  using Handle_type = std::coroutine_handle<Promise_type>;
+  using Void_handle_type = std::coroutine_handle<>;
+  using Typed_handle_type = std::coroutine_handle<Promise_type>;
+
+  struct Continuation {
+    promise_type* m_prev{};
+  };
 
   struct promise_type {
     struct Return_type {
       /** Whether the result can be co_returned. */
+      // FIXME: Use std::optional
       bool m_is_set{};
 
       /** Status or statues returned by async functions. */
@@ -36,11 +44,14 @@ struct Async_future {
     };
 
     Async_future get_return_object() {
-      auto h{Handle_type::from_promise(*this)};
+      auto h{Typed_handle_type::from_promise(*this)};
 
+      // FIXME: This is very expensive
       assert(m_result == nullptr);
       m_result = new(std::nothrow) Return_type{};
       assert(m_result != nullptr);
+
+      std::cout << __FILE__ << ":" << __LINE__ << ":" << m_result << "\n";
 
       return Async_future(h, m_result);
     }
@@ -48,8 +59,8 @@ struct Async_future {
     auto initial_suspend() { return std::suspend_never{}; }
 
     auto final_suspend() noexcept {
-      if (m_prev != nullptr) {
-        auto h{Handle_type::from_promise(*m_prev)};
+      if (m_continuation.m_prev != nullptr) {
+        auto h{Typed_handle_type::from_promise(*m_continuation.m_prev)};
         h.resume();
       }
       return std::suspend_never{};
@@ -59,28 +70,14 @@ struct Async_future {
       std::abort();
     }
 
-    void return_value(bool v) {
-      m_result->m_value = v;
-      m_result->m_is_set = true;
-    }
-
-    void return_value(Status v) {
-      m_result->m_value = v;
-      m_result->m_is_set = true;
-    }
-
-    void return_value(IOStatus v) {
-      m_result->m_value = v;
-      m_result->m_is_set = true;
-    }
-
-    void return_value(std::vector<Status>&& v) {
-      m_result->m_is_set = true;
+    template <typename T>
+    void return_value(T v) {
       m_result->m_value = std::move(v);
+      m_result->m_is_set = true;
     }
 
-    promise_type* m_prev{};
     Return_type* m_result{};
+    Continuation m_continuation{};
   };
 
   struct IO_ctx {
@@ -112,22 +109,45 @@ struct Async_future {
   };
 
   Async_future() = default;
-  Async_future(Async_future&&) = default;
   Async_future(const Async_future&) = default;
-  Async_future& operator()(Async_future&&) = delete;
   Async_future& operator()(const Async_future&) = delete;
+
+  Async_future(Async_future&& rhs)
+      : m_h(rhs.m_h),
+        m_async(rhs.m_async),
+        m_ctx(rhs.m_ctx),
+        m_result(rhs.m_result) {
+    rhs.m_ctx = nullptr;
+    rhs.m_result = nullptr;
+    std::cout << __FILE__ << ":" << __LINE__ << "\n";
+  }
 
   Async_future(bool async, IO_ctx* ctx)
       : m_async(async),
         m_ctx(ctx) {}
 
-  Async_future(Handle_type h, Promise_type::Return_type* result)
+  Async_future(Typed_handle_type h, Promise_type::Return_type* result)
       : m_h(h),
         m_result(result) {}
 
   ~Async_future() {
     delete m_result;
     m_result = nullptr;
+  }
+
+  Async_future& operator=(Async_future&& rhs) {
+    if (this != &rhs) {
+      m_h = rhs.m_h;
+      m_ctx = rhs.m_ctx;
+      m_async = rhs.m_async;
+      m_result = rhs.m_result;
+
+      rhs.m_ctx = nullptr;
+      rhs.m_result = nullptr;
+
+      std::cout << __FILE__ << ":" << __LINE__ << "\n";
+    }
+    return *this;
   }
 
   bool await_ready() const noexcept {
@@ -138,13 +158,17 @@ struct Async_future {
     }
   }
 
-  template <typename H>
-  void await_suspend(H h) {
+  void await_suspend(Typed_handle_type h) {
     if (!m_async) { 
-      m_h.promise().m_prev = &h.promise();
+      m_h.promise().m_continuation.m_prev = &h.promise();
     } else {
       m_ctx->m_promise = &h.promise();
     }
+  }
+
+  void await_suspend(Void_handle_type  h) {
+    (void) h;
+    assert(false);
   }
 
   void await_resume() const noexcept {}
@@ -171,9 +195,9 @@ struct Async_future {
   }
 
 private:
-  Handle_type m_h{};
+  Typed_handle_type m_h{};
 
-  /* true if a custome io_uring handler is installed. */
+  /* true if a custom io_uring handler is installed. */
   bool m_async{};
 
   /** IO context for read/write. */
