@@ -15,13 +15,13 @@
 using ROCKSDB_NAMESPACE::DB;
 using ROCKSDB_NAMESPACE::Async_future;
 using ROCKSDB_NAMESPACE::ReadTier;
-using ROCKSDB_NAMESPACE::Submit_queue;
 using ROCKSDB_NAMESPACE::Options;
 using ROCKSDB_NAMESPACE::PinnableSlice;
 using ROCKSDB_NAMESPACE::ReadOptions;
 using ROCKSDB_NAMESPACE::Status;
 using ROCKSDB_NAMESPACE::WriteBatch;
 using ROCKSDB_NAMESPACE::WriteOptions;
+using Submit_queue = Async_future::Submit_queue;
 
 std::string kDBPath = "/tmp/rocksdb_async_simple_example";
 
@@ -79,8 +79,6 @@ class Async {
 
   ~Async() {
     std::cout << "~Async" << std::endl;
-
-    m_shutdown.store(true, std::memory_order_relaxed);
     io_uring_queue_exit(m_io_uring.get());
   }
 
