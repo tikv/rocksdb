@@ -18,6 +18,7 @@
 #include "io_status.h"
 #include "rocksdb/status.h"
 
+struct RustFutureStatus;
 struct RustFutureIOStatus;
 
 namespace ROCKSDB_NAMESPACE {
@@ -51,8 +52,6 @@ struct [[nodiscard]] Async_future {
       m_result = new(std::nothrow) Return_type{};
       assert(m_result != nullptr);
 
-      // std::cout << __FILE__ << ":" << __LINE__ << ":" << m_result << "\n";
-
       return Async_future(h, m_result);
     }
 
@@ -72,8 +71,8 @@ struct [[nodiscard]] Async_future {
 
     template <typename T>
     void return_value(T v) {
-      m_result->m_value = std::move(v);
       m_result->m_is_set = true;
+      m_result->m_value = std::move(v);
     }
 
     Return_type* m_result{};
@@ -81,7 +80,8 @@ struct [[nodiscard]] Async_future {
   };
 
   struct IO_ctx {
-    explicit IO_ctx(int n_pages) : m_iov(n_pages) { }
+    explicit IO_ctx(int n_pages) : m_iov(n_pages) {}
+
     ~IO_ctx() = default;
 
     promise_type* m_promise{};
@@ -120,16 +120,15 @@ struct [[nodiscard]] Async_future {
         m_result(rhs.m_result) {
     rhs.m_ctx = nullptr;
     rhs.m_result = nullptr;
-    // std::cout << __FILE__ << ":" << __LINE__ << "\n";
   }
 
   Async_future(bool async, IO_ctx* ctx)
       : m_async(async),
-        m_ctx(ctx) {}
+        m_ctx(ctx) { }
 
   Async_future(Typed_handle_type h, Promise_type::Return_type* result)
       : m_h(h),
-        m_result(result) {}
+        m_result(result) { }
 
   ~Async_future() {
     delete m_result;
@@ -145,15 +144,16 @@ struct [[nodiscard]] Async_future {
   }
 
   void await_suspend(Typed_handle_type h) {
+    auto promise = &h.promise();
+
     if (!m_async) { 
-      m_h.promise().m_continuation.m_prev = &h.promise();
+      m_h.promise().m_continuation.m_prev = promise;
     } else {
-      m_ctx->m_promise = &h.promise();
+      m_ctx->m_promise = promise;
     }
   }
 
-  void await_suspend(Void_handle_type  h) {
-    (void) h;
+  void await_suspend(Void_handle_type) {
     assert(false);
   }
 

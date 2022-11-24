@@ -189,7 +189,7 @@ int main() {
 
     auto r1 = async.get(k1, v1);
     auto r2 = async.get(k2, v2);
-    auto r3 = async.get(k1, v3);
+    auto r3 = async.get(k3, v3);
 
     async.io_uring_completion();
 

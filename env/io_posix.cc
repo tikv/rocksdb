@@ -735,17 +735,17 @@ Async_future PosixRandomAccessFile::AsyncRead(uint64_t offset, size_t n,
 
     co_await Async_future{true, ctx};
 
+    *result = Slice(scratch, n);
+
+    co_return IOStatus::OK();
   } else {
     using Ops = Async_future::Submit_queue::Ops;
     auto delegate{opts.submit_queue->m_delegate};
+    auto r = delegate(ctx, fd_, offset, Ops::Read);
 
-    // FIXME: Error handling?
-    co_await delegate(ctx, fd_, offset, Ops::Read);
+    co_await r;
+    co_return r.io_result();
   }
-
-  *result = Slice(scratch, n);
-
-  co_return IOStatus::OK();
 }
 
 IOStatus PosixRandomAccessFile::MultiRead(FSReadRequest* reqs,
