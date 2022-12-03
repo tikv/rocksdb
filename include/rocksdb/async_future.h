@@ -109,9 +109,15 @@ struct [[nodiscard]] Async_future {
   };
 
   Async_future() = default;
-  Async_future(const Async_future&) = default;
-  Async_future& operator=(Async_future&&) = delete;
   Async_future& operator=(const Async_future&) = delete;
+
+  Async_future(const Async_future& rhs)
+      : m_h(rhs.m_h), 
+        m_async(rhs.m_async),
+        m_ctx(rhs.m_ctx),
+        m_result() {
+    assert(rhs.m_result == nullptr);
+  }
 
   Async_future(Async_future&& rhs)
       : m_h(rhs.m_h),
@@ -120,6 +126,20 @@ struct [[nodiscard]] Async_future {
         m_result(rhs.m_result) {
     rhs.m_ctx = nullptr;
     rhs.m_result = nullptr;
+  }
+
+  Async_future& operator=(Async_future&& rhs) {
+    if (this != &rhs) {
+      m_h = rhs.m_h;
+      m_ctx = rhs.m_ctx;
+      m_async = rhs.m_async;
+      m_result = rhs.m_result;
+
+      rhs.m_ctx = nullptr;
+      rhs.m_result = nullptr;
+    }
+
+    return *this;
   }
 
   Async_future(bool async, IO_ctx* ctx)
