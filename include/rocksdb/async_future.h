@@ -84,6 +84,8 @@ struct [[nodiscard]] Async_future {
 
     ~IO_ctx() = default;
 
+    int m_fd{};
+    off_t m_off{};
     promise_type* m_promise{};
     std::vector<iovec> m_iov{};
   };
@@ -168,7 +170,7 @@ struct [[nodiscard]] Async_future {
 
     if (!m_async) { 
       m_h.promise().m_continuation.m_prev = promise;
-    } else {
+    } else if (m_ctx != nullptr) {
       m_ctx->m_promise = promise;
     }
   }
