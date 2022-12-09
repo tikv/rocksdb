@@ -4045,17 +4045,9 @@ bool DBImpl::GetAggregatedIntProperty(const Slice& property,
   return ret;
 }
 
-SuperVersion* DBImpl::GetAndRefSuperVersion(ColumnFamilyData* cfd,
-                                            bool useThreadLocalCache) {
-  if (useThreadLocalCache) {
-    // TODO(ljin): consider using GetReferencedSuperVersion() directly
-    return cfd->GetThreadLocalSuperVersion(this);
-  } else {
-    this->mutex()->Lock();
-    auto sv = cfd->GetSuperVersion();
-    this->mutex()->Unlock();
-    return sv;
-  }
+SuperVersion* DBImpl::GetAndRefSuperVersion(ColumnFamilyData* cfd) {
+  // TODO(ljin): consider using GetReferencedSuperVersion() directly
+  return cfd->GetThreadLocalSuperVersion(this);
 }
 
 // REQUIRED: this function should only be called on the write thread or if the
@@ -4072,6 +4064,7 @@ SuperVersion* DBImpl::GetAndRefSuperVersion(uint32_t column_family_id) {
 
 void DBImpl::CleanupSuperVersion(SuperVersion* sv) {
   // Release SuperVersion
+  std::cout << "SV: Cleanup: " << sv << "\n";
   if (sv->Unref()) {
     bool defer_purge =
             immutable_db_options().avoid_unnecessary_blocking_io;

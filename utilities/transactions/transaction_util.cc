@@ -27,7 +27,7 @@ Status TransactionUtil::CheckKeyForConflicts(
 
   auto cfh = static_cast_with_check<ColumnFamilyHandleImpl>(column_family);
   auto cfd = cfh->cfd();
-  SuperVersion* sv = db_impl->GetAndRefSuperVersion(cfd, true);
+  SuperVersion* sv = db_impl->GetAndRefSuperVersion(cfd);
 
   if (sv == nullptr) {
     result = Status::InvalidArgument("Could not access column family " +

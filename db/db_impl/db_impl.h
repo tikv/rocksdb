@@ -785,8 +785,7 @@ class DBImpl : public DB {
   // Find Super version and reference it. Based on options, it might return
   // the thread local cached one.
   // Call ReturnAndCleanupSuperVersion() when it is no longer needed.
-  SuperVersion* GetAndRefSuperVersion(ColumnFamilyData* cfd,
-                                      bool useThreadLocalCache = true);
+  SuperVersion* GetAndRefSuperVersion(ColumnFamilyData* cfd);
 
   // Similar to the previous function but looks up based on a column family id.
   // nullptr will be returned if this column family no longer exists.
