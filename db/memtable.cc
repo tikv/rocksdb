@@ -122,7 +122,6 @@ MemTable::MemTable(const InternalKeyComparator& cmp,
   assert(!ShouldScheduleFlush());
 
   UpdateFlushState();
-  UpdateOldestKeyTime();
 }
 
 MemTable::~MemTable() {
