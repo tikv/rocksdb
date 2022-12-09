@@ -278,7 +278,6 @@ class ColumnFamilyData {
   // that ColumnFamilyData is alive (while holding a non-zero ref already,
   // holding a DB mutex, or as the leader in a write batch group).
   void Ref() {
-    std::cout << "CFD: " << this << ", refs_.add: " << refs_ << "\n";
     refs_.fetch_add(1);
   }
 
@@ -446,7 +445,7 @@ class ColumnFamilyData {
   // Try to return SuperVersion back to thread local storage. Return true on
   // success and false on failure. It fails when the thread local storage
   // contains anything other than SuperVersion::kSVInUse flag.
-  bool ReturnThreadLocalSuperVersion(SuperVersion* sv);
+  bool ReturnThreadLocalSuperVersion(DBImpl* db, SuperVersion* sv);
   // thread-safe
   uint64_t GetSuperVersionNumber() const {
     return super_version_number_.load();

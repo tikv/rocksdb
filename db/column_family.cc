@@ -435,7 +435,6 @@ SuperVersion::~SuperVersion() {
 
 SuperVersion* SuperVersion::Ref() {
   refs.fetch_add(1, std::memory_order_relaxed);
-  std::cout << "SV: " << this << " ref: " << refs << "\n";
   return this;
 }
 
@@ -445,8 +444,6 @@ uint32_t SuperVersion::GetRef() const {
 
 bool SuperVersion::Unref() {
   // fetch_sub returns the previous value of ref
-  std::cout << "SV: " << this << " unref: " << refs << "\n";
-
   uint32_t previous_refs = refs.fetch_sub(1);
   assert(previous_refs > 0);
   return previous_refs == 1;
@@ -679,8 +676,6 @@ ColumnFamilyData::~ColumnFamilyData() {
 }
 
 bool ColumnFamilyData::UnrefAndTryDelete() {
-  std::cout << "CFD: " << this << ", refs_.sub: " << refs_ << "\n";
-
   int old_refs = refs_.fetch_sub(1);
   assert(old_refs > 0);
 
@@ -1209,7 +1204,7 @@ Compaction* ColumnFamilyData::CompactRange(
 SuperVersion* ColumnFamilyData::GetReferencedSuperVersion(DBImpl* db) {
   SuperVersion* sv = GetThreadLocalSuperVersion(db);
   sv->Ref();
-  if (!ReturnThreadLocalSuperVersion(sv)) {
+  if (!ReturnThreadLocalSuperVersion(db, sv)) {
     // This Unref() corresponds to the Ref() in GetThreadLocalSuperVersion()
     // when the thread-local pointer was populated. So, the Ref() earlier in
     // this function still prevents the returned SuperVersion* from being
@@ -1269,11 +1264,10 @@ SuperVersion* ColumnFamilyData::GetThreadLocalSuperVersion(DBImpl* db) {
     delete sv_to_delete;
   }
   assert(sv != nullptr);
-  std::cout << "SV: " << sv << std::endl;
   return sv;
 }
 
-bool ColumnFamilyData::ReturnThreadLocalSuperVersion(SuperVersion* sv) {
+bool ColumnFamilyData::ReturnThreadLocalSuperVersion(DBImpl* db, SuperVersion* sv) {
   assert(sv != nullptr);
 
   // Put the SuperVersion back
@@ -1283,15 +1277,22 @@ bool ColumnFamilyData::ReturnThreadLocalSuperVersion(SuperVersion* sv) {
     // When we see kSVInUse in the ThreadLocal, we are sure ThreadLocal
     // storage has not been altered and no Scrape has happened. The
     // SuperVersion is still current.
-    std::cout << "SV: " << sv << " in use\n";
     return true;
   } else if (expected != nullptr) {
+    // A scrape has happened, we have to adjust the refs in both
+    // the super version and CFD that it refers to.
+    // FIXME: This assumes the SVs "release"  are not interleaved.
     auto ptr = static_cast<SuperVersion*>(local_sv_->Swap(sv));
     if (sv != ptr) {
-      ptr->Unref();
+      db->mutex()->Lock();
+      assert(ptr != super_version_);
+      bool last_ref __attribute__((__unused__));
+      last_ref = ptr->Unref();
+      assert(last_ref);
       refs_.fetch_sub(1);
       ptr->Cleanup();
-      delete ptr;
+      db->mutex()->Unlock();
+      // delete ptr;
     } else {
       sv->Unref();
     }
@@ -1300,9 +1301,8 @@ bool ColumnFamilyData::ReturnThreadLocalSuperVersion(SuperVersion* sv) {
     // ThreadLocal scrape happened in the process of this GetImpl call (after
     // thread local Swap() at the beginning and before CompareAndSwap()).
     // This means the SuperVersion it holds is obsolete.
-    std::cout << "SV: " << sv << " (" << expected << ") obsolete : " << "\n";
+    return false;
   }
-  return false;
 }
 
 void ColumnFamilyData::InstallSuperVersion(

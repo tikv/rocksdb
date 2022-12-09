@@ -4064,7 +4064,6 @@ SuperVersion* DBImpl::GetAndRefSuperVersion(uint32_t column_family_id) {
 
 void DBImpl::CleanupSuperVersion(SuperVersion* sv) {
   // Release SuperVersion
-  std::cout << "SV: Cleanup: " << sv << "\n";
   if (sv->Unref()) {
     bool defer_purge =
             immutable_db_options().avoid_unnecessary_blocking_io;
@@ -4086,7 +4085,7 @@ void DBImpl::CleanupSuperVersion(SuperVersion* sv) {
 
 void DBImpl::ReturnAndCleanupSuperVersion(ColumnFamilyData* cfd,
                                           SuperVersion* sv) {
-  if (!cfd->ReturnThreadLocalSuperVersion(sv)) {
+  if (!cfd->ReturnThreadLocalSuperVersion(this, sv)) {
     CleanupSuperVersion(sv);
   }
 }
