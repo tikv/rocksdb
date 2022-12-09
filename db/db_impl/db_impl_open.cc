@@ -1687,10 +1687,6 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
           handles->push_back(
               new ColumnFamilyHandleImpl(cfd, impl, &impl->mutex_));
           impl->NewThreadStatusCfInfo(cfd);
-          impl->mutex_.Unlock();
-          impl->write_buffer_manager_->RegisterColumnFamily(impl,
-                                                            handles->back());
-          impl->mutex_.Lock();
         } else {
           if (db_options.create_missing_column_families) {
             // missing column family, create it
@@ -1900,6 +1896,22 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
   }
   if (s.ok()) {
     impl->StartPeriodicWorkScheduler();
+    if (impl->write_buffer_manager_) {
+      // Newly created handles are already registered during
+      // `CreateColumnFamily`.
+      impl->write_buffer_manager_->UnregisterDB(impl);
+      for (auto* cf : *handles) {
+        if (cf->GetName() == kDefaultColumnFamilyName) {
+          impl->write_buffer_manager_->RegisterColumnFamily(
+              impl, impl->default_cf_handle_);
+        } else if (cf->GetName() == kPersistentStatsColumnFamilyName) {
+          impl->write_buffer_manager_->RegisterColumnFamily(
+              impl, impl->persist_stats_cf_handle_);
+        } else {
+          impl->write_buffer_manager_->RegisterColumnFamily(impl, cf);
+        }
+      }
+    }
   } else {
     for (auto* h : *handles) {
       delete h;

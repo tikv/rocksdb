@@ -174,11 +174,9 @@ void WriteBufferManager::FreeMemWithCache(size_t mem) {
 }
 
 void WriteBufferManager::MaybeFlushLocked(DB* this_db) {
-  size_t local_size = flush_size();
   if (!ShouldFlush()) {
     return;
   }
-  uint64_t total_active_mem = 0;
   // We only flush at most one column family at a time.
   // This is enough to keep size under control except when flush_size is
   // dynamically decreased. That case is managed in `SetFlushSize`.
@@ -202,10 +200,9 @@ void WriteBufferManager::MaybeFlushLocked(DB* this_db) {
       max_score = current_score;
       candidate_size = current_memory_bytes;
     }
-    total_active_mem += current_memory_bytes;
   }
 
-  if (total_active_mem > local_size && candidate != nullptr) {
+  if (candidate != nullptr) {
     FlushOptions flush_opts;
     flush_opts.allow_write_stall = true;
     flush_opts.wait = false;

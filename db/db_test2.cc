@@ -586,7 +586,7 @@ TEST_F(DBTest2, SharedWriteBufferLimitAcrossDB) {
     ASSERT_OK(static_cast<DBImpl*>(db2)->TEST_WaitForFlushMemTable());
   };
 
-  // Trigger a flush on DB1.cf2
+  // Trigger a flush on DB1.cf1
   flush_listener->expected_flush_reason = FlushReason::kManualFlush;
   ASSERT_OK(Put(0, Key(1), DummyString(20000), wo));
   wait_flush();
@@ -600,7 +600,6 @@ TEST_F(DBTest2, SharedWriteBufferLimitAcrossDB) {
 
   ASSERT_OK(Put(1, Key(1), DummyString(1), wo));
   wait_flush();
-  ASSERT_OK(static_cast<DBImpl*>(db2)->TEST_WaitForFlushMemTable());
   {
     ASSERT_EQ(GetNumberOfSstFilesForColumnFamily(db_, "default"),
               static_cast<uint64_t>(0));
