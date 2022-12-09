@@ -31,7 +31,6 @@
 #include "table/multiget_context.h"
 #include "util/dynamic_bloom.h"
 #include "util/hash.h"
-// #include "util/mutexlock.h"
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -635,6 +634,7 @@ class MemTable {
                                moptions_.memtable_huge_page_size, logger_));
         }
         ptr = bloom_filter_.get();
+        bloom_filter_ptr_.store(ptr, std::memory_order_relaxed);
       }
       return ptr;
     }
