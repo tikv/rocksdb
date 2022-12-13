@@ -12,6 +12,7 @@
 #include <memory>
 
 #include "db/log_format.h"
+#include "rocksdb/async_future.h"
 #include "rocksdb/io_status.h"
 #include "rocksdb/slice.h"
 #include "rocksdb/status.h"
@@ -81,12 +82,16 @@ class Writer {
 
   IOStatus AddRecord(const Slice& slice);
 
+  Async_future AsyncAddRecord(const Slice& slice);
+
   WritableFileWriter* file() { return dest_.get(); }
   const WritableFileWriter* file() const { return dest_.get(); }
 
   uint64_t get_log_number() const { return log_number_; }
 
   IOStatus WriteBuffer();
+
+  Async_future AsyncWriteBuffer();
 
   IOStatus Close();
 

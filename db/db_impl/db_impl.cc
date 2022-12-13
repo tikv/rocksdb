@@ -1333,11 +1333,11 @@ Status DBImpl::FlushWAL(bool sync) {
       // future writes
       IOStatusCheck(io_s);
       // whether sync or not, we should abort the rest of function upon error
-      return std::move(io_s);
+      return io_s;
     }
     if (!sync) {
       ROCKS_LOG_DEBUG(immutable_db_options_.info_log, "FlushWAL sync=false");
-      return std::move(io_s);
+      return io_s;
     }
   }
   if (!sync) {
@@ -1346,6 +1346,41 @@ Status DBImpl::FlushWAL(bool sync) {
   // sync = true
   ROCKS_LOG_DEBUG(immutable_db_options_.info_log, "FlushWAL sync=true");
   return SyncWAL();
+}
+
+Async_future DBImpl::AsyncFlushWAL(bool sync) {
+  if (manual_wal_flush_) {
+    IOStatus io_s;
+    {
+      // We need to lock log_write_mutex_ since logs_ might change concurrently
+      InstrumentedMutexLock wl(&log_write_mutex_);
+      log::Writer* cur_log_writer = logs_.back().writer;
+      auto result = cur_log_writer->AsyncWriteBuffer();
+      co_await result;
+      io_s = result.io_result();
+    }
+    if (!io_s.ok()) {
+      ROCKS_LOG_ERROR(immutable_db_options_.info_log, "WAL flush error %s",
+                      io_s.ToString().c_str());
+      // In case there is a fs error we should set it globally to prevent the
+      // future writes
+      IOStatusCheck(io_s);
+      // whether sync or not, we should abort the rest of function upon error
+      co_return std::move(io_s);
+    }
+    if (!sync) {
+      ROCKS_LOG_DEBUG(immutable_db_options_.info_log, "FlushWAL sync=false");
+      co_return std::move(io_s);
+    }
+  }
+  if (!sync) {
+    co_return Status::OK();
+  }
+  // sync = true
+  ROCKS_LOG_DEBUG(immutable_db_options_.info_log, "FlushWAL sync=true");
+  auto result = AsSyncWAL();
+  co_await result;
+  co_return result.status();
 }
 
 Status DBImpl::SyncWAL() {
@@ -1443,6 +1478,92 @@ Status DBImpl::ApplyWALToManifest(VersionEdit* synced_wals) {
   return status;
 }
 
+Async_future DBImpl::AsSyncWAL() {
+  autovector<log::Writer*, 1> logs_to_sync;
+  bool need_log_dir_sync;
+  uint64_t current_log_number;
+
+  {
+    InstrumentedMutexLock l(&mutex_);
+    assert(!logs_.empty());
+
+    // This SyncWAL() call only cares about logs up to this number.
+    current_log_number = logfile_number_;
+
+    while (logs_.front().number <= current_log_number &&
+           logs_.front().getting_synced) {
+      log_sync_cv_.Wait();
+    }
+    // First check that logs are safe to sync in background.
+    for (auto it = logs_.begin();
+         it != logs_.end() && it->number <= current_log_number; ++it) {
+      if (!it->writer->file()->writable_file()->IsSyncThreadSafe()) {
+        co_return Status::NotSupported(
+            "SyncWAL() is not supported for this implementation of WAL file",
+            immutable_db_options_.allow_mmap_writes
+                ? "try setting Options::allow_mmap_writes to false"
+                : Slice());
+      }
+    }
+    for (auto it = logs_.begin();
+         it != logs_.end() && it->number <= current_log_number; ++it) {
+      auto& log = *it;
+      assert(!log.getting_synced);
+      log.getting_synced = true;
+      logs_to_sync.push_back(log.writer);
+    }
+
+    need_log_dir_sync = !log_dir_synced_;
+  }
+
+  TEST_SYNC_POINT("DBWALTest::SyncWALNotWaitWrite:1");
+  RecordTick(stats_, WAL_FILE_SYNCED);
+  Status status;
+  IOStatus io_s;
+  for (log::Writer* log : logs_to_sync) {
+    auto result =
+        log->file()->AsSyncWithoutFlush(immutable_db_options_.use_fsync);
+    co_await result;
+    io_s = result.io_result();
+    if (!io_s.ok()) {
+      status = io_s;
+      break;
+    }
+  }
+  if (!io_s.ok()) {
+    ROCKS_LOG_ERROR(immutable_db_options_.info_log, "WAL Sync error %s",
+                    io_s.ToString().c_str());
+    // In case there is a fs error we should set it globally to prevent the
+    // future writes
+    IOStatusCheck(io_s);
+  }
+  if (status.ok() && need_log_dir_sync) {
+    status = directories_.GetWalDir()->Fsync(IOOptions(), nullptr);
+  }
+  TEST_SYNC_POINT("DBWALTest::SyncWALNotWaitWrite:2");
+
+  TEST_SYNC_POINT("DBImpl::SyncWAL:BeforeMarkLogsSynced:1");
+
+  VersionEdit synced_wals;
+  {
+    InstrumentedMutexLock l(&mutex_);
+    if (status.ok()) {
+      MarkLogsSynced(current_log_number, need_log_dir_sync, &synced_wals);
+    } else {
+      MarkLogsNotSynced(current_log_number);
+    }
+  }
+
+  if (status.ok() && synced_wals.IsWalAddition()) {
+    InstrumentedMutexLock l(&mutex_);
+    status = ApplyWALToManifest(&synced_wals);
+  }
+
+  TEST_SYNC_POINT("DBImpl::SyncWAL:BeforeMarkLogsSynced:2");
+
+  co_return status;
+}
+
 Status DBImpl::LockWAL() {
   log_write_mutex_.Lock();
   auto cur_log_writer = logs_.back().writer;
@@ -1454,7 +1575,7 @@ Status DBImpl::LockWAL() {
     // future writes
     WriteStatusCheck(status);
   }
-  return std::move(status);
+  return status;
 }
 
 Status DBImpl::UnlockWAL() {
@@ -1731,12 +1852,24 @@ Status DBImpl::Get(const ReadOptions& read_options,
 Status DBImpl::Get(const ReadOptions& read_options,
                    ColumnFamilyHandle* column_family, const Slice& key,
                    PinnableSlice* value, std::string* timestamp) {
-  GetImplOptions get_impl_options;
-  get_impl_options.column_family = column_family;
-  get_impl_options.value = value;
-  get_impl_options.timestamp = timestamp;
-  Status s = GetImpl(read_options, key, get_impl_options);
-  return s;
+  GetImplOptions get_impl_options = {
+      .column_family = column_family,
+      .value = value,
+      .timestamp = timestamp};
+  return GetImpl(read_options, key, get_impl_options);
+}
+
+Async_future DBImpl::AsyncGet(const ReadOptions& read_options,
+                              ColumnFamilyHandle* column_family,
+                              const Slice& key, PinnableSlice* value,
+                              std::string* timestamp) {
+  GetImplOptions get_impl_options = {
+      .column_family = column_family,
+      .value = value,
+      .timestamp = timestamp};
+  auto result = AsyncGetImpl(read_options, key, get_impl_options);
+  co_await result;
+  co_return result.status();
 }
 
 namespace {
@@ -1956,6 +2089,214 @@ Status DBImpl::GetImpl(const ReadOptions& read_options, const Slice& key,
   return s;
 }
 
+Async_future DBImpl::AsyncGetImpl(const ReadOptions& read_options, const Slice& key,
+                       GetImplOptions& get_impl_options) {
+  assert(get_impl_options.value != nullptr ||
+         get_impl_options.merge_operands != nullptr);
+
+  assert(get_impl_options.column_family);
+
+  if (read_options.timestamp) {
+    const Status s = FailIfTsSizesMismatch(get_impl_options.column_family,
+                                           *(read_options.timestamp));
+    if (!s.ok()) {
+      co_return s;
+    }
+  } else {
+    const Status s = FailIfCfHasTs(get_impl_options.column_family);
+    if (!s.ok()) {
+      co_return s;
+    }
+  }
+
+  GetWithTimestampReadCallback read_cb(0);  // Will call Refresh
+
+  PERF_CPU_TIMER_GUARD(get_cpu_nanos, immutable_db_options_.clock);
+  StopWatch sw(immutable_db_options_.clock, stats_, DB_GET);
+  PERF_TIMER_GUARD(get_snapshot_time);
+
+  auto cfh = static_cast_with_check<ColumnFamilyHandleImpl>(
+      get_impl_options.column_family);
+  auto cfd = cfh->cfd();
+
+  if (tracer_) {
+    // TODO: This mutex should be removed later, to improve performance when
+    // tracing is enabled.
+    InstrumentedMutexLock lock(&trace_mutex_);
+    if (tracer_) {
+      // TODO: maybe handle the tracing status?
+      tracer_->Get(get_impl_options.column_family, key).PermitUncheckedError();
+    }
+  }
+
+  // Acquire SuperVersion
+  SuperVersion* sv = GetAndRefSuperVersion(cfd);
+
+  TEST_SYNC_POINT("DBImpl::GetImpl:1");
+  TEST_SYNC_POINT("DBImpl::GetImpl:2");
+
+  SequenceNumber snapshot;
+  if (read_options.snapshot != nullptr) {
+    if (get_impl_options.callback) {
+      // Already calculated based on read_options.snapshot
+      snapshot = get_impl_options.callback->max_visible_seq();
+    } else {
+      snapshot =
+          reinterpret_cast<const SnapshotImpl*>(read_options.snapshot)->number_;
+    }
+  } else {
+    // Note that the snapshot is assigned AFTER referencing the super
+    // version because otherwise a flush happening in between may compact away
+    // data for the snapshot, so the reader would see neither data that was be
+    // visible to the snapshot before compaction nor the newer data inserted
+    // afterwards.
+    if (last_seq_same_as_publish_seq_) {
+      snapshot = versions_->LastSequence();
+    } else {
+      snapshot = versions_->LastPublishedSequence();
+    }
+    if (get_impl_options.callback) {
+      // The unprep_seqs are not published for write unprepared, so it could be
+      // that max_visible_seq is larger. Seek to the std::max of the two.
+      // However, we still want our callback to contain the actual snapshot so
+      // that it can do the correct visibility filtering.
+      get_impl_options.callback->Refresh(snapshot);
+
+      // Internally, WriteUnpreparedTxnReadCallback::Refresh would set
+      // max_visible_seq = max(max_visible_seq, snapshot)
+      //
+      // Currently, the commented out assert is broken by
+      // InvalidSnapshotReadCallback, but if write unprepared recovery followed
+      // the regular transaction flow, then this special read callback would not
+      // be needed.
+      //
+      // assert(callback->max_visible_seq() >= snapshot);
+      snapshot = get_impl_options.callback->max_visible_seq();
+    }
+  }
+  // If timestamp is used, we use read callback to ensure <key,t,s> is returned
+  // only if t <= read_opts.timestamp and s <= snapshot.
+  // HACK: temporarily overwrite input struct field but restore
+  SaveAndRestore<ReadCallback*> restore_callback(&get_impl_options.callback);
+  const Comparator* ucmp = get_impl_options.column_family->GetComparator();
+  assert(ucmp);
+  if (ucmp->timestamp_size() > 0) {
+    assert(!get_impl_options
+                .callback);  // timestamp with callback is not supported
+    read_cb.Refresh(snapshot);
+    get_impl_options.callback = &read_cb;
+  }
+  TEST_SYNC_POINT("DBImpl::GetImpl:3");
+  TEST_SYNC_POINT("DBImpl::GetImpl:4");
+
+  // Prepare to store a list of merge operations if merge occurs.
+  MergeContext merge_context;
+  SequenceNumber max_covering_tombstone_seq = 0;
+
+  Status s;
+  // First look in the memtable, then in the immutable memtable (if any).
+  // s is both in/out. When in, s could either be OK or MergeInProgress.
+  // merge_operands will contain the sequence of merges in the latter case.
+  LookupKey lkey(key, snapshot, read_options.timestamp);
+  PERF_TIMER_STOP(get_snapshot_time);
+
+  bool skip_memtable = (read_options.read_tier == kPersistedTier &&
+                        has_unpersisted_data_.load(std::memory_order_relaxed));
+  bool done = false;
+  std::string* timestamp =
+      ucmp->timestamp_size() > 0 ? get_impl_options.timestamp : nullptr;
+  if (!skip_memtable) {
+    // Get value associated with key
+    if (get_impl_options.get_value) {
+      if (sv->mem->Get(lkey, get_impl_options.value->GetSelf(), timestamp, &s,
+                       &merge_context, &max_covering_tombstone_seq,
+                       read_options, get_impl_options.callback,
+                       get_impl_options.is_blob_index)) {
+        done = true;
+        get_impl_options.value->PinSelf();
+        RecordTick(stats_, MEMTABLE_HIT);
+      } else if ((s.ok() || s.IsMergeInProgress()) &&
+                 sv->imm->Get(lkey, get_impl_options.value->GetSelf(),
+                              timestamp, &s, &merge_context,
+                              &max_covering_tombstone_seq, read_options,
+                              get_impl_options.callback,
+                              get_impl_options.is_blob_index)) {
+        done = true;
+        get_impl_options.value->PinSelf();
+        RecordTick(stats_, MEMTABLE_HIT);
+      }
+    } else {
+      // Get Merge Operands associated with key, Merge Operands should not be
+      // merged and raw values should be returned to the user.
+      if (sv->mem->Get(lkey, /*value*/ nullptr, /*timestamp=*/nullptr, &s,
+                       &merge_context, &max_covering_tombstone_seq,
+                       read_options, nullptr, nullptr, false)) {
+        done = true;
+        RecordTick(stats_, MEMTABLE_HIT);
+      } else if ((s.ok() || s.IsMergeInProgress()) &&
+                 sv->imm->GetMergeOperands(lkey, &s, &merge_context,
+                                           &max_covering_tombstone_seq,
+                                           read_options)) {
+        done = true;
+        RecordTick(stats_, MEMTABLE_HIT);
+      }
+    }
+    if (!done && !s.ok() && !s.IsMergeInProgress()) {
+      ReturnAndCleanupSuperVersion(cfd, sv);
+      co_return s;
+    }
+  }
+  PinnedIteratorsManager pinned_iters_mgr;
+  if (!done) {
+    PERF_TIMER_GUARD(get_from_output_files_time);
+    auto result = sv->current->AsyncGet(
+        read_options, lkey, get_impl_options.value, timestamp, &s,
+        &merge_context, &max_covering_tombstone_seq, &pinned_iters_mgr,
+        get_impl_options.get_value ? get_impl_options.value_found : nullptr,
+        nullptr, nullptr,
+        get_impl_options.get_value ? get_impl_options.callback : nullptr,
+        get_impl_options.get_value ? get_impl_options.is_blob_index : nullptr,
+        get_impl_options.get_value);
+    co_await result;
+    (void) result; // hold async result after wait
+    RecordTick(stats_, MEMTABLE_MISS);
+  }
+
+  {
+    PERF_TIMER_GUARD(get_post_process_time);
+
+    ReturnAndCleanupSuperVersion(cfd, sv);
+
+    RecordTick(stats_, NUMBER_KEYS_READ);
+    size_t size = 0;
+    if (s.ok()) {
+      if (get_impl_options.get_value) {
+        size = get_impl_options.value->size();
+      } else {
+        // Return all merge operands for get_impl_options.key
+        *get_impl_options.number_of_operands =
+            static_cast<int>(merge_context.GetNumOperands());
+        if (*get_impl_options.number_of_operands >
+            get_impl_options.get_merge_operands_options
+                ->expected_max_number_of_operands) {
+          s = Status::Incomplete(
+              Status::SubCode::KMergeOperandsInsufficientCapacity);
+        } else {
+          for (const Slice& sl : merge_context.GetOperands()) {
+            size += sl.size();
+            get_impl_options.merge_operands->PinSelf(sl);
+            get_impl_options.merge_operands++;
+          }
+        }
+      }
+      RecordTick(stats_, BYTES_READ, size);
+      PERF_COUNTER_ADD(get_read_bytes, size);
+    }
+    RecordInHistogram(stats_, BYTES_PER_READ, size);
+  }
+  co_return s;
+}
+
 std::vector<Status> DBImpl::MultiGet(
     const ReadOptions& read_options,
     const std::vector<ColumnFamilyHandle*>& column_family,
@@ -2164,6 +2505,195 @@ std::vector<Status> DBImpl::MultiGet(
   PERF_TIMER_STOP(get_post_process_time);
 
   return stat_list;
+}
+
+Async_future DBImpl::AsyncMultiGet(
+    const ReadOptions& read_options,
+    const std::vector<ColumnFamilyHandle*>& column_family,
+    const std::vector<Slice>& keys, std::vector<std::string>* values,
+    std::vector<std::string>* timestamps) {
+  PERF_CPU_TIMER_GUARD(get_cpu_nanos, immutable_db_options_.clock);
+  StopWatch sw(immutable_db_options_.clock, stats_, DB_MULTIGET);
+  PERF_TIMER_GUARD(get_snapshot_time);
+
+#ifndef NDEBUG
+  for (const auto* cfh : column_family) {
+    assert(cfh);
+    const Comparator* const ucmp = cfh->GetComparator();
+    assert(ucmp);
+    if (ucmp->timestamp_size() > 0) {
+      assert(read_options.timestamp);
+      assert(ucmp->timestamp_size() == read_options.timestamp->size());
+    } else {
+      assert(!read_options.timestamp);
+    }
+  }
+#endif  // NDEBUG
+
+  if (tracer_) {
+    // TODO: This mutex should be removed later, to improve performance when
+    // tracing is enabled.
+    InstrumentedMutexLock lock(&trace_mutex_);
+    if (tracer_) {
+      // TODO: maybe handle the tracing status?
+      tracer_->MultiGet(column_family, keys).PermitUncheckedError();
+    }
+  }
+
+  SequenceNumber consistent_seqnum;
+
+  std::unordered_map<uint32_t, MultiGetColumnFamilyData> multiget_cf_data(
+      column_family.size());
+  for (auto cf : column_family) {
+    auto cfh = static_cast_with_check<ColumnFamilyHandleImpl>(cf);
+    auto cfd = cfh->cfd();
+    if (multiget_cf_data.find(cfd->GetID()) == multiget_cf_data.end()) {
+      multiget_cf_data.emplace(cfd->GetID(),
+                               MultiGetColumnFamilyData(cfh, nullptr));
+    }
+  }
+
+  std::function<MultiGetColumnFamilyData*(
+      std::unordered_map<uint32_t, MultiGetColumnFamilyData>::iterator&)>
+      iter_deref_lambda =
+          [](std::unordered_map<uint32_t, MultiGetColumnFamilyData>::iterator&
+                 cf_iter) { return &cf_iter->second; };
+
+  bool unref_only =
+      MultiCFSnapshot<std::unordered_map<uint32_t, MultiGetColumnFamilyData>>(
+          read_options, nullptr, iter_deref_lambda, &multiget_cf_data,
+          &consistent_seqnum);
+
+  TEST_SYNC_POINT("DBImpl::MultiGet:AfterGetSeqNum1");
+  TEST_SYNC_POINT("DBImpl::MultiGet:AfterGetSeqNum2");
+
+  // Contain a list of merge operations if merge occurs.
+  MergeContext merge_context;
+
+  // Note: this always resizes the values array
+  size_t num_keys = keys.size();
+  std::vector<Status> stat_list(num_keys);
+  values->resize(num_keys);
+  if (timestamps) {
+    timestamps->resize(num_keys);
+  }
+
+  // Keep track of bytes that we read for statistics-recording later
+  uint64_t bytes_read = 0;
+  PERF_TIMER_STOP(get_snapshot_time);
+
+  // For each of the given keys, apply the entire "get" process as follows:
+  // First look in the memtable, then in the immutable memtable (if any).
+  // s is both in/out. When in, s could either be OK or MergeInProgress.
+  // merge_operands will contain the sequence of merges in the latter case.
+  size_t num_found = 0;
+  size_t keys_read;
+  uint64_t curr_value_size = 0;
+
+  GetWithTimestampReadCallback timestamp_read_callback(0);
+  ReadCallback* read_callback = nullptr;
+  if (read_options.timestamp && read_options.timestamp->size() > 0) {
+    timestamp_read_callback.Refresh(consistent_seqnum);
+    read_callback = &timestamp_read_callback;
+  }
+
+  for (keys_read = 0; keys_read < num_keys; ++keys_read) {
+    merge_context.Clear();
+    Status& s = stat_list[keys_read];
+    std::string* value = &(*values)[keys_read];
+    std::string* timestamp = timestamps ? &(*timestamps)[keys_read] : nullptr;
+
+    LookupKey lkey(keys[keys_read], consistent_seqnum, read_options.timestamp);
+    auto cfh = static_cast_with_check<ColumnFamilyHandleImpl>(
+        column_family[keys_read]);
+    SequenceNumber max_covering_tombstone_seq = 0;
+    auto mgd_iter = multiget_cf_data.find(cfh->cfd()->GetID());
+    assert(mgd_iter != multiget_cf_data.end());
+    auto mgd = mgd_iter->second;
+    auto super_version = mgd.super_version;
+    bool skip_memtable =
+        (read_options.read_tier == kPersistedTier &&
+         has_unpersisted_data_.load(std::memory_order_relaxed));
+    bool done = false;
+    if (!skip_memtable) {
+      if (super_version->mem->Get(lkey, value, timestamp, &s, &merge_context,
+                                  &max_covering_tombstone_seq, read_options,
+                                  read_callback)) {
+        done = true;
+        RecordTick(stats_, MEMTABLE_HIT);
+      } else if (super_version->imm->Get(lkey, value, timestamp, &s,
+                                         &merge_context,
+                                         &max_covering_tombstone_seq,
+                                         read_options, read_callback)) {
+        done = true;
+        RecordTick(stats_, MEMTABLE_HIT);
+      }
+    }
+    if (!done) {
+      PinnableSlice pinnable_val;
+      PERF_TIMER_GUARD(get_from_output_files_time);
+      PinnedIteratorsManager pinned_iters_mgr;
+      auto r = super_version->current->AsyncGet(
+          read_options, lkey, &pinnable_val, timestamp, &s, &merge_context,
+          &max_covering_tombstone_seq,
+	  &pinned_iters_mgr, /*value_found=*/nullptr,
+          /*key_exists=*/nullptr,
+          /*seq=*/nullptr, read_callback);
+      co_await r;
+      (void)r;  // hold Async_future after await
+      value->assign(pinnable_val.data(), pinnable_val.size());
+      RecordTick(stats_, MEMTABLE_MISS);
+    }
+
+    if (s.ok()) {
+      bytes_read += value->size();
+      num_found++;
+      curr_value_size += value->size();
+      if (curr_value_size > read_options.value_size_soft_limit) {
+        while (++keys_read < num_keys) {
+          stat_list[keys_read] = Status::Aborted();
+        }
+        break;
+      }
+    }
+    if (read_options.deadline.count() &&
+        immutable_db_options_.clock->NowMicros() >
+            static_cast<uint64_t>(read_options.deadline.count())) {
+      break;
+    }
+  }
+
+  if (keys_read < num_keys) {
+    // The only reason to break out of the loop is when the deadline is
+    // exceeded
+    assert(immutable_db_options_.clock->NowMicros() >
+           static_cast<uint64_t>(read_options.deadline.count()));
+    for (++keys_read; keys_read < num_keys; ++keys_read) {
+      stat_list[keys_read] = Status::TimedOut();
+    }
+  }
+
+  // Post processing (decrement reference counts and record statistics)
+  PERF_TIMER_GUARD(get_post_process_time);
+  autovector<SuperVersion*> superversions_to_delete;
+
+  for (auto mgd_iter : multiget_cf_data) {
+    auto mgd = mgd_iter.second;
+    if (!unref_only) {
+      ReturnAndCleanupSuperVersion(mgd.cfd, mgd.super_version);
+    } else {
+      mgd.cfd->GetSuperVersion()->Unref();
+    }
+  }
+  RecordTick(stats_, NUMBER_MULTIGET_CALLS);
+  RecordTick(stats_, NUMBER_MULTIGET_KEYS_READ, num_keys);
+  RecordTick(stats_, NUMBER_MULTIGET_KEYS_FOUND, num_found);
+  RecordTick(stats_, NUMBER_MULTIGET_BYTES_READ, bytes_read);
+  RecordInHistogram(stats_, BYTES_PER_MULTIGET, bytes_read);
+  PERF_COUNTER_ADD(multiget_read_bytes, bytes_read);
+  PERF_TIMER_STOP(get_post_process_time);
+
+  co_return stat_list;
 }
 
 template <class T>
@@ -3555,7 +4085,7 @@ void DBImpl::CleanupSuperVersion(SuperVersion* sv) {
 
 void DBImpl::ReturnAndCleanupSuperVersion(ColumnFamilyData* cfd,
                                           SuperVersion* sv) {
-  if (!cfd->ReturnThreadLocalSuperVersion(sv)) {
+  if (!cfd->ReturnThreadLocalSuperVersion(this, sv)) {
     CleanupSuperVersion(sv);
   }
 }
