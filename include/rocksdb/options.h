@@ -1639,14 +1639,6 @@ struct ReadOptions {
   ReadOptions(bool cksum, bool cache);
 };
 
-class PostWriteCallback {
- public:
-  virtual ~PostWriteCallback() {}
-
-  // Will be called while on the write thread after the write executes.
-  virtual void Callback() = 0;
-};
-
 // Options that control write operations
 struct WriteOptions {
   // If true, the write will be flushed from the operating system
@@ -1704,19 +1696,13 @@ struct WriteOptions {
   // Default: false
   bool memtable_insert_hint_per_batch;
 
-  // Called after memtable is updated. It is not compatible with concurrent
-  // prepares.
-  // Default: nullptr
-  PostWriteCallback* write_callback;
-
   WriteOptions()
       : sync(false),
         disableWAL(false),
         ignore_missing_column_families(false),
         no_slowdown(false),
         low_pri(false),
-        memtable_insert_hint_per_batch(false),
-        write_callback(nullptr) {}
+        memtable_insert_hint_per_batch(false) {}
 };
 
 // Options that control flush operations

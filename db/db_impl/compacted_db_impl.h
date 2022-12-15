@@ -55,7 +55,8 @@ class CompactedDBImpl : public DBImpl {
   }
   using DBImpl::Write;
   virtual Status Write(const WriteOptions& /*options*/, WriteBatch* /*updates*/,
-                       uint64_t* /*seq*/) override {
+                       uint64_t* /*seq*/,
+                       PostWriteCallback* /*callback*/) override {
     return Status::NotSupported("Not supported in compacted db mode.");
   }
   using DBImpl::CompactRange;

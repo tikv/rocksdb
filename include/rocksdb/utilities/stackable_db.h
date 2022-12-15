@@ -203,8 +203,8 @@ class StackableDB : public DB {
 
   using DB::Write;
   virtual Status Write(const WriteOptions& opts, WriteBatch* updates,
-                       uint64_t* seq) override {
-    return db_->Write(opts, updates, seq);
+                       uint64_t* seq, PostWriteCallback* callback) override {
+    return db_->Write(opts, updates, seq, callback);
   }
 
   using DB::NewIterator;

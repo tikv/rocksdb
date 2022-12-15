@@ -130,7 +130,7 @@ class BlobDBImpl : public BlobDB {
 
   using BlobDB::Write;
   virtual Status Write(const WriteOptions& opts, WriteBatch* updates,
-                       uint64_t* seq) override;
+                       uint64_t* seq, PostWriteCallback* callback) override;
 
   virtual Status Close() override;
 
