@@ -320,6 +320,9 @@ Status DBImpl::MultiBatchWriteImpl(const WriteOptions& write_options,
 
     while (writer.ConsumeOne())
       ;
+    if (writer.status.ok() && write_options.write_callback) {
+      write_options.write_callback->Callback(this);
+    }
     MultiBatchWriteCommit(writer.request);
 
     WriteStatusCheck(writer.status);
@@ -375,6 +378,14 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
   if (two_write_queues_ && immutable_db_options_.enable_multi_batch_write) {
     return Status::NotSupported(
         "pipelined_writes is not compatible with concurrent prepares");
+  }
+  if (two_write_queues_ && write_options.write_callback) {
+    return Status::NotSupported(
+        "write_callback is not compatible with concurrent prepares");
+  }
+  if (disable_memtable && write_options.write_callback) {
+    return Status::NotSupported(
+        "write_callback is not compatible with disabling memtable");
   }
   if (seq_per_batch_ && immutable_db_options_.enable_pipelined_write) {
     // TODO(yiwu): update pipeline write with seq_per_batch and batch_cnt
@@ -754,6 +765,9 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
     }
   }
 
+  if (status.ok() && w.status.ok() && write_options.write_callback) {
+    write_options.write_callback->Callback(this);
+  }
   bool should_exit_batch_group = true;
   if (in_parallel_group) {
     // CompleteParallelWorker returns true if this thread should
@@ -920,6 +934,9 @@ Status DBImpl::PipelinedWriteImpl(const WriteOptions& write_options,
           write_options.ignore_missing_column_families, 0 /*log_number*/, this,
           false /*concurrent_memtable_writes*/, seq_per_batch_, batch_per_txn_);
       versions_->SetLastSequence(memtable_write_group.last_sequence);
+      if (w.status.ok() && write_options.write_callback) {
+        write_options.write_callback->Callback(this);
+      }
       write_thread_.ExitAsMemTableWriter(&w, memtable_write_group);
     }
   } else {
@@ -941,6 +958,9 @@ Status DBImpl::PipelinedWriteImpl(const WriteOptions& write_options,
     if (write_thread_.CompleteParallelMemTableWriter(&w)) {
       MemTableInsertStatusCheck(w.status);
       versions_->SetLastSequence(w.write_group->last_sequence);
+      if (w.status.ok() && write_options.write_callback) {
+        write_options.write_callback->Callback(this);
+      }
       write_thread_.ExitAsMemTableWriter(&w, *w.write_group);
     }
   }
@@ -983,6 +1003,9 @@ Status DBImpl::UnorderedWriteMemtable(const WriteOptions& write_options,
     }
   }
 
+  if (w.status.ok() && write_options.write_callback) {
+    write_options.write_callback->Callback(this);
+  }
   size_t pending_cnt = pending_memtable_writes_.fetch_sub(1) - 1;
   if (pending_cnt == 0) {
     // switch_cv_ waits until pending_memtable_writes_ = 0. Locking its mutex
