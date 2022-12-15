@@ -1644,7 +1644,7 @@ class PostWriteCallback {
   virtual ~PostWriteCallback() {}
 
   // Will be called while on the write thread after the write executes.
-  virtual void Callback(DB* db) = 0;
+  virtual void Callback() = 0;
 };
 
 // Options that control write operations

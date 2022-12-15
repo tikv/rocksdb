@@ -321,7 +321,7 @@ Status DBImpl::MultiBatchWriteImpl(const WriteOptions& write_options,
     while (writer.ConsumeOne())
       ;
     if (writer.status.ok() && write_options.write_callback) {
-      write_options.write_callback->Callback(this);
+      write_options.write_callback->Callback();
     }
     MultiBatchWriteCommit(writer.request);
 
@@ -766,7 +766,7 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
   }
 
   if (status.ok() && w.status.ok() && write_options.write_callback) {
-    write_options.write_callback->Callback(this);
+    write_options.write_callback->Callback();
   }
   bool should_exit_batch_group = true;
   if (in_parallel_group) {
@@ -935,7 +935,7 @@ Status DBImpl::PipelinedWriteImpl(const WriteOptions& write_options,
           false /*concurrent_memtable_writes*/, seq_per_batch_, batch_per_txn_);
       versions_->SetLastSequence(memtable_write_group.last_sequence);
       if (w.status.ok() && write_options.write_callback) {
-        write_options.write_callback->Callback(this);
+        write_options.write_callback->Callback();
       }
       write_thread_.ExitAsMemTableWriter(&w, memtable_write_group);
     }
@@ -959,7 +959,7 @@ Status DBImpl::PipelinedWriteImpl(const WriteOptions& write_options,
       MemTableInsertStatusCheck(w.status);
       versions_->SetLastSequence(w.write_group->last_sequence);
       if (w.status.ok() && write_options.write_callback) {
-        write_options.write_callback->Callback(this);
+        write_options.write_callback->Callback();
       }
       write_thread_.ExitAsMemTableWriter(&w, *w.write_group);
     }
@@ -1004,7 +1004,7 @@ Status DBImpl::UnorderedWriteMemtable(const WriteOptions& write_options,
   }
 
   if (w.status.ok() && write_options.write_callback) {
-    write_options.write_callback->Callback(this);
+    write_options.write_callback->Callback();
   }
   size_t pending_cnt = pending_memtable_writes_.fetch_sub(1) - 1;
   if (pending_cnt == 0) {
