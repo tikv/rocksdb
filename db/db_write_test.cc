@@ -563,10 +563,6 @@ TEST_P(DBWriteTest, MultiThreadWrite) {
   Close();
 }
 
-// Do two things:
-// 1. Take locked mutex1. Unblock whoever is waiting for mutex1.
-// 2. Wait for mutex2 to be released and take ownership. (Release it when
-// destructed.)
 class SimpleCallback : public PostWriteCallback {
   std::function<void(SequenceNumber)> f_;
 
