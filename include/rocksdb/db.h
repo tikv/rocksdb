@@ -149,7 +149,7 @@ class PostWriteCallback {
   virtual ~PostWriteCallback() {}
 
   // Will be called while on the write thread after the write executes.
-  virtual void Callback() = 0;
+  virtual void Callback(SequenceNumber seq) = 0;
 };
 
 // A DB is a persistent, versioned ordered map from keys to values.
@@ -480,21 +480,20 @@ class DB {
   // Returns OK on success, non-OK on failure.
   // Note: consider setting options.sync = true.
   virtual Status Write(const WriteOptions& options, WriteBatch* updates,
-                       uint64_t* seq, PostWriteCallback* callback) = 0;
+                       PostWriteCallback* callback) = 0;
   virtual Status Write(const WriteOptions& options, WriteBatch* updates) {
-    return Write(options, updates, nullptr, nullptr);
+    return Write(options, updates, nullptr);
   }
 
   virtual Status MultiBatchWrite(const WriteOptions& /*options*/,
                                  std::vector<WriteBatch*>&& /*updates*/,
-                                 uint64_t* /*seq*/,
                                  PostWriteCallback* /*callback*/) {
     return Status::NotSupported();
   }
 
   virtual Status MultiBatchWrite(const WriteOptions& options,
                                  std::vector<WriteBatch*>&& updates) {
-    return MultiBatchWrite(options, std::move(updates), nullptr, nullptr);
+    return MultiBatchWrite(options, std::move(updates), nullptr);
   }
 
   // If the database contains an entry for "key" store the
