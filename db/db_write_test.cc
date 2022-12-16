@@ -563,6 +563,76 @@ TEST_P(DBWriteTest, MultiThreadWrite) {
   Close();
 }
 
+// Do two things:
+// 1. Take locked mutex1. Unblock whoever is waiting for mutex1.
+// 2. Wait for mutex2 to be released and take ownership. (Release it when
+// destructed.)
+class LockCallback : public PostWriteCallback {
+  port::Mutex* mutex1_;
+  port::Mutex* mutex2_;
+
+ public:
+  LockCallback(port::Mutex* mutex1, port::Mutex* mutex2)
+      : mutex1_(mutex1), mutex2_(mutex2) {
+    mutex1_->AssertHeld();
+  }
+  void Callback() override {
+    mutex1_->Unlock();
+    mutex2_->Lock();
+  }
+  ~LockCallback() { mutex2_->Unlock(); }
+};
+
+TEST_P(DBWriteTest, PostWriteCallback) {
+  Options options = GetOptions();
+  if (options.two_write_queues) {
+    // Not compatible.
+    return;
+  }
+  Reopen(options);
+  std::vector<port::Thread> threads;
+  port::Mutex write_mutex;
+  write_mutex.Lock();
+  port::Mutex flush_mutex;
+  flush_mutex.Lock();
+  std::atomic<bool> written(false);
+  std::atomic<bool> flushed(false);
+
+  // Write with callback.
+  threads.push_back(port::Thread([&] {
+    WriteBatch batch;
+    WriteOptions opts;
+    opts.sync = false;
+    opts.disableWAL = true;
+    LockCallback callback(&flush_mutex, &write_mutex);
+    batch.Put("key", "value");
+    ASSERT_OK(dbfull()->Write(opts, &batch, nullptr, &callback));
+    written.store(true, std::memory_order_relaxed);
+  }));
+  // Flush that will enter write thread and wait for pending writes.
+  threads.push_back(port::Thread([&] {
+    FlushOptions opts;
+    opts.wait = true;
+    flush_mutex.Lock();
+    ASSERT_OK(dbfull()->Flush(opts));
+    flush_mutex.Unlock();
+    flushed.store(true, std::memory_order_relaxed);
+  }));
+
+  std::this_thread::sleep_for(std::chrono::milliseconds{100});
+  ASSERT_EQ(written.load(std::memory_order_relaxed), false);
+  ASSERT_EQ(flushed.load(std::memory_order_relaxed), false);
+
+  write_mutex.Unlock();
+  std::this_thread::sleep_for(std::chrono::milliseconds{10});
+  ASSERT_EQ(written.load(std::memory_order_relaxed), true);
+  ASSERT_EQ(flushed.load(std::memory_order_relaxed), true);
+
+  for (auto& t : threads) {
+    t.join();
+  }
+}
+
 INSTANTIATE_TEST_CASE_P(DBWriteTestInstance, DBWriteTest,
                         testing::Values(DBTestBase::kDefault,
                                         DBTestBase::kConcurrentWALWrites,
