@@ -2041,8 +2041,9 @@ Status DBImpl::FlushMemTable(ColumnFamilyData* cfd,
 
     if (flush_reason != FlushReason::kErrorRecoveryRetryFlush &&
         (!cfd->mem()->IsEmpty() || !cached_recoverable_state_empty_.load()) &&
-        (cfd->mem()->ApproximateMemoryUsageFast() >
-         flush_options.min_size_to_flush)) {
+        (flush_options.min_size_to_flush > 0 &&
+         cfd->mem()->ApproximateMemoryUsageFast() >=
+             flush_options.min_size_to_flush)) {
       // Note that, when flush reason is kErrorRecoveryRetryFlush, during the
       // auto retry resume, we want to avoid creating new small memtables.
       // Therefore, SwitchMemtable will not be called. Also, since ResumeImpl
@@ -2199,8 +2200,9 @@ Status DBImpl::AtomicFlushMemTables(
           flush_reason == FlushReason::kErrorRecoveryRetryFlush) {
         continue;
       }
-      if (cfd->mem()->ApproximateMemoryUsageFast() <=
-          flush_options.min_size_to_flush) {
+      if (flush_options.min_size_to_flush > 0 &&
+          cfd->mem()->ApproximateMemoryUsageFast() <
+              flush_options.min_size_to_flush) {
         continue;
       }
       cfd->Ref();

@@ -207,7 +207,7 @@ void WriteBufferManager::MaybeFlushLocked(DB* this_db) {
     flush_opts.allow_write_stall = true;
     flush_opts.wait = false;
     flush_opts._write_stopped = (candidate->db == this_db);
-    flush_opts.min_size_to_flush = candidate_size - 1;
+    flush_opts.min_size_to_flush = candidate_size;
     candidate->db->Flush(flush_opts, candidate->cf);
   }
 }

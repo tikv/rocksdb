@@ -1280,7 +1280,7 @@ Status DBImpl::PreprocessWrite(const WriteOptions& write_options,
   }
 
   // Ordering: before write delay.
-  if (UNLIKELY(write_buffer_manager_->ShouldFlush())) {
+  if (UNLIKELY(status.ok() && write_buffer_manager_->ShouldFlush())) {
     write_buffer_manager_->MaybeFlush(this);
   }
 
