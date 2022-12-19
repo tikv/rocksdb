@@ -1898,7 +1898,8 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
     impl->StartPeriodicWorkScheduler();
     if (impl->write_buffer_manager_) {
       // Newly created handles are already registered during
-      // `CreateColumnFamily`.
+      // `CreateColumnFamily`. We must clear them all to avoid duplicate
+      // registration.
       impl->write_buffer_manager_->UnregisterDB(impl);
       for (auto* cf : *handles) {
         if (cf->GetName() == kDefaultColumnFamilyName) {

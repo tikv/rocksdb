@@ -147,8 +147,10 @@ class WriteBufferManager final {
   //
   // Should only be called by RocksDB internally .
   bool ShouldStall() const {
-    return is_stall_active() ||
-           (allow_stall_ && flush_size() > 0 && is_stall_threshold_exceeded());
+    if (!allow_stall_ || flush_size() == 0) {
+      return false;
+    }
+    return is_stall_active() || is_stall_threshold_exceeded();
   }
 
   // Returns true if stall is active.
