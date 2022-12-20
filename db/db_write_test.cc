@@ -623,7 +623,7 @@ TEST_P(DBWriteTest, PostWriteCallback) {
   // Flush will enter write thread and wait for pending writes.
   threads.push_back(port::Thread([&] {
     FlushOptions opts;
-    opts.wait = true;
+    opts.wait = false;
     can_flush_mutex.Lock();
     ASSERT_OK(dbfull()->Flush(opts));
     can_flush_mutex.Unlock();
