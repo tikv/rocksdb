@@ -149,6 +149,14 @@ struct GetMergeOperandsOptions {
 using TablePropertiesCollection =
     std::unordered_map<std::string, std::shared_ptr<const TableProperties>>;
 
+class PostWriteCallback {
+ public:
+  virtual ~PostWriteCallback() {}
+
+  // Will be called while on the write thread after the write executes.
+  virtual void Callback(SequenceNumber seq) = 0;
+};
+
 // A DB is a persistent, versioned ordered map from keys to values.
 // A DB is safe for concurrent access from multiple threads without
 // any external synchronization.
@@ -541,14 +549,14 @@ class DB {
   // Returns OK on success, non-OK on failure.
   // Note: consider setting options.sync = true.
   virtual Status Write(const WriteOptions& options, WriteBatch* updates,
-                       uint64_t* seq) = 0;
+                       PostWriteCallback* callback) = 0;
   virtual Status Write(const WriteOptions& options, WriteBatch* updates) {
     return Write(options, updates, nullptr);
   }
 
   virtual Status MultiBatchWrite(const WriteOptions& /*options*/,
                                  std::vector<WriteBatch*>&& /*updates*/,
-                                 uint64_t* /*seq*/) {
+                                 PostWriteCallback* /*callback*/) {
     return Status::NotSupported();
   }
 

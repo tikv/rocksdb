@@ -164,7 +164,7 @@ class DBImplSecondary : public DBImpl {
 
   using DBImpl::Write;
   Status Write(const WriteOptions& /*options*/, WriteBatch* /*updates*/,
-               uint64_t* /*seq*/) override {
+               PostWriteCallback* /*callback*/) override {
     return Status::NotSupported("Not supported operation in secondary mode.");
   }
 

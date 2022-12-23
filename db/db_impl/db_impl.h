@@ -230,12 +230,12 @@ class DBImpl : public DB {
 
   using DB::Write;
   virtual Status Write(const WriteOptions& options, WriteBatch* updates,
-                       uint64_t* seq) override;
+                       PostWriteCallback* callback) override;
 
   using DB::MultiBatchWrite;
   virtual Status MultiBatchWrite(const WriteOptions& options,
                                  std::vector<WriteBatch*>&& updates,
-                                 uint64_t* seq) override;
+                                 PostWriteCallback* callback) override;
 
   using DB::Get;
   virtual Status Get(const ReadOptions& options,
@@ -494,8 +494,7 @@ class DBImpl : public DB {
   virtual Status GetSortedWalFiles(VectorLogPtr& files) override;
   virtual Status GetCurrentWalFile(
       std::unique_ptr<LogFile>* current_log_file) override;
-  virtual Status GetCreationTimeOfOldestFile(
-      uint64_t* creation_time) override;
+  virtual Status GetCreationTimeOfOldestFile(uint64_t* creation_time) override;
 
   virtual Status GetUpdatesSince(
       SequenceNumber seq_number, std::unique_ptr<TransactionLogIterator>* iter,
@@ -616,7 +615,6 @@ class DBImpl : public DB {
   virtual Status GetPropertiesOfTablesInRange(
       ColumnFamilyHandle* column_family, const Range* range, std::size_t n,
       TablePropertiesCollection* props) override;
-
 
   // ---- End of implementations of the DB interface ----
   SystemClock* GetSystemClock() const;
@@ -1478,26 +1476,30 @@ class DBImpl : public DB {
                    bool disable_memtable = false, uint64_t* seq_used = nullptr,
                    size_t batch_cnt = 0,
                    PreReleaseCallback* pre_release_callback = nullptr,
-                   PostMemTableCallback* post_memtable_callback = nullptr);
+                   PostMemTableCallback* post_memtable_callback = nullptr,
+                   PostWriteCallback* post_callback = nullptr);
 
   Status MultiBatchWriteImpl(const WriteOptions& write_options,
                              std::vector<WriteBatch*>&& my_batch,
                              WriteCallback* callback = nullptr,
                              uint64_t* log_used = nullptr, uint64_t log_ref = 0,
-                             uint64_t* seq_used = nullptr);
+                             uint64_t* seq_used = nullptr,
+                             PostWriteCallback* post_callback = nullptr);
   void MultiBatchWriteCommit(CommitRequest* request);
 
   Status PipelinedWriteImpl(const WriteOptions& options, WriteBatch* updates,
                             WriteCallback* callback = nullptr,
                             uint64_t* log_used = nullptr, uint64_t log_ref = 0,
                             bool disable_memtable = false,
-                            uint64_t* seq_used = nullptr);
+                            uint64_t* seq_used = nullptr,
+                            PostWriteCallback* post_callback = nullptr);
 
   // Write only to memtables without joining any write queue
   Status UnorderedWriteMemtable(const WriteOptions& write_options,
                                 WriteBatch* my_batch, WriteCallback* callback,
                                 uint64_t log_ref, SequenceNumber seq,
-                                const size_t sub_batch_cnt);
+                                const size_t sub_batch_cnt,
+                                PostWriteCallback* post_callback = nullptr);
 
   // Whether the batch requires to be assigned with an order
   enum AssignOrder : bool { kDontAssignOrder, kDoAssignOrder };
@@ -1798,8 +1800,8 @@ class DBImpl : public DB {
     const InternalKey* begin = nullptr;  // nullptr means beginning of key range
     const InternalKey* end = nullptr;    // nullptr means end of key range
     InternalKey* manual_end = nullptr;   // how far we are compacting
-    InternalKey tmp_storage;      // Used to keep track of compaction progress
-    InternalKey tmp_storage1;     // Used to keep track of compaction progress
+    InternalKey tmp_storage;   // Used to keep track of compaction progress
+    InternalKey tmp_storage1;  // Used to keep track of compaction progress
 
     // When the user provides a canceled pointer in CompactRangeOptions, the
     // above varaibe is the reference of the user-provided

@@ -83,11 +83,11 @@ class OptimisticTransactionDBImpl : public OptimisticTransactionDB {
   // incompatible with `OptimisticTransactionDB`.
   using OptimisticTransactionDB::Write;
   virtual Status Write(const WriteOptions& write_opts, WriteBatch* batch,
-                       uint64_t* seq) override {
+                       PostWriteCallback* callback) override {
     if (batch->HasDeleteRange()) {
       return Status::NotSupported();
     }
-    return OptimisticTransactionDB::Write(write_opts, batch, seq);
+    return OptimisticTransactionDB::Write(write_opts, batch, callback);
   }
 
   OccValidationPolicy GetValidatePolicy() const { return validate_policy_; }

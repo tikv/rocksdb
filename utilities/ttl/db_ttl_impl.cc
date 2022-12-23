@@ -548,7 +548,7 @@ Status DBWithTTLImpl::Merge(const WriteOptions& options,
 }
 
 Status DBWithTTLImpl::Write(const WriteOptions& opts, WriteBatch* updates,
-                            uint64_t* seq) {
+                            PostWriteCallback* callback) {
   class Handler : public WriteBatch::Handler {
    public:
     explicit Handler(SystemClock* clock) : clock_(clock) {}
@@ -591,7 +591,7 @@ Status DBWithTTLImpl::Write(const WriteOptions& opts, WriteBatch* updates,
   if (!st.ok()) {
     return st;
   } else {
-    return db_->Write(opts, &(handler.updates_ttl), seq);
+    return db_->Write(opts, &(handler.updates_ttl), callback);
   }
 }
 
