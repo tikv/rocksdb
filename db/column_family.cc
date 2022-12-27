@@ -64,6 +64,9 @@ ColumnFamilyHandleImpl::~ColumnFamilyHandleImpl() {
     for (auto& listener : cfd_->ioptions()->listeners) {
       listener->OnColumnFamilyHandleDeletionStarted(this);
     }
+    if (cfd_->write_buffer_mgr()) {
+      cfd_->write_buffer_mgr()->UnregisterColumnFamily(this);
+    }
     // Job id == 0 means that this is not our background process, but rather
     // user thread
     // Need to hold some shared pointers owned by the initial_cf_options

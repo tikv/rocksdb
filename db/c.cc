@@ -4944,11 +4944,6 @@ bool rocksdb_write_buffer_manager_enabled(rocksdb_write_buffer_manager_t* wbm) {
   return wbm->rep->enabled();
 }
 
-bool rocksdb_write_buffer_manager_cost_to_cache(
-    rocksdb_write_buffer_manager_t* wbm) {
-  return wbm->rep->cost_to_cache();
-}
-
 size_t rocksdb_write_buffer_manager_memory_usage(
     rocksdb_write_buffer_manager_t* wbm) {
   return wbm->rep->memory_usage();
@@ -4962,18 +4957,6 @@ size_t rocksdb_write_buffer_manager_mutable_memtable_memory_usage(
 size_t rocksdb_write_buffer_manager_dummy_entries_in_cache_usage(
     rocksdb_write_buffer_manager_t* wbm) {
   return wbm->rep->dummy_entries_in_cache_usage();
-}
-size_t rocksdb_write_buffer_manager_buffer_size(
-    rocksdb_write_buffer_manager_t* wbm) {
-  return wbm->rep->buffer_size();
-}
-void rocksdb_write_buffer_manager_set_buffer_size(
-    rocksdb_write_buffer_manager_t* wbm, size_t new_size) {
-  wbm->rep->SetBufferSize(new_size);
-}
-ROCKSDB_LIBRARY_API void rocksdb_write_buffer_manager_set_allow_stall(
-    rocksdb_write_buffer_manager_t* wbm, bool new_allow_stall) {
-  wbm->rep->SetAllowStall(new_allow_stall);
 }
 
 rocksdb_dbpath_t* rocksdb_dbpath_create(const char* path,

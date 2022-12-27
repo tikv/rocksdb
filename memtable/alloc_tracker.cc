@@ -25,8 +25,7 @@ AllocTracker::~AllocTracker() { FreeMem(); }
 
 void AllocTracker::Allocate(size_t bytes) {
   assert(write_buffer_manager_ != nullptr);
-  if (write_buffer_manager_->enabled() ||
-      write_buffer_manager_->cost_to_cache()) {
+  if (write_buffer_manager_->enabled()) {
     bytes_allocated_.fetch_add(bytes, std::memory_order_relaxed);
     write_buffer_manager_->ReserveMem(bytes);
   }
@@ -34,8 +33,7 @@ void AllocTracker::Allocate(size_t bytes) {
 
 void AllocTracker::DoneAllocating() {
   if (write_buffer_manager_ != nullptr && !done_allocating_) {
-    if (write_buffer_manager_->enabled() ||
-        write_buffer_manager_->cost_to_cache()) {
+    if (write_buffer_manager_->enabled()) {
       write_buffer_manager_->ScheduleFreeMem(
           bytes_allocated_.load(std::memory_order_relaxed));
     } else {
@@ -50,8 +48,7 @@ void AllocTracker::FreeMem() {
     DoneAllocating();
   }
   if (write_buffer_manager_ != nullptr && !freed_) {
-    if (write_buffer_manager_->enabled() ||
-        write_buffer_manager_->cost_to_cache()) {
+    if (write_buffer_manager_->enabled()) {
       write_buffer_manager_->FreeMem(
           bytes_allocated_.load(std::memory_order_relaxed));
     } else {

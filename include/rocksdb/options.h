@@ -1885,7 +1885,19 @@ struct FlushOptions {
   // is performed by someone else (foreground call or background thread).
   // Default: false
   bool allow_write_stall;
-  FlushOptions() : wait(true), allow_write_stall(false) {}
+  // Only switch mutable memtable if its size is no smaller than this parameter.
+  // Zero is no-op.
+  // Default: 0
+  uint64_t min_size_to_flush;
+  // Used by RocksDB internally.
+  // Default: false
+  bool _write_stopped;
+
+  FlushOptions()
+      : wait(true),
+        allow_write_stall(false),
+        min_size_to_flush(0),
+        _write_stopped(false) {}
 };
 
 // Create a Logger from provided DBOptions

@@ -2265,6 +2265,23 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
   }
   if (s.ok()) {
     s = impl->StartPeriodicTaskScheduler();
+    if (impl->write_buffer_manager_) {
+      // Newly created handles are already registered during
+      // `CreateColumnFamily`. We must clear them all to avoid duplicate
+      // registration.
+      impl->write_buffer_manager_->UnregisterDB(impl);
+      for (auto* cf : *handles) {
+        if (cf->GetName() == kDefaultColumnFamilyName) {
+          impl->write_buffer_manager_->RegisterColumnFamily(
+              impl, impl->default_cf_handle_);
+        } else if (cf->GetName() == kPersistentStatsColumnFamilyName) {
+          impl->write_buffer_manager_->RegisterColumnFamily(
+              impl, impl->persist_stats_cf_handle_);
+        } else {
+          impl->write_buffer_manager_->RegisterColumnFamily(impl, cf);
+        }
+      }
+    }
   }
   if (s.ok()) {
     s = impl->RegisterRecordSeqnoTimeWorker(recovery_ctx.is_new_db_);

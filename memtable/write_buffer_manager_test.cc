@@ -24,57 +24,19 @@ TEST_F(WriteBufferManagerTest, ShouldFlush) {
 
   wbf->ReserveMem(8 * 1024 * 1024);
   ASSERT_FALSE(wbf->ShouldFlush());
-  // 90% of the hard limit will hit the condition
-  wbf->ReserveMem(1 * 1024 * 1024);
+  wbf->ReserveMem(2 * 1024 * 1024);
   ASSERT_TRUE(wbf->ShouldFlush());
   // Scheduling for freeing will release the condition
   wbf->ScheduleFreeMem(1 * 1024 * 1024);
   ASSERT_FALSE(wbf->ShouldFlush());
 
-  wbf->ReserveMem(2 * 1024 * 1024);
-  ASSERT_TRUE(wbf->ShouldFlush());
-
-  wbf->ScheduleFreeMem(4 * 1024 * 1024);
-  // 11MB total, 6MB mutable. hard limit still hit
-  ASSERT_TRUE(wbf->ShouldFlush());
-
-  wbf->ScheduleFreeMem(2 * 1024 * 1024);
-  // 11MB total, 4MB mutable. hard limit stills but won't flush because more
-  // than half data is already being flushed.
-  ASSERT_FALSE(wbf->ShouldFlush());
-
-  wbf->ReserveMem(4 * 1024 * 1024);
-  // 15 MB total, 8MB mutable.
-  ASSERT_TRUE(wbf->ShouldFlush());
-
-  wbf->FreeMem(7 * 1024 * 1024);
-  // 8MB total, 8MB mutable.
-  ASSERT_FALSE(wbf->ShouldFlush());
-
-  // change size: 8M limit, 7M mutable limit
-  wbf->SetBufferSize(8 * 1024 * 1024);
-  // 8MB total, 8MB mutable.
+  // change size: 8M limit.
+  wbf->SetFlushSize(8 * 1024 * 1024);
+  // 9MB mutable.
   ASSERT_TRUE(wbf->ShouldFlush());
 
   wbf->ScheduleFreeMem(2 * 1024 * 1024);
-  // 8MB total, 6MB mutable.
-  ASSERT_TRUE(wbf->ShouldFlush());
-
-  wbf->FreeMem(2 * 1024 * 1024);
-  // 6MB total, 6MB mutable.
-  ASSERT_FALSE(wbf->ShouldFlush());
-
-  wbf->ReserveMem(1 * 1024 * 1024);
-  // 7MB total, 7MB mutable.
-  ASSERT_FALSE(wbf->ShouldFlush());
-
-  wbf->ReserveMem(1 * 1024 * 1024);
-  // 8MB total, 8MB mutable.
-  ASSERT_TRUE(wbf->ShouldFlush());
-
-  wbf->ScheduleFreeMem(1 * 1024 * 1024);
-  wbf->FreeMem(1 * 1024 * 1024);
-  // 7MB total, 7MB mutable.
+  // 7MB mutable.
   ASSERT_FALSE(wbf->ShouldFlush());
 }
 
@@ -123,7 +85,6 @@ TEST_F(ChargeWriteBufferTest, Basic) {
   ASSERT_EQ(wbf->dummy_entries_in_cache_usage(), 44 * kSizeDummyEntry);
   ASSERT_GE(cache->GetPinnedUsage(), 44 * 256 * 1024);
   ASSERT_LT(cache->GetPinnedUsage(), 44 * 256 * 1024 + kMetaDataChargeOverhead);
-  ASSERT_FALSE(wbf->ShouldFlush());
 
   // Allocate another 41MB, memory_used_ = 52045KB
   wbf->ReserveMem(41 * 1024 * 1024);
@@ -131,19 +92,6 @@ TEST_F(ChargeWriteBufferTest, Basic) {
   ASSERT_GE(cache->GetPinnedUsage(), 204 * 256 * 1024);
   ASSERT_LT(cache->GetPinnedUsage(),
             204 * 256 * 1024 + kMetaDataChargeOverhead);
-  ASSERT_TRUE(wbf->ShouldFlush());
-
-  ASSERT_TRUE(wbf->ShouldFlush());
-
-  // Schedule free 20MB, memory_used_ = 52045KB
-  // It will not cause any change in memory_used and cache cost
-  wbf->ScheduleFreeMem(20 * 1024 * 1024);
-  ASSERT_EQ(wbf->dummy_entries_in_cache_usage(), 204 * kSizeDummyEntry);
-  ASSERT_GE(cache->GetPinnedUsage(), 204 * 256 * 1024);
-  ASSERT_LT(cache->GetPinnedUsage(),
-            204 * 256 * 1024 + kMetaDataChargeOverhead);
-  // Still need flush as the hard limit hits
-  ASSERT_TRUE(wbf->ShouldFlush());
 
   // Free 20MB, memory_used_ = 31565KB
   // It will releae 80 dummy entries from cache since
@@ -155,8 +103,6 @@ TEST_F(ChargeWriteBufferTest, Basic) {
   ASSERT_GE(cache->GetPinnedUsage(), 124 * 256 * 1024);
   ASSERT_LT(cache->GetPinnedUsage(),
             124 * 256 * 1024 + kMetaDataChargeOverhead);
-
-  ASSERT_FALSE(wbf->ShouldFlush());
 
   // Free 16KB, memory_used_ = 31549KB
   // It will not release any dummy entry since memory_used_ >=
@@ -213,8 +159,6 @@ TEST_F(ChargeWriteBufferTest, BasicWithNoBufferSizeLimit) {
   ASSERT_EQ(wbf->dummy_entries_in_cache_usage(), 40 * kSizeDummyEntry);
   ASSERT_GE(cache->GetPinnedUsage(), 40 * 256 * 1024);
   ASSERT_LT(cache->GetPinnedUsage(), 40 * 256 * 1024 + kMetaDataChargeOverhead);
-
-  ASSERT_FALSE(wbf->ShouldFlush());
 
   // Free 9MB,  memory_used_ = 1024KB
   // It will free 36 dummy entries

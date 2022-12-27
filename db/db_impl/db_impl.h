@@ -395,6 +395,12 @@ class DBImpl : public DB {
                                            const Range& range,
                                            uint64_t* const count,
                                            uint64_t* const size) override;
+
+  using DB::GetApproximateActiveMemTableStats;
+  virtual void GetApproximateActiveMemTableStats(
+      ColumnFamilyHandle* column_family, uint64_t* const memory_bytes,
+      uint64_t* const oldest_key_time) override;
+
   using DB::CompactRange;
   virtual Status CompactRange(const CompactRangeOptions& options,
                               ColumnFamilyHandle* column_family,
@@ -1203,6 +1209,7 @@ class DBImpl : public DB {
   SeqnoToTimeMapping TEST_GetSeqnoToTimeMapping() const;
   const autovector<uint64_t>& TEST_GetFilesToQuarantine() const;
   size_t TEST_EstimateInMemoryStatsHistorySize() const;
+  void TEST_ClearBackgroundJobs();
 
   uint64_t TEST_GetCurrentLogNumber() const {
     InstrumentedMutexLock l(mutex());
@@ -2069,9 +2076,6 @@ class DBImpl : public DB {
 
   // REQUIRES: mutex locked and in write thread.
   Status SwitchWAL(WriteContext* write_context);
-
-  // REQUIRES: mutex locked and in write thread.
-  Status HandleWriteBufferManagerFlush(WriteContext* write_context);
 
   // REQUIRES: mutex locked
   Status PreprocessWrite(const WriteOptions& write_options,

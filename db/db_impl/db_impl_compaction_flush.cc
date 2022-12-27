@@ -2273,7 +2273,9 @@ Status DBImpl::FlushMemTable(ColumnFamilyData* cfd,
     }
   }
 
-  const bool needs_to_join_write_thread = !entered_write_thread;
+  const bool needs_to_join_write_thread =
+      !entered_write_thread && !flush_options._write_stopped;
+
   autovector<FlushRequest> flush_reqs;
   autovector<uint64_t> memtable_ids_to_wait;
   {
@@ -2290,7 +2292,9 @@ Status DBImpl::FlushMemTable(ColumnFamilyData* cfd,
     }
     WaitForPendingWrites();
 
-    if (!cfd->mem()->IsEmpty() || !cached_recoverable_state_empty_.load()) {
+    if ((!cfd->mem()->IsEmpty() || !cached_recoverable_state_empty_.load()) &&
+        (cfd->mem()->ApproximateMemoryUsageFast() >=
+         flush_options.min_size_to_flush)) {
       s = SwitchMemtable(cfd, &context);
     }
     const uint64_t flush_memtable_id = std::numeric_limits<uint64_t>::max();
@@ -2476,6 +2480,10 @@ Status DBImpl::AtomicFlushMemTables(
 
     for (auto cfd : cfds) {
       if (cfd->mem()->IsEmpty() && cached_recoverable_state_empty_.load()) {
+        continue;
+      }
+      if (cfd->mem()->ApproximateMemoryUsageFast() <
+          flush_options.min_size_to_flush) {
         continue;
       }
       cfd->Ref();

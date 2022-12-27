@@ -1465,6 +1465,10 @@ class DB {
     GetApproximateMemTableStats(DefaultColumnFamily(), range, count, size);
   }
 
+  virtual void GetApproximateActiveMemTableStats(
+      ColumnFamilyHandle* /*column_family*/, uint64_t* const /*memory_bytes*/,
+      uint64_t* const /*oldest_key_time*/) {}
+
   // Compact the underlying storage for the key range [*begin,*end].
   // The actual compaction interval might be superset of [*begin, *end].
   // In particular, deleted and overwritten versions are discarded,
