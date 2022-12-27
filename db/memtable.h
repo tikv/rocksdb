@@ -568,6 +568,8 @@ class MemTable {
   std::vector<port::RWMutex> locks_;
 
   const SliceTransform* const prefix_extractor_;
+  // Bloom filter initialization is delayed to the actual read/write. This is to
+  // reduce memory footprint of empty memtable.
   const bool needs_bloom_filter_;
   std::atomic<DynamicBloom*> bloom_filter_ptr_;
   SpinMutex bloom_filter_mutex_;
