@@ -303,6 +303,8 @@ Status DBImpl::MultiBatchWriteImpl(const WriteOptions& write_options,
               next_sequence += count;
               total_count += count;
               memtable_write_cnt++;
+            } else if (w->post_callback) {
+              w->post_callback->Callback(w->sequence);
             }
           }
           total_byte_size = WriteBatchInternal::AppendedByteSize(

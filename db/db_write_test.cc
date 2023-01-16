@@ -922,7 +922,6 @@ TEST_P(DBWriteTest, PostWriteCallback) {
     opts.wait = false;
     can_flush_mutex.Lock();
     ASSERT_OK(dbfull()->Flush(opts));
-    can_flush_mutex.Unlock();
     flushed.store(true, std::memory_order_relaxed);
   }));
 
@@ -931,13 +930,30 @@ TEST_P(DBWriteTest, PostWriteCallback) {
   ASSERT_EQ(flushed.load(std::memory_order_relaxed), false);
 
   the_first_can_exit_write_mutex.Unlock();
-  std::this_thread::sleep_for(std::chrono::milliseconds{10});
+  std::this_thread::sleep_for(std::chrono::milliseconds{50});
   ASSERT_EQ(written.load(std::memory_order_relaxed), 2);
   ASSERT_EQ(flushed.load(std::memory_order_relaxed), true);
 
   for (auto& t : threads) {
     t.join();
   }
+}
+
+TEST_P(DBWriteTest, PostWriteCallbackEmptyBatch) {
+  Options options = GetOptions();
+  if (options.two_write_queues) {
+    // Not compatible.
+    return;
+  }
+  Reopen(options);
+  WriteBatch batch;
+  WriteOptions opts;
+  opts.sync = false;
+  opts.disableWAL = true;
+  SequenceNumber seq = 0;
+  SimpleCallback callback([&](SequenceNumber s) { seq = s; });
+  ASSERT_OK(dbfull()->Write(opts, &batch, &callback));
+  ASSERT_NE(seq, 0);
 }
 
 INSTANTIATE_TEST_CASE_P(DBWriteTestInstance, DBWriteTest,
