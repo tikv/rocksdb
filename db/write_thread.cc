@@ -863,6 +863,8 @@ void WriteThread::Writer::ConsumeOne(size_t claimed) {
   if (!s.ok()) {
     std::lock_guard<SpinMutex> guard(this->status_lock);
     this->status = s;
+  } else if (post_callback) {
+    post_callback->Callback(sequence);
   }
   multi_batch.pending_wb_cnt.fetch_sub(1, std::memory_order_acq_rel);
 }

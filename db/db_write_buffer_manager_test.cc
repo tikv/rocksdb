@@ -31,10 +31,10 @@ TEST_P(DBWriteBufferManagerTest, SharedBufferAcrossCFs1) {
 
   if (cost_cache_) {
     options.write_buffer_manager.reset(
-        new WriteBufferManager(100000, cache, true));
+        new WriteBufferManager(100000, cache, 1.0));
   } else {
     options.write_buffer_manager.reset(
-        new WriteBufferManager(100000, nullptr, true));
+        new WriteBufferManager(100000, nullptr, 1.0));
   }
 
   WriteOptions wo;
@@ -74,10 +74,10 @@ TEST_P(DBWriteBufferManagerTest, SharedWriteBufferAcrossCFs2) {
 
   if (cost_cache_) {
     options.write_buffer_manager.reset(
-        new WriteBufferManager(100000, cache, true));
+        new WriteBufferManager(100000, cache, 1.0));
   } else {
     options.write_buffer_manager.reset(
-        new WriteBufferManager(100000, nullptr, true));
+        new WriteBufferManager(100000, nullptr, 1.0));
   }
   WriteOptions wo;
   wo.disableWAL = true;
@@ -179,6 +179,143 @@ TEST_P(DBWriteBufferManagerTest, SharedWriteBufferAcrossCFs2) {
   ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->DisableProcessing();
 }
 
+TEST_P(DBWriteBufferManagerTest, FreeMemoryOnDestroy) {
+  Options options = CurrentOptions();
+  options.arena_block_size = 4096;
+  options.write_buffer_size = 500000;   // this is never hit
+  options.max_write_buffer_number = 5;  // Avoid unexpected stalling.
+  std::shared_ptr<Cache> cache = NewLRUCache(4 * 1024 * 1024, 2);
+  ASSERT_LT(cache->GetUsage(), 256 * 1024);
+  cost_cache_ = GetParam();
+
+  if (cost_cache_) {
+    options.write_buffer_manager.reset(
+        new WriteBufferManager(100000, cache, 1.0));
+  } else {
+    options.write_buffer_manager.reset(
+        new WriteBufferManager(100000, nullptr, 1.0));
+  }
+
+  CreateAndReopenWithCF({"cf1", "cf2"}, options);
+  std::string db2_name = test::PerThreadDBPath("free_memory_on_destroy_db2");
+  DB* db2 = nullptr;
+  ASSERT_OK(DestroyDB(db2_name, options));
+  ASSERT_OK(DB::Open(options, db2_name, &db2));
+
+  ASSERT_OK(db_->PauseBackgroundWork());
+  ASSERT_OK(db2->PauseBackgroundWork());
+
+  WriteOptions wo;
+  wo.disableWAL = true;
+  wo.no_slowdown = true;
+
+  ASSERT_OK(db2->Put(wo, Key(1), DummyString(30000)));
+  ASSERT_OK(Put(1, Key(1), DummyString(20000), wo));
+  ASSERT_OK(Put(0, Key(1), DummyString(40000), wo));
+
+  // Decrease flush size, at least two cfs must be freed to not stall write.
+  options.write_buffer_manager->SetFlushSize(50000);
+  ASSERT_TRUE(Put(0, Key(1), DummyString(30000), wo).IsIncomplete());
+
+  ASSERT_OK(db2->ContinueBackgroundWork());  // Close waits on pending jobs.
+  // Thanks to `UnregisterDB`, we don't have to delete it to free up space.
+  db2->Close();
+  ASSERT_TRUE(Put(0, Key(1), DummyString(30000), wo).IsIncomplete());
+
+  dbfull()->TEST_ClearBackgroundJobs();  // Jobs hold ref of cfd.
+  ASSERT_OK(db_->DropColumnFamily(handles_[1]));
+  ASSERT_TRUE(Put(0, Key(1), DummyString(30000), wo).IsIncomplete());
+  ASSERT_OK(db_->DestroyColumnFamilyHandle(handles_[1]));
+  handles_.erase(handles_.begin() + 1);
+  ASSERT_OK(Put(0, Key(1), DummyString(30000), wo));
+
+  delete db2;
+  DestroyDB(db2_name, options);
+
+  ASSERT_OK(db_->ContinueBackgroundWork());
+}
+
+TEST_P(DBWriteBufferManagerTest, DynamicFlushSize) {
+  Options options = CurrentOptions();
+  options.arena_block_size = 4096;
+  options.write_buffer_size = 500000;  // this is never hit
+  std::shared_ptr<Cache> cache = NewLRUCache(4 * 1024 * 1024, 2);
+  ASSERT_LT(cache->GetUsage(), 256 * 1024);
+  cost_cache_ = GetParam();
+
+  if (cost_cache_) {
+    options.write_buffer_manager.reset(
+        new WriteBufferManager(100000, cache, 1.0));
+  } else {
+    options.write_buffer_manager.reset(
+        new WriteBufferManager(100000, nullptr, 1.0));
+  }
+
+  CreateAndReopenWithCF({"cf1", "cf2"}, options);
+  std::string db2_name = test::PerThreadDBPath("dynamic_flush_db2");
+  DB* db2 = nullptr;
+  ASSERT_OK(DestroyDB(db2_name, options));
+  ASSERT_OK(DB::Open(options, db2_name, &db2));
+
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->LoadDependency(
+      {{"DBWriteBufferManagerTest::SharedWriteBufferAcrossCFs:0",
+        "DBImpl::BackgroundCallFlush:start"}});
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->EnableProcessing();
+
+  // Increase flush size can unblock writers.
+  {
+    WriteOptions wo;
+    wo.disableWAL = true;
+    ASSERT_OK(db2->Put(wo, Key(1), DummyString(60000)));
+    ASSERT_OK(Put(1, Key(1), DummyString(30000), wo));
+    ASSERT_OK(Put(0, Key(1), DummyString(30000), wo));
+    // Write to DB.
+    std::vector<port::Thread> threads;
+    std::atomic<bool> ready{false};
+    std::function<void(DB*)> write_db = [&](DB* db) {
+      WriteOptions wopts;
+      wopts.disableWAL = true;
+      wopts.no_slowdown = true;
+      ASSERT_TRUE(db->Put(wopts, Key(3), DummyString(1)).IsIncomplete());
+      ready = true;
+      wopts.no_slowdown = false;
+      ASSERT_OK(db->Put(wopts, Key(3), DummyString(1)));
+    };
+    // Triggers db2 flush, but the flush is blocked.
+    threads.emplace_back(write_db, db_);
+    while (!ready) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    // Increase.
+    options.write_buffer_manager->SetFlushSize(200000);
+    for (auto& t : threads) {
+      t.join();
+    }
+    TEST_SYNC_POINT("DBWriteBufferManagerTest::SharedWriteBufferAcrossCFs:0");
+  }
+  // Decrease flush size triggers flush.
+  {
+    WriteOptions wo;
+    wo.disableWAL = true;
+    wo.no_slowdown = true;
+
+    ASSERT_OK(Put(0, Key(1), DummyString(60000), wo));
+    // All memtables must be flushed to satisfy the new flush_size.
+    // Not too small because memtable has a minimum size.
+    options.write_buffer_manager->SetFlushSize(10240);
+    ASSERT_OK(dbfull()->TEST_WaitForFlushMemTable(handles_[0]));
+    ASSERT_OK(dbfull()->TEST_WaitForFlushMemTable(handles_[1]));
+    ASSERT_OK(db2->Put(wo, Key(1), DummyString(200000)));
+  }
+
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->ClearAllCallBacks();
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->DisableProcessing();
+
+  db2->Close();
+  delete db2;
+  DestroyDB(db2_name, options);
+}
+
 // Test multiple DBs get blocked when WriteBufferManager limit exceeds and flush
 // is waiting to be finished but DBs tries to write meanwhile.
 TEST_P(DBWriteBufferManagerTest, SharedWriteBufferLimitAcrossDB) {
@@ -201,10 +338,10 @@ TEST_P(DBWriteBufferManagerTest, SharedWriteBufferLimitAcrossDB) {
 
   if (cost_cache_) {
     options.write_buffer_manager.reset(
-        new WriteBufferManager(100000, cache, true));
+        new WriteBufferManager(100000, cache, 1.0));
   } else {
     options.write_buffer_manager.reset(
-        new WriteBufferManager(100000, nullptr, true));
+        new WriteBufferManager(100000, nullptr, 1.0));
   }
   CreateAndReopenWithCF({"cf1", "cf2"}, options);
 
@@ -216,10 +353,10 @@ TEST_P(DBWriteBufferManagerTest, SharedWriteBufferLimitAcrossDB) {
   wo.disableWAL = true;
 
   for (int i = 0; i < num_dbs; i++) {
-    ASSERT_OK(dbs[i]->Put(wo, Key(1), DummyString(20000)));
+    ASSERT_OK(dbs[i]->Put(wo, Key(1), DummyString(25000)));
   }
   // Insert to db_.
-  ASSERT_OK(Put(0, Key(1), DummyString(30000), wo));
+  ASSERT_OK(Put(0, Key(1), DummyString(25000), wo));
 
   // WriteBufferManager Limit exceeded.
   std::vector<port::Thread> threads;
@@ -318,10 +455,10 @@ TEST_P(DBWriteBufferManagerTest, SharedWriteBufferLimitAcrossDB1) {
 
   if (cost_cache_) {
     options.write_buffer_manager.reset(
-        new WriteBufferManager(100000, cache, true));
+        new WriteBufferManager(100000, cache, 1.0));
   } else {
     options.write_buffer_manager.reset(
-        new WriteBufferManager(100000, nullptr, true));
+        new WriteBufferManager(100000, nullptr, 1.0));
   }
   CreateAndReopenWithCF({"cf1", "cf2"}, options);
 
@@ -333,10 +470,10 @@ TEST_P(DBWriteBufferManagerTest, SharedWriteBufferLimitAcrossDB1) {
   wo.disableWAL = true;
 
   for (int i = 0; i < num_dbs; i++) {
-    ASSERT_OK(dbs[i]->Put(wo, Key(1), DummyString(20000)));
+    ASSERT_OK(dbs[i]->Put(wo, Key(1), DummyString(25000)));
   }
   // Insert to db_.
-  ASSERT_OK(Put(0, Key(1), DummyString(30000), wo));
+  ASSERT_OK(Put(0, Key(1), DummyString(25000), wo));
 
   // WriteBufferManager::buffer_size_ has exceeded after the previous write to
   // dbs[0] is completed.
@@ -460,10 +597,10 @@ TEST_P(DBWriteBufferManagerTest, MixedSlowDownOptionsSingleDB) {
 
   if (cost_cache_) {
     options.write_buffer_manager.reset(
-        new WriteBufferManager(100000, cache, true));
+        new WriteBufferManager(100000, cache, 1.0));
   } else {
     options.write_buffer_manager.reset(
-        new WriteBufferManager(100000, nullptr, true));
+        new WriteBufferManager(100000, nullptr, 1.0));
   }
   WriteOptions wo;
   wo.disableWAL = true;
@@ -622,10 +759,10 @@ TEST_P(DBWriteBufferManagerTest, MixedSlowDownOptionsMultipleDB) {
 
   if (cost_cache_) {
     options.write_buffer_manager.reset(
-        new WriteBufferManager(100000, cache, true));
+        new WriteBufferManager(100000, cache, 1.0));
   } else {
     options.write_buffer_manager.reset(
-        new WriteBufferManager(100000, nullptr, true));
+        new WriteBufferManager(100000, nullptr, 1.0));
   }
   CreateAndReopenWithCF({"cf1", "cf2"}, options);
 
@@ -637,10 +774,10 @@ TEST_P(DBWriteBufferManagerTest, MixedSlowDownOptionsMultipleDB) {
   wo.disableWAL = true;
 
   for (int i = 0; i < num_dbs; i++) {
-    ASSERT_OK(dbs[i]->Put(wo, Key(1), DummyString(20000)));
+    ASSERT_OK(dbs[i]->Put(wo, Key(1), DummyString(25000)));
   }
   // Insert to db_.
-  ASSERT_OK(Put(0, Key(1), DummyString(30000), wo));
+  ASSERT_OK(Put(0, Key(1), DummyString(25000), wo));
 
   // WriteBufferManager::buffer_size_ has exceeded after the previous write to
   // dbs[0] is completed.

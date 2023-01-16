@@ -79,7 +79,7 @@ class DBWithTTLImpl : public DBWithTTL {
 
   using StackableDB::Write;
   virtual Status Write(const WriteOptions& opts, WriteBatch* updates,
-                       uint64_t* seq) override;
+                       PostWriteCallback* callback) override;
 
   using StackableDB::NewIterator;
   virtual Iterator* NewIterator(const ReadOptions& opts,

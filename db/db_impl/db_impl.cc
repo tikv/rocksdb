@@ -716,7 +716,10 @@ Status DBImpl::CloseHelper() {
   }
 
   if (write_buffer_manager_ && wbm_stall_) {
-    write_buffer_manager_->RemoveDBFromQueue(wbm_stall_.get());
+    write_buffer_manager_->RemoveFromStallQueue(wbm_stall_.get());
+  }
+  if (write_buffer_manager_) {
+    write_buffer_manager_->UnregisterDB(this);
   }
 
   if (ret.IsAborted()) {
@@ -2824,6 +2827,9 @@ Status DBImpl::CreateColumnFamilyImpl(const ColumnFamilyOptions& cf_options,
   if (s.ok()) {
     NewThreadStatusCfInfo(
         static_cast_with_check<ColumnFamilyHandleImpl>(*handle)->cfd());
+    if (write_buffer_manager_ != nullptr) {
+      write_buffer_manager_->RegisterColumnFamily(this, *handle);
+    }
   }
   return s;
 }
@@ -3619,6 +3625,18 @@ void DBImpl::GetApproximateMemTableStats(ColumnFamilyHandle* column_family,
   *size = memStats.size + immStats.size;
 
   ReturnAndCleanupSuperVersion(cfd, sv);
+}
+
+void DBImpl::GetApproximateActiveMemTableStats(
+    ColumnFamilyHandle* column_family, uint64_t* const memory_bytes,
+    uint64_t* const oldest_key_time) {
+  auto* cf_impl = static_cast<ColumnFamilyHandleImpl*>(column_family);
+  if (memory_bytes) {
+    *memory_bytes = cf_impl->cfd()->mem()->ApproximateMemoryUsageFast();
+  }
+  if (oldest_key_time) {
+    *oldest_key_time = cf_impl->cfd()->mem()->ApproximateOldestKeyTime();
+  }
 }
 
 Status DBImpl::GetApproximateSizes(const SizeApproximationOptions& options,
