@@ -1828,7 +1828,7 @@ class DB {
     kDumpStats = 2,
     kPersistStats = 1,
   };
-  virtual Status DoPeriodicWork(PeriodicWorkType type) {
+  virtual Status DoPeriodicWork(PeriodicWorkType /*type*/) {
     return Status::NotSupported("DoPeriodicWork() is not implemented.");
   }
 
