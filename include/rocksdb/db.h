@@ -1823,6 +1823,15 @@ class DB {
     return Status::NotSupported("GetStatsHistory() is not implemented.");
   }
 
+  enum PeriodicWorkType {
+    kFlushInfoLog = 0,
+    kDumpStats = 2,
+    kPersistStats = 1,
+  };
+  virtual Status DoPeriodicWork(PeriodicWorkType type) {
+    return Status::NotSupported("DoPeriodicWork() is not implemented.");
+  }
+
 #ifndef ROCKSDB_LITE
   // Make the secondary instance catch up with the primary by tailing and
   // replaying the MANIFEST and WAL of the primary.

@@ -541,6 +541,10 @@ static std::unordered_map<std::string, OptionTypeInfo>
          OptionTypeInfo::Enum<CacheTier>(
              offsetof(struct ImmutableDBOptions, lowest_used_cache_tier),
              &cache_tier_string_map, OptionTypeFlags::kNone)},
+        {"disable_periodic_work_scheduler",
+         {offsetof(struct ImmutableDBOptions, disable_periodic_work_scheduler),
+          OptionType::kBoolean, OptionVerificationType::kNormal,
+          OptionTypeFlags::kNone}},
 };
 
 const std::string OptionsHelper::kDBOptionsName = "DBOptions";
@@ -741,7 +745,8 @@ ImmutableDBOptions::ImmutableDBOptions(const DBOptions& options)
       db_host_id(options.db_host_id),
       checksum_handoff_file_types(options.checksum_handoff_file_types),
       lowest_used_cache_tier(options.lowest_used_cache_tier),
-      compaction_service(options.compaction_service) {
+      compaction_service(options.compaction_service),
+      disable_periodic_work_scheduler(options.disable_periodic_work_scheduler) {
   stats = statistics.get();
   fs = env->GetFileSystem();
   if (env != nullptr) {
@@ -919,6 +924,10 @@ void ImmutableDBOptions::Dump(Logger* log) const {
                    allow_data_in_errors);
   ROCKS_LOG_HEADER(log, "            Options.db_host_id: %s",
                    db_host_id.c_str());
+  ROCKS_LOG_HEADER(log,
+                   "                       "
+                   "Options.disable_periodic_work_scheduler: %d",
+                   disable_periodic_work_scheduler);
 }
 
 bool ImmutableDBOptions::IsWalDirSameAsDBPath() const {

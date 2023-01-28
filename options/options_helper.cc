@@ -188,6 +188,8 @@ DBOptions BuildDBOptions(const ImmutableDBOptions& immutable_db_options,
   options.checksum_handoff_file_types =
       immutable_db_options.checksum_handoff_file_types;
   options.lowest_used_cache_tier = immutable_db_options.lowest_used_cache_tier;
+  options.disable_periodic_work_scheduler =
+      immutable_db_options.disable_periodic_work_scheduler;
   return options;
 }
 

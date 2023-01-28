@@ -1131,6 +1131,21 @@ class DBImpl : public DB {
   // flush LOG out of application buffer
   void FlushInfoLog();
 
+  Status DoPeriodicWork(PeriodicWorkType type) override {
+    switch (type) {
+      case PeriodicWorkType::kFlushInfoLog:
+        FlushInfoLog();
+        break;
+      case PeriodicWorkType::kDumpStats:
+        DumpStats();
+        break;
+      case PeriodicWorkType::kPersistStats:
+        PersistStats();
+        break;
+    }
+    return Status::OK();
+  }
+
   // Interface to block and signal the DB in case of stalling writes by
   // WriteBufferManager. Each DBImpl object contains ptr to WBMStallInterface.
   // When DB needs to be blocked or signalled by WriteBufferManager,

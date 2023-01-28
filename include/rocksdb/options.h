@@ -829,6 +829,10 @@ struct DBOptions {
   // NOT SUPPORTED ANYMORE -- this options is no longer used
   bool skip_log_error_on_recovery = false;
 
+  // Disable periodic work scheduler. User should manually run periodic work
+  // with `DB::DoPeriodicWork()`. Default: false
+  bool disable_periodic_work_scheduler = false;
+
   // if not zero, dump rocksdb.stats to LOG every stats_dump_period_sec
   //
   // Default: 600 (10 min)
