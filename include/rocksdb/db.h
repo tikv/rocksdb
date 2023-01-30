@@ -1825,8 +1825,8 @@ class DB {
 
   enum PeriodicWorkType {
     kFlushInfoLog = 0,
-    kDumpStats = 2,
-    kPersistStats = 1,
+    kDumpStats = 1,
+    kPersistStats = 2,
   };
   virtual Status DoPeriodicWork(PeriodicWorkType /*type*/) {
     return Status::NotSupported("DoPeriodicWork() is not implemented.");
