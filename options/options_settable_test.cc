@@ -344,8 +344,7 @@ TEST_F(OptionsSettableTest, DBOptionsAllFieldsSettable) {
                              "bgerror_resume_retry_interval=1000000"
                              "db_host_id=hostname;"
                              "lowest_used_cache_tier=kNonVolatileBlockTier;"
-                             "allow_data_in_errors=false;"
-                             "disable_periodic_work_scheduler=false",
+                             "allow_data_in_errors=false",
                              new_options));
 
   ASSERT_EQ(unset_bytes_base, NumUnsetBytes(new_options_ptr, sizeof(DBOptions),

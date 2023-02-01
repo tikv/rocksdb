@@ -773,17 +773,16 @@ void DBImpl::PrintStatistics() {
 void DBImpl::StartPeriodicWorkScheduler() {
 #ifndef ROCKSDB_LITE
 
-  bool disable_scheduler =
-      immutable_db_options_.disable_periodic_work_scheduler;
 #ifndef NDEBUG
   // It only used by test to disable scheduler
+  bool disable_scheduler = false;
   TEST_SYNC_POINT_CALLBACK(
       "DBImpl::StartPeriodicWorkScheduler:DisableScheduler",
       &disable_scheduler);
-#endif  // !NDEBUG
   if (disable_scheduler) {
     return;
   }
+#endif  // !NDEBUG
 
   {
     InstrumentedMutexLock l(&mutex_);
