@@ -849,8 +849,7 @@ void DBImpl::NotifyOnFlushBegin(ColumnFamilyData* cfd, FileMetaData* file_meta,
   bool triggered_writes_stop =
       (cfd->current()->storage_info()->NumLevelFiles(0) >=
        mutable_cf_options.level0_stop_writes_trigger);
-  // release lock while notifying events
-  mutex_.Unlock();
+  // mutex_.Unlock();
   {
     FlushJobInfo info{};
     info.cf_id = cfd->GetID();
@@ -874,7 +873,7 @@ void DBImpl::NotifyOnFlushBegin(ColumnFamilyData* cfd, FileMetaData* file_meta,
       listener->OnFlushBegin(this, info);
     }
   }
-  mutex_.Lock();
+// mutex_.Lock();
 // no need to signal bg_cv_ as it will be signaled at the end of the
 // flush process.
 #else
@@ -903,8 +902,9 @@ void DBImpl::NotifyOnFlushCompleted(
   bool triggered_writes_stop =
       (cfd->current()->storage_info()->NumLevelFiles(0) >=
        mutable_cf_options.level0_stop_writes_trigger);
-  // release lock while notifying events
-  mutex_.Unlock();
+  // Callback can be reordered if we unlock mutex_ after LogAndApply in
+  // TryInstallMemtableFlushResults.
+  // mutex_.Unlock();
   {
     for (auto& info : *flush_jobs_info) {
       info->triggered_writes_slowdown = triggered_writes_slowdown;
@@ -915,9 +915,9 @@ void DBImpl::NotifyOnFlushCompleted(
     }
     flush_jobs_info->clear();
   }
-  mutex_.Lock();
-  // no need to signal bg_cv_ as it will be signaled at the end of the
-  // flush process.
+// mutex_.Lock();
+// no need to signal bg_cv_ as it will be signaled at the end of the
+// flush process.
 #else
   (void)cfd;
   (void)mutable_cf_options;
