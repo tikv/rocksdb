@@ -50,10 +50,6 @@ Status DBImpl::ValidateForMerge(const MergeInstanceOptions& mopts,
     if (rhs->total_log_size_ > 0) {
       return Status::InvalidArgument("DB WAL is not empty");
     }
-    if (rhs->write_buffer_manager_ != write_buffer_manager_) {
-      return Status::InvalidArgument(
-          "write_buffer_manager must be shared to merge memtable");
-    }
   }
   return Status::OK();
 }
