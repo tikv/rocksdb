@@ -358,6 +358,27 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
                                          *cf_mopts[i]);
       sv_context.Clean();
     }
+
+    if (immutable_db_options_.atomic_flush) {
+      AssignAtomicFlushSeq(this_cfds);
+    }
+    for (auto cfd : this_cfds) {
+      cfd->imm()->FlushRequested();
+      if (!immutable_db_options_.atomic_flush) {
+        FlushRequest flush_req;
+        GenerateFlushRequest({cfd}, &flush_req);
+        SchedulePendingFlush(flush_req, FlushReason::kWriteBufferFull);
+      }
+    }
+    if (immutable_db_options_.atomic_flush) {
+      FlushRequest flush_req;
+      GenerateFlushRequest(this_cfds, &flush_req);
+      SchedulePendingFlush(flush_req, FlushReason::kWriteBufferFull);
+    }
+    for (auto cfd : this_cfds) {
+      SchedulePendingCompaction(cfd);
+    }
+    MaybeScheduleFlushOrCompaction();
   }
 
   assert(s.ok());
