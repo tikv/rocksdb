@@ -748,7 +748,7 @@ class TableFactory : public Customizable {
       const InternalKeyComparator& /*internal_comparator*/,
       TableReader* /*table_reader*/,
       std::unique_ptr<TableReader>* /*cloned*/) const {
-    return Status::NotSupported();
+    return Status::NotSupported("`CloneTableReader` not implemented");
   }
 
   // Return a table builder to write to a file for this table type.
