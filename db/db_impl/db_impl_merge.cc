@@ -298,40 +298,6 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
               f->oldest_blob_file_number, f->oldest_ancester_time,
               f->file_creation_time, f->file_checksum,
               f->file_checksum_func_name, f->min_timestamp, f->max_timestamp);
-
-          // Copy cached table readers.
-          // Because the cache key prefix is stored in table reader, once the
-          // old reader is copied, the target instance will be able to read
-          // blocks cached by source instances (given they share the same block
-          // cache) via the same cache key.
-          // If the block cache is not shared, we can also retrieve blocks on
-          // our own using the file reader copied from source instances.
-          auto CacheKey = [](const uint64_t& file_number) {
-            // Matching `GetSliceForFileNumber()` in table_cache.cc.
-            return Slice(reinterpret_cast<const char*>(&file_number),
-                         sizeof(file_number));
-          };
-          Cache::Handle* handle =
-              table_cache->Lookup(CacheKey(source_file_number));
-          if (handle != nullptr) {
-            std::unique_ptr<TableReader> new_reader;
-            // We already verified that they share the same table factory. So
-            // it's safe to use this_table_factory to clone the reader.
-            auto clone_s = this_table_factory->CloneTableReader(
-                *this_cfd->ioptions(), *this_cfd->soptions(),
-                this_cfd->internal_comparator(),
-                static_cast<TableReader*>(table_cache->Value(handle)),
-                &new_reader);
-            if (clone_s.ok()) {
-              assert(new_reader != nullptr);
-              auto insert_s = this_table_cache->Insert(
-                  CacheKey(target_file_number), new_reader.get(), 1,
-                  table_cache->GetDeleter(handle));
-              if (insert_s.ok()) {
-                new_reader.release();
-              }
-            }
-          }
         }
       }
     }
@@ -346,6 +312,14 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
       edit_ptrs.push_back({&cf_edits[i]});
       cf_mopts.push_back(this_cfds[i]->GetLatestMutableCFOptions());
     }
+
+    auto old_capacity = table_cache_->GetCapacity();
+    if (merge_options.max_preload_files >= 0) {
+      // Refer to `LoadTableHandlers` for calculation details.
+      table_cache_->SetCapacity(
+          (table_cache_->GetUsage() + merge_options.max_preload_files) * 4);
+    }
+
     InstrumentedMutexLock lock(&mutex_);
     s = versions_->LogAndApply(this_cfds, cf_mopts, edit_ptrs, &mutex_,
                                directories_.GetDbDir(), false);
@@ -379,6 +353,10 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
       SchedulePendingCompaction(cfd);
     }
     MaybeScheduleFlushOrCompaction();
+
+    if (merge_options.max_preload_files >= 0) {
+      table_cache_->SetCapacity(old_capacity);
+    }
   }
 
   assert(s.ok());

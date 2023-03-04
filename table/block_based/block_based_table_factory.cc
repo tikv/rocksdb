@@ -624,17 +624,6 @@ Status BlockBasedTableFactory::NewTableReader(
       table_reader_options.cur_file_num);
 }
 
-Status BlockBasedTableFactory::CloneTableReader(
-    const ImmutableOptions& ioptions, const EnvOptions& env_options,
-    const InternalKeyComparator& internal_comparator, TableReader* table_reader,
-    std::unique_ptr<TableReader>* cloned) const {
-  assert(cloned != nullptr);
-  auto* reader_impl = static_cast_with_check<BlockBasedTable>(table_reader);
-  assert(reader_impl != nullptr);
-  return reader_impl->Clone(ioptions, env_options, table_options_,
-                            internal_comparator, cloned);
-}
-
 TableBuilder* BlockBasedTableFactory::NewTableBuilder(
     const TableBuilderOptions& table_builder_options,
     WritableFileWriter* file) const {

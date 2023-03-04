@@ -108,11 +108,6 @@ class BlockBasedTable : public TableReader {
       size_t max_file_size_for_l0_meta_pin = 0,
       const std::string& cur_db_session_id = "", uint64_t cur_file_num = 0);
 
-  Status Clone(const ImmutableOptions& ioptions, const EnvOptions& env_options,
-               const BlockBasedTableOptions& table_options,
-               const InternalKeyComparator& internal_comparator,
-               std::unique_ptr<TableReader>* table_reader) const;
-
   bool PrefixMayMatch(const Slice& internal_key,
                       const ReadOptions& read_options,
                       const SliceTransform* options_prefix_extractor,

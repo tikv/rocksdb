@@ -1972,6 +1972,8 @@ struct MergeInstanceOptions {
   // Whether or not writes to source DBs are still allowed after the merge.
   // Some optimizations are possible only with this flag set to false.
   bool allow_source_write = true;
+  // No limit if negative.
+  int max_preload_files = 16;
 };
 
 }  // namespace ROCKSDB_NAMESPACE
