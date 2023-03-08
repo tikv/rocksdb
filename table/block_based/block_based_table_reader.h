@@ -563,7 +563,7 @@ struct BlockBasedTable::Rep {
   const FilterPolicy* const filter_policy;
   const InternalKeyComparator& internal_comparator;
   Status status;
-  std::shared_ptr<RandomAccessFileReader> file;
+  std::unique_ptr<RandomAccessFileReader> file;
   OffsetableCacheKey base_cache_key;
   PersistentCacheOptions persistent_cache_options;
 
@@ -594,7 +594,7 @@ struct BlockBasedTable::Rep {
   // and compatible with existing code, we introduce a wrapper that allows
   // block to extract prefix without knowing if a key is internal or not.
   // null if no prefix_extractor is passed in when opening the table reader.
-  std::shared_ptr<SliceTransform> internal_prefix_transform;
+  std::unique_ptr<SliceTransform> internal_prefix_transform;
   std::shared_ptr<const SliceTransform> table_prefix_extractor;
 
   std::shared_ptr<const FragmentedRangeTombstoneList> fragmented_range_dels;

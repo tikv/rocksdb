@@ -3110,8 +3110,6 @@ bool BlockBasedTable::TEST_KeyInCache(const ReadOptions& options,
 //  3. options
 //  4. internal_comparator
 //  5. index_type
-// In rare cases the `meta_iter` is allowed to be empty. Returns error in that
-// case.
 Status BlockBasedTable::CreateIndexReader(
     const ReadOptions& ro, FilePrefetchBuffer* prefetch_buffer,
     InternalIterator* meta_iter, bool use_cache, bool prefetch, bool pin,
@@ -3152,10 +3150,6 @@ Status BlockBasedTable::CreateIndexReader(
                                                use_cache, prefetch, pin,
                                                lookup_context, index_reader);
       } else {
-        if (meta_iter == nullptr) {
-          return Status::InvalidArgument(
-              "Missing meta_iter to create HashIndexReader.");
-        }
         return HashIndexReader::Create(this, ro, prefetch_buffer, meta_iter,
                                        use_cache, prefetch, pin, lookup_context,
                                        index_reader);

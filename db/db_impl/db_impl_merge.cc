@@ -261,7 +261,6 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
       if (super_version == nullptr) {
         continue;
       }
-      auto* db = db_impls[db_i];
       VersionStorageInfo& vsi = *super_version->current->storage_info();
       auto& cf_paths = super_version->cfd->ioptions()->cf_paths;
       auto SourcePath = [&](size_t path_id) {

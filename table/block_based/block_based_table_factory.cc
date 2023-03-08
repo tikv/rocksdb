@@ -29,7 +29,6 @@
 #include "table/block_based/block_based_table_builder.h"
 #include "table/block_based/block_based_table_reader.h"
 #include "table/format.h"
-#include "util/cast_util.h"
 #include "util/mutexlock.h"
 #include "util/string_util.h"
 

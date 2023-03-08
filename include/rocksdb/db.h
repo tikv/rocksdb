@@ -291,7 +291,12 @@ class DB {
   //
   // The provided DBs must be disjoint: their internal key ranges don't overlap
   // each other. Calling `CompactRange` on the complementary ranges can make
-  // sure user-visible key range is consistent with internal key range.
+  // sure user-visible key range consistent with internal key range. Caveats are
+  // (1) in-memory point tombstones are not detected during `CompactRange`
+  // calls, an extra manual flush is needed if your DB uses point tombstones;
+  // (2) sometimes `bottommost_level_compaction` needs to be configured to avoid
+  // trivial move; (3) range tombstones are even trickier, they might be
+  // retained even if there's no out-of-ranges key.
   //
   // To avoid triggering L0 (or Memtable) stall conditions, user can consider
   // dynamically decreasing the corresponding limits before entering merge.

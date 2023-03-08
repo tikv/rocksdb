@@ -36,7 +36,6 @@ class FlushBlockPolicyFactory;
 class PersistentCache;
 class RandomAccessFile;
 struct TableReaderOptions;
-struct ImmutableOptions;
 struct TableBuilderOptions;
 class TableBuilder;
 class TableFactory;
