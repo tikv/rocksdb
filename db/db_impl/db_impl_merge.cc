@@ -252,10 +252,8 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
   assert(s.ok());
   autovector<VersionEdit> cf_edits;
   cf_edits.resize(num_cfs);
-  auto* this_table_cache = table_cache_.get();
   for (size_t cf_i = 0; cf_i < num_cfs; cf_i++) {
     auto* this_cfd = this_cfds[cf_i];
-    auto* this_table_factory = this_cfd->ioptions()->table_factory.get();
     auto& edit = cf_edits[cf_i];
     edit.SetColumnFamily(this_cfd->GetID());
     for (size_t db_i = 0; db_i < db_impls.size(); db_i++) {
@@ -264,7 +262,6 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
         continue;
       }
       auto* db = db_impls[db_i];
-      auto* table_cache = db->table_cache_.get();
       VersionStorageInfo& vsi = *super_version->current->storage_info();
       auto& cf_paths = super_version->cfd->ioptions()->cf_paths;
       auto SourcePath = [&](size_t path_id) {
