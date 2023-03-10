@@ -51,6 +51,9 @@ Status DBImpl::ValidateForMerge(const MergeInstanceOptions& mopts,
       return Status::InvalidArgument("DB WAL is not empty");
     }
   }
+  if (rhs->table_cache_ == table_cache_) {
+    return Status::InvalidArgument("table_cache must not be shared");
+  }
   return Status::OK();
 }
 
@@ -312,6 +315,7 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
     auto old_capacity = table_cache_->GetCapacity();
     if (merge_options.max_preload_files >= 0) {
       // Refer to `LoadTableHandlers` for calculation details.
+      // This trick will be wrong if table_cache is shared.
       table_cache_->SetCapacity(
           (table_cache_->GetUsage() + merge_options.max_preload_files) * 4);
     }
