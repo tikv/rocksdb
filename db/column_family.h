@@ -406,6 +406,14 @@ class ColumnFamilyData {
                                     SuperVersion* super_version,
                                     bool allow_data_in_errors, bool* overlap);
 
+  // Get user key range of memtables. Tombstones are counted.
+  Status GetMemtablesUserKeyRange(PinnableSlice* smallest,
+                                  PinnableSlice* largest, bool* found);
+
+  // Get user key range of all data. Tombstones are counted.
+  Status GetUserKeyRange(PinnableSlice* smallest, PinnableSlice* largest,
+                         bool* found);
+
   // A flag to tell a manual compaction is to compact all levels together
   // instead of a specific level.
   static const int kCompactAllLevels;

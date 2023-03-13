@@ -82,6 +82,7 @@ class WriteCallback;
 struct JobContext;
 struct ExternalSstFileInfo;
 struct MemTableInfo;
+class WriteBlocker;
 
 // Class to maintain directories for all database paths other than main one.
 class Directories {
@@ -1060,6 +1061,13 @@ class DBImpl : public DB {
                      std::vector<ColumnFamilyHandle*>* handles, DB** dbptr,
                      const bool seq_per_batch, const bool batch_per_txn);
 
+  // Validate `rhs` can be merged into this DB with given merge options.
+  Status ValidateForMerge(const MergeInstanceOptions& merge_options,
+                          DBImpl* rhs);
+
+  Status MergeDisjointInstances(const MergeInstanceOptions& merge_options,
+                                const std::vector<DB*>& instances) override;
+
   static IOStatus CreateAndNewDirectory(
       FileSystem* fs, const std::string& dirname,
       std::unique_ptr<FSDirectory>* directory);
@@ -1615,6 +1623,7 @@ class DBImpl : public DB {
   friend class WriteBatchWithIndex;
   friend class WriteUnpreparedTxnDB;
   friend class WriteUnpreparedTxn;
+  friend class WriteBlocker;
 
   friend class ForwardIterator;
   friend struct SuperVersion;

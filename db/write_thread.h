@@ -21,6 +21,7 @@
 #include "db/trim_history_scheduler.h"
 #include "db/write_callback.h"
 #include "monitoring/instrumented_mutex.h"
+#include "rocksdb/db.h"
 #include "rocksdb/options.h"
 #include "rocksdb/status.h"
 #include "rocksdb/types.h"
@@ -216,10 +217,10 @@ class WriteThread {
           protection_bytes_per_key(0),
           pre_release_callback(nullptr),
           post_memtable_callback(nullptr),
+          post_callback(nullptr),
           log_used(0),
           log_ref(0),
           callback(nullptr),
-          post_callback(nullptr),
           made_waitable(false),
           state(STATE_INIT),
           write_group(nullptr),

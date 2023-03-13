@@ -269,6 +269,9 @@ class MemTableList {
                             autovector<MemTable*>* mems,
                             uint64_t* max_next_log_number = nullptr);
 
+  // Returns all memtable ordered from the oldest to the newest.
+  void ExportMemtables(autovector<MemTable*>* mems);
+
   // Reset status of the given memtable list back to pending state so that
   // they can get picked up again on the next round of flush.
   //

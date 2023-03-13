@@ -930,7 +930,7 @@ TEST_P(DBWriteTest, PostWriteCallback) {
   ASSERT_EQ(flushed.load(std::memory_order_relaxed), false);
 
   the_first_can_exit_write_mutex.Unlock();
-  std::this_thread::sleep_for(std::chrono::milliseconds{50});
+  std::this_thread::sleep_for(std::chrono::milliseconds{100});
   ASSERT_EQ(written.load(std::memory_order_relaxed), 2);
   ASSERT_EQ(flushed.load(std::memory_order_relaxed), true);
 
