@@ -20,11 +20,13 @@ namespace ROCKSDB_NAMESPACE {
 WriteBufferManager::WriteBufferManager(size_t _flush_size,
                                        std::shared_ptr<Cache> cache,
                                        float stall_ratio,
-                                       bool flush_oldest_first)
+                                       bool flush_oldest_first,
+                                       uint64_t flush_deadline)
     : memory_used_(0),
       flush_size_(_flush_size),
       memory_active_(0),
       flush_oldest_first_(flush_oldest_first),
+      flush_deadline_(flush_deadline),
       allow_stall_(stall_ratio >= 1.0),
       stall_ratio_(stall_ratio),
       stall_active_(false),
@@ -184,12 +186,24 @@ void WriteBufferManager::MaybeFlushLocked(DB* this_db) {
   uint64_t candidate_size = 0;
   uint64_t max_score = 0;
   uint64_t current_score = 0;
+
+  uint64_t deadline_interval = flush_deadline_.load(std::memory_order_relaxed);
+  uint64_t deadline_time = 0;
+  if (deadline_interval != std::numeric_limits<uint64_t>::max()) {
+    uint64_t current;
+    SystemClock::Default()->GetCurrentTime(&current);
+    deadline_time = current - deadline_interval;
+  }
   for (auto& s : sentinels_) {
     uint64_t current_memory_bytes = std::numeric_limits<uint64_t>::max();
     uint64_t oldest_time = std::numeric_limits<uint64_t>::max();
     s->db->GetApproximateActiveMemTableStats(s->cf, &current_memory_bytes,
                                              &oldest_time);
-    if (flush_oldest_first_) {
+    if (oldest_time < deadline_time) {
+      candidate = s.get();
+      candidate_size = current_memory_bytes;
+      break;
+    } else if (flush_oldest_first_.load(std::memory_order_relaxed)) {
       // Convert oldest to highest score.
       current_score = std::numeric_limits<uint64_t>::max() - oldest_time;
     } else {
