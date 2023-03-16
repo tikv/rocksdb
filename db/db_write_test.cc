@@ -586,6 +586,8 @@ TEST_P(DBWriteTest, PostWriteCallback) {
   the_first_can_exit_write_mutex.Lock();
   port::Mutex can_flush_mutex;
   can_flush_mutex.Lock();
+  port::Mutex the_second_can_enter_write_mutex;
+  the_second_can_enter_write_mutex.Lock();
   port::Mutex the_second_can_exit_write_mutex;
   the_second_can_exit_write_mutex.Lock();
 
@@ -599,13 +601,14 @@ TEST_P(DBWriteTest, PostWriteCallback) {
     opts.disableWAL = true;
     SimpleCallback callback([&](SequenceNumber seq) {
       ASSERT_NE(seq, 0);
+      the_second_can_enter_write_mutex.Unlock();
       can_flush_mutex.Unlock();
       the_first_can_exit_write_mutex.Lock();
       the_second_can_exit_write_mutex.Unlock();
+      written.fetch_add(1, std::memory_order_relaxed);
     });
     batch.Put("key", "value");
     ASSERT_OK(dbfull()->Write(opts, &batch, &callback));
-    written.fetch_add(1, std::memory_order_relaxed);
   }));
   threads.push_back(port::Thread([&] {
     WriteBatch batch;
@@ -615,10 +618,11 @@ TEST_P(DBWriteTest, PostWriteCallback) {
     SimpleCallback callback([&](SequenceNumber seq) {
       ASSERT_NE(seq, 0);
       the_second_can_exit_write_mutex.Lock();
+      written.fetch_add(1, std::memory_order_relaxed);
     });
     batch.Put("key", "value");
+    the_second_can_enter_write_mutex.Lock();
     ASSERT_OK(dbfull()->Write(opts, &batch, &callback));
-    written.fetch_add(1, std::memory_order_relaxed);
   }));
   // Flush will enter write thread and wait for pending writes.
   threads.push_back(port::Thread([&] {
@@ -634,9 +638,13 @@ TEST_P(DBWriteTest, PostWriteCallback) {
   ASSERT_EQ(flushed.load(std::memory_order_relaxed), false);
 
   the_first_can_exit_write_mutex.Unlock();
-  std::this_thread::sleep_for(std::chrono::milliseconds{100});
+  size_t wait = 0;
+  while (!flushed.load(std::memory_order_relaxed)) {
+    std::this_thread::sleep_for(std::chrono::milliseconds{10});
+    wait += 1;
+    ASSERT_LE(wait, 100);
+  }
   ASSERT_EQ(written.load(std::memory_order_relaxed), 2);
-  ASSERT_EQ(flushed.load(std::memory_order_relaxed), true);
 
   for (auto& t : threads) {
     t.join();
