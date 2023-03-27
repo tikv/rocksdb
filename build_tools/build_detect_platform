@@ -45,11 +45,11 @@ if test -z "$OUTPUT"; then
   exit 1
 fi
 
-# we depend on C++11, but should be compatible with newer standards
+# we depend on C++17, but should be compatible with newer standards
 if [ "$ROCKSDB_CXX_STANDARD" ]; then
   PLATFORM_CXXFLAGS="-std=$ROCKSDB_CXX_STANDARD"
 else
-  PLATFORM_CXXFLAGS="-std=c++11"
+  PLATFORM_CXXFLAGS="-std=c++17"
 fi
 
 # we currently depend on POSIX platform
@@ -58,15 +58,13 @@ COMMON_FLAGS="-DROCKSDB_PLATFORM_POSIX -DROCKSDB_LIB_IO_POSIX"
 # Default to fbcode gcc on internal fb machines
 if [ -z "$ROCKSDB_NO_FBCODE" -a -d /mnt/gvfs/third-party ]; then
     FBCODE_BUILD="true"
-    # If we're compiling with TSAN we need pic build
+    # If we're compiling with TSAN or shared lib, we need pic build
     PIC_BUILD=$COMPILE_WITH_TSAN
-    if [ -n "$ROCKSDB_FBCODE_BUILD_WITH_481" ]; then
-      # we need this to build with MySQL. Don't use for other purposes.
-      source "$PWD/build_tools/fbcode_config4.8.1.sh"
-    elif [ -n "$ROCKSDB_FBCODE_BUILD_WITH_5xx" ]; then
-      source "$PWD/build_tools/fbcode_config.sh"
-    elif [ -n "$ROCKSDB_FBCODE_BUILD_WITH_PLATFORM007" ]; then
-      source "$PWD/build_tools/fbcode_config_platform007.sh"
+    if [ "$LIB_MODE" == "shared" ]; then
+      PIC_BUILD=1
+    fi
+    if [ -n "$ROCKSDB_FBCODE_BUILD_WITH_PLATFORM010" ]; then
+      source "$PWD/build_tools/fbcode_config_platform010.sh"
     elif [ -n "$ROCKSDB_FBCODE_BUILD_WITH_PLATFORM009" ]; then
       source "$PWD/build_tools/fbcode_config_platform009.sh"
     else
@@ -271,7 +269,7 @@ esac
 PLATFORM_CXXFLAGS="$PLATFORM_CXXFLAGS ${CXXFLAGS}"
 JAVA_LDFLAGS="$PLATFORM_LDFLAGS"
 JAVA_STATIC_LDFLAGS="$PLATFORM_LDFLAGS"
-JAVAC_ARGS="-source 7"
+JAVAC_ARGS="-source 8"
 
 if [ "$CROSS_COMPILE" = "true" -o "$FBCODE_BUILD" = "true" ]; then
     # Cross-compiling; do not try any compilation tests.
@@ -279,6 +277,7 @@ if [ "$CROSS_COMPILE" = "true" -o "$FBCODE_BUILD" = "true" ]; then
     if [ "$FBCODE_BUILD" = "true" ]; then
       # Enable backtrace on fbcode since the necessary libraries are present
       COMMON_FLAGS="$COMMON_FLAGS -DROCKSDB_BACKTRACE"
+      FOLLY_DIR="third-party/folly"
     fi
     true
 else
@@ -471,7 +470,7 @@ EOF
 
     if ! test $ROCKSDB_DISABLE_MEMKIND; then
         # Test whether memkind library is installed
-        $CXX $PLATFORM_CXXFLAGS $COMMON_FLAGS -lmemkind -x c++ - -o test.o 2>/dev/null  <<EOF
+        $CXX $PLATFORM_CXXFLAGS $LDFLAGS -x c++ - -o test.o -lmemkind 2>/dev/null  <<EOF
           #include <memkind.h>
           int main() {
             memkind_malloc(MEMKIND_DAX_KMEM, 1024);
@@ -608,7 +607,7 @@ EOF
     fi
     if ! test $ROCKSDB_DISABLE_BENCHMARK; then
         # Test whether google benchmark is available
-        $CXX $PLATFORM_CXXFLAGS -x c++ - -o /dev/null -lbenchmark 2>/dev/null  <<EOF
+        $CXX $PLATFORM_CXXFLAGS -x c++ - -o /dev/null -lbenchmark -lpthread 2>/dev/null  <<EOF
           #include <benchmark/benchmark.h>
           int main() {}
 EOF
@@ -616,6 +615,17 @@ EOF
             PLATFORM_LDFLAGS="$PLATFORM_LDFLAGS -lbenchmark"
         fi
     fi
+    if test $USE_FOLLY; then
+        # Test whether libfolly library is installed
+        $CXX $PLATFORM_CXXFLAGS $COMMON_FLAGS -x c++ - -o /dev/null 2>/dev/null  <<EOF
+          #include <folly/synchronization/DistributedMutex.h>
+          int main() {}
+EOF
+        if [ "$?" != 0 ]; then
+          FOLLY_DIR="./third-party/folly"
+        fi
+    fi
+
 fi
 
 # TODO(tec): Fix -Wshorten-64-to-32 errors on FreeBSD and enable the warning.
@@ -630,22 +640,6 @@ EOF
   fi
 fi
 
-# shall we use HDFS?
-
-if test "$USE_HDFS"; then
-  if test -z "$JAVA_HOME"; then
-    echo "JAVA_HOME has to be set for HDFS usage." >&2
-    exit 1
-  fi
-  HDFS_CCFLAGS="$HDFS_CCFLAGS -I$JAVA_HOME/include -I$JAVA_HOME/include/linux -DUSE_HDFS -I$HADOOP_HOME/include"
-  HDFS_LDFLAGS="$HDFS_LDFLAGS -lhdfs -L$JAVA_HOME/jre/lib/amd64 -L$HADOOP_HOME/lib/native"
-  HDFS_LDFLAGS="$HDFS_LDFLAGS -L$JAVA_HOME/jre/lib/amd64/server -L$GLIBC_RUNTIME_PATH/lib"
-  HDFS_LDFLAGS="$HDFS_LDFLAGS -ldl -lverify -ljava -ljvm"
-  COMMON_FLAGS="$COMMON_FLAGS $HDFS_CCFLAGS"
-  PLATFORM_LDFLAGS="$PLATFORM_LDFLAGS $HDFS_LDFLAGS"
-  JAVA_LDFLAGS="$JAVA_LDFLAGS $HDFS_LDFLAGS"
-fi
-
 if test "0$PORTABLE" -eq 0; then
   if test -n "`echo $TARGET_ARCHITECTURE | grep ^ppc64`"; then
     # Tune for this POWER processor, treating '+' models as base models
@@ -658,12 +652,15 @@ if test "0$PORTABLE" -eq 0; then
     COMMON_FLAGS="$COMMON_FLAGS"
   elif test -n "`echo $TARGET_ARCHITECTURE | grep ^s390x`"; then
     if echo 'int main() {}' | $CXX $PLATFORM_CXXFLAGS -x c++ \
-      -fsyntax-only -march=native - -o /dev/null 2>/dev/null; then
+      -march=native - -o /dev/null 2>/dev/null; then
       COMMON_FLAGS="$COMMON_FLAGS -march=native "
     else
       COMMON_FLAGS="$COMMON_FLAGS -march=z196 "
     fi
     COMMON_FLAGS="$COMMON_FLAGS"
+  elif test -n "`echo $TARGET_ARCHITECTURE | grep ^riscv64`"; then
+    RISC_ISA=$(cat /proc/cpuinfo | grep isa | head -1 | cut --delimiter=: -f 2 | cut -b 2-)
+    COMMON_FLAGS="$COMMON_FLAGS -march=${RISC_ISA}"
   elif [ "$TARGET_OS" == "IOS" ]; then
     COMMON_FLAGS="$COMMON_FLAGS"
   elif [ "$TARGET_OS" == "AIX" ] || [ "$TARGET_OS" == "SunOS" ]; then
@@ -684,14 +681,19 @@ else
     COMMON_FLAGS="$COMMON_FLAGS -march=z196 "
   fi
 
+  if test -n "`echo $TARGET_ARCHITECTURE | grep ^riscv64`"; then
+    RISC_ISA=$(cat /proc/cpuinfo | grep isa | head -1 | cut --delimiter=: -f 2 | cut -b 2-)
+    COMMON_FLAGS="$COMMON_FLAGS -march=${RISC_ISA}"
+  fi
+
   if [[ "${PLATFORM}" == "OS_MACOSX" ]]; then
-    # For portability compile for macOS 10.12 (2016) or newer
-    COMMON_FLAGS="$COMMON_FLAGS -mmacosx-version-min=10.12"
-    PLATFORM_LDFLAGS="$PLATFORM_LDFLAGS -mmacosx-version-min=10.12"
+    # For portability compile for macOS 10.13 (2017) or newer
+    COMMON_FLAGS="$COMMON_FLAGS -mmacosx-version-min=10.13"
+    PLATFORM_LDFLAGS="$PLATFORM_LDFLAGS -mmacosx-version-min=10.13"
     # -mmacosx-version-min must come first here.
-    PLATFORM_SHARED_LDFLAGS="-mmacosx-version-min=10.12 $PLATFORM_SHARED_LDFLAGS"
-    PLATFORM_CMAKE_FLAGS="-DCMAKE_OSX_DEPLOYMENT_TARGET=10.12"
-    JAVA_STATIC_DEPS_COMMON_FLAGS="-mmacosx-version-min=10.12"
+    PLATFORM_SHARED_LDFLAGS="-mmacosx-version-min=10.13 $PLATFORM_SHARED_LDFLAGS"
+    PLATFORM_CMAKE_FLAGS="-DCMAKE_OSX_DEPLOYMENT_TARGET=10.13"
+    JAVA_STATIC_DEPS_COMMON_FLAGS="-mmacosx-version-min=10.13"
     JAVA_STATIC_DEPS_LDFLAGS="$JAVA_STATIC_DEPS_COMMON_FLAGS"
     JAVA_STATIC_DEPS_CCFLAGS="$JAVA_STATIC_DEPS_COMMON_FLAGS"
     JAVA_STATIC_DEPS_CXXFLAGS="$JAVA_STATIC_DEPS_COMMON_FLAGS"
@@ -823,25 +825,6 @@ if [ "$?" = 0 ]; then
   COMMON_FLAGS="$COMMON_FLAGS -DHAVE_UINT128_EXTENSION"
 fi
 
-# iOS doesn't support thread-local storage, but this check would erroneously
-# succeed because the cross-compiler flags are added by the Makefile, not this
-# script.
-if [ "$PLATFORM" != IOS ]; then
-  $CXX $COMMON_FLAGS -x c++ - -o test.o 2>/dev/null <<EOF
-  #if defined(_MSC_VER) && !defined(__thread)
-  #define __thread __declspec(thread)
-  #endif
-  int main() {
-    static __thread int tls;
-    (void)tls;
-  }
-EOF
-  if [ "$?" = 0 ]; then
-    COMMON_FLAGS="$COMMON_FLAGS -DROCKSDB_SUPPORT_THREAD_LOCAL"
-  fi
-fi
-
-
 if [ "$FBCODE_BUILD" != "true" -a "$PLATFORM" = OS_LINUX ]; then
   $CXX $COMMON_FLAGS $PLATFORM_SHARED_CFLAGS -x c++ -c - -o test_dl.o 2>/dev/null <<EOF
   void dummy_func() {}
@@ -868,6 +851,13 @@ if [ "$?" = 0 ]; then
 fi
 
 rm -f test.o test_dl.o
+
+# Get the path for the folly installation dir
+if [ "$USE_FOLLY" ]; then
+  if [ "$FOLLY_DIR" ]; then
+    FOLLY_PATH=`cd $FOLLY_DIR && $PYTHON build/fbcode_builder/getdeps.py show-inst-dir folly`
+  fi
+fi
 
 PLATFORM_CCFLAGS="$PLATFORM_CCFLAGS $COMMON_FLAGS"
 PLATFORM_CXXFLAGS="$PLATFORM_CXXFLAGS $COMMON_FLAGS"
@@ -908,6 +898,8 @@ echo "CLANG_ANALYZER=$CLANG_ANALYZER" >> "$OUTPUT"
 echo "PROFILING_FLAGS=$PROFILING_FLAGS" >> "$OUTPUT"
 echo "FIND=$FIND" >> "$OUTPUT"
 echo "WATCH=$WATCH" >> "$OUTPUT"
+echo "FOLLY_PATH=$FOLLY_PATH" >> "$OUTPUT"
+
 # This will enable some related identifiers for the preprocessor
 if test -n "$JEMALLOC"; then
   echo "JEMALLOC=1" >> "$OUTPUT"
@@ -919,8 +911,8 @@ if test -n "$WITH_JEMALLOC_FLAG"; then
   echo "WITH_JEMALLOC_FLAG=$WITH_JEMALLOC_FLAG" >> "$OUTPUT"
 fi
 echo "LUA_PATH=$LUA_PATH" >> "$OUTPUT"
-if test -n "$USE_FOLLY_DISTRIBUTED_MUTEX"; then
-  echo "USE_FOLLY_DISTRIBUTED_MUTEX=$USE_FOLLY_DISTRIBUTED_MUTEX" >> "$OUTPUT"
+if test -n "$USE_FOLLY"; then
+  echo "USE_FOLLY=$USE_FOLLY" >> "$OUTPUT"
 fi
 if test -n "$PPC_LIBC_IS_GNU"; then
   echo "PPC_LIBC_IS_GNU=$PPC_LIBC_IS_GNU" >> "$OUTPUT"

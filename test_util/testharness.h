@@ -14,7 +14,6 @@
 #else
 #include <gtest/gtest.h>
 #endif
-#include "rocksdb/utilities/regex.h"
 
 // A "skipped" test has a specific meaning in Facebook infrastructure: the
 // test is in good shape and should be run, but something about the
@@ -53,6 +52,8 @@
   } while (false) /* user ; */
 
 #include <string>
+
+#include "port/stack_trace.h"
 #include "rocksdb/env.h"
 
 namespace ROCKSDB_NAMESPACE {

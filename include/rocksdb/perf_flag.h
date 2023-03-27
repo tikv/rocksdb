@@ -111,6 +111,23 @@ enum PerfFlag : uint32_t {
   logger_nanos,
   cpu_read_nanos,
   cpu_write_nanos,
+
+  blob_cache_hit_count,
+  blob_checksum_time,
+  blob_decompress_time,
+  blob_read_byte,
+  blob_read_count,
+  blob_read_time,
+  block_cache_real_handle_count,
+  block_cache_standalone_handle_count,
+  compressed_sec_cache_compressed_bytes,
+  compressed_sec_cache_insert_dummy_count,
+  compressed_sec_cache_insert_real_count,
+  compressed_sec_cache_uncompressed_bytes,
+  internal_range_del_reseek_count,
+  number_async_seek,
+
+
   // Should always be the last
   COUNT
 };

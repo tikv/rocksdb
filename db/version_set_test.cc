@@ -12,12 +12,14 @@
 #include <algorithm>
 
 #include "db/db_impl/db_impl.h"
+#include "db/db_test_util.h"
 #include "db/log_writer.h"
 #include "rocksdb/advanced_options.h"
 #include "rocksdb/convenience.h"
 #include "rocksdb/file_system.h"
 #include "table/block_based/block_based_table_factory.h"
 #include "table/mock_table.h"
+#include "table/unique_id_impl.h"
 #include "test_util/testharness.h"
 #include "test_util/testutil.h"
 #include "util/string_util.h"
@@ -48,8 +50,7 @@ class GenerateLevelFilesBriefTest : public testing::Test {
         largest_seq, /* marked_for_compact */ false, Temperature::kUnknown,
         kInvalidBlobFileNumber, kUnknownOldestAncesterTime,
         kUnknownFileCreationTime, kUnknownFileChecksum,
-        kUnknownFileChecksumFuncName, kDisableUserTimestamp,
-        kDisableUserTimestamp);
+        kUnknownFileChecksumFuncName, kNullUniqueId64x2);
     files_.push_back(f);
   }
 
@@ -157,8 +158,7 @@ class VersionStorageInfoTestBase : public testing::Test {
         /* largest_seq */ 0, /* marked_for_compact */ false,
         Temperature::kUnknown, oldest_blob_file_number,
         kUnknownOldestAncesterTime, kUnknownFileCreationTime,
-        kUnknownFileChecksum, kUnknownFileChecksumFuncName,
-        kDisableUserTimestamp, kDisableUserTimestamp);
+        kUnknownFileChecksum, kUnknownFileChecksumFuncName, kNullUniqueId64x2);
     f->compensated_file_size = file_size;
     vstorage_.AddFile(level, f);
   }
@@ -178,15 +178,8 @@ class VersionStorageInfoTestBase : public testing::Test {
     vstorage_.AddBlobFile(std::move(meta));
   }
 
-  void Finalize() {
-    vstorage_.UpdateNumNonEmptyLevels();
-    vstorage_.CalculateBaseBytes(ioptions_, mutable_cf_options_);
-    vstorage_.UpdateFilesByCompactionPri(ioptions_, mutable_cf_options_);
-    vstorage_.GenerateFileIndexer();
-    vstorage_.GenerateLevelFilesBrief();
-    vstorage_.GenerateLevel0NonOverlapping();
-    vstorage_.GenerateBottommostFiles();
-
+  void UpdateVersionStorageInfo() {
+    vstorage_.PrepareForVersionAppend(ioptions_, mutable_cf_options_);
     vstorage_.SetFinalized();
   }
 
@@ -217,10 +210,12 @@ TEST_F(VersionStorageInfoTest, MaxBytesForLevelStatic) {
   ioptions_.level_compaction_dynamic_level_bytes = false;
   mutable_cf_options_.max_bytes_for_level_base = 10;
   mutable_cf_options_.max_bytes_for_level_multiplier = 5;
-  Add(4, 100U, "1", "2");
-  Add(5, 101U, "1", "2");
 
-  vstorage_.CalculateBaseBytes(ioptions_, mutable_cf_options_);
+  Add(4, 100U, "1", "2", 100U);
+  Add(5, 101U, "1", "2", 100U);
+
+  UpdateVersionStorageInfo();
+
   ASSERT_EQ(vstorage_.MaxBytesForLevel(1), 10U);
   ASSERT_EQ(vstorage_.MaxBytesForLevel(2), 50U);
   ASSERT_EQ(vstorage_.MaxBytesForLevel(3), 250U);
@@ -229,40 +224,84 @@ TEST_F(VersionStorageInfoTest, MaxBytesForLevelStatic) {
   ASSERT_EQ(0, logger_->log_count);
 }
 
-TEST_F(VersionStorageInfoTest, MaxBytesForLevelDynamic) {
+TEST_F(VersionStorageInfoTest, MaxBytesForLevelDynamic_1) {
   ioptions_.level_compaction_dynamic_level_bytes = true;
   mutable_cf_options_.max_bytes_for_level_base = 1000;
   mutable_cf_options_.max_bytes_for_level_multiplier = 5;
+
   Add(5, 1U, "1", "2", 500U);
 
-  vstorage_.CalculateBaseBytes(ioptions_, mutable_cf_options_);
+  UpdateVersionStorageInfo();
+
   ASSERT_EQ(0, logger_->log_count);
   ASSERT_EQ(vstorage_.base_level(), 5);
+}
 
+TEST_F(VersionStorageInfoTest, MaxBytesForLevelDynamic_2) {
+  ioptions_.level_compaction_dynamic_level_bytes = true;
+  mutable_cf_options_.max_bytes_for_level_base = 1000;
+  mutable_cf_options_.max_bytes_for_level_multiplier = 5;
+
+  Add(5, 1U, "1", "2", 500U);
   Add(5, 2U, "3", "4", 550U);
-  vstorage_.CalculateBaseBytes(ioptions_, mutable_cf_options_);
+
+  UpdateVersionStorageInfo();
+
   ASSERT_EQ(0, logger_->log_count);
   ASSERT_EQ(vstorage_.MaxBytesForLevel(4), 1000U);
   ASSERT_EQ(vstorage_.base_level(), 4);
+}
 
+TEST_F(VersionStorageInfoTest, MaxBytesForLevelDynamic_3) {
+  ioptions_.level_compaction_dynamic_level_bytes = true;
+  mutable_cf_options_.max_bytes_for_level_base = 1000;
+  mutable_cf_options_.max_bytes_for_level_multiplier = 5;
+
+  Add(5, 1U, "1", "2", 500U);
+  Add(5, 2U, "3", "4", 550U);
   Add(4, 3U, "3", "4", 550U);
-  vstorage_.CalculateBaseBytes(ioptions_, mutable_cf_options_);
+
+  UpdateVersionStorageInfo();
+
   ASSERT_EQ(0, logger_->log_count);
   ASSERT_EQ(vstorage_.MaxBytesForLevel(4), 1000U);
   ASSERT_EQ(vstorage_.base_level(), 4);
+}
 
+TEST_F(VersionStorageInfoTest, MaxBytesForLevelDynamic_4) {
+  ioptions_.level_compaction_dynamic_level_bytes = true;
+  mutable_cf_options_.max_bytes_for_level_base = 1000;
+  mutable_cf_options_.max_bytes_for_level_multiplier = 5;
+
+  Add(5, 1U, "1", "2", 500U);
+  Add(5, 2U, "3", "4", 550U);
+  Add(4, 3U, "3", "4", 550U);
   Add(3, 4U, "3", "4", 250U);
   Add(3, 5U, "5", "7", 300U);
-  vstorage_.CalculateBaseBytes(ioptions_, mutable_cf_options_);
+
+  UpdateVersionStorageInfo();
+
   ASSERT_EQ(1, logger_->log_count);
   ASSERT_EQ(vstorage_.MaxBytesForLevel(4), 1005U);
   ASSERT_EQ(vstorage_.MaxBytesForLevel(3), 1000U);
   ASSERT_EQ(vstorage_.base_level(), 3);
+}
 
+TEST_F(VersionStorageInfoTest, MaxBytesForLevelDynamic_5) {
+  ioptions_.level_compaction_dynamic_level_bytes = true;
+  mutable_cf_options_.max_bytes_for_level_base = 1000;
+  mutable_cf_options_.max_bytes_for_level_multiplier = 5;
+
+  Add(5, 1U, "1", "2", 500U);
+  Add(5, 2U, "3", "4", 550U);
+  Add(4, 3U, "3", "4", 550U);
+  Add(3, 4U, "3", "4", 250U);
+  Add(3, 5U, "5", "7", 300U);
   Add(1, 6U, "3", "4", 5U);
   Add(1, 7U, "8", "9", 5U);
-  logger_->log_count = 0;
-  vstorage_.CalculateBaseBytes(ioptions_, mutable_cf_options_);
+
+  UpdateVersionStorageInfo();
+
   ASSERT_EQ(1, logger_->log_count);
   ASSERT_GT(vstorage_.MaxBytesForLevel(4), 1005U);
   ASSERT_GT(vstorage_.MaxBytesForLevel(3), 1005U);
@@ -275,6 +314,7 @@ TEST_F(VersionStorageInfoTest, MaxBytesForLevelDynamicLotsOfData) {
   ioptions_.level_compaction_dynamic_level_bytes = true;
   mutable_cf_options_.max_bytes_for_level_base = 100;
   mutable_cf_options_.max_bytes_for_level_multiplier = 2;
+
   Add(0, 1U, "1", "2", 50U);
   Add(1, 2U, "1", "2", 50U);
   Add(2, 3U, "1", "2", 500U);
@@ -282,7 +322,8 @@ TEST_F(VersionStorageInfoTest, MaxBytesForLevelDynamicLotsOfData) {
   Add(4, 5U, "1", "2", 1700U);
   Add(5, 6U, "1", "2", 500U);
 
-  vstorage_.CalculateBaseBytes(ioptions_, mutable_cf_options_);
+  UpdateVersionStorageInfo();
+
   ASSERT_EQ(vstorage_.MaxBytesForLevel(4), 800U);
   ASSERT_EQ(vstorage_.MaxBytesForLevel(3), 400U);
   ASSERT_EQ(vstorage_.MaxBytesForLevel(2), 200U);
@@ -296,12 +337,14 @@ TEST_F(VersionStorageInfoTest, MaxBytesForLevelDynamicLargeLevel) {
   ioptions_.level_compaction_dynamic_level_bytes = true;
   mutable_cf_options_.max_bytes_for_level_base = 10U * kOneGB;
   mutable_cf_options_.max_bytes_for_level_multiplier = 10;
+
   Add(0, 1U, "1", "2", 50U);
   Add(3, 4U, "1", "2", 32U * kOneGB);
   Add(4, 5U, "1", "2", 500U * kOneGB);
   Add(5, 6U, "1", "2", 3000U * kOneGB);
 
-  vstorage_.CalculateBaseBytes(ioptions_, mutable_cf_options_);
+  UpdateVersionStorageInfo();
+
   ASSERT_EQ(vstorage_.MaxBytesForLevel(5), 3000U * kOneGB);
   ASSERT_EQ(vstorage_.MaxBytesForLevel(4), 300U * kOneGB);
   ASSERT_EQ(vstorage_.MaxBytesForLevel(3), 30U * kOneGB);
@@ -325,76 +368,86 @@ TEST_F(VersionStorageInfoTest, MaxBytesForLevelDynamicWithLargeL0_1) {
   Add(3, 6U, "1", "2", 40000U);
   Add(2, 7U, "1", "2", 8000U);
 
-  vstorage_.CalculateBaseBytes(ioptions_, mutable_cf_options_);
+  UpdateVersionStorageInfo();
+
   ASSERT_EQ(0, logger_->log_count);
   ASSERT_EQ(2, vstorage_.base_level());
   // level multiplier should be 3.5
   ASSERT_EQ(vstorage_.level_multiplier(), 5.0);
-  // Level size should be around 30,000, 105,000, 367,500
   ASSERT_EQ(40000U, vstorage_.MaxBytesForLevel(2));
   ASSERT_EQ(51450U, vstorage_.MaxBytesForLevel(3));
   ASSERT_EQ(257250U, vstorage_.MaxBytesForLevel(4));
+
+  vstorage_.ComputeCompactionScore(ioptions_, mutable_cf_options_);
+  // Only L0 hits compaction.
+  ASSERT_EQ(vstorage_.CompactionScoreLevel(0), 0);
 }
 
 TEST_F(VersionStorageInfoTest, MaxBytesForLevelDynamicWithLargeL0_2) {
   ioptions_.level_compaction_dynamic_level_bytes = true;
   mutable_cf_options_.max_bytes_for_level_base = 10000;
   mutable_cf_options_.max_bytes_for_level_multiplier = 5;
-  mutable_cf_options_.level0_file_num_compaction_trigger = 2;
+  mutable_cf_options_.level0_file_num_compaction_trigger = 4;
 
   Add(0, 11U, "1", "2", 10000U);
   Add(0, 12U, "1", "2", 10000U);
   Add(0, 13U, "1", "2", 10000U);
 
+  // Level size should be around 10,000, 10,290, 51,450, 257,250
   Add(5, 4U, "1", "2", 1286250U);
-  Add(4, 5U, "1", "2", 200000U);
-  Add(3, 6U, "1", "2", 40000U);
-  Add(2, 7U, "1", "2", 8000U);
+  Add(4, 5U, "1", "2", 258000U);  // unadjusted score 1.003
+  Add(3, 6U, "1", "2", 53000U);   // unadjusted score 1.03
+  Add(2, 7U, "1", "2", 20000U);   // unadjusted score 1.94
 
-  vstorage_.CalculateBaseBytes(ioptions_, mutable_cf_options_);
+  UpdateVersionStorageInfo();
+
   ASSERT_EQ(0, logger_->log_count);
-  ASSERT_EQ(2, vstorage_.base_level());
-  // level multiplier should be 3.5
-  ASSERT_LT(vstorage_.level_multiplier(), 3.6);
-  ASSERT_GT(vstorage_.level_multiplier(), 3.4);
-  // Level size should be around 30,000, 105,000, 367,500
-  ASSERT_EQ(30000U, vstorage_.MaxBytesForLevel(2));
-  ASSERT_LT(vstorage_.MaxBytesForLevel(3), 110000U);
-  ASSERT_GT(vstorage_.MaxBytesForLevel(3), 100000U);
-  ASSERT_LT(vstorage_.MaxBytesForLevel(4), 370000U);
-  ASSERT_GT(vstorage_.MaxBytesForLevel(4), 360000U);
+  ASSERT_EQ(1, vstorage_.base_level());
+  ASSERT_EQ(10000U, vstorage_.MaxBytesForLevel(1));
+  ASSERT_EQ(10290U, vstorage_.MaxBytesForLevel(2));
+  ASSERT_EQ(51450U, vstorage_.MaxBytesForLevel(3));
+  ASSERT_EQ(257250U, vstorage_.MaxBytesForLevel(4));
+
+  vstorage_.ComputeCompactionScore(ioptions_, mutable_cf_options_);
+  // Although L2 and l3 have higher unadjusted compaction score, considering
+  // a relatively large L0 being compacted down soon, L4 is picked up for
+  // compaction.
+  // L0 is still picked up for oversizing.
+  ASSERT_EQ(0, vstorage_.CompactionScoreLevel(0));
+  ASSERT_EQ(4, vstorage_.CompactionScoreLevel(1));
 }
 
 TEST_F(VersionStorageInfoTest, MaxBytesForLevelDynamicWithLargeL0_3) {
   ioptions_.level_compaction_dynamic_level_bytes = true;
-  mutable_cf_options_.max_bytes_for_level_base = 10000;
+  mutable_cf_options_.max_bytes_for_level_base = 20000;
   mutable_cf_options_.max_bytes_for_level_multiplier = 5;
-  mutable_cf_options_.level0_file_num_compaction_trigger = 2;
+  mutable_cf_options_.level0_file_num_compaction_trigger = 5;
 
-  Add(0, 11U, "1", "2", 5000U);
-  Add(0, 12U, "1", "2", 5000U);
-  Add(0, 13U, "1", "2", 5000U);
-  Add(0, 14U, "1", "2", 5000U);
-  Add(0, 15U, "1", "2", 5000U);
-  Add(0, 16U, "1", "2", 5000U);
+  Add(0, 11U, "1", "2", 2500U);
+  Add(0, 12U, "1", "2", 2500U);
+  Add(0, 13U, "1", "2", 2500U);
+  Add(0, 14U, "1", "2", 2500U);
 
+  // Level size should be around 20,000, 53000, 258000
   Add(5, 4U, "1", "2", 1286250U);
-  Add(4, 5U, "1", "2", 200000U);
-  Add(3, 6U, "1", "2", 40000U);
-  Add(2, 7U, "1", "2", 8000U);
+  Add(4, 5U, "1", "2", 260000U);  // Unadjusted score 1.01, adjusted about 4.3
+  Add(3, 6U, "1", "2", 85000U);   // Unadjusted score 1.42, adjusted about 11.6
+  Add(2, 7U, "1", "2", 30000);    // Unadjusted score 1.5, adjusted about 10.0
 
-  vstorage_.CalculateBaseBytes(ioptions_, mutable_cf_options_);
+  UpdateVersionStorageInfo();
+
   ASSERT_EQ(0, logger_->log_count);
   ASSERT_EQ(2, vstorage_.base_level());
-  // level multiplier should be 3.5
-  ASSERT_LT(vstorage_.level_multiplier(), 3.6);
-  ASSERT_GT(vstorage_.level_multiplier(), 3.4);
-  // Level size should be around 30,000, 105,000, 367,500
-  ASSERT_EQ(30000U, vstorage_.MaxBytesForLevel(2));
-  ASSERT_LT(vstorage_.MaxBytesForLevel(3), 110000U);
-  ASSERT_GT(vstorage_.MaxBytesForLevel(3), 100000U);
-  ASSERT_LT(vstorage_.MaxBytesForLevel(4), 370000U);
-  ASSERT_GT(vstorage_.MaxBytesForLevel(4), 360000U);
+  ASSERT_EQ(20000U, vstorage_.MaxBytesForLevel(2));
+
+  vstorage_.ComputeCompactionScore(ioptions_, mutable_cf_options_);
+  // Although L2 has higher unadjusted compaction score, considering
+  // a relatively large L0 being compacted down soon, L3 is picked up for
+  // compaction.
+
+  ASSERT_EQ(3, vstorage_.CompactionScoreLevel(0));
+  ASSERT_EQ(2, vstorage_.CompactionScoreLevel(1));
+  ASSERT_EQ(4, vstorage_.CompactionScoreLevel(2));
 }
 
 TEST_F(VersionStorageInfoTest, EstimateLiveDataSize) {
@@ -406,6 +459,9 @@ TEST_F(VersionStorageInfoTest, EstimateLiveDataSize) {
   Add(4, 5U, "4", "5", 1U);  // Inside range of last level
   Add(4, 6U, "6", "7", 1U);  // Inside range of last level
   Add(5, 7U, "4", "7", 10U);
+
+  UpdateVersionStorageInfo();
+
   ASSERT_EQ(10U, vstorage_.EstimateLiveDataSize());
 }
 
@@ -417,6 +473,9 @@ TEST_F(VersionStorageInfoTest, EstimateLiveDataSize2) {
   Add(1, 5U, "5", "6", 1U);
   Add(2, 6U, "2", "3", 1U);
   Add(3, 7U, "7", "8", 1U);
+
+  UpdateVersionStorageInfo();
+
   ASSERT_EQ(4U, vstorage_.EstimateLiveDataSize());
 }
 
@@ -430,8 +489,8 @@ TEST_F(VersionStorageInfoTest, GetOverlappingInputs) {
   // Two files that do not overlap.
   Add(1, 5U, {"g", 0, kTypeValue}, {"h", 0, kTypeValue}, 1);
   Add(1, 6U, {"i", 0, kTypeValue}, {"j", 0, kTypeValue}, 1);
-  vstorage_.UpdateNumNonEmptyLevels();
-  vstorage_.GenerateLevelFilesBrief();
+
+  UpdateVersionStorageInfo();
 
   ASSERT_EQ("1,2", GetOverlappingFiles(
       1, {"a", 0, kTypeValue}, {"b", 0, kTypeValue}));
@@ -459,6 +518,8 @@ TEST_F(VersionStorageInfoTest, FileLocationAndMetaDataByNumber) {
 
   Add(2, 7U, "1", "2", 8000U);
 
+  UpdateVersionStorageInfo();
+
   ASSERT_EQ(vstorage_.GetFileLocation(11U),
             VersionStorageInfo::FileLocation(0, 0));
   ASSERT_NE(vstorage_.GetFileMetaDataByNumber(11U), nullptr);
@@ -477,7 +538,7 @@ TEST_F(VersionStorageInfoTest, FileLocationAndMetaDataByNumber) {
 
 TEST_F(VersionStorageInfoTest, ForcedBlobGCEmpty) {
   // No SST or blob files in VersionStorageInfo
-  Finalize();
+  UpdateVersionStorageInfo();
 
   constexpr double age_cutoff = 0.5;
   constexpr double force_threshold = 0.75;
@@ -486,7 +547,131 @@ TEST_F(VersionStorageInfoTest, ForcedBlobGCEmpty) {
   ASSERT_TRUE(vstorage_.FilesMarkedForForcedBlobGC().empty());
 }
 
-TEST_F(VersionStorageInfoTest, ForcedBlobGC) {
+TEST_F(VersionStorageInfoTest, ForcedBlobGCSingleBatch) {
+  // Test the edge case when all blob files are part of the oldest batch.
+  // We have one L0 SST file #1, and four blob files #10, #11, #12, and #13.
+  // The oldest blob file used by SST #1 is blob file #10.
+
+  constexpr int level = 0;
+
+  constexpr uint64_t sst = 1;
+
+  constexpr uint64_t first_blob = 10;
+  constexpr uint64_t second_blob = 11;
+  constexpr uint64_t third_blob = 12;
+  constexpr uint64_t fourth_blob = 13;
+
+  {
+    constexpr char smallest[] = "bar1";
+    constexpr char largest[] = "foo1";
+    constexpr uint64_t file_size = 1000;
+
+    Add(level, sst, smallest, largest, file_size, first_blob);
+  }
+
+  {
+    constexpr uint64_t total_blob_count = 10;
+    constexpr uint64_t total_blob_bytes = 100000;
+    constexpr uint64_t garbage_blob_count = 2;
+    constexpr uint64_t garbage_blob_bytes = 15000;
+
+    AddBlob(first_blob, total_blob_count, total_blob_bytes,
+            BlobFileMetaData::LinkedSsts{sst}, garbage_blob_count,
+            garbage_blob_bytes);
+  }
+
+  {
+    constexpr uint64_t total_blob_count = 4;
+    constexpr uint64_t total_blob_bytes = 400000;
+    constexpr uint64_t garbage_blob_count = 3;
+    constexpr uint64_t garbage_blob_bytes = 235000;
+
+    AddBlob(second_blob, total_blob_count, total_blob_bytes,
+            BlobFileMetaData::LinkedSsts{}, garbage_blob_count,
+            garbage_blob_bytes);
+  }
+
+  {
+    constexpr uint64_t total_blob_count = 20;
+    constexpr uint64_t total_blob_bytes = 1000000;
+    constexpr uint64_t garbage_blob_count = 8;
+    constexpr uint64_t garbage_blob_bytes = 400000;
+
+    AddBlob(third_blob, total_blob_count, total_blob_bytes,
+            BlobFileMetaData::LinkedSsts{}, garbage_blob_count,
+            garbage_blob_bytes);
+  }
+
+  {
+    constexpr uint64_t total_blob_count = 128;
+    constexpr uint64_t total_blob_bytes = 1000000;
+    constexpr uint64_t garbage_blob_count = 67;
+    constexpr uint64_t garbage_blob_bytes = 600000;
+
+    AddBlob(fourth_blob, total_blob_count, total_blob_bytes,
+            BlobFileMetaData::LinkedSsts{}, garbage_blob_count,
+            garbage_blob_bytes);
+  }
+
+  UpdateVersionStorageInfo();
+
+  assert(vstorage_.num_levels() > 0);
+  const auto& level_files = vstorage_.LevelFiles(level);
+
+  assert(level_files.size() == 1);
+  assert(level_files[0] && level_files[0]->fd.GetNumber() == sst);
+
+  // No blob files eligible for GC due to the age cutoff
+
+  {
+    constexpr double age_cutoff = 0.1;
+    constexpr double force_threshold = 0.0;
+    vstorage_.ComputeFilesMarkedForForcedBlobGC(age_cutoff, force_threshold);
+
+    ASSERT_TRUE(vstorage_.FilesMarkedForForcedBlobGC().empty());
+  }
+
+  // Part of the oldest batch of blob files (specifically, #12 and #13) is
+  // ineligible for GC due to the age cutoff
+
+  {
+    constexpr double age_cutoff = 0.5;
+    constexpr double force_threshold = 0.0;
+    vstorage_.ComputeFilesMarkedForForcedBlobGC(age_cutoff, force_threshold);
+
+    ASSERT_TRUE(vstorage_.FilesMarkedForForcedBlobGC().empty());
+  }
+
+  // Oldest batch is eligible based on age cutoff but its overall garbage ratio
+  // is below threshold
+
+  {
+    constexpr double age_cutoff = 1.0;
+    constexpr double force_threshold = 0.6;
+    vstorage_.ComputeFilesMarkedForForcedBlobGC(age_cutoff, force_threshold);
+
+    ASSERT_TRUE(vstorage_.FilesMarkedForForcedBlobGC().empty());
+  }
+
+  // Oldest batch is eligible based on age cutoff and its overall garbage ratio
+  // meets threshold
+
+  {
+    constexpr double age_cutoff = 1.0;
+    constexpr double force_threshold = 0.5;
+    vstorage_.ComputeFilesMarkedForForcedBlobGC(age_cutoff, force_threshold);
+
+    auto ssts_to_be_compacted = vstorage_.FilesMarkedForForcedBlobGC();
+    ASSERT_EQ(ssts_to_be_compacted.size(), 1);
+
+    const autovector<std::pair<int, FileMetaData*>>
+        expected_ssts_to_be_compacted{{level, level_files[0]}};
+
+    ASSERT_EQ(ssts_to_be_compacted[0], expected_ssts_to_be_compacted[0]);
+  }
+}
+
+TEST_F(VersionStorageInfoTest, ForcedBlobGCMultipleBatches) {
   // Add three L0 SSTs (1, 2, and 3) and four blob files (10, 11, 12, and 13).
   // The first two SSTs have the same oldest blob file, namely, the very oldest
   // one (10), while the third SST's oldest blob file reference points to the
@@ -573,7 +758,7 @@ TEST_F(VersionStorageInfoTest, ForcedBlobGC) {
             garbage_blob_bytes);
   }
 
-  Finalize();
+  UpdateVersionStorageInfo();
 
   assert(vstorage_.num_levels() > 0);
   const auto& level_files = vstorage_.LevelFiles(level);
@@ -641,6 +826,46 @@ TEST_F(VersionStorageInfoTest, ForcedBlobGC) {
     ASSERT_EQ(ssts_to_be_compacted[0], expected_ssts_to_be_compacted[0]);
     ASSERT_EQ(ssts_to_be_compacted[1], expected_ssts_to_be_compacted[1]);
   }
+
+  // Now try the last two cases again with a greater than necessary age cutoff
+
+  // Oldest batch is eligible based on age cutoff but its overall garbage ratio
+  // is below threshold
+
+  {
+    constexpr double age_cutoff = 0.75;
+    constexpr double force_threshold = 0.6;
+    vstorage_.ComputeFilesMarkedForForcedBlobGC(age_cutoff, force_threshold);
+
+    ASSERT_TRUE(vstorage_.FilesMarkedForForcedBlobGC().empty());
+  }
+
+  // Oldest batch is eligible based on age cutoff and its overall garbage ratio
+  // meets threshold
+
+  {
+    constexpr double age_cutoff = 0.75;
+    constexpr double force_threshold = 0.5;
+    vstorage_.ComputeFilesMarkedForForcedBlobGC(age_cutoff, force_threshold);
+
+    auto ssts_to_be_compacted = vstorage_.FilesMarkedForForcedBlobGC();
+    ASSERT_EQ(ssts_to_be_compacted.size(), 2);
+
+    std::sort(ssts_to_be_compacted.begin(), ssts_to_be_compacted.end(),
+              [](const std::pair<int, FileMetaData*>& lhs,
+                 const std::pair<int, FileMetaData*>& rhs) {
+                assert(lhs.second);
+                assert(rhs.second);
+                return lhs.second->fd.GetNumber() < rhs.second->fd.GetNumber();
+              });
+
+    const autovector<std::pair<int, FileMetaData*>>
+        expected_ssts_to_be_compacted{{level, level_files[0]},
+                                      {level, level_files[1]}};
+
+    ASSERT_EQ(ssts_to_be_compacted[0], expected_ssts_to_be_compacted[0]);
+    ASSERT_EQ(ssts_to_be_compacted[1], expected_ssts_to_be_compacted[1]);
+  }
 }
 
 class VersionStorageInfoTimestampTest : public VersionStorageInfoTestBase {
@@ -678,8 +903,9 @@ TEST_F(VersionStorageInfoTimestampTest, GetOverlappingInputs) {
       /*largest=*/
       {PackUserKeyAndTimestamp("d", /*ts=*/1), /*s=*/0, kTypeValue},
       /*file_size=*/100);
-  vstorage_.UpdateNumNonEmptyLevels();
-  vstorage_.GenerateLevelFilesBrief();
+
+  UpdateVersionStorageInfo();
+
   ASSERT_EQ(
       "1,2",
       GetOverlappingFiles(
@@ -925,7 +1151,7 @@ class VersionSetTestBase {
         new VersionSet(dbname_, &db_options_, env_options_, table_cache_.get(),
                        &write_buffer_manager_, &write_controller_,
                        /*block_cache_tracer=*/nullptr, /*io_tracer=*/nullptr,
-                       /*db_session_id*/ ""));
+                       /*db_id*/ "", /*db_session_id*/ ""));
     reactive_versions_ = std::make_shared<ReactiveVersionSet>(
         dbname_, &db_options_, env_options_, table_cache_.get(),
         &write_buffer_manager_, &write_controller_, nullptr);
@@ -1029,7 +1255,7 @@ class VersionSetTestBase {
         new VersionSet(dbname_, &db_options_, env_options_, table_cache_.get(),
                        &write_buffer_manager_, &write_controller_,
                        /*block_cache_tracer=*/nullptr, /*io_tracer=*/nullptr,
-                       /*db_session_id*/ ""));
+                       /*db_id*/ "", /*db_session_id*/ ""));
     EXPECT_OK(versions_->Recover(column_families_, false));
   }
 
@@ -1046,7 +1272,7 @@ class VersionSetTestBase {
     mutex_.Lock();
     Status s =
         versions_->LogAndApply(versions_->GetColumnFamilySet()->GetDefault(),
-                               mutable_cf_options_, &edit, &mutex_);
+                               mutable_cf_options_, &edit, &mutex_, nullptr);
     mutex_.Unlock();
     return s;
   }
@@ -1060,7 +1286,7 @@ class VersionSetTestBase {
     mutex_.Lock();
     Status s =
         versions_->LogAndApply(versions_->GetColumnFamilySet()->GetDefault(),
-                               mutable_cf_options_, vedits, &mutex_);
+                               mutable_cf_options_, vedits, &mutex_, nullptr);
     mutex_.Unlock();
     return s;
   }
@@ -1158,8 +1384,8 @@ TEST_F(VersionSetTest, SameColumnFamilyGroupCommit) {
       });
   SyncPoint::GetInstance()->EnableProcessing();
   mutex_.Lock();
-  Status s =
-      versions_->LogAndApply(cfds, all_mutable_cf_options, edit_lists, &mutex_);
+  Status s = versions_->LogAndApply(cfds, all_mutable_cf_options, edit_lists,
+                                    &mutex_, nullptr);
   mutex_.Unlock();
   EXPECT_OK(s);
   EXPECT_EQ(kGroupSize - 1, count);
@@ -1361,7 +1587,7 @@ TEST_F(VersionSetTest, ObsoleteBlobFile) {
   mutex_.Lock();
   Status s =
       versions_->LogAndApply(versions_->GetColumnFamilySet()->GetDefault(),
-                             mutable_cf_options_, &edit, &mutex_);
+                             mutable_cf_options_, &edit, &mutex_, nullptr);
   mutex_.Unlock();
 
   ASSERT_OK(s);
@@ -1535,7 +1761,7 @@ TEST_F(VersionSetTest, WalAddition) {
         new VersionSet(dbname_, &db_options_, env_options_, table_cache_.get(),
                        &write_buffer_manager_, &write_controller_,
                        /*block_cache_tracer=*/nullptr, /*io_tracer=*/nullptr,
-                       /*db_session_id*/ ""));
+                       /*db_id*/ "", /*db_session_id*/ ""));
     ASSERT_OK(new_versions->Recover(column_families_, /*read_only=*/false));
     const auto& wals = new_versions->GetWalSet().GetWals();
     ASSERT_EQ(wals.size(), 1);
@@ -1602,7 +1828,7 @@ TEST_F(VersionSetTest, WalCloseWithoutSync) {
         new VersionSet(dbname_, &db_options_, env_options_, table_cache_.get(),
                        &write_buffer_manager_, &write_controller_,
                        /*block_cache_tracer=*/nullptr, /*io_tracer=*/nullptr,
-                       /*db_session_id*/ ""));
+                       /*db_id*/ "", /*db_session_id*/ ""));
     ASSERT_OK(new_versions->Recover(column_families_, false));
     const auto& wals = new_versions->GetWalSet().GetWals();
     ASSERT_EQ(wals.size(), 2);
@@ -1655,7 +1881,7 @@ TEST_F(VersionSetTest, WalDeletion) {
         new VersionSet(dbname_, &db_options_, env_options_, table_cache_.get(),
                        &write_buffer_manager_, &write_controller_,
                        /*block_cache_tracer=*/nullptr, /*io_tracer=*/nullptr,
-                       /*db_session_id*/ ""));
+                       /*db_id*/ "", /*db_session_id*/ ""));
     ASSERT_OK(new_versions->Recover(column_families_, false));
     const auto& wals = new_versions->GetWalSet().GetWals();
     ASSERT_EQ(wals.size(), 1);
@@ -1693,7 +1919,7 @@ TEST_F(VersionSetTest, WalDeletion) {
         new VersionSet(dbname_, &db_options_, env_options_, table_cache_.get(),
                        &write_buffer_manager_, &write_controller_,
                        /*block_cache_tracer=*/nullptr, /*io_tracer=*/nullptr,
-                       /*db_session_id*/ ""));
+                       /*db_id*/ "", /*db_session_id*/ ""));
     ASSERT_OK(new_versions->Recover(column_families_, false));
     const auto& wals = new_versions->GetWalSet().GetWals();
     ASSERT_EQ(wals.size(), 1);
@@ -1813,7 +2039,7 @@ TEST_F(VersionSetTest, DeleteWalsBeforeNonExistingWalNumber) {
         new VersionSet(dbname_, &db_options_, env_options_, table_cache_.get(),
                        &write_buffer_manager_, &write_controller_,
                        /*block_cache_tracer=*/nullptr, /*io_tracer=*/nullptr,
-                       /*db_session_id*/ ""));
+                       /*db_id*/ "", /*db_session_id*/ ""));
     ASSERT_OK(new_versions->Recover(column_families_, false));
     const auto& wals = new_versions->GetWalSet().GetWals();
     ASSERT_EQ(wals.size(), 1);
@@ -1849,7 +2075,7 @@ TEST_F(VersionSetTest, DeleteAllWals) {
         new VersionSet(dbname_, &db_options_, env_options_, table_cache_.get(),
                        &write_buffer_manager_, &write_controller_,
                        /*block_cache_tracer=*/nullptr, /*io_tracer=*/nullptr,
-                       /*db_session_id*/ ""));
+                       /*db_id*/ "", /*db_session_id*/ ""));
     ASSERT_OK(new_versions->Recover(column_families_, false));
     const auto& wals = new_versions->GetWalSet().GetWals();
     ASSERT_EQ(wals.size(), 0);
@@ -1891,7 +2117,7 @@ TEST_F(VersionSetTest, AtomicGroupWithWalEdits) {
         new VersionSet(dbname_, &db_options_, env_options_, table_cache_.get(),
                        &write_buffer_manager_, &write_controller_,
                        /*block_cache_tracer=*/nullptr, /*io_tracer=*/nullptr,
-                       /*db_session_id*/ ""));
+                       /*db_id*/ "", /*db_session_id*/ ""));
     std::string db_id;
     ASSERT_OK(
         new_versions->Recover(column_families_, /*read_only=*/false, &db_id));
@@ -1945,7 +2171,7 @@ class VersionSetWithTimestampTest : public VersionSetTest {
         new VersionSet(dbname_, &db_options_, env_options_, table_cache_.get(),
                        &write_buffer_manager_, &write_controller_,
                        /*block_cache_tracer=*/nullptr, /*io_tracer=*/nullptr,
-                       /*db_session_id*/ ""));
+                       /*db_id*/ "", /*db_session_id*/ ""));
     ASSERT_OK(vset->Recover(column_families_, /*read_only=*/false,
                             /*db_id=*/nullptr));
     for (auto* cfd : *(vset->GetColumnFamilySet())) {
@@ -1968,7 +2194,7 @@ class VersionSetWithTimestampTest : public VersionSetTest {
     Status s;
     mutex_.Lock();
     s = versions_->LogAndApply(cfd_, *(cfd_->GetLatestMutableCFOptions()),
-                               edits_, &mutex_);
+                               edits_, &mutex_, nullptr);
     mutex_.Unlock();
     ASSERT_OK(s);
     VerifyFullHistoryTsLow(*std::max_element(ts_lbs.begin(), ts_lbs.end()));
@@ -2435,7 +2661,7 @@ TEST_P(VersionSetTestDropOneCF, HandleDroppedColumnFamilyInAtomicGroup) {
   mutex_.Lock();
   s = versions_->LogAndApply(cfd_to_drop,
                              *cfd_to_drop->GetLatestMutableCFOptions(),
-                             &drop_cf_edit, &mutex_);
+                             &drop_cf_edit, &mutex_, nullptr);
   mutex_.Unlock();
   ASSERT_OK(s);
 
@@ -2484,8 +2710,8 @@ TEST_P(VersionSetTestDropOneCF, HandleDroppedColumnFamilyInAtomicGroup) {
       });
   SyncPoint::GetInstance()->EnableProcessing();
   mutex_.Lock();
-  s = versions_->LogAndApply(cfds, mutable_cf_options_list, edit_lists,
-                             &mutex_);
+  s = versions_->LogAndApply(cfds, mutable_cf_options_list, edit_lists, &mutex_,
+                             nullptr);
   mutex_.Unlock();
   ASSERT_OK(s);
   ASSERT_EQ(1, called);
@@ -3000,7 +3226,7 @@ class VersionSetTestMissingFiles : public VersionSetTestBase,
       InternalKey ikey(info.key, 0, ValueType::kTypeValue);
       builder->Add(ikey.Encode(), "value");
       ASSERT_OK(builder->Finish());
-      fwriter->Flush();
+      ASSERT_OK(fwriter->Flush());
       uint64_t file_size = 0;
       s = fs_->GetFileSize(fname, IOOptions(), &file_size, nullptr);
       ASSERT_OK(s);
@@ -3008,8 +3234,7 @@ class VersionSetTestMissingFiles : public VersionSetTestBase,
       file_metas->emplace_back(file_num, /*file_path_id=*/0, file_size, ikey,
                                ikey, 0, 0, false, Temperature::kUnknown, 0, 0,
                                0, kUnknownFileChecksum,
-                               kUnknownFileChecksumFuncName,
-                               kDisableUserTimestamp, kDisableUserTimestamp);
+                               kUnknownFileChecksumFuncName, kNullUniqueId64x2);
     }
   }
 
@@ -3064,8 +3289,7 @@ TEST_F(VersionSetTestMissingFiles, ManifestFarBehindSst) {
     FileMetaData meta = FileMetaData(
         file_num, /*file_path_id=*/0, /*file_size=*/12, smallest_ikey,
         largest_ikey, 0, 0, false, Temperature::kUnknown, 0, 0, 0,
-        kUnknownFileChecksum, kUnknownFileChecksumFuncName,
-        kDisableUserTimestamp, kDisableUserTimestamp);
+        kUnknownFileChecksum, kUnknownFileChecksumFuncName, kNullUniqueId64x2);
     added_files.emplace_back(0, meta);
   }
   WriteFileAdditionAndDeletionToManifest(
@@ -3120,8 +3344,7 @@ TEST_F(VersionSetTestMissingFiles, ManifestAheadofSst) {
     FileMetaData meta = FileMetaData(
         file_num, /*file_path_id=*/0, /*file_size=*/12, smallest_ikey,
         largest_ikey, 0, 0, false, Temperature::kUnknown, 0, 0, 0,
-        kUnknownFileChecksum, kUnknownFileChecksumFuncName,
-        kDisableUserTimestamp, kDisableUserTimestamp);
+        kUnknownFileChecksum, kUnknownFileChecksumFuncName, kNullUniqueId64x2);
     added_files.emplace_back(0, meta);
   }
   WriteFileAdditionAndDeletionToManifest(
@@ -3228,9 +3451,135 @@ TEST_F(VersionSetTestMissingFiles, MinLogNumberToKeep2PC) {
   }
 }
 
+class ChargeFileMetadataTest : public DBTestBase {
+ public:
+  ChargeFileMetadataTest()
+      : DBTestBase("charge_file_metadata_test", /*env_do_fsync=*/true) {}
+};
+
+class ChargeFileMetadataTestWithParam
+    : public ChargeFileMetadataTest,
+      public testing::WithParamInterface<CacheEntryRoleOptions::Decision> {
+ public:
+  ChargeFileMetadataTestWithParam() {}
+};
+
+#ifndef ROCKSDB_LITE
+INSTANTIATE_TEST_CASE_P(
+    ChargeFileMetadataTestWithParam, ChargeFileMetadataTestWithParam,
+    ::testing::Values(CacheEntryRoleOptions::Decision::kEnabled,
+                      CacheEntryRoleOptions::Decision::kDisabled));
+
+TEST_P(ChargeFileMetadataTestWithParam, Basic) {
+  Options options;
+  BlockBasedTableOptions table_options;
+  CacheEntryRoleOptions::Decision charge_file_metadata = GetParam();
+  table_options.cache_usage_options.options_overrides.insert(
+      {CacheEntryRole::kFileMetadata, {/*.charged = */ charge_file_metadata}});
+  std::shared_ptr<TargetCacheChargeTrackingCache<CacheEntryRole::kFileMetadata>>
+      file_metadata_charge_only_cache = std::make_shared<
+          TargetCacheChargeTrackingCache<CacheEntryRole::kFileMetadata>>(
+          NewLRUCache(
+              4 * CacheReservationManagerImpl<
+                      CacheEntryRole::kFileMetadata>::GetDummyEntrySize(),
+              0 /* num_shard_bits */, true /* strict_capacity_limit */));
+  table_options.block_cache = file_metadata_charge_only_cache;
+  options.table_factory.reset(NewBlockBasedTableFactory(table_options));
+  options.create_if_missing = true;
+  options.disable_auto_compactions = true;
+  DestroyAndReopen(options);
+
+  // Create 128 file metadata, each of which is roughly 1024 bytes.
+  // This results in 1 *
+  // CacheReservationManagerImpl<CacheEntryRole::kFileMetadata>::GetDummyEntrySize()
+  // cache reservation for file metadata.
+  for (int i = 1; i <= 128; ++i) {
+    ASSERT_OK(Put(std::string(1024, 'a'), "va"));
+    ASSERT_OK(Put("b", "vb"));
+    ASSERT_OK(Flush());
+  }
+  if (charge_file_metadata == CacheEntryRoleOptions::Decision::kEnabled) {
+    EXPECT_EQ(file_metadata_charge_only_cache->GetCacheCharge(),
+              1 * CacheReservationManagerImpl<
+                      CacheEntryRole::kFileMetadata>::GetDummyEntrySize());
+
+  } else {
+    EXPECT_EQ(file_metadata_charge_only_cache->GetCacheCharge(), 0);
+  }
+
+  // Create another 128 file metadata.
+  // This increases the file metadata cache reservation to 2 *
+  // CacheReservationManagerImpl<CacheEntryRole::kFileMetadata>::GetDummyEntrySize().
+  for (int i = 1; i <= 128; ++i) {
+    ASSERT_OK(Put(std::string(1024, 'a'), "vva"));
+    ASSERT_OK(Put("b", "vvb"));
+    ASSERT_OK(Flush());
+  }
+  if (charge_file_metadata == CacheEntryRoleOptions::Decision::kEnabled) {
+    EXPECT_EQ(file_metadata_charge_only_cache->GetCacheCharge(),
+              2 * CacheReservationManagerImpl<
+                      CacheEntryRole::kFileMetadata>::GetDummyEntrySize());
+  } else {
+    EXPECT_EQ(file_metadata_charge_only_cache->GetCacheCharge(), 0);
+  }
+  // Compaction will create 1 new file metadata, obsolete and delete all 256
+  // file metadata above. This results in 1 *
+  // CacheReservationManagerImpl<CacheEntryRole::kFileMetadata>::GetDummyEntrySize()
+  // cache reservation for file metadata.
+  SyncPoint::GetInstance()->LoadDependency(
+      {{"DBImpl::BackgroundCallCompaction:PurgedObsoleteFiles",
+        "ChargeFileMetadataTestWithParam::"
+        "PreVerifyingCacheReservationRelease"}});
+  SyncPoint::GetInstance()->EnableProcessing();
+  ASSERT_OK(db_->CompactRange(CompactRangeOptions(), nullptr, nullptr));
+  ASSERT_EQ("0,1", FilesPerLevel(0));
+  TEST_SYNC_POINT(
+      "ChargeFileMetadataTestWithParam::PreVerifyingCacheReservationRelease");
+  if (charge_file_metadata == CacheEntryRoleOptions::Decision::kEnabled) {
+    EXPECT_EQ(file_metadata_charge_only_cache->GetCacheCharge(),
+              1 * CacheReservationManagerImpl<
+                      CacheEntryRole::kFileMetadata>::GetDummyEntrySize());
+  } else {
+    EXPECT_EQ(file_metadata_charge_only_cache->GetCacheCharge(), 0);
+  }
+  SyncPoint::GetInstance()->DisableProcessing();
+
+  // Destroying the db will delete the remaining 1 new file metadata
+  // This results in no cache reservation for file metadata.
+  Destroy(options);
+  EXPECT_EQ(file_metadata_charge_only_cache->GetCacheCharge(),
+            0 * CacheReservationManagerImpl<
+                    CacheEntryRole::kFileMetadata>::GetDummyEntrySize());
+
+  // Reopen the db with a smaller cache in order to test failure in allocating
+  // file metadata due to memory limit based on cache capacity
+  file_metadata_charge_only_cache = std::make_shared<
+      TargetCacheChargeTrackingCache<CacheEntryRole::kFileMetadata>>(
+      NewLRUCache(1 * CacheReservationManagerImpl<
+                          CacheEntryRole::kFileMetadata>::GetDummyEntrySize(),
+                  0 /* num_shard_bits */, true /* strict_capacity_limit */));
+  table_options.block_cache = file_metadata_charge_only_cache;
+  options.table_factory.reset(NewBlockBasedTableFactory(table_options));
+  Reopen(options);
+  ASSERT_OK(Put(std::string(1024, 'a'), "va"));
+  ASSERT_OK(Put("b", "vb"));
+  Status s = Flush();
+  if (charge_file_metadata == CacheEntryRoleOptions::Decision::kEnabled) {
+    EXPECT_TRUE(s.IsMemoryLimit());
+    EXPECT_TRUE(s.ToString().find(
+                    kCacheEntryRoleToCamelString[static_cast<std::uint32_t>(
+                        CacheEntryRole::kFileMetadata)]) != std::string::npos);
+    EXPECT_TRUE(s.ToString().find("memory limit based on cache capacity") !=
+                std::string::npos);
+  } else {
+    EXPECT_TRUE(s.ok());
+  }
+}
+#endif  // ROCKSDB_LITE
 }  // namespace ROCKSDB_NAMESPACE
 
 int main(int argc, char** argv) {
+  ROCKSDB_NAMESPACE::port::InstallStackTraceHandler();
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }

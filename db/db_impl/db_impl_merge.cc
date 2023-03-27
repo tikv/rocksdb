@@ -296,7 +296,8 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
               f->fd.largest_seqno, f->marked_for_compaction, f->temperature,
               f->oldest_blob_file_number, f->oldest_ancester_time,
               f->file_creation_time, f->file_checksum,
-              f->file_checksum_func_name, f->min_timestamp, f->max_timestamp);
+              f->file_checksum_func_name, f->unique_id,
+              f->min_timestamp, f->max_timestamp);
         }
       }
     }

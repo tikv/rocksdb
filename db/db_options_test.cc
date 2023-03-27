@@ -95,6 +95,22 @@ TEST_F(DBOptionsTest, ImmutableTrackAndVerifyWalsInManifest) {
   ASSERT_FALSE(s.ok());
 }
 
+TEST_F(DBOptionsTest, ImmutableVerifySstUniqueIdInManifest) {
+  Options options;
+  options.env = env_;
+  options.verify_sst_unique_id_in_manifest = true;
+
+  ImmutableDBOptions db_options(options);
+  ASSERT_TRUE(db_options.verify_sst_unique_id_in_manifest);
+
+  Reopen(options);
+  ASSERT_TRUE(dbfull()->GetDBOptions().verify_sst_unique_id_in_manifest);
+
+  Status s =
+      dbfull()->SetDBOptions({{"verify_sst_unique_id_in_manifest", "false"}});
+  ASSERT_FALSE(s.ok());
+}
+
 // RocksDB lite don't support dynamic options.
 #ifndef ROCKSDB_LITE
 
@@ -204,6 +220,7 @@ TEST_F(DBOptionsTest, SetMutableTableOptions) {
 
   ColumnFamilyHandle* cfh = dbfull()->DefaultColumnFamily();
   Options c_opts = dbfull()->GetOptions(cfh);
+
   const auto* c_bbto =
       c_opts.table_factory->GetOptions<BlockBasedTableOptions>();
   ASSERT_NE(c_bbto, nullptr);
@@ -424,8 +441,8 @@ TEST_F(DBOptionsTest, WritableFileMaxBufferSize) {
   ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->EnableProcessing();
   int i = 0;
   for (; i < 3; i++) {
-    ASSERT_OK(Put("foo", ToString(i)));
-    ASSERT_OK(Put("bar", ToString(i)));
+    ASSERT_OK(Put("foo", std::to_string(i)));
+    ASSERT_OK(Put("bar", std::to_string(i)));
     ASSERT_OK(Flush());
   }
   ASSERT_OK(dbfull()->TEST_WaitForCompact());
@@ -436,14 +453,14 @@ TEST_F(DBOptionsTest, WritableFileMaxBufferSize) {
       dbfull()->SetDBOptions({{"writable_file_max_buffer_size", "524288"}}));
   buffer_size = 512 * 1024;
   match_cnt = 0;
-  unmatch_cnt = 0;  // SetDBOptions() will create a WriteableFileWriter
+  unmatch_cnt = 0;  // SetDBOptions() will create a WritableFileWriter
 
   ASSERT_EQ(buffer_size,
             dbfull()->GetDBOptions().writable_file_max_buffer_size);
   i = 0;
   for (; i < 3; i++) {
-    ASSERT_OK(Put("foo", ToString(i)));
-    ASSERT_OK(Put("bar", ToString(i)));
+    ASSERT_OK(Put("foo", std::to_string(i)));
+    ASSERT_OK(Put("bar", std::to_string(i)));
     ASSERT_OK(Flush());
   }
   ASSERT_OK(dbfull()->TEST_WaitForCompact());
@@ -654,8 +671,8 @@ TEST_F(DBOptionsTest, SetOptionsMayTriggerCompaction) {
   Reopen(options);
   for (int i = 0; i < 3; i++) {
     // Need to insert two keys to avoid trivial move.
-    ASSERT_OK(Put("foo", ToString(i)));
-    ASSERT_OK(Put("bar", ToString(i)));
+    ASSERT_OK(Put("foo", std::to_string(i)));
+    ASSERT_OK(Put("bar", std::to_string(i)));
     ASSERT_OK(Flush());
   }
   ASSERT_EQ("3", FilesPerLevel());
@@ -673,17 +690,6 @@ TEST_F(DBOptionsTest, SetBackgroundCompactionThreads) {
   Reopen(options);
   ASSERT_EQ(1, dbfull()->TEST_BGCompactionsAllowed());
   ASSERT_OK(dbfull()->SetDBOptions({{"max_background_compactions", "3"}}));
-  ASSERT_EQ(1, dbfull()->TEST_BGCompactionsAllowed());
-  {
-    auto stop_token = dbfull()->TEST_write_controler().GetStopToken();
-    ASSERT_EQ(3, dbfull()->TEST_BGCompactionsAllowed());
-  }
-
-  ASSERT_OK(dbfull()->SetDBOptions({{"base_background_compactions", "2"}}));
-  ASSERT_EQ(2, dbfull()->TEST_BGCompactionsAllowed());
-  ASSERT_OK(dbfull()->SetDBOptions({{"base_background_compactions", "5"}}));
-  ASSERT_EQ(3, dbfull()->TEST_BGCompactionsAllowed());
-  ASSERT_OK(dbfull()->SetDBOptions({{"base_background_compactions", "1"}}));
   ASSERT_EQ(1, dbfull()->TEST_BGCompactionsAllowed());
   {
     auto stop_token = dbfull()->TEST_write_controler().GetStopToken();
@@ -811,8 +817,8 @@ TEST_F(DBOptionsTest, SetStatsDumpPeriodSec) {
 
   for (int i = 0; i < 20; i++) {
     unsigned int num = rand() % 5000 + 1;
-    ASSERT_OK(
-        dbfull()->SetDBOptions({{"stats_dump_period_sec", ToString(num)}}));
+    ASSERT_OK(dbfull()->SetDBOptions(
+        {{"stats_dump_period_sec", std::to_string(num)}}));
     ASSERT_EQ(num, dbfull()->GetDBOptions().stats_dump_period_sec);
   }
   Close();
@@ -1003,7 +1009,7 @@ TEST_F(DBOptionsTest, SetFIFOCompactionOptions) {
   for (int i = 0; i < 10; i++) {
     // Generate and flush a file about 10KB.
     for (int j = 0; j < 10; j++) {
-      ASSERT_OK(Put(ToString(i * 20 + j), rnd.RandomString(980)));
+      ASSERT_OK(Put(std::to_string(i * 20 + j), rnd.RandomString(980)));
     }
     ASSERT_OK(Flush());
   }
@@ -1034,7 +1040,7 @@ TEST_F(DBOptionsTest, SetFIFOCompactionOptions) {
   for (int i = 0; i < 10; i++) {
     // Generate and flush a file about 10KB.
     for (int j = 0; j < 10; j++) {
-      ASSERT_OK(Put(ToString(i * 20 + j), rnd.RandomString(980)));
+      ASSERT_OK(Put(std::to_string(i * 20 + j), rnd.RandomString(980)));
     }
     ASSERT_OK(Flush());
   }
@@ -1066,7 +1072,7 @@ TEST_F(DBOptionsTest, SetFIFOCompactionOptions) {
   for (int i = 0; i < 10; i++) {
     // Generate and flush a file about 10KB.
     for (int j = 0; j < 10; j++) {
-      ASSERT_OK(Put(ToString(i * 20 + j), rnd.RandomString(980)));
+      ASSERT_OK(Put(std::to_string(i * 20 + j), rnd.RandomString(980)));
     }
     ASSERT_OK(Flush());
   }
@@ -1097,7 +1103,6 @@ TEST_F(DBOptionsTest, CompactionReadaheadSizeChange) {
   options.env = &env;
 
   options.compaction_readahead_size = 0;
-  options.new_table_reader_for_compaction_inputs = true;
   options.level0_file_num_compaction_trigger = 2;
   const std::string kValue(1024, 'v');
   Reopen(options);
@@ -1132,7 +1137,7 @@ TEST_F(DBOptionsTest, FIFOTtlBackwardCompatible) {
   for (int i = 0; i < 10; i++) {
     // Generate and flush a file about 10KB.
     for (int j = 0; j < 10; j++) {
-      ASSERT_OK(Put(ToString(i * 20 + j), rnd.RandomString(980)));
+      ASSERT_OK(Put(std::to_string(i * 20 + j), rnd.RandomString(980)));
     }
     ASSERT_OK(Flush());
   }

@@ -1166,7 +1166,7 @@ Status BlobDBImpl::DecompressSlice(const Slice& compressed_value,
     UncompressionContext context(compression_type);
     UncompressionInfo info(context, UncompressionDict::GetEmptyDict(),
                            compression_type);
-    Status s = UncompressBlockContentsForCompressionType(
+    Status s = UncompressBlockData(
         info, compressed_value.data(), compressed_value.size(), &contents,
         kBlockBasedTableVersionFormat, *(cfh->cfd()->ioptions()));
     if (!s.ok()) {
@@ -1542,15 +1542,16 @@ Status BlobDBImpl::GetRawBlobFromFile(const Slice& key, uint64_t file_number,
 
   {
     StopWatch read_sw(clock_, statistics_, BLOB_DB_BLOB_FILE_READ_MICROS);
+    // TODO: rate limit old blob DB file reads.
     if (reader->use_direct_io()) {
       s = reader->Read(IOOptions(), record_offset,
                        static_cast<size_t>(record_size), &blob_record, nullptr,
-                       &aligned_buf);
+                       &aligned_buf, Env::IO_TOTAL /* rate_limiter_priority */);
     } else {
       buf.reserve(static_cast<size_t>(record_size));
       s = reader->Read(IOOptions(), record_offset,
                        static_cast<size_t>(record_size), &blob_record, &buf[0],
-                       nullptr);
+                       nullptr, Env::IO_TOTAL /* rate_limiter_priority */);
     }
     RecordTick(statistics_, BLOB_DB_BLOB_FILE_BYTES_READ, blob_record.size());
   }

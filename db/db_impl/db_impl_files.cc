@@ -193,11 +193,14 @@ void DBImpl::FindObsoleteFiles(JobContext* job_context, bool force,
       }
     }
 
+    IOOptions io_opts;
+    io_opts.do_not_recurse = true;
     for (auto& path : paths) {
       // set of all files in the directory. We'll exclude files that are still
       // alive in the subsequent processings.
       std::vector<std::string> files;
-      Status s = env_->GetChildren(path, &files);
+      Status s = immutable_db_options_.fs->GetChildren(
+          path, io_opts, &files, /*IODebugContext*=*/nullptr);
       s.PermitUncheckedError();  // TODO: What should we do on error?
       for (const std::string& file : files) {
         uint64_t number;
@@ -223,7 +226,9 @@ void DBImpl::FindObsoleteFiles(JobContext* job_context, bool force,
     // Add log files in wal_dir
     if (!immutable_db_options_.IsWalDirSameAsDBPath(dbname_)) {
       std::vector<std::string> log_files;
-      Status s = env_->GetChildren(immutable_db_options_.wal_dir, &log_files);
+      Status s = immutable_db_options_.fs->GetChildren(
+          immutable_db_options_.wal_dir, io_opts, &log_files,
+          /*IODebugContext*=*/nullptr);
       s.PermitUncheckedError();  // TODO: What should we do on error?
       for (const std::string& log_file : log_files) {
         job_context->full_scan_candidate_files.emplace_back(
@@ -235,8 +240,9 @@ void DBImpl::FindObsoleteFiles(JobContext* job_context, bool force,
     if (!immutable_db_options_.db_log_dir.empty() &&
         immutable_db_options_.db_log_dir != dbname_) {
       std::vector<std::string> info_log_files;
-      Status s =
-          env_->GetChildren(immutable_db_options_.db_log_dir, &info_log_files);
+      Status s = immutable_db_options_.fs->GetChildren(
+          immutable_db_options_.db_log_dir, io_opts, &info_log_files,
+          /*IODebugContext*=*/nullptr);
       s.PermitUncheckedError();  // TODO: What should we do on error?
       for (std::string& log_file : info_log_files) {
         job_context->full_scan_candidate_files.emplace_back(
@@ -788,7 +794,7 @@ uint64_t PrecomputeMinLogNumberToKeepNon2PC(
   assert(!cfds_to_flush.empty());
   assert(cfds_to_flush.size() == edit_lists.size());
 
-  uint64_t min_log_number_to_keep = port::kMaxUint64;
+  uint64_t min_log_number_to_keep = std::numeric_limits<uint64_t>::max();
   for (const auto& edit_list : edit_lists) {
     uint64_t log = 0;
     for (const auto& e : edit_list) {
@@ -800,7 +806,7 @@ uint64_t PrecomputeMinLogNumberToKeepNon2PC(
       min_log_number_to_keep = std::min(min_log_number_to_keep, log);
     }
   }
-  if (min_log_number_to_keep == port::kMaxUint64) {
+  if (min_log_number_to_keep == std::numeric_limits<uint64_t>::max()) {
     min_log_number_to_keep = cfds_to_flush[0]->GetLogNumber();
     for (size_t i = 1; i < cfds_to_flush.size(); i++) {
       min_log_number_to_keep =
@@ -890,49 +896,61 @@ uint64_t PrecomputeMinLogNumberToKeep2PC(
   return min_log_number_to_keep;
 }
 
-Status DBImpl::SetDBId(bool read_only) {
+void DBImpl::SetDBId(std::string&& id, bool read_only,
+                     RecoveryContext* recovery_ctx) {
+  assert(db_id_.empty());
+  assert(!id.empty());
+  db_id_ = std::move(id);
+  if (!read_only && immutable_db_options_.write_dbid_to_manifest) {
+    assert(recovery_ctx != nullptr);
+    assert(versions_->GetColumnFamilySet() != nullptr);
+    VersionEdit edit;
+    edit.SetDBId(db_id_);
+    versions_->db_id_ = db_id_;
+    recovery_ctx->UpdateVersionEdits(
+        versions_->GetColumnFamilySet()->GetDefault(), edit);
+  }
+}
+
+Status DBImpl::SetupDBId(bool read_only, RecoveryContext* recovery_ctx) {
   Status s;
-  // Happens when immutable_db_options_.write_dbid_to_manifest is set to true
-  // the very first time.
-  if (db_id_.empty()) {
-    // Check for the IDENTITY file and create it if not there.
-    s = fs_->FileExists(IdentityFileName(dbname_), IOOptions(), nullptr);
-    // Typically Identity file is created in NewDB() and for some reason if
-    // it is no longer available then at this point DB ID is not in Identity
-    // file or Manifest.
-    if (s.IsNotFound()) {
-      // Create a new DB ID, saving to file only if allowed
-      if (read_only) {
-        db_id_ = env_->GenerateUniqueId();
-        return Status::OK();
-      } else {
-        s = SetIdentityFile(env_, dbname_);
-        if (!s.ok()) {
-          return s;
-        }
+  // Check for the IDENTITY file and create it if not there or
+  // broken or not matching manifest
+  std::string db_id_in_file;
+  s = fs_->FileExists(IdentityFileName(dbname_), IOOptions(), nullptr);
+  if (s.ok()) {
+    s = GetDbIdentityFromIdentityFile(&db_id_in_file);
+    if (s.ok() && !db_id_in_file.empty()) {
+      if (db_id_.empty()) {
+        // Loaded from file and wasn't already known from manifest
+        SetDBId(std::move(db_id_in_file), read_only, recovery_ctx);
+        return s;
+      } else if (db_id_ == db_id_in_file) {
+        // Loaded from file and matches manifest
+        return s;
       }
-    } else if (!s.ok()) {
-      assert(s.IsIOError());
-      return s;
     }
-    s = GetDbIdentityFromIdentityFile(&db_id_);
-    if (immutable_db_options_.write_dbid_to_manifest && s.ok()) {
-      VersionEdit edit;
-      edit.SetDBId(db_id_);
-      Options options;
-      MutableCFOptions mutable_cf_options(options);
-      versions_->db_id_ = db_id_;
-      s = versions_->LogAndApply(versions_->GetColumnFamilySet()->GetDefault(),
-                                 mutable_cf_options, &edit, &mutex_, nullptr,
-                                 /* new_descriptor_log */ false);
-    }
-  } else if (!read_only) {
+  }
+  if (s.IsNotFound()) {
+    s = Status::OK();
+  }
+  if (!s.ok()) {
+    assert(s.IsIOError());
+    return s;
+  }
+  // Otherwise IDENTITY file is missing or no good.
+  // Generate new id if needed
+  if (db_id_.empty()) {
+    SetDBId(env_->GenerateUniqueId(), read_only, recovery_ctx);
+  }
+  // Persist it to IDENTITY file if allowed
+  if (!read_only) {
     s = SetIdentityFile(env_, dbname_, db_id_);
   }
   return s;
 }
 
-Status DBImpl::DeleteUnreferencedSstFiles() {
+Status DBImpl::DeleteUnreferencedSstFiles(RecoveryContext* recovery_ctx) {
   mutex_.AssertHeld();
   std::vector<std::string> paths;
   paths.push_back(NormalizePath(dbname_ + std::string(1, kFilePathSeparator)));
@@ -952,7 +970,6 @@ Status DBImpl::DeleteUnreferencedSstFiles() {
 
   uint64_t next_file_number = versions_->current_next_file_number();
   uint64_t largest_file_number = next_file_number;
-  std::set<std::string> files_to_delete;
   Status s;
   for (const auto& path : paths) {
     std::vector<std::string> files;
@@ -970,8 +987,9 @@ Status DBImpl::DeleteUnreferencedSstFiles() {
       const std::string normalized_fpath = path + fname;
       largest_file_number = std::max(largest_file_number, number);
       if (type == kTableFile && number >= next_file_number &&
-          files_to_delete.find(normalized_fpath) == files_to_delete.end()) {
-        files_to_delete.insert(normalized_fpath);
+          recovery_ctx->files_to_delete_.find(normalized_fpath) ==
+              recovery_ctx->files_to_delete_.end()) {
+        recovery_ctx->files_to_delete_.emplace(normalized_fpath);
       }
     }
   }
@@ -988,21 +1006,7 @@ Status DBImpl::DeleteUnreferencedSstFiles() {
   assert(versions_->GetColumnFamilySet());
   ColumnFamilyData* default_cfd = versions_->GetColumnFamilySet()->GetDefault();
   assert(default_cfd);
-  s = versions_->LogAndApply(
-      default_cfd, *default_cfd->GetLatestMutableCFOptions(), &edit, &mutex_,
-      directories_.GetDbDir(), /*new_descriptor_log*/ false);
-  if (!s.ok()) {
-    return s;
-  }
-
-  mutex_.Unlock();
-  for (const auto& fname : files_to_delete) {
-    s = env_->DeleteFile(fname);
-    if (!s.ok()) {
-      break;
-    }
-  }
-  mutex_.Lock();
+  recovery_ctx->UpdateVersionEdits(default_cfd, edit);
   return s;
 }
 

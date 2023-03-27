@@ -191,7 +191,9 @@ class WriteBufferManager final {
   std::atomic<size_t> flush_size_;
   // Only used when flush_size is non-zero.
   std::atomic<size_t> memory_active_;
-  const bool flush_oldest_first_;
+  std::shared_ptr<CacheReservationManager> cache_res_mgr_;
+  // Protects cache_res_mgr_
+  std::mutex cache_res_mgr_mu_;
 
   const bool allow_stall_;
   const float stall_ratio_;
@@ -202,10 +204,7 @@ class WriteBufferManager final {
   // while holding mu_, but it can be read without a lock.
   // It is a cached value of `ShouldStall()`.
   std::atomic<bool> stall_active_;
-
-  std::unique_ptr<CacheReservationManager> cache_res_mgr_;
-  // Protects cache_res_mgr_
-  std::mutex cache_res_mgr_mu_;
+  const bool flush_oldest_first_;
 
   void ReserveMemWithCache(size_t mem);
   void FreeMemWithCache(size_t mem);

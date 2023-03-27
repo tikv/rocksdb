@@ -1129,8 +1129,7 @@ TYPED_TEST(RibbonTypeParamTest, FindOccupancy) {
     return;
   }
 
-  KeyGen cur(ROCKSDB_NAMESPACE::ToString(
-                 testing::UnitTest::GetInstance()->random_seed()),
+  KeyGen cur(std::to_string(testing::UnitTest::GetInstance()->random_seed()),
              0);
 
   Banding banding;
@@ -1248,8 +1247,7 @@ TYPED_TEST(RibbonTypeParamTest, OptimizeHomogAtScale) {
     return;
   }
 
-  KeyGen cur(ROCKSDB_NAMESPACE::ToString(
-                 testing::UnitTest::GetInstance()->random_seed()),
+  KeyGen cur(std::to_string(testing::UnitTest::GetInstance()->random_seed()),
              0);
 
   Banding banding;
@@ -1301,6 +1299,7 @@ TYPED_TEST(RibbonTypeParamTest, OptimizeHomogAtScale) {
 }
 
 int main(int argc, char** argv) {
+  ROCKSDB_NAMESPACE::port::InstallStackTraceHandler();
   ::testing::InitGoogleTest(&argc, argv);
 #ifdef GFLAGS
   ParseCommandLineFlags(&argc, &argv, true);

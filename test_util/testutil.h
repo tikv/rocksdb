@@ -769,7 +769,9 @@ class ChanglingMergeOperator : public MergeOperator {
     return false;
   }
   static const char* kClassName() { return "ChanglingMergeOperator"; }
-  virtual bool IsInstanceOf(const std::string& id) const override {
+  const char* NickName() const override { return kNickName(); }
+  static const char* kNickName() { return "Changling"; }
+  bool IsInstanceOf(const std::string& id) const override {
     if (id == kClassName()) {
       return true;
     } else {
@@ -802,7 +804,10 @@ class ChanglingCompactionFilter : public CompactionFilter {
   }
 
   static const char* kClassName() { return "ChanglingCompactionFilter"; }
-  virtual bool IsInstanceOf(const std::string& id) const override {
+  const char* NickName() const override { return kNickName(); }
+  static const char* kNickName() { return "Changling"; }
+
+  bool IsInstanceOf(const std::string& id) const override {
     if (id == kClassName()) {
       return true;
     } else {
@@ -836,7 +841,10 @@ class ChanglingCompactionFilterFactory : public CompactionFilterFactory {
   // Returns a name that identifies this compaction filter factory.
   const char* Name() const override { return name_.c_str(); }
   static const char* kClassName() { return "ChanglingCompactionFilterFactory"; }
-  virtual bool IsInstanceOf(const std::string& id) const override {
+  const char* NickName() const override { return kNickName(); }
+  static const char* kNickName() { return "Changling"; }
+
+  bool IsInstanceOf(const std::string& id) const override {
     if (id == kClassName()) {
       return true;
     } else {
@@ -873,11 +881,6 @@ bool IsPrefetchSupported(const std::shared_ptr<FileSystem>& fs,
 
 // Return the number of lines where a given pattern was found in a file.
 size_t GetLinesCount(const std::string& fname, const std::string& pattern);
-
-// TEST_TMPDIR may be set to /dev/shm in Makefile,
-// but /dev/shm does not support direct IO.
-// Tries to set TEST_TMPDIR to a directory supporting direct IO.
-void ResetTmpDirForDirectIO();
 
 Status CorruptFile(Env* env, const std::string& fname, int offset,
                    int bytes_to_corrupt, bool verify_checksum = true);
