@@ -69,7 +69,7 @@ class DBMergeTest : public testing::Test {
             std::to_string(cf_id), ColumnFamilyOptions(options_)));
       }
     }
-    return std::move(column_families);
+    return column_families;
   }
 
   std::string GenDBPath(uint32_t db_id) {
