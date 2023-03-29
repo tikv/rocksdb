@@ -525,7 +525,8 @@ TEST_F(VersionBuilderTest, ApplyFileDeletionAndAddition) {
                    largest_seqno, marked_for_compaction, Temperature::kUnknown,
                    kInvalidBlobFileNumber, kUnknownOldestAncesterTime,
                    kUnknownFileCreationTime, kUnknownFileChecksum,
-                   kUnknownFileChecksumFuncName, kNullUniqueId64x2);
+                   kUnknownFileChecksumFuncName, kNullUniqueId64x2,
+                   kDisableUserTimestamp, kDisableUserTimestamp);
 
   ASSERT_OK(builder.Apply(&addition));
 
@@ -574,7 +575,8 @@ TEST_F(VersionBuilderTest, ApplyFileAdditionAlreadyInBase) {
       GetInternalKey(largest), smallest_seqno, largest_seqno,
       marked_for_compaction, Temperature::kUnknown, kInvalidBlobFileNumber,
       kUnknownOldestAncesterTime, kUnknownFileCreationTime,
-      kUnknownFileChecksum, kUnknownFileChecksumFuncName, kNullUniqueId64x2);
+      kUnknownFileChecksum, kUnknownFileChecksumFuncName, kNullUniqueId64x2,
+      kDisableUserTimestamp, kDisableUserTimestamp);
 
   const Status s = builder.Apply(&edit);
   ASSERT_TRUE(s.IsCorruption());
@@ -1319,7 +1321,8 @@ TEST_F(VersionBuilderTest, CheckConsistencyForBlobFiles) {
                Temperature::kUnknown,
                /* oldest_blob_file_number */ 16, kUnknownOldestAncesterTime,
                kUnknownFileCreationTime, kUnknownFileChecksum,
-               kUnknownFileChecksumFuncName, kNullUniqueId64x2);
+               kUnknownFileChecksumFuncName, kNullUniqueId64x2,
+               kDisableUserTimestamp, kDisableUserTimestamp);
 
   edit.AddFile(/* level */ 1, /* file_number */ 700, /* path_id */ 0,
                /* file_size */ 100, /* smallest */ GetInternalKey("801"),
