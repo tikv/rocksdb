@@ -202,8 +202,6 @@ class SubcompactionState {
     return s;
   }
 
-  bool IsPartialCompaction() { return start || end; }
-
  private:
   // State kept for output being generated
   CompactionOutputs compaction_outputs_;
