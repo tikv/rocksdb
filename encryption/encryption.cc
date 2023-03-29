@@ -132,13 +132,13 @@ Status AESCTRCipherStream::Cipher(uint64_t file_offset, char* data,
     if (ret != 1) {
       FreeCipherContext(ctx);
       return Status::IOError("Crypter failed for first block, offset " +
-                             ToString(file_offset));
+                             std::to_string(file_offset));
     }
     if (output_size != static_cast<int>(block_size)) {
       FreeCipherContext(ctx);
       return Status::IOError(
           "Unexpected crypter output size for first block, expected " +
-          ToString(block_size) + " vs actual " + ToString(output_size));
+          std::to_string(block_size) + " vs actual " + std::to_string(output_size));
     }
     memcpy(data, partial_block + block_offset, partial_block_size);
     data_offset += partial_block_size;
@@ -156,13 +156,13 @@ Status AESCTRCipherStream::Cipher(uint64_t file_offset, char* data,
     if (ret != 1) {
       FreeCipherContext(ctx);
       return Status::IOError("Crypter failed at offset " +
-                             ToString(file_offset + data_offset));
+                             std::to_string(file_offset + data_offset));
     }
     if (output_size != static_cast<int>(actual_data_size)) {
       FreeCipherContext(ctx);
       return Status::IOError("Unexpected crypter output size, expected " +
-                             ToString(actual_data_size) + " vs actual " +
-                             ToString(output_size));
+                             std::to_string(actual_data_size) + " vs actual " +
+                             std::to_string(output_size));
     }
     data_offset += actual_data_size;
     remaining_data_size -= actual_data_size;
@@ -178,13 +178,13 @@ Status AESCTRCipherStream::Cipher(uint64_t file_offset, char* data,
     if (ret != 1) {
       FreeCipherContext(ctx);
       return Status::IOError("Crypter failed for last block, offset " +
-                             ToString(file_offset + data_offset));
+                             std::to_string(file_offset + data_offset));
     }
     if (output_size != static_cast<int>(block_size)) {
       FreeCipherContext(ctx);
       return Status::IOError(
           "Unexpected crypter output size for last block, expected " +
-          ToString(block_size) + " vs actual " + ToString(output_size));
+          std::to_string(block_size) + " vs actual " + std::to_string(output_size));
     }
     memcpy(data + data_offset, partial_block, remaining_data_size);
   }
@@ -226,17 +226,17 @@ Status NewAESCTRCipherStream(EncryptionMethod method, const std::string& key,
 #endif
     default:
       return Status::InvalidArgument("Unsupported encryption method: " +
-                                     ToString(static_cast<int>(method)));
+                                     std::to_string(static_cast<int>(method)));
   }
   if (key.size() != KeySize(method)) {
     return Status::InvalidArgument("Encryption key size mismatch. " +
-                                   ToString(key.size()) + "(actual) vs. " +
-                                   ToString(KeySize(method)) + "(expected).");
+                                   std::to_string(key.size()) + "(actual) vs. " +
+                                   std::to_string(KeySize(method)) + "(expected).");
   }
   if (iv.size() != AES_BLOCK_SIZE) {
     return Status::InvalidArgument(
-        "iv size not equal to block cipher block size: " + ToString(iv.size()) +
-        "(actual) vs. " + ToString(AES_BLOCK_SIZE) + "(expected).");
+        "iv size not equal to block cipher block size: " + std::to_string(iv.size()) +
+        "(actual) vs. " + std::to_string(AES_BLOCK_SIZE) + "(expected).");
   }
   Slice iv_slice(iv);
   uint64_t iv_high =
@@ -309,7 +309,7 @@ Status KeyManagedEncryptedEnv::NewSequentialFile(
     default:
       s = Status::InvalidArgument(
           "Unsupported encryption method: " +
-          ROCKSDB_NAMESPACE::ToString(static_cast<int>(file_info.method)));
+          std::to_string(static_cast<int>(file_info.method)));
   }
   return s;
 }
@@ -335,7 +335,7 @@ Status KeyManagedEncryptedEnv::NewRandomAccessFile(
     default:
       s = Status::InvalidArgument(
           "Unsupported encryption method: " +
-          ROCKSDB_NAMESPACE::ToString(static_cast<int>(file_info.method)));
+          std::to_string(static_cast<int>(file_info.method)));
   }
   return s;
 }
@@ -369,7 +369,7 @@ Status KeyManagedEncryptedEnv::NewWritableFile(
     default:
       s = Status::InvalidArgument(
           "Unsupported encryption method: " +
-          ROCKSDB_NAMESPACE::ToString(static_cast<int>(file_info.method)));
+          std::to_string(static_cast<int>(file_info.method)));
   }
   if (!s.ok() && !skipped) {
     // Ignore error
@@ -399,7 +399,7 @@ Status KeyManagedEncryptedEnv::ReopenWritableFile(
     default:
       s = Status::InvalidArgument(
           "Unsupported encryption method: " +
-          ROCKSDB_NAMESPACE::ToString(static_cast<int>(file_info.method)));
+          std::to_string(static_cast<int>(file_info.method)));
   }
   return s;
 }
@@ -428,7 +428,7 @@ Status KeyManagedEncryptedEnv::ReuseWritableFile(
     default:
       s = Status::InvalidArgument(
           "Unsupported encryption method: " +
-          ROCKSDB_NAMESPACE::ToString(static_cast<int>(file_info.method)));
+          std::to_string(static_cast<int>(file_info.method)));
   }
   if (!s.ok()) {
     return s;
@@ -465,7 +465,7 @@ Status KeyManagedEncryptedEnv::NewRandomRWFile(
     default:
       s = Status::InvalidArgument(
           "Unsupported encryption method: " +
-          ROCKSDB_NAMESPACE::ToString(static_cast<int>(file_info.method)));
+          std::to_string(static_cast<int>(file_info.method)));
   }
   if (!s.ok()) {
     // Ignore error
