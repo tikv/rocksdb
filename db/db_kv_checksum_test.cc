@@ -449,7 +449,7 @@ TEST_P(DbKvChecksumTestMergedBatch, WriteToWALCorrupted) {
               // this writer joins the write group
               ASSERT_NE(follower->state, WriteThread::STATE_GROUP_LEADER);
               if (corrupt_byte_offset >= leader_batch_size) {
-                Slice batch_content = follower->batch->Data();
+                Slice batch_content = follower->multi_batch.batches[0]->Data();
                 CorruptWriteBatch(&batch_content,
                                   corrupt_byte_offset - leader_batch_size,
                                   corrupt_byte_addend_);
@@ -473,9 +473,9 @@ TEST_P(DbKvChecksumTestMergedBatch, WriteToWALCorrupted) {
                   .IsCorruption());
         });
 
-        ASSERT_EQ(leader->batch->GetDataSize(), leader_batch_size);
+        ASSERT_EQ(leader->multi_batch.batches[0]->GetDataSize(), leader_batch_size);
         if (corrupt_byte_offset < leader_batch_size) {
-          Slice batch_content = leader->batch->Data();
+          Slice batch_content = leader->multi_batch.batches[0]->Data();
           CorruptWriteBatch(&batch_content, corrupt_byte_offset,
                             corrupt_byte_addend_);
         }
@@ -562,7 +562,7 @@ TEST_P(DbKvChecksumTestMergedBatch, WriteToWALWithColumnFamilyCorrupted) {
               ASSERT_NE(follower->state, WriteThread::STATE_GROUP_LEADER);
               if (corrupt_byte_offset >= leader_batch_size) {
                 Slice batch_content =
-                    WriteBatchInternal::Contents(follower->batch);
+                    WriteBatchInternal::Contents(follower->multi_batch.batches[0]);
                 CorruptWriteBatch(&batch_content,
                                   corrupt_byte_offset - leader_batch_size,
                                   corrupt_byte_addend_);
@@ -585,9 +585,9 @@ TEST_P(DbKvChecksumTestMergedBatch, WriteToWALWithColumnFamilyCorrupted) {
                   .IsCorruption());
         });
 
-        ASSERT_EQ(leader->batch->GetDataSize(), leader_batch_size);
+        ASSERT_EQ(leader->multi_batch.batches[0]->GetDataSize(), leader_batch_size);
         if (corrupt_byte_offset < leader_batch_size) {
-          Slice batch_content = WriteBatchInternal::Contents(leader->batch);
+          Slice batch_content = WriteBatchInternal::Contents(leader->multi_batch.batches[0]);
           CorruptWriteBatch(&batch_content, corrupt_byte_offset,
                             corrupt_byte_addend_);
         }
