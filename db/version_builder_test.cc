@@ -72,7 +72,8 @@ class VersionBuilderTest : public testing::Test {
         /* marked_for_compact */ false, Temperature::kUnknown,
         oldest_blob_file_number, kUnknownOldestAncesterTime,
         kUnknownFileCreationTime, kUnknownFileChecksum,
-        kUnknownFileChecksumFuncName, kNullUniqueId64x2);
+        kUnknownFileChecksumFuncName, kNullUniqueId64x2,
+        kDisableUserTimestamp, kDisableUserTimestamp);
     f->compensated_file_size = file_size;
     f->num_entries = num_entries;
     f->num_deletions = num_deletions;
