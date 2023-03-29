@@ -146,7 +146,8 @@ class CompactionPickerTestBase : public testing::Test {
         smallest_seq, largest_seq, marked_for_compact, temperature,
         kInvalidBlobFileNumber, kUnknownOldestAncesterTime,
         kUnknownFileCreationTime, kUnknownFileChecksum,
-        kUnknownFileChecksumFuncName, kNullUniqueId64x2);
+        kUnknownFileChecksumFuncName, kNullUniqueId64x2,
+        kDisableUserTimestamp, kDisableUserTimestamp);
     f->compensated_file_size =
         (compensated_file_size != 0) ? compensated_file_size : file_size;
     f->oldest_ancester_time = oldest_ancestor_time;
