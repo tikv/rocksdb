@@ -967,7 +967,7 @@ TEST_F(PerfContextTest, BitMapControl) {
       {PerfFlag::user_key_comparison_count, PerfFlag::write_wal_time}));
 
   for (int i = 0; i < FLAGS_total_keys; ++i) {
-    std::string i_str = ToString(i);
+    std::string i_str = std::to_string(i);
     std::string key = "k" + i_str;
     std::string value = "v" + i_str;
 
