@@ -871,6 +871,8 @@ void DBImpl::NotifyOnFlushBegin(ColumnFamilyData* cfd, FileMetaData* file_meta,
   (void)file_meta;
   (void)mutable_cf_options;
   (void)job_id;
+  (void)earliest_seqno;
+  (void)largest_seqno;
 #endif  // ROCKSDB_LITE
 }
 
