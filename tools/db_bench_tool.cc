@@ -993,9 +993,6 @@ DEFINE_uint64(fifo_age_for_warm, 0, "age_for_warm for FIFO compaction.");
 // Stacked BlobDB Options
 DEFINE_bool(use_blob_db, false, "[Stacked BlobDB] Open a BlobDB instance.");
 
-DEFINE_bool(use_multi_thread_write, false,
-            "Open a RocksDB with multi thread write pool");
-
 DEFINE_bool(
     blob_db_enable_gc,
     ROCKSDB_NAMESPACE::blob_db::BlobDBOptions().enable_garbage_collection,
@@ -1135,6 +1132,9 @@ DEFINE_int32(secondary_update_interval, 5,
 
 DEFINE_bool(report_bg_io_stats, false,
             "Measure times spents on I/Os while in compactions. ");
+
+DEFINE_bool(use_multi_thread_write, false,
+            "Open a RocksDB with multi thread write pool");
 
 DEFINE_bool(use_stderr_info_logger, false,
             "Write info logs to stderr instead of to LOG file. ");
