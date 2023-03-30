@@ -3821,7 +3821,7 @@ bool DBImpl::GetProperty(ColumnFamilyHandle* column_family,
   if (property_info == nullptr) {
     return false;
   } else if (property_info->handle_int) {
-    uint64_t int_value;
+    uint64_t int_value = 0;
     bool ret_value =
         GetIntPropertyInternal(cfd, *property_info, false, &int_value);
     if (ret_value) {
@@ -3951,7 +3951,7 @@ bool DBImpl::GetAggregatedIntProperty(const Slice& property,
   {
     // Needs mutex to protect the list of column families.
     InstrumentedMutexLock l(&mutex_);
-    uint64_t value;
+    uint64_t value = 0;
     for (auto* cfd : versions_->GetRefedColumnFamilySet()) {
       if (!cfd->initialized()) {
         continue;
