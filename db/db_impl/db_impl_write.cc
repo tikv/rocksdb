@@ -1410,16 +1410,7 @@ Status DBImpl::PreprocessWrite(const WriteOptions& write_options,
 
   // Ordering: before write delay.
   if (UNLIKELY(status.ok() && write_buffer_manager_->ShouldFlush())) {
-    // TODO CYRIL check if it's still needed
-    // write_buffer_manager_->MaybeFlush(this);
-    // Before a new memtable is added in SwitchMemtable(),
-    // write_buffer_manager_->ShouldFlush() will keep returning true. If another
-    // thread is writing to another DB with the same write buffer, they may also
-    // be flushed. We may end up with flushing much more DBs than needed. It's
-    // suboptimal but still correct.
-    InstrumentedMutexLock l(&mutex_);
-    WaitForPendingWrites();
-    status = HandleWriteBufferManagerFlush(write_context);
+    write_buffer_manager_->MaybeFlush(this);
   }
 
   if (UNLIKELY(status.ok() && !trim_history_scheduler_.Empty())) {
