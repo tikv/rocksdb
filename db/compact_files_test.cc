@@ -122,11 +122,11 @@ TEST_F(CompactFilesTest, FilterContext) {
   assert(db);
 
   // `Flush` is different from `Compaction`.
-  db->Put(WriteOptions(), ToString(1), "");
-  db->Put(WriteOptions(), ToString(51), "");
+  db->Put(WriteOptions(), std::to_string(1), "");
+  db->Put(WriteOptions(), std::to_string(51), "");
   db->Flush(FlushOptions());
-  db->Put(WriteOptions(), ToString(50), "");
-  db->Put(WriteOptions(), ToString(99), "");
+  db->Put(WriteOptions(), std::to_string(50), "");
+  db->Put(WriteOptions(), std::to_string(99), "");
   db->Flush(FlushOptions());
   ASSERT_EQ(*compaction_count.get(), 0);
 
