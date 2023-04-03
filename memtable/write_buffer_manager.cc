@@ -190,10 +190,13 @@ void WriteBufferManager::MaybeFlushLocked(DB* this_db) {
   uint64_t deadline_interval = flush_deadline_.load(std::memory_order_relaxed);
   uint64_t deadline_time = 0;
   if (deadline_interval != std::numeric_limits<uint64_t>::max()) {
-    uint64_t current;
-    SystemClock::Default()->GetCurrentTime(&current);
-    if (current > deadline_interval) {
-      deadline_time = current - deadline_interval;
+    int64_t current;
+    auto s = SystemClock::Default()->GetCurrentTime(&current);
+    if (s.ok()) {
+      assert(current > 0);
+      if (static_cast<uint64_t>(current) > deadline_interval) {
+        deadline_time = static_cast<uint64_t>(current) - deadline_interval;
+      }
     }
   }
   for (auto& s : sentinels_) {
