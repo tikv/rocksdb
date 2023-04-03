@@ -192,7 +192,9 @@ void WriteBufferManager::MaybeFlushLocked(DB* this_db) {
   if (deadline_interval != std::numeric_limits<uint64_t>::max()) {
     uint64_t current;
     SystemClock::Default()->GetCurrentTime(&current);
-    deadline_time = current - deadline_interval;
+    if (current > deadline_interval) {
+      deadline_time = current - deadline_interval;
+    }
   }
   for (auto& s : sentinels_) {
     uint64_t current_memory_bytes = std::numeric_limits<uint64_t>::max();
