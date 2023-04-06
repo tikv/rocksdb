@@ -542,6 +542,7 @@ Status DBImpl::Recover(
           !cfd->GetLatestMutableCFOptions()->disable_auto_compactions) {
         int to_level = cfd->ioptions()->num_levels - 1;
         // last level is reserved
+        // allow_ingest_behind does not support Level Compaction.
         if (cfd->ioptions()->allow_ingest_behind) {
           to_level -= 1;
         }

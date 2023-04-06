@@ -200,7 +200,9 @@ TEST_F(CompactFilesTest, L0ConflictsFiles) {
 TEST_F(CompactFilesTest, MultipleLevel) {
   Options options;
   options.create_if_missing = true;
-  options.level_compaction_dynamic_level_bytes = true;
+  // Otherwise background compaction can happen to
+  // drain unnecessary level
+  options.level_compaction_dynamic_level_bytes = false;
   options.num_levels = 6;
   // Add listener
   FlushedFileCollector* collector = new FlushedFileCollector();
@@ -258,7 +260,6 @@ TEST_F(CompactFilesTest, MultipleLevel) {
   for (int invalid_output_level = 0; invalid_output_level < 5;
        invalid_output_level++) {
     s = db->CompactFiles(CompactionOptions(), files, invalid_output_level);
-    std::cout << s.ToString() << std::endl;
     ASSERT_TRUE(s.IsInvalidArgument());
   }
 
