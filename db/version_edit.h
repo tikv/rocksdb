@@ -235,8 +235,8 @@ struct FileMetaData {
                uint64_t _oldest_ancester_time, uint64_t _file_creation_time,
                const std::string& _file_checksum,
                const std::string& _file_checksum_func_name,
-               UniqueId64x2 _unique_id,
-               std::string _min_timestamp, std::string _max_timestamp)
+               UniqueId64x2 _unique_id, std::string _min_timestamp,
+               std::string _max_timestamp)
       : fd(file, file_path_id, file_size, smallest_seq, largest_seq),
         smallest(smallest_key),
         largest(largest_key),
@@ -478,8 +478,8 @@ class VersionEdit {
                uint64_t oldest_ancester_time, uint64_t file_creation_time,
                const std::string& file_checksum,
                const std::string& file_checksum_func_name,
-               const UniqueId64x2& unique_id,
-               std::string min_timestamp, std::string max_timestamp) {
+               const UniqueId64x2& unique_id, std::string min_timestamp,
+               std::string max_timestamp) {
     assert(smallest_seqno <= largest_seqno);
     new_files_.emplace_back(
         level,

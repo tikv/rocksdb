@@ -72,8 +72,8 @@ class VersionBuilderTest : public testing::Test {
         /* marked_for_compact */ false, Temperature::kUnknown,
         oldest_blob_file_number, kUnknownOldestAncesterTime,
         kUnknownFileCreationTime, kUnknownFileChecksum,
-        kUnknownFileChecksumFuncName, kNullUniqueId64x2,
-        kDisableUserTimestamp, kDisableUserTimestamp);
+        kUnknownFileChecksumFuncName, kNullUniqueId64x2, kDisableUserTimestamp,
+        kDisableUserTimestamp);
     f->compensated_file_size = file_size;
     f->num_entries = num_entries;
     f->num_deletions = num_deletions;
@@ -570,13 +570,13 @@ TEST_F(VersionBuilderTest, ApplyFileAdditionAlreadyInBase) {
   constexpr SequenceNumber largest_seqno = 1000;
   constexpr bool marked_for_compaction = false;
 
-  edit.AddFile(
-      new_level, file_number, path_id, file_size, GetInternalKey(smallest),
-      GetInternalKey(largest), smallest_seqno, largest_seqno,
-      marked_for_compaction, Temperature::kUnknown, kInvalidBlobFileNumber,
-      kUnknownOldestAncesterTime, kUnknownFileCreationTime,
-      kUnknownFileChecksum, kUnknownFileChecksumFuncName, kNullUniqueId64x2,
-      kDisableUserTimestamp, kDisableUserTimestamp);
+  edit.AddFile(new_level, file_number, path_id, file_size,
+               GetInternalKey(smallest), GetInternalKey(largest),
+               smallest_seqno, largest_seqno, marked_for_compaction,
+               Temperature::kUnknown, kInvalidBlobFileNumber,
+               kUnknownOldestAncesterTime, kUnknownFileCreationTime,
+               kUnknownFileChecksum, kUnknownFileChecksumFuncName,
+               kNullUniqueId64x2, kDisableUserTimestamp, kDisableUserTimestamp);
 
   const Status s = builder.Apply(&edit);
   ASSERT_TRUE(s.IsCorruption());
@@ -1553,8 +1553,8 @@ TEST_F(VersionBuilderTest, MaintainLinkedSstsForBlobFiles) {
       Temperature::kUnknown,
       /* oldest_blob_file_number */ 1, kUnknownOldestAncesterTime,
       kUnknownFileCreationTime, kUnknownFileChecksum,
-      kUnknownFileChecksumFuncName, kNullUniqueId64x2,
-      kDisableUserTimestamp, kDisableUserTimestamp);
+      kUnknownFileChecksumFuncName, kNullUniqueId64x2, kDisableUserTimestamp,
+      kDisableUserTimestamp);
 
   // Add an SST that does not reference any blob files.
   edit.AddFile(
@@ -1564,8 +1564,8 @@ TEST_F(VersionBuilderTest, MaintainLinkedSstsForBlobFiles) {
       /* largest_seqno */ 2200, /* marked_for_compaction */ false,
       Temperature::kUnknown, kInvalidBlobFileNumber, kUnknownOldestAncesterTime,
       kUnknownFileCreationTime, kUnknownFileChecksum,
-      kUnknownFileChecksumFuncName, kNullUniqueId64x2,
-      kDisableUserTimestamp, kDisableUserTimestamp);
+      kUnknownFileChecksumFuncName, kNullUniqueId64x2, kDisableUserTimestamp,
+      kDisableUserTimestamp);
 
   // Delete a file that references a blob file.
   edit.DeleteFile(/* level */ 1, /* file_number */ 6);

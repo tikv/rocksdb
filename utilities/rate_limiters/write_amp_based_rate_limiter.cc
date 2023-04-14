@@ -304,7 +304,8 @@ void WriteAmpBasedRateLimiter::Refill() {
 
 int64_t WriteAmpBasedRateLimiter::CalculateRefillBytesPerPeriod(
     int64_t rate_bytes_per_sec) {
-  if (std::numeric_limits<int64_t>::max() / rate_bytes_per_sec < refill_period_us_) {
+  if (std::numeric_limits<int64_t>::max() / rate_bytes_per_sec <
+      refill_period_us_) {
     // Avoid unexpected result in the overflow case. The result now is still
     // inaccurate but is a number that is large enough.
     return std::numeric_limits<int64_t>::max() / 1000000;

@@ -1737,7 +1737,6 @@ DEFINE_string(
     encryption_method, "",
     "If non-empty, enable encryption with the specific encryption method.");
 
-
 DEFINE_uint32(write_batch_protection_bytes_per_key, 0,
               "Size of per-key-value checksum in each write batch. Currently "
               "only value 0 and 8 are supported.");

@@ -44,7 +44,8 @@ TEST_F(VersionEditTest, EncodeDecode) {
                  InternalKey("zoo", kBig + 600 + i, kTypeDeletion),
                  kBig + 500 + i, kBig + 600 + i, false, Temperature::kUnknown,
                  kInvalidBlobFileNumber, 888, 678, "234", "crc32c",
-                 kNullUniqueId64x2, kDisableUserTimestamp, kDisableUserTimestamp);
+                 kNullUniqueId64x2, kDisableUserTimestamp,
+                 kDisableUserTimestamp);
     edit.DeleteFile(4, kBig + 700 + i);
   }
 

@@ -127,7 +127,6 @@ enum PerfFlag : uint32_t {
   internal_range_del_reseek_count,
   number_async_seek,
 
-
   // Should always be the last
   COUNT
 };

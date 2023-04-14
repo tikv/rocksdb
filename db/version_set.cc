@@ -5970,7 +5970,8 @@ Status VersionSet::DumpManifest(Options& options, std::string& dscname,
     cf_descs.emplace_back(cf, options);
   }
 
-  DumpManifestHandler handler(cf_descs, this, io_tracer_, verbose, hex, json, sst_file_number);
+  DumpManifestHandler handler(cf_descs, this, io_tracer_, verbose, hex, json,
+                              sst_file_number);
   {
     VersionSet::LogReporter reporter;
     reporter.status = &s;

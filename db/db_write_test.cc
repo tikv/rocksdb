@@ -703,8 +703,9 @@ TEST_P(DBWriteTest, MultiThreadWrite) {
               WriteBatch* batch = &data[i];
               batch->Clear();
               for (int k = 0; k < kBatchSize; k++) {
-                batch->Put("key_" + std::to_string(index) + "_" + std::to_string(j) + "_" +
-                           std::to_string(i) + "_" + std::to_string(k),
+                batch->Put("key_" + std::to_string(index) + "_" +
+                               std::to_string(j) + "_" + std::to_string(i) +
+                               "_" + std::to_string(k),
                            "value" + std::to_string(k));
               }
               batches.push_back(batch);
@@ -723,10 +724,11 @@ TEST_P(DBWriteTest, MultiThreadWrite) {
     for (int i = 0; i < kNumWrite; i++) {
       for (int j = 0; j < kNumBatch; j++) {
         for (int k = 0; k < kBatchSize; k++) {
-          ASSERT_OK(dbfull()->Get(opt,
-                                  "key_" + std::to_string(t) + "_" + std::to_string(i) +
-                                      "_" + std::to_string(j) + "_" + std::to_string(k),
-                                  &value));
+          ASSERT_OK(dbfull()->Get(
+              opt,
+              "key_" + std::to_string(t) + "_" + std::to_string(i) + "_" +
+                  std::to_string(j) + "_" + std::to_string(k),
+              &value));
           std::string expected_value = "value" + std::to_string(k);
           ASSERT_EQ(expected_value, value);
         }

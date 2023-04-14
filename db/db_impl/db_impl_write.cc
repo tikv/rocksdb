@@ -546,8 +546,8 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
 
   PERF_TIMER_GUARD(write_pre_and_post_process_time);
   WriteThread::Writer w(write_options, my_batch, callback, post_callback,
-                        log_ref, disable_memtable, batch_cnt, pre_release_callback,
-                        post_memtable_callback);
+                        log_ref, disable_memtable, batch_cnt,
+                        pre_release_callback, post_memtable_callback);
   StopWatch write_sw(immutable_db_options_.clock, stats_, DB_WRITE);
 
   write_thread_.JoinBatchGroup(&w);

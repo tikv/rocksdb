@@ -50,8 +50,8 @@ class GenerateLevelFilesBriefTest : public testing::Test {
         largest_seq, /* marked_for_compact */ false, Temperature::kUnknown,
         kInvalidBlobFileNumber, kUnknownOldestAncesterTime,
         kUnknownFileCreationTime, kUnknownFileChecksum,
-        kUnknownFileChecksumFuncName, kNullUniqueId64x2,
-        kDisableUserTimestamp, kDisableUserTimestamp);
+        kUnknownFileChecksumFuncName, kNullUniqueId64x2, kDisableUserTimestamp,
+        kDisableUserTimestamp);
     files_.push_back(f);
   }
 

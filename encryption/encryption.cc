@@ -138,7 +138,8 @@ Status AESCTRCipherStream::Cipher(uint64_t file_offset, char* data,
       FreeCipherContext(ctx);
       return Status::IOError(
           "Unexpected crypter output size for first block, expected " +
-          std::to_string(block_size) + " vs actual " + std::to_string(output_size));
+          std::to_string(block_size) + " vs actual " +
+          std::to_string(output_size));
     }
     memcpy(data, partial_block + block_offset, partial_block_size);
     data_offset += partial_block_size;
@@ -184,7 +185,8 @@ Status AESCTRCipherStream::Cipher(uint64_t file_offset, char* data,
       FreeCipherContext(ctx);
       return Status::IOError(
           "Unexpected crypter output size for last block, expected " +
-          std::to_string(block_size) + " vs actual " + std::to_string(output_size));
+          std::to_string(block_size) + " vs actual " +
+          std::to_string(output_size));
     }
     memcpy(data + data_offset, partial_block, remaining_data_size);
   }
@@ -229,14 +231,15 @@ Status NewAESCTRCipherStream(EncryptionMethod method, const std::string& key,
                                      std::to_string(static_cast<int>(method)));
   }
   if (key.size() != KeySize(method)) {
-    return Status::InvalidArgument("Encryption key size mismatch. " +
-                                   std::to_string(key.size()) + "(actual) vs. " +
-                                   std::to_string(KeySize(method)) + "(expected).");
+    return Status::InvalidArgument(
+        "Encryption key size mismatch. " + std::to_string(key.size()) +
+        "(actual) vs. " + std::to_string(KeySize(method)) + "(expected).");
   }
   if (iv.size() != AES_BLOCK_SIZE) {
     return Status::InvalidArgument(
-        "iv size not equal to block cipher block size: " + std::to_string(iv.size()) +
-        "(actual) vs. " + std::to_string(AES_BLOCK_SIZE) + "(expected).");
+        "iv size not equal to block cipher block size: " +
+        std::to_string(iv.size()) + "(actual) vs. " +
+        std::to_string(AES_BLOCK_SIZE) + "(expected).");
   }
   Slice iv_slice(iv);
   uint64_t iv_high =

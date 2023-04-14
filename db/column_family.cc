@@ -1258,8 +1258,8 @@ Status ColumnFamilyData::GetMemtablesUserKeyRange(PinnableSlice* smallest,
     autovector<MemTable*> memtables{mem_};
     imm_.ExportMemtables(&memtables);
     for (auto* mem : memtables) {
-      auto* iter =
-          mem->NewRangeTombstoneIterator(read_opts, kMaxSequenceNumber, false /* immutable_memtable */);
+      auto* iter = mem->NewRangeTombstoneIterator(
+          read_opts, kMaxSequenceNumber, false /* immutable_memtable */);
       if (iter != nullptr) {
         iter->SeekToFirst();
         if (iter->Valid()) {

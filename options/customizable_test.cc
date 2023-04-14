@@ -16,9 +16,9 @@
 #include <unordered_set>
 
 #include "db/db_test_util.h"
-#include "monitoring/statistics_impl.h"
 #include "memory/jemalloc_nodump_allocator.h"
 #include "memory/memkind_kmem_allocator.h"
+#include "monitoring/statistics_impl.h"
 #include "options/options_helper.h"
 #include "options/options_parser.h"
 #include "port/stack_trace.h"

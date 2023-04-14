@@ -26,8 +26,8 @@ namespace ROCKSDB_NAMESPACE {
 class WriteAmpBasedRateLimiterTest : public testing::Test {};
 
 TEST_F(WriteAmpBasedRateLimiterTest, OverflowRate) {
-  WriteAmpBasedRateLimiter limiter(std::numeric_limits<int64_t>::max(), 1000, 10,
-                                   RateLimiter::Mode::kWritesOnly,
+  WriteAmpBasedRateLimiter limiter(std::numeric_limits<int64_t>::max(), 1000,
+                                   10, RateLimiter::Mode::kWritesOnly,
                                    Env::Default(), false /* auto_tuned */);
   ASSERT_GT(limiter.GetSingleBurstBytes(), 1000000000ll);
 }
