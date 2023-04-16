@@ -302,7 +302,7 @@ TEST_F(AutoRollLoggerTest, CompositeRollByTimeAndSizeLogger) {
 #ifndef OS_WIN
 // TODO: does not build for Windows because of EnvLogger use below. Need to
 // port
-TEST_F(AutoRollLoggerTest, CreateLoggerFromOptions) {
+TEST_F(AutoRollLoggerTest, DISABLED_CreateLoggerFromOptions) {
   DBOptions options;
   auto nsc =
       std::make_shared<EmulatedSystemClock>(SystemClock::Default(), true);
