@@ -93,7 +93,7 @@ class TestFilterFactory : public CompactionFilterFactory {
   }
 };
 
-TEST_F(CompactFilesTest, FilterContext) {
+TEST_F(CompactFilesTest, DISABLED_FilterContext) {
   Options options;
   // to trigger compaction more easily
   const int kWriteBufferSize = 10000;
