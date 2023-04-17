@@ -97,6 +97,8 @@ class KeyManagedEncryptedEnv : public EnvWrapper {
   Status RenameFile(const std::string& src_fname,
                     const std::string& dst_fname) override;
 
+  Status DeleteDir(const std::string& dname) override;
+
  private:
   const std::shared_ptr<KeyManager> key_manager_;
   const std::shared_ptr<AESEncryptionProvider> provider_;
