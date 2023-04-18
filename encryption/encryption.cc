@@ -541,6 +541,8 @@ Status KeyManagedEncryptedEnv::DeleteDir(const std::string& dname) {
   if (!s.ok()) {
     return s;
   }
+  // We don't use a dedicated `DeleteDir` function, because RocksDB already uses
+  // `RenameFile` for both file and directory.
   return key_manager_->DeleteFile(dname);
 }
 
