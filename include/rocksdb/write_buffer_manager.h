@@ -56,17 +56,13 @@ class WriteBufferManager final {
   // when `flush_size` is triggered. By enabling this flag, the oldest mutable
   // memtable will be frozen instead.
   //
-  // - flush_deadline: Interval in seconds. Flush memtable immediately if its
-  // oldest key was written before `now - flush_deadline` and the total memory
-  // reaches `flush_size`.
-  //
   // - cache: if `cache` is provided, memtable memory will be charged as a
   // dummy entry This is useful to keep the memory sum of both memtable and
   // block cache under control.
-  explicit WriteBufferManager(
-      size_t flush_size, std::shared_ptr<Cache> cache = {},
-      float stall_ratio = 0.0, bool flush_oldest_first = false,
-      uint64_t flush_deadline = std::numeric_limits<uint64_t>::max());
+  explicit WriteBufferManager(size_t flush_size,
+                              std::shared_ptr<Cache> cache = {},
+                              float stall_ratio = 0.0,
+                              bool flush_oldest_first = false);
   // No copying allowed
   WriteBufferManager(const WriteBufferManager&) = delete;
   WriteBufferManager& operator=(const WriteBufferManager&) = delete;
@@ -103,10 +99,6 @@ class WriteBufferManager final {
 
   void SetFlushOldestFirst(bool v) {
     flush_oldest_first_.store(v, std::memory_order_relaxed);
-  }
-
-  void SetDeadline(uint64_t deadline) {
-    flush_deadline_.store(deadline, std::memory_order_relaxed);
   }
 
   // Below functions should be called by RocksDB internally.
@@ -204,7 +196,6 @@ class WriteBufferManager final {
   // Only used when flush_size is non-zero.
   std::atomic<size_t> memory_active_;
   std::atomic<bool> flush_oldest_first_;
-  std::atomic<uint64_t> flush_deadline_;
 
   const bool allow_stall_;
   const float stall_ratio_;
