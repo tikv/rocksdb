@@ -199,7 +199,8 @@ void WriteBufferManager::MaybeFlushLocked(DB* this_db) {
     }
     // A very mild penalty for too many L0 files.
     uint64_t level0;
-    if (s->db->GetProperty(kNumFilesAtLevelPrefix + "0", &level0).ok() &&
+    if (s->db->GetIntProperty(DB::Properties::kNumFilesAtLevelPrefix + "0",
+                              &level0) &&
         level0 >= 4) {
       // 4->2, 5->4, 6->8, 7->12, 8->18
       uint64_t factor = (level0 - 2) * (level0 - 2) / 2;
