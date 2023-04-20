@@ -199,15 +199,23 @@ void WriteBufferManager::MaybeFlushLocked(DB* this_db) {
     }
     // A very mild penalty for too many L0 files.
     uint64_t level0;
+    // 3 is to optimize the frequency of getting options, which uses mutex.
     if (s->db->GetIntProperty(DB::Properties::kNumFilesAtLevelPrefix + "0",
                               &level0) &&
-        level0 >= 4) {
-      // 4->2, 5->4, 6->8, 7->12, 8->18
-      uint64_t factor = (level0 - 2) * (level0 - 2) / 2;
-      if (factor > 100) {
-        factor = 100;
+        level0 >= 3) {
+      auto opts = s->db->GetOptions(s->cf);
+      if (opts.level0_file_num_compaction_trigger > 0 &&
+          level0 >=
+              static_cast<uint64_t>(opts.level0_file_num_compaction_trigger)) {
+        auto diff = level0 - static_cast<uint64_t>(
+                                 opts.level0_file_num_compaction_trigger);
+        // 0->2, +1->4, +2->8, +3->12, +4->18
+        uint64_t factor = (diff + 2) * (diff + 2) / 2;
+        if (factor > 100) {
+          factor = 100;
+        }
+        current_score = current_score * (100 - factor) / factor;
       }
-      current_score = current_score * (100 - factor) / factor;
     }
     if (current_score > max_score) {
       candidate = s.get();
