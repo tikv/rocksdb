@@ -97,6 +97,10 @@ class WriteBufferManager final {
 
   void SetFlushSize(size_t new_size);
 
+  void SetFlushOldestFirst(bool v) {
+    flush_oldest_first_.store(v, std::memory_order_relaxed);
+  }
+
   // Below functions should be called by RocksDB internally.
 
   // This handle is the same as the one created by `DB::Open` or
@@ -190,6 +194,7 @@ class WriteBufferManager final {
   std::atomic<size_t> flush_size_;
   // Only used when flush_size is non-zero.
   std::atomic<size_t> memory_active_;
+  std::atomic<bool> flush_oldest_first_;
 
   const bool flush_oldest_first_;
   const bool allow_stall_;

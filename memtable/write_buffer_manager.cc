@@ -171,16 +171,38 @@ void WriteBufferManager::MaybeFlushLocked(DB* this_db) {
   uint64_t candidate_size = 0;
   uint64_t max_score = 0;
   uint64_t current_score = 0;
+
   for (auto& s : sentinels_) {
+    // TODO: move this calculation to a callback.
     uint64_t current_memory_bytes = std::numeric_limits<uint64_t>::max();
     uint64_t oldest_time = std::numeric_limits<uint64_t>::max();
     s->db->GetApproximateActiveMemTableStats(s->cf, &current_memory_bytes,
                                              &oldest_time);
-    if (flush_oldest_first_) {
+    if (flush_oldest_first_.load(std::memory_order_relaxed)) {
       // Convert oldest to highest score.
       current_score = std::numeric_limits<uint64_t>::max() - oldest_time;
     } else {
       current_score = current_memory_bytes;
+    }
+    // A very mild penalty for too many L0 files.
+    uint64_t level0;
+    // 3 is to optimize the frequency of getting options, which uses mutex.
+    if (s->db->GetIntProperty(DB::Properties::kNumFilesAtLevelPrefix + "0",
+                              &level0) &&
+        level0 >= 3) {
+      auto opts = s->db->GetOptions(s->cf);
+      if (opts.level0_file_num_compaction_trigger > 0 &&
+          level0 >=
+              static_cast<uint64_t>(opts.level0_file_num_compaction_trigger)) {
+        auto diff = level0 - static_cast<uint64_t>(
+                                 opts.level0_file_num_compaction_trigger);
+        // 0->2, +1->4, +2->8, +3->12, +4->18
+        uint64_t factor = (diff + 2) * (diff + 2) / 2;
+        if (factor > 100) {
+          factor = 100;
+        }
+        current_score = current_score * (100 - factor) / factor;
+      }
     }
     if (current_score > max_score) {
       candidate = s.get();
