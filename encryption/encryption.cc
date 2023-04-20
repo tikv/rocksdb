@@ -538,6 +538,16 @@ Status KeyManagedEncryptedEnv::RenameFile(const std::string& src_fname,
   return s;
 }
 
+Status KeyManagedEncryptedEnv::DeleteDir(const std::string& dname) {
+  Status s = target()->DeleteDir(dname);
+  if (!s.ok()) {
+    return s;
+  }
+  // We don't use a dedicated `DeleteDir` function, because RocksDB already uses
+  // `RenameFile` for both file and directory.
+  return key_manager_->DeleteFile(dname);
+}
+
 Env* NewKeyManagedEncryptedEnv(Env* base_env,
                                std::shared_ptr<KeyManager>& key_manager) {
   std::shared_ptr<AESEncryptionProvider> provider(
