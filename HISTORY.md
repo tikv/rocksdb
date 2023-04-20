@@ -29,6 +29,7 @@
 * In leveled compaction with dynamic levelling, level multiplier is not anymore adjusted due to oversized L0. Instead, compaction score is adjusted by increasing size level target by adding incoming bytes from upper levels. This would deprioritize compactions from upper levels if more data from L0 is coming. This is to fix some unnecessary full stalling due to drastic change of level targets, while not wasting write bandwidth for compaction while writes are overloaded.
 * For level compaction with `level_compaction_dynamic_level_bytes=true`, RocksDB now trivially moves levels down to fill LSM starting from bottommost level during DB open. See more in comments for option `level_compaction_dynamic_level_bytes`.
 * For level compaction with `level_compaction_dynamic_level_bytes=true`, RocksDB now drains unnecessary levels through background compaction automatically (#11340). This together with #11321 makes it automatic to migrate other compaction settings to level compaction with `level_compaction_dynamic_level_bytes=true`. In addition, a live DB that becomes smaller will now have unnecessary levels drained which can help to reduce read and space amp.
+* If `CompactRange()` is called with `CompactRangeOptions::bottommost_level_compaction=kForce*` to compact from L0 to L1, RocksDB now will try to do trivial move from L0 to L1 and then do an intra L1 compaction, instead of a L0 to L1 compaction with trivial move disabled (#11375).
 
 ## 6.29.5 (03/29/2022)
 ### Bug Fixes
