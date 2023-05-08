@@ -34,12 +34,14 @@ Status DBImpl::FlushForGetLiveFiles() {
 
   // flush all dirty data to disk.
   Status status;
+  FlushOptions opts;
+  opts.allow_write_stall = true;
   if (immutable_db_options_.atomic_flush) {
     autovector<ColumnFamilyData*> cfds;
     SelectColumnFamiliesForAtomicFlush(&cfds);
     mutex_.Unlock();
     status =
-        AtomicFlushMemTables(cfds, FlushOptions(), FlushReason::kGetLiveFiles);
+        AtomicFlushMemTables(cfds, opts, FlushReason::kGetLiveFiles);
     if (status.IsColumnFamilyDropped()) {
       status = Status::OK();
     }
@@ -50,7 +52,7 @@ Status DBImpl::FlushForGetLiveFiles() {
         continue;
       }
       mutex_.Unlock();
-      status = FlushMemTable(cfd, FlushOptions(), FlushReason::kGetLiveFiles);
+      status = FlushMemTable(cfd, opts, FlushReason::kGetLiveFiles);
       TEST_SYNC_POINT("DBImpl::GetLiveFiles:1");
       TEST_SYNC_POINT("DBImpl::GetLiveFiles:2");
       mutex_.Lock();
