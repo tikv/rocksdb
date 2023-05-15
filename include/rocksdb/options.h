@@ -1716,10 +1716,9 @@ struct FlushOptions {
   // is performed by someone else (foreground call or background thread).
   // Default: false
   bool allow_write_stall;
-  // Only switch mutable memtable if its size is no smaller than this parameter.
-  // Zero is no-op.
-  // Default: 0
-  uint64_t min_size_to_flush;
+  // Only flush memtable if it has the expected oldest key time.
+  // Zero is no-op. Ignored for atomic flush.
+  uint64_t expected_oldest_key_time;
   // Used by RocksDB internally.
   // Default: false
   bool _write_stopped;
@@ -1727,7 +1726,7 @@ struct FlushOptions {
   FlushOptions()
       : wait(true),
         allow_write_stall(false),
-        min_size_to_flush(0),
+        expected_oldest_key_time(0),
         _write_stopped(false) {}
 };
 
