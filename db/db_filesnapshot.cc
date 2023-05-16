@@ -40,8 +40,7 @@ Status DBImpl::FlushForGetLiveFiles() {
     autovector<ColumnFamilyData*> cfds;
     SelectColumnFamiliesForAtomicFlush(&cfds);
     mutex_.Unlock();
-    status =
-        AtomicFlushMemTables(cfds, opts, FlushReason::kGetLiveFiles);
+    status = AtomicFlushMemTables(cfds, opts, FlushReason::kGetLiveFiles);
     if (status.IsColumnFamilyDropped()) {
       status = Status::OK();
     }
