@@ -1719,6 +1719,9 @@ struct FlushOptions {
   // Only flush memtable if it has the expected oldest key time.
   // Zero is no-op. Ignored for atomic flush.
   uint64_t expected_oldest_key_time;
+  // Abort flush if compaction is disabled via `DisableManualCompaction`.
+  // Default: false
+  bool check_if_compaction_disabled;
   // Used by RocksDB internally.
   // Default: false
   bool _write_stopped;
@@ -1727,6 +1730,7 @@ struct FlushOptions {
       : wait(true),
         allow_write_stall(false),
         expected_oldest_key_time(0),
+        check_if_compaction_disabled(false),
         _write_stopped(false) {}
 };
 

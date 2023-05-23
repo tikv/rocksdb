@@ -1733,9 +1733,6 @@ int DBImpl::Level0StopWriteTrigger(ColumnFamilyHandle* column_family) {
 
 Status DBImpl::Flush(const FlushOptions& flush_options,
                      ColumnFamilyHandle* column_family) {
-  if (manual_compaction_paused_.load(std::memory_order_acquire) > 0) {
-    return Status::Incomplete(Status::SubCode::kManualCompactionPaused);
-  }
   auto cfh = static_cast_with_check<ColumnFamilyHandleImpl>(column_family);
   ROCKS_LOG_INFO(immutable_db_options_.info_log, "[%s] Manual flush start.",
                  cfh->GetName().c_str());
@@ -1755,9 +1752,6 @@ Status DBImpl::Flush(const FlushOptions& flush_options,
 
 Status DBImpl::Flush(const FlushOptions& flush_options,
                      const std::vector<ColumnFamilyHandle*>& column_families) {
-  if (manual_compaction_paused_.load(std::memory_order_acquire) > 0) {
-    return Status::Incomplete(Status::SubCode::kManualCompactionPaused);
-  }
   Status s;
   if (!immutable_db_options_.atomic_flush) {
     for (auto cfh : column_families) {
@@ -2034,6 +2028,20 @@ Status DBImpl::FlushMemTable(ColumnFamilyData* cfd,
   {
     WriteContext context;
     InstrumentedMutexLock guard_lock(&mutex_);
+    // Need to check inside lock to avoid [flush()] -> [disable] -> [schedule].
+    if (flush_options.check_if_compaction_disabled &&
+        manual_compaction_paused_.load(std::memory_order_acquire) > 0) {
+      return Status::Incomplete(Status::SubCode::kManualCompactionPaused);
+    }
+    if (flush_options.expected_oldest_key_time != 0 &&
+        cfd->mem()->ApproximateOldestKeyTime() !=
+            flush_options.expected_oldest_key_time) {
+      std::ostringstream oss;
+      oss << "Oldest key time doesn't match. expected="
+          << flush_options.expected_oldest_key_time
+          << ", actual=" << cfd->mem()->ApproximateOldestKeyTime();
+      return Status::Incomplete(oss.str());
+    }
 
     WriteThread::Writer w;
     WriteThread::Writer nonmem_w;
@@ -2046,10 +2054,7 @@ Status DBImpl::FlushMemTable(ColumnFamilyData* cfd,
     WaitForPendingWrites();
 
     if (flush_reason != FlushReason::kErrorRecoveryRetryFlush &&
-        (!cfd->mem()->IsEmpty() || !cached_recoverable_state_empty_.load()) &&
-        (flush_options.expected_oldest_key_time == 0 ||
-         cfd->mem()->ApproximateOldestKeyTime() ==
-             flush_options.expected_oldest_key_time)) {
+        (!cfd->mem()->IsEmpty() || !cached_recoverable_state_empty_.load())) {
       // Note that, when flush reason is kErrorRecoveryRetryFlush, during the
       // auto retry resume, we want to avoid creating new small memtables.
       // Therefore, SwitchMemtable will not be called. Also, since ResumeImpl
@@ -2181,6 +2186,11 @@ Status DBImpl::AtomicFlushMemTables(
   {
     WriteContext context;
     InstrumentedMutexLock guard_lock(&mutex_);
+    // Need to check inside lock to avoid [flush()] -> [disable] -> [schedule].
+    if (flush_options.check_if_compaction_disabled &&
+        manual_compaction_paused_.load(std::memory_order_acquire) > 0) {
+      return Status::Incomplete(Status::SubCode::kManualCompactionPaused);
+    }
 
     WriteThread::Writer w;
     WriteThread::Writer nonmem_w;

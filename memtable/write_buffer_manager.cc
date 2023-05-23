@@ -12,6 +12,7 @@
 #include "cache/cache_entry_roles.h"
 #include "cache/cache_reservation_manager.h"
 #include "db/db_impl/db_impl.h"
+#include "logging/logging.h"
 #include "rocksdb/options.h"
 #include "rocksdb/status.h"
 #include "util/coding.h"
@@ -180,13 +181,13 @@ void WriteBufferManager::MaybeFlushLocked(DB* this_db) {
   // We only flush at most one column family at a time.
   // This is enough to keep size under control except when flush_size is
   // dynamically decreased. That case is managed in `SetFlushSize`.
-  WriteBufferSentinel* candidate = nullptr;
-  uint64_t candidate_age = 0;
-  uint64_t max_score = 0;
-  uint64_t current_score = 0;
+  // (score, age).
+  std::tuple<WriteBufferSentinel*, uint64_t, uint64_t> candidates[2] = {
+      {nullptr, 0, 0}, {nullptr, 0, 0}};
 
   for (auto& s : sentinels_) {
     // TODO: move this calculation to a callback.
+    uint64_t current_score = 0;
     uint64_t current_memory_bytes = std::numeric_limits<uint64_t>::max();
     uint64_t oldest_time = std::numeric_limits<uint64_t>::max();
     s->db->GetApproximateActiveMemTableStats(s->cf, &current_memory_bytes,
@@ -217,20 +218,31 @@ void WriteBufferManager::MaybeFlushLocked(DB* this_db) {
         current_score = current_score * (100 - factor) / factor;
       }
     }
-    if (current_score > max_score) {
-      candidate = s.get();
-      max_score = current_score;
-      candidate_age = oldest_time;
+    if (current_score > std::get<1>(candidates[0])) {
+      candidates[0] = {s.get(), current_score, oldest_time};
+    } else if (current_score > std::get<1>(candidates[1])) {
+      candidates[1] = {s.get(), current_score, oldest_time};
     }
   }
 
-  if (candidate != nullptr) {
-    FlushOptions flush_opts;
-    flush_opts.allow_write_stall = true;
-    flush_opts.wait = false;
-    flush_opts._write_stopped = (candidate->db == this_db);
-    flush_opts.expected_oldest_key_time = candidate_age;
-    candidate->db->Flush(flush_opts, candidate->cf);
+  for (size_t i = 0; i < 2; i++) {
+    auto candidate = std::get<0>(candidates[i]);
+    if (candidate != nullptr) {
+      FlushOptions flush_opts;
+      flush_opts.allow_write_stall = true;
+      flush_opts.wait = false;
+      flush_opts._write_stopped = (candidate->db == this_db);
+      flush_opts.expected_oldest_key_time = std::get<2>(candidates[i]);
+      auto s = candidate->db->Flush(flush_opts, candidate->cf);
+      if (!s.ok()) {
+        auto opts = candidate->db->GetDBOptions();
+        ROCKS_LOG_INFO(opts.info_log, "WriteBufferManager fails to flush: %s",
+                       s.ToString().c_str());
+        // Fallback to the next best candidate.
+        continue;
+      }
+    }
+    break;
   }
 }
 
