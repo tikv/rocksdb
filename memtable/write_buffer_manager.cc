@@ -178,12 +178,13 @@ void WriteBufferManager::MaybeFlushLocked(DB* this_db) {
   if (!ShouldFlush()) {
     return;
   }
+  constexpr size_t kCandidateSize = 2;
   // We only flush at most one column family at a time.
   // This is enough to keep size under control except when flush_size is
   // dynamically decreased. That case is managed in `SetFlushSize`.
   // (score, age).
-  std::tuple<WriteBufferSentinel*, uint64_t, uint64_t> candidates[2] = {
-      {nullptr, 0, 0}, {nullptr, 0, 0}};
+  std::tuple<WriteBufferSentinel*, uint64_t, uint64_t>
+      candidates[kCandidateSize];
 
   for (auto& s : sentinels_) {
     // TODO: move this calculation to a callback.
@@ -225,7 +226,7 @@ void WriteBufferManager::MaybeFlushLocked(DB* this_db) {
     }
   }
 
-  for (size_t i = 0; i < 2; i++) {
+  for (size_t i = 0; i < kCandidateSize; i++) {
     auto candidate = std::get<0>(candidates[i]);
     if (candidate != nullptr) {
       FlushOptions flush_opts;
@@ -233,6 +234,12 @@ void WriteBufferManager::MaybeFlushLocked(DB* this_db) {
       flush_opts.wait = false;
       flush_opts._write_stopped = (candidate->db == this_db);
       flush_opts.expected_oldest_key_time = std::get<2>(candidates[i]);
+      if (i < kCandidateSize - 1) {
+        // Don't check it for the last candidate. Otherwise we could end up
+        // never progressing.
+        // TODO: add a test case.
+        flush_opts.check_if_compaction_disabled = true;
+      }
       auto s = candidate->db->Flush(flush_opts, candidate->cf);
       if (!s.ok()) {
         auto opts = candidate->db->GetDBOptions();
