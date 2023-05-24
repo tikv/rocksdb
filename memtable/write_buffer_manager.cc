@@ -219,10 +219,11 @@ void WriteBufferManager::MaybeFlushLocked(DB* this_db) {
         current_score = current_score * (100 - factor) / factor;
       }
     }
-    if (current_score > std::get<1>(candidates[0])) {
-      candidates[0] = {s.get(), current_score, oldest_time};
-    } else if (current_score > std::get<1>(candidates[1])) {
-      candidates[1] = {s.get(), current_score, oldest_time};
+    for (size_t i = 0; i < kCandidateSize; i++) {
+      if (current_score > std::get<1>(candidates[i])) {
+        candidates[i] = {s.get(), current_score, oldest_time};
+        break;
+      }
     }
   }
 
@@ -237,7 +238,6 @@ void WriteBufferManager::MaybeFlushLocked(DB* this_db) {
       if (i < kCandidateSize - 1) {
         // Don't check it for the last candidate. Otherwise we could end up
         // never progressing.
-        // TODO: add a test case.
         flush_opts.check_if_compaction_disabled = true;
       }
       auto s = candidate->db->Flush(flush_opts, candidate->cf);

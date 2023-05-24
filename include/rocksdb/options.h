@@ -1717,7 +1717,8 @@ struct FlushOptions {
   // Default: false
   bool allow_write_stall;
   // Only flush memtable if it has the expected oldest key time.
-  // Zero is no-op. Ignored for atomic flush.
+  // This option is ignored for atomic flush. Zero means disabling the check.
+  // Default: 0
   uint64_t expected_oldest_key_time;
   // Abort flush if compaction is disabled via `DisableManualCompaction`.
   // Default: false
