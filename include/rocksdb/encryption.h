@@ -61,7 +61,7 @@ class KeyManager {
   // Provide additional hint of physical file when the key name doesn't map to
   // one.
   virtual Status DeleteFileExt(const std::string& fname,
-                               const std::string& physical_fname) {
+                               const std::string& /*physical_fname*/) {
     return DeleteFile(fname);
   }
 };
