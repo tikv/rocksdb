@@ -23,6 +23,8 @@
 * For track_and_verify_wals_in_manifest, revert to the original behavior before #10087: syncing of live WAL file is not tracked, and we track only the synced sizes of **closed** WALs. (PR #10330).
 * DB::Write does not hold global `mutex_` if this db instance does not need to switch wal and mem-table (#7516).
 * If `CompactRange()` is called with `CompactRangeOptions::bottommost_level_compaction=kForce*` to compact from L0 to L1, RocksDB now will try to do trivial move from L0 to L1 and then do an intra L1 compaction, instead of a L0 to L1 compaction with trivial move disabled (#11375).
+* For Leveled Compaction users, `CompactRange()` will now always try to compact to the last non-empty level. (#11468)
+For Leveled Compaction users, `CompactRange()` with `bottommost_level_compaction = BottommostLevelCompaction::kIfHaveCompactionFilter` will behave similar to `kForceOptimized` in that it will skip files created during this manual compaction when compacting files in the bottommost level. (#11468)
 
 ## 6.29.5 (03/29/2022)
 ### Bug Fixes
