@@ -196,7 +196,6 @@ class WriteBufferManager final {
   std::atomic<size_t> memory_active_;
   std::atomic<bool> flush_oldest_first_;
 
-  const bool flush_oldest_first_;
   const bool allow_stall_;
   const float stall_ratio_;
   std::list<StallInterface*> queue_;

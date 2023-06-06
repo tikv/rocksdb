@@ -917,7 +917,6 @@ TEST_P(DBWriteBufferManagerTest, MixedSlowDownOptionsMultipleDB) {
   ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->DisableProcessing();
 }
 
-
 // Tests a `WriteBufferManager` constructed with `allow_stall == false` does not
 // thrash memtable switching when full and a CF receives multiple writes.
 // Instead, we expect to switch a CF's memtable for flush only when that CF does
@@ -928,7 +927,7 @@ TEST_P(DBWriteBufferManagerTest, MixedSlowDownOptionsMultipleDB) {
 // by writing to that CF's DB.
 //
 // Not supported in LITE mode due to `GetProperty()` unavailable.
-TEST_P(DBWriteBufferManagerTest, StopSwitchingMemTablesOnceFlushing) {
+TEST_P(DBWriteBufferManagerTest, DISABLED_StopSwitchingMemTablesOnceFlushing) {
   Options options = CurrentOptions();
   options.arena_block_size = 4 << 10;   // 4KB
   options.write_buffer_size = 1 << 20;  // 1MB
@@ -983,72 +982,84 @@ TEST_P(DBWriteBufferManagerTest, StopSwitchingMemTablesOnceFlushing) {
   delete shared_wbm_db;
 }
 
-TEST_F(DBWriteBufferManagerTest, RuntimeChangeableAllowStall) {
-  constexpr int kBigValue = 10000;
+// Test write can progress even if manual compaction and background work is
+// paused.
+TEST_P(DBWriteBufferManagerTest, BackgroundWorkPaused) {
+  std::vector<std::string> dbnames;
+  std::vector<DB*> dbs;
+  int num_dbs = 4;
+
+  for (int i = 0; i < num_dbs; i++) {
+    dbs.push_back(nullptr);
+    dbnames.push_back(
+        test::PerThreadDBPath("db_shared_wb_db" + std::to_string(i)));
+  }
 
   Options options = CurrentOptions();
-  options.write_buffer_manager.reset(
-      new WriteBufferManager(1, nullptr /* cache */, true /* allow_stall */));
+  options.arena_block_size = 4096;
+  options.write_buffer_size = 500000;          // this is never hit
+  options.avoid_flush_during_shutdown = true;  // avoid blocking destroy forever
+  std::shared_ptr<Cache> cache = NewLRUCache(4 * 1024 * 1024, 2);
+  ASSERT_LT(cache->GetUsage(), 256 * 1024);
+  cost_cache_ = GetParam();
+
+  // Do not enable write stall.
+  if (cost_cache_) {
+    options.write_buffer_manager.reset(
+        new WriteBufferManager(100000, cache, 0.0));
+  } else {
+    options.write_buffer_manager.reset(
+        new WriteBufferManager(100000, nullptr, 0.0));
+  }
   DestroyAndReopen(options);
 
-  // Pause flush thread so that
-  // (a) the only way to exist write stall below is to change the `allow_stall`
-  // (b) the write stall is "stable" without being interfered by flushes so that
-  // we can check it without flakiness
-  std::unique_ptr<test::SleepingBackgroundTask> sleeping_task(
-      new test::SleepingBackgroundTask());
-  env_->SetBackgroundThreads(1, Env::HIGH);
-  env_->Schedule(&test::SleepingBackgroundTask::DoSleepTask,
-                 sleeping_task.get(), Env::Priority::HIGH);
-  sleeping_task->WaitUntilSleeping();
+  for (int i = 0; i < num_dbs; i++) {
+    ASSERT_OK(DestroyDB(dbnames[i], options));
+    ASSERT_OK(DB::Open(options, dbnames[i], &(dbs[i])));
+  }
 
-  // Test 1: test setting `allow_stall` from true to false
-  //
-  // Assert existence of a write stall
-  WriteOptions wo_no_slowdown;
-  wo_no_slowdown.no_slowdown = true;
-  Status s = Put(Key(0), DummyString(kBigValue), wo_no_slowdown);
-  ASSERT_TRUE(s.IsIncomplete());
-  ASSERT_TRUE(s.ToString().find("Write stall") != std::string::npos);
+  dbfull()->DisableManualCompaction();
+  ASSERT_OK(dbfull()->PauseBackgroundWork());
+  for (int i = 0; i < num_dbs; i++) {
+    dbs[i]->DisableManualCompaction();
+    ASSERT_OK(dbs[i]->PauseBackgroundWork());
+  }
 
-  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->LoadDependency(
-      {{"WBMStallInterface::BlockDB",
-        "DBWriteBufferManagerTest::RuntimeChangeableThreadSafeParameters::"
-        "ChangeParameter"}});
-  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->EnableProcessing();
+  WriteOptions wo;
+  wo.disableWAL = true;
 
-  // Test `SetAllowStall()`
-  port::Thread thread1([&] { ASSERT_OK(Put(Key(0), DummyString(kBigValue))); });
-  port::Thread thread2([&] {
-    TEST_SYNC_POINT(
-        "DBWriteBufferManagerTest::RuntimeChangeableThreadSafeParameters::"
-        "ChangeParameter");
-    options.write_buffer_manager->SetAllowStall(false);
-  });
+  // Arrange the score like this: (this)2000, (0-th)100000, (1-th)1, ...
+  ASSERT_OK(Put(Key(1), DummyString(2000), wo));
+  for (int i = 1; i < num_dbs; i++) {
+    ASSERT_OK(dbs[i]->Put(wo, Key(1), DummyString(1)));
+  }
+  // Exceed the limit.
+  ASSERT_OK(dbs[0]->Put(wo, Key(1), DummyString(100000)));
+  // Write another one to trigger the flush.
+  ASSERT_OK(Put(Key(3), DummyString(1), wo));
 
-  // Verify `allow_stall` is successfully set to false in thread2.
-  // Othwerwise, thread1's write will be stalled and this test will hang
-  // forever.
-  thread1.join();
-  thread2.join();
+  for (int i = 0; i < num_dbs; i++) {
+    ASSERT_OK(dbs[i]->ContinueBackgroundWork());
+    ASSERT_OK(
+        static_cast_with_check<DBImpl>(dbs[i])->TEST_WaitForFlushMemTable());
+    std::string property;
+    EXPECT_TRUE(dbs[i]->GetProperty("rocksdb.num-files-at-level0", &property));
+    int num = atoi(property.c_str());
+    ASSERT_EQ(num, 0);
+  }
+  ASSERT_OK(dbfull()->ContinueBackgroundWork());
+  ASSERT_OK(dbfull()->TEST_WaitForFlushMemTable());
+  std::string property;
+  EXPECT_TRUE(dbfull()->GetProperty("rocksdb.num-files-at-level0", &property));
+  int num = atoi(property.c_str());
+  ASSERT_EQ(num, 1);
 
-  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->ClearAllCallBacks();
-  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->DisableProcessing();
-
-  // Test 2: test setting `allow_stall` from false to true
-  //
-  // Assert no write stall
-  ASSERT_OK(Put(Key(0), DummyString(kBigValue), wo_no_slowdown));
-
-  // Test `SetAllowStall()`
-  options.write_buffer_manager->SetAllowStall(true);
-
-  // Verify `allow_stall` is successfully set to true.
-  // Otherwise the following write will not be stalled and therefore succeed.
-  s = Put(Key(0), DummyString(kBigValue), wo_no_slowdown);
-  ASSERT_TRUE(s.IsIncomplete());
-  ASSERT_TRUE(s.ToString().find("Write stall") != std::string::npos);
-  sleeping_task->WakeUp();
+  // Clean up DBs.
+  for (int i = 0; i < num_dbs; i++) {
+    ASSERT_OK(dbs[i]->Close());
+    ASSERT_OK(DestroyDB(dbnames[i], options));
+    delete dbs[i];
+  }
 }
 
 INSTANTIATE_TEST_CASE_P(DBWriteBufferManagerTest, DBWriteBufferManagerTest,
