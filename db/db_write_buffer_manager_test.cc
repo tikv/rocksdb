@@ -963,17 +963,16 @@ TEST_P(DBWriteBufferManagerTest, BackgroundWorkPaused) {
   WriteOptions wo;
   wo.disableWAL = true;
 
-  // Make sure each db has something to flush.
-  ASSERT_OK(Put(Key(1), DummyString(1), wo));
-  for (int i = 0; i < num_dbs; i++) {
+  // Arrange the score like this: (this)2000, (0-th)100000, (1-th)1, ...
+  ASSERT_OK(Put(Key(1), DummyString(2000), wo));
+  for (int i = 1; i < num_dbs; i++) {
     ASSERT_OK(dbs[i]->Put(wo, Key(1), DummyString(1)));
   }
   // Exceed the limit.
-  ASSERT_OK(Put(Key(2), DummyString(100000), wo));
+  ASSERT_OK(dbs[0]->Put(wo, Key(1), DummyString(100000)));
   // Write another one to trigger the flush.
   ASSERT_OK(Put(Key(3), DummyString(1), wo));
 
-  bool found = false;
   for (int i = 0; i < num_dbs; i++) {
     ASSERT_OK(dbs[i]->ContinueBackgroundWork());
     ASSERT_OK(
@@ -981,14 +980,14 @@ TEST_P(DBWriteBufferManagerTest, BackgroundWorkPaused) {
     std::string property;
     EXPECT_TRUE(dbs[i]->GetProperty("rocksdb.num-files-at-level0", &property));
     int num = atoi(property.c_str());
-    if (!found) {
-      ASSERT_LE(num, 1);
-      found = (num == 1);
-    } else {
-      ASSERT_EQ(num, 0);
-    }
+    ASSERT_EQ(num, 0);
   }
-  ASSERT_TRUE(found);
+  ASSERT_OK(dbfull()->ContinueBackgroundWork());
+  ASSERT_OK(dbfull()->TEST_WaitForFlushMemTable());
+  std::string property;
+  EXPECT_TRUE(dbfull()->GetProperty("rocksdb.num-files-at-level0", &property));
+  int num = atoi(property.c_str());
+  ASSERT_EQ(num, 1);
 
   // Clean up DBs.
   for (int i = 0; i < num_dbs; i++) {
