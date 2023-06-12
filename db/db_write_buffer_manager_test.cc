@@ -917,6 +917,86 @@ TEST_P(DBWriteBufferManagerTest, MixedSlowDownOptionsMultipleDB) {
   ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->DisableProcessing();
 }
 
+// Test write can progress even if manual compaction and background work is
+// paused.
+TEST_P(DBWriteBufferManagerTest, BackgroundWorkPaused) {
+  std::vector<std::string> dbnames;
+  std::vector<DB*> dbs;
+  int num_dbs = 4;
+
+  for (int i = 0; i < num_dbs; i++) {
+    dbs.push_back(nullptr);
+    dbnames.push_back(
+        test::PerThreadDBPath("db_shared_wb_db" + std::to_string(i)));
+  }
+
+  Options options = CurrentOptions();
+  options.arena_block_size = 4096;
+  options.write_buffer_size = 500000;          // this is never hit
+  options.avoid_flush_during_shutdown = true;  // avoid blocking destroy forever
+  std::shared_ptr<Cache> cache = NewLRUCache(4 * 1024 * 1024, 2);
+  ASSERT_LT(cache->GetUsage(), 256 * 1024);
+  cost_cache_ = GetParam();
+
+  // Do not enable write stall.
+  if (cost_cache_) {
+    options.write_buffer_manager.reset(
+        new WriteBufferManager(100000, cache, 0.0));
+  } else {
+    options.write_buffer_manager.reset(
+        new WriteBufferManager(100000, nullptr, 0.0));
+  }
+  DestroyAndReopen(options);
+
+  for (int i = 0; i < num_dbs; i++) {
+    ASSERT_OK(DestroyDB(dbnames[i], options));
+    ASSERT_OK(DB::Open(options, dbnames[i], &(dbs[i])));
+  }
+
+  dbfull()->DisableManualCompaction();
+  ASSERT_OK(dbfull()->PauseBackgroundWork());
+  for (int i = 0; i < num_dbs; i++) {
+    dbs[i]->DisableManualCompaction();
+    ASSERT_OK(dbs[i]->PauseBackgroundWork());
+  }
+
+  WriteOptions wo;
+  wo.disableWAL = true;
+
+  // Arrange the score like this: (this)2000, (0-th)100000, (1-th)1, ...
+  ASSERT_OK(Put(Key(1), DummyString(2000), wo));
+  for (int i = 1; i < num_dbs; i++) {
+    ASSERT_OK(dbs[i]->Put(wo, Key(1), DummyString(1)));
+  }
+  // Exceed the limit.
+  ASSERT_OK(dbs[0]->Put(wo, Key(1), DummyString(100000)));
+  // Write another one to trigger the flush.
+  ASSERT_OK(Put(Key(3), DummyString(1), wo));
+
+  for (int i = 0; i < num_dbs; i++) {
+    ASSERT_OK(dbs[i]->ContinueBackgroundWork());
+    ASSERT_OK(
+        static_cast_with_check<DBImpl>(dbs[i])->TEST_WaitForFlushMemTable());
+    std::string property;
+    EXPECT_TRUE(dbs[i]->GetProperty("rocksdb.num-files-at-level0", &property));
+    int num = atoi(property.c_str());
+    ASSERT_EQ(num, 0);
+  }
+  ASSERT_OK(dbfull()->ContinueBackgroundWork());
+  ASSERT_OK(dbfull()->TEST_WaitForFlushMemTable());
+  std::string property;
+  EXPECT_TRUE(dbfull()->GetProperty("rocksdb.num-files-at-level0", &property));
+  int num = atoi(property.c_str());
+  ASSERT_EQ(num, 1);
+
+  // Clean up DBs.
+  for (int i = 0; i < num_dbs; i++) {
+    ASSERT_OK(dbs[i]->Close());
+    ASSERT_OK(DestroyDB(dbnames[i], options));
+    delete dbs[i];
+  }
+}
+
 INSTANTIATE_TEST_CASE_P(DBWriteBufferManagerTest, DBWriteBufferManagerTest,
                         testing::Bool());
 
