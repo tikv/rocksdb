@@ -86,6 +86,19 @@ class TestKeyManager : public encryption::KeyManager {
   Status DeleteFile(const std::string& fname) override {
     std::lock_guard<std::mutex> l(mutex);
     file_set.erase(fname);
+    if (!fname.empty()) {
+      std::string fname = fname;
+      if (fname.back() != '/') {
+        fname.push_back('/');
+      }
+      auto begin = file_set.lower_bound(fname);
+      auto end = begin;
+      while (end != file_set.end() &&
+             end->compare(0, fname.size(), fname) == 0) {
+        end++;
+      }
+      file_set.erase(begin, end);
+    }
     return Status::OK();
   }
 
