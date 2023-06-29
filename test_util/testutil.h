@@ -87,14 +87,13 @@ class TestKeyManager : public encryption::KeyManager {
     std::lock_guard<std::mutex> l(mutex);
     file_set.erase(fname);
     if (!fname.empty()) {
-      std::string fname = fname;
-      if (fname.back() != '/') {
-        fname.push_back('/');
+      std::string copy = fname;
+      if (copy.back() != '/') {
+        copy.push_back('/');
       }
-      auto begin = file_set.lower_bound(fname);
+      auto begin = file_set.lower_bound(copy);
       auto end = begin;
-      while (end != file_set.end() &&
-             end->compare(0, fname.size(), fname) == 0) {
+      while (end != file_set.end() && end->compare(0, copy.size(), copy) == 0) {
         end++;
       }
       file_set.erase(begin, end);
