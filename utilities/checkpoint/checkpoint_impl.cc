@@ -310,7 +310,9 @@ Status CheckpointImpl::ExportColumnFamily(
   s = db_->GetEnv()->CreateDir(tmp_export_dir);
 
   if (s.ok()) {
-    s = db_->Flush(ROCKSDB_NAMESPACE::FlushOptions(), handle);
+    auto opts = ROCKSDB_NAMESPACE::FlushOptions();
+    opts.check_if_compaction_disabled = true;
+    s = db_->Flush(opts, handle);
   }
 
   ColumnFamilyMetaData db_metadata;
