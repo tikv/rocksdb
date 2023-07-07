@@ -311,6 +311,8 @@ Status CheckpointImpl::ExportColumnFamily(
 
   if (s.ok()) {
     auto opts = ROCKSDB_NAMESPACE::FlushOptions();
+    // In TiKV context: If tablet is to be destroyed, its background work will
+    // be paused. Manual flush can never make progress.
     opts.check_if_compaction_disabled = true;
     s = db_->Flush(opts, handle);
   }
