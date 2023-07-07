@@ -54,9 +54,17 @@ class KeyManager {
                          FileEncryptionInfo* file_info) = 0;
   virtual Status NewFile(const std::string& fname,
                          FileEncryptionInfo* file_info) = 0;
+  // Used with both file and directory.
   virtual Status DeleteFile(const std::string& fname) = 0;
   virtual Status LinkFile(const std::string& src_fname,
                           const std::string& dst_fname) = 0;
+  // Provide additional hint of physical file when the key name doesn't map to
+  // one. A typical use case of this is atomically deleting a directory by
+  // renaming it first.
+  virtual Status DeleteFileExt(const std::string& fname,
+                               const std::string& /*physical_fname*/) {
+    return DeleteFile(fname);
+  }
 };
 
 // An Env with underlying files being encrypted. It holds a reference to an
