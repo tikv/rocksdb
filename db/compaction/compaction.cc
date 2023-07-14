@@ -10,6 +10,7 @@
 #include "db/compaction/compaction.h"
 
 #include <cinttypes>
+#include <algorithm>
 #include <vector>
 
 #include "db/column_family.h"
@@ -564,6 +565,18 @@ std::unique_ptr<CompactionFilter> Compaction::CreateCompactionFilter(
   context.reason = TableFileCreationReason::kCompaction;
   return cfd_->ioptions()->compaction_filter_factory->CreateCompactionFilter(
       context);
+}
+
+std::vector<SstPartitioner::Segment> CreateSegmentsForLevel(
+  const Version* version,
+  Slice smallest_user_key,
+  Slice largest_user_key,
+  int in_level) {
+    const auto files = version->storage_info()->LevelFilesBrief(in_level);
+    std::vector<SstPartitioner::Segment> segs;
+    for (int i = 0; i < files.num_files; i ++) {
+      const auto& file = files.files[i];
+    }
 }
 
 std::unique_ptr<SstPartitioner> Compaction::CreateSstPartitioner() const {

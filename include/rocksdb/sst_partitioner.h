@@ -62,6 +62,11 @@ class SstPartitioner {
   virtual bool CanDoTrivialMove(const Slice& smallest_user_key,
                                 const Slice& largest_user_key) = 0;
 
+  struct Segment {
+    int size_in_this_segment;
+    Slice segment_until_user_key;
+  };
+
   // Context information of a compaction run
   struct Context {
     // Does this compaction run include all data files
@@ -75,6 +80,10 @@ class SstPartitioner {
     Slice smallest_user_key;
     // Largest key for compaction
     Slice largest_user_key;
+    // The segments consist with the next level of target level.
+    // This will be useful while deciding whether to partition 
+    // files to finer parts for avoiding future huge compactions.
+    std::vector<Segment> output_next_level_segments;
   };
 };
 
