@@ -1913,7 +1913,7 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
               impl, impl->persist_stats_cf_handle_);
         } else if (cf->GetName() == kLockColumnFamilyName && impl->lock_write_buffer_manager_) {
           impl->lock_write_buffer_manager_->RegisterColumnFamily(
-              impl, impl->persist_stats_cf_handle_);
+              impl, cf);
         } else {
           impl->write_buffer_manager_->RegisterColumnFamily(impl, cf);
         }
