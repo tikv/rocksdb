@@ -1305,6 +1305,10 @@ Status DBImpl::PreprocessWrite(const WriteOptions& write_options,
     write_buffer_manager_->MaybeFlush(this);
   }
 
+  if (UNLIKELY(status.ok() && lock_write_buffer_manager_->ShouldFlush())) {
+    lock_write_buffer_manager_->MaybeFlush(this);
+  }
+
   if (UNLIKELY(status.ok() && !trim_history_scheduler_.Empty())) {
     InstrumentedMutexLock l(&mutex_);
     status = TrimMemtableHistory(write_context);

@@ -69,6 +69,7 @@ class WriteBatch;
 
 extern const std::string kDefaultColumnFamilyName;
 extern const std::string kPersistentStatsColumnFamilyName;
+extern const std::string kLockColumnFamilyName;
 struct ColumnFamilyDescriptor {
   std::string name;
   ColumnFamilyOptions options;

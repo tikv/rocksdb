@@ -730,6 +730,7 @@ class ColumnFamilySet {
   const ImmutableDBOptions* const db_options_;
   Cache* table_cache_;
   WriteBufferManager* write_buffer_manager_;
+  WriteBufferManager* lock_write_buffer_manager_;
   WriteController* write_controller_;
   BlockCacheTracer* const block_cache_tracer_;
   std::shared_ptr<IOTracer> io_tracer_;

@@ -2283,6 +2283,7 @@ class DBImpl : public DB {
   Directories directories_;
 
   WriteBufferManager* write_buffer_manager_;
+  WriteBufferManager* lock_write_buffer_manager_;
 
   WriteThread write_thread_;
   WriteBatch tmp_batch_;

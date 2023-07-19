@@ -1605,6 +1605,7 @@ ColumnFamilySet::ColumnFamilySet(const std::string& dbname,
       db_options_(db_options),
       table_cache_(table_cache),
       write_buffer_manager_(_write_buffer_manager),
+      lock_write_buffer_manager_(db_options->lock_write_buffer_manager.get()),
       write_controller_(_write_controller),
       block_cache_tracer_(block_cache_tracer),
       io_tracer_(io_tracer),
@@ -1667,13 +1668,21 @@ size_t ColumnFamilySet::NumberOfColumnFamilies() const {
   return column_families_.size();
 }
 
+extern const std::string kLockColumnFamilyName;
+
 // under a DB mutex AND write thread
 ColumnFamilyData* ColumnFamilySet::CreateColumnFamily(
     const std::string& name, uint32_t id, Version* dummy_versions,
     const ColumnFamilyOptions& options) {
   assert(column_families_.find(name) == column_families_.end());
+  WriteBufferManager* write_buffer_manager;
+  if (name == kLockColumnFamilyName) {
+    write_buffer_manager = lock_write_buffer_manager_;
+  } else {
+    write_buffer_manager = write_buffer_manager_;
+  }
   ColumnFamilyData* new_cfd = new ColumnFamilyData(
-      id, name, dummy_versions, table_cache_, write_buffer_manager_, options,
+      id, name, dummy_versions, table_cache_, write_buffer_manager, options,
       *db_options_, &file_options_, this, block_cache_tracer_, io_tracer_,
       db_session_id_);
   column_families_.insert({name, id});

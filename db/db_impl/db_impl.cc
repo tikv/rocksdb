@@ -109,6 +109,7 @@
 namespace ROCKSDB_NAMESPACE {
 
 const std::string kDefaultColumnFamilyName("default");
+const std::string kLockColumnFamilyName("lock");
 const std::string kPersistentStatsColumnFamilyName(
     "___rocksdb_stats_history___");
 void DumpRocksDBBuildVersion(Logger* log);
@@ -185,6 +186,8 @@ DBImpl::DBImpl(const DBOptions& options, const std::string& dbname,
       total_log_size_(0),
       is_snapshot_supported_(true),
       write_buffer_manager_(immutable_db_options_.write_buffer_manager.get()),
+      lock_write_buffer_manager_(
+          immutable_db_options_.lock_write_buffer_manager.get()),
       write_thread_(immutable_db_options_),
       nonmem_write_thread_(immutable_db_options_),
       write_controller_(mutable_db_options_.delayed_write_rate),
@@ -720,6 +723,10 @@ Status DBImpl::CloseHelper() {
   }
   if (write_buffer_manager_) {
     write_buffer_manager_->UnregisterDB(this);
+  }
+
+  if (lock_write_buffer_manager_) {
+    lock_write_buffer_manager_->UnregisterDB(this);
   }
 
   if (ret.IsAborted()) {
@@ -2827,8 +2834,14 @@ Status DBImpl::CreateColumnFamilyImpl(const ColumnFamilyOptions& cf_options,
   if (s.ok()) {
     NewThreadStatusCfInfo(
         static_cast_with_check<ColumnFamilyHandleImpl>(*handle)->cfd());
-    if (write_buffer_manager_ != nullptr) {
-      write_buffer_manager_->RegisterColumnFamily(this, *handle);
+    if (column_family_name != kLockColumnFamilyName) {
+      if (write_buffer_manager_ != nullptr) {
+        write_buffer_manager_->RegisterColumnFamily(this, *handle);
+      }
+    } else {
+      if (lock_write_buffer_manager_ != nullptr) {
+        lock_write_buffer_manager_->RegisterColumnFamily(this, *handle);
+      }
     }
   }
   return s;
