@@ -1901,7 +1901,9 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
       // `CreateColumnFamily`. We must clear them all to avoid duplicate
       // registration.
       impl->write_buffer_manager_->UnregisterDB(impl);
-      impl->lock_write_buffer_manager_->UnregisterDB(impl);
+      if (impl->lock_write_buffer_manager_) {
+        impl->lock_write_buffer_manager_->UnregisterDB(impl);
+      }
       for (auto* cf : *handles) {
         if (cf->GetName() == kDefaultColumnFamilyName) {
           impl->write_buffer_manager_->RegisterColumnFamily(
@@ -1909,7 +1911,7 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
         } else if (cf->GetName() == kPersistentStatsColumnFamilyName) {
           impl->write_buffer_manager_->RegisterColumnFamily(
               impl, impl->persist_stats_cf_handle_);
-        } else if (cf->GetName() == kLockColumnFamilyName) {
+        } else if (cf->GetName() == kLockColumnFamilyName && impl->lock_write_buffer_manager_) {
           impl->lock_write_buffer_manager_->RegisterColumnFamily(
               impl, impl->persist_stats_cf_handle_);
         } else {
