@@ -83,6 +83,36 @@ class ChangeLevelConflictsWithAuto
 };
 
 namespace {
+class SplitAllPartitioner : public SstPartitioner {
+ public:
+  const char* Name() const override { return "SplitAllPartitioner"; }
+
+  PartitionerResult ShouldPartition(
+      const PartitionerRequest& /*request*/) override {
+    return PartitionerResult::kRequired;
+  }
+
+  bool CanDoTrivialMove(const Slice& smallest_user_key,
+                        const Slice& largest_user_key) {
+    return true;
+  }
+};
+
+class SplitAllPatitionerFactory : public SstPartitionerFactory {
+ public:
+  std::function<void(const SstPartitioner::Context&)> on_create_;
+
+  SplitAllPatitionerFactory(std::function<void(const SstPartitioner::Context&)> on_create) :
+    on_create_(on_create) {}
+
+  std::unique_ptr<SstPartitioner> CreatePartitioner(
+      const SstPartitioner::Context& context) const override {
+    on_create_(context);
+    return std::unique_ptr<SstPartitioner>(new SplitAllPartitioner());
+  }
+
+  const char* Name() const override { return "SplitAllPartitionerFactory"; }
+};
 
 class FlushedFileCollector : public EventListener {
  public:
@@ -1027,6 +1057,51 @@ TEST_F(DBCompactionTest, CompactionSstPartitionerNonTrivial) {
   ASSERT_EQ(2, files.size());
   ASSERT_EQ("A", Get("aaaa1"));
   ASSERT_EQ("B", Get("bbbb1"));
+}
+
+TEST_F(DBCompactionTest, CompactionSstPartitionerNextLevel) {
+  Options options = CurrentOptions();
+  options.compaction_style = kCompactionStyleLevel;
+  options.level0_file_num_compaction_trigger = 1;
+  options.max_bytes_for_level_base = 10;
+  options.max_bytes_for_level_multiplier = 2;
+  options.sst_partitioner_factory = std::unique_ptr<SstPartitionerFactory>(new SplitAllPatitionerFactory([this](const SstPartitioner::Context& cx) {
+    if (!cx.output_next_level_segments.empty()) {
+      std::vector<LiveFileMetaData> files;
+      // We are holding the mutex in this context...
+      // Perhaps we'd better make a `TEST_GetVersion` for fetching.
+      dbfull()->TEST_UnlockMutex();
+      dbfull()->GetLiveFilesMetaData(&files);
+      dbfull()->TEST_LockMutex();
+      auto next_level_overlap_files = std::count_if(files.begin(), files.end(), [&](const LiveFileMetaData& ld){
+        // Check whether the file is in range [cx.smallest_user_key, cx.largest_user_key) and in the level cx.output_level + 1.
+        return Slice(ld.smallestkey).compare(cx.largest_user_key) < 0 && Slice(ld.largestkey).compare(cx.smallest_user_key) > 0 && ld.level == cx.output_level + 1;
+      });
+      if (!cx.output_next_level_segments.empty()) {
+        ASSERT_EQ(next_level_overlap_files + 1, cx.output_next_level_segments.size());
+      }
+    }
+  }));
+  DestroyAndReopen(options);
+
+  ASSERT_OK(Put("A", "there are more than 10 bytes."));
+  ASSERT_OK(Put("B", "yet another key."));
+  ASSERT_OK(Flush());
+  ASSERT_OK(dbfull()->TEST_WaitForCompact(true));
+  ASSERT_OK(Put("A1", "the new challenger..."));
+  ASSERT_OK(Put("B1", "and his buddy."));
+  ASSERT_OK(Flush());
+  ASSERT_OK(dbfull()->TEST_WaitForFlushMemTable());
+  ASSERT_OK(dbfull()->TEST_WaitForCompact(true));
+  ASSERT_OK(Put("A1P", "the new challenger... Changed."));
+  ASSERT_OK(Put("B1P", "and his buddy. Changed too."));
+  ASSERT_OK(Flush());
+  ASSERT_OK(dbfull()->TEST_WaitForFlushMemTable());
+  ASSERT_OK(dbfull()->TEST_WaitForCompact(true));
+    
+  std::vector<LiveFileMetaData> files;
+  dbfull()->GetLiveFilesMetaData(&files);
+  ASSERT_EQ(6, files.size());
 }
 
 TEST_F(DBCompactionTest, ZeroSeqIdCompaction) {

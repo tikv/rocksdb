@@ -345,6 +345,7 @@ class Compaction {
 
   static bool IsFullCompaction(VersionStorageInfo* vstorage,
                                const std::vector<CompactionInputFiles>& inputs);
+  std::vector<SstPartitioner::Segment> CreateSegmentsForLevel(int level) const;
 
   VersionStorageInfo* input_vstorage_;
 

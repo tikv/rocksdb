@@ -63,7 +63,8 @@ class SstPartitioner {
                                 const Slice& largest_user_key) = 0;
 
   struct Segment {
-    int size_in_this_segment;
+    Segment(uint64_t size_diff, Slice until) : size_in_this_segment(size_diff), segment_until_user_key(until) {}
+    uint64_t size_in_this_segment;
     Slice segment_until_user_key;
   };
 
