@@ -92,10 +92,7 @@ class SplitAllPartitioner : public SstPartitioner {
     return PartitionerResult::kRequired;
   }
 
-  bool CanDoTrivialMove(const Slice& smallest_user_key,
-                        const Slice& largest_user_key) {
-    return true;
-  }
+  bool CanDoTrivialMove(const Slice&, const Slice&) { return true; }
 };
 
 class SplitAllPatitionerFactory : public SstPartitionerFactory {
