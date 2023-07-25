@@ -574,6 +574,11 @@ std::vector<SstPartitioner::Segment> Compaction::CreateSegmentsForLevel(
   // makes sense for not supporting L0.
   assert(in_level != 0);
 
+  // Some of test cases may not initialize the version...
+  if (input_version_ == nullptr) {
+    return std::vector<SstPartitioner::Segment>();
+  }
+
   const auto vsi = input_version_->storage_info();
   if (in_level >= vsi->num_non_empty_levels()) {
     // The level shall be empty.
