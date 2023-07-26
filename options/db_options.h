@@ -59,7 +59,8 @@ struct ImmutableDBOptions {
   bool advise_random_on_open;
   double experimental_mempurge_threshold;
   size_t db_write_buffer_size;
-  std::shared_ptr<WriteBufferManager> write_buffer_manager;
+  std::vector<std::shared_ptr<WriteBufferManager>> write_buffer_manager;
+  std::unordered_map<std::string, size_t> write_buffer_manager_map;
   std::shared_ptr<WriteBufferManager> lock_write_buffer_manager;
   DBOptions::AccessHint access_hint_on_compaction_start;
   bool new_table_reader_for_compaction_inputs;

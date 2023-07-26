@@ -185,7 +185,6 @@ DBImpl::DBImpl(const DBOptions& options, const std::string& dbname,
       log_sync_cv_(&log_write_mutex_),
       total_log_size_(0),
       is_snapshot_supported_(true),
-      write_buffer_manager_(immutable_db_options_.write_buffer_manager.get()),
       lock_write_buffer_manager_(
           immutable_db_options_.lock_write_buffer_manager.get()),
       write_thread_(immutable_db_options_),
@@ -276,7 +275,10 @@ DBImpl::DBImpl(const DBOptions& options, const std::string& dbname,
 
   max_total_wal_size_.store(mutable_db_options_.max_total_wal_size,
                             std::memory_order_relaxed);
-  if (write_buffer_manager_) {
+  for (auto manager : immutable_db_options_.write_buffer_manager) {
+    write_buffer_manager_.push_back(manager.get());
+  }
+  if (!write_buffer_manager_.empty()) {
     wbm_stall_.reset(new WBMStallInterface());
   }
 }
@@ -718,15 +720,13 @@ Status DBImpl::CloseHelper() {
     }
   }
 
-  if (write_buffer_manager_ && wbm_stall_) {
-    write_buffer_manager_->RemoveFromStallQueue(wbm_stall_.get());
+  if (wbm_stall_) {
+    for (auto write_buffer_manager : write_buffer_manager_) {
+      write_buffer_manager->RemoveFromStallQueue(wbm_stall_.get());
+    }
   }
-  if (write_buffer_manager_) {
-    write_buffer_manager_->UnregisterDB(this);
-  }
-
-  if (lock_write_buffer_manager_) {
-    lock_write_buffer_manager_->UnregisterDB(this);
+  for (auto write_buffer_manager : write_buffer_manager_) {
+    write_buffer_manager->UnregisterDB(this);
   }
 
   if (ret.IsAborted()) {
@@ -2834,14 +2834,11 @@ Status DBImpl::CreateColumnFamilyImpl(const ColumnFamilyOptions& cf_options,
   if (s.ok()) {
     NewThreadStatusCfInfo(
         static_cast_with_check<ColumnFamilyHandleImpl>(*handle)->cfd());
-    if (column_family_name != kLockColumnFamilyName) {
-      if (write_buffer_manager_ != nullptr) {
-        write_buffer_manager_->RegisterColumnFamily(this, *handle);
-      }
-    } else {
-      if (lock_write_buffer_manager_ != nullptr) {
-        lock_write_buffer_manager_->RegisterColumnFamily(this, *handle);
-      }
+
+    if (write_buffer_manager_map_.count(column_family_name)) {
+      size_t idx = write_buffer_manager_map_[column_family_name];
+      auto write_buffer_manager = write_buffer_manager_[idx];
+      write_buffer_manager->RegisterColumnFamily(this, *handle);
     }
   }
   return s;

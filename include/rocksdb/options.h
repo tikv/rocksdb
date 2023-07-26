@@ -905,7 +905,8 @@ struct DBOptions {
   // to enable it.
   //
   // Default: null
-  std::shared_ptr<WriteBufferManager> write_buffer_manager = nullptr;
+  std::vector<std::shared_ptr<WriteBufferManager>> write_buffer_manager;
+  std::unordered_map<std::string, size_t> write_buffer_manager_map;
   std::shared_ptr<WriteBufferManager> lock_write_buffer_manager = nullptr;
 
   // Specify the file access pattern once a compaction is started.

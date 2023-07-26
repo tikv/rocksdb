@@ -1301,12 +1301,10 @@ Status DBImpl::PreprocessWrite(const WriteOptions& write_options,
   }
 
   // Ordering: before write delay.
-  if (UNLIKELY(status.ok() && write_buffer_manager_->ShouldFlush())) {
-    write_buffer_manager_->MaybeFlush(this);
-  }
-
-  if (UNLIKELY(status.ok() && lock_write_buffer_manager_->ShouldFlush())) {
-    lock_write_buffer_manager_->MaybeFlush(this);
+  for (auto write_buffer_manager : write_buffer_manager_) {
+    if (UNLIKELY(status.ok() && write_buffer_manager->ShouldFlush())) {
+      write_buffer_manager->MaybeFlush(this);
+    }
   }
 
   if (UNLIKELY(status.ok() && !trim_history_scheduler_.Empty())) {
@@ -1342,14 +1340,17 @@ Status DBImpl::PreprocessWrite(const WriteOptions& write_options,
   // It does soft checking because WriteBufferManager::buffer_limit_ has already
   // exceeded at this point so no new write (including current one) will go
   // through until memory usage is decreased.
-  if (UNLIKELY(status.ok() && write_buffer_manager_->ShouldStall())) {
-    if (write_options.no_slowdown) {
-      status = Status::Incomplete("Write stall");
-    } else {
-      InstrumentedMutexLock l(&mutex_);
-      WriteBufferManagerStallWrites();
+  for (int i = 0; i < write_buffer_manager_.size(); i++) {
+    if (UNLIKELY(status.ok() && write_buffer_manager_[i]->ShouldStall())) {
+      if (write_options.no_slowdown) {
+        status = Status::Incomplete("Write stall");
+      } else {
+        InstrumentedMutexLock l(&mutex_);
+        WriteBufferManagerStallWrites(i);
+      }
     }
   }
+
   InstrumentedMutexLock l(&log_write_mutex_);
   if (status.ok() && log_context->need_log_sync) {
     // Wait until the parallel syncs are finished. Any sync process has to sync
@@ -1877,7 +1878,7 @@ Status DBImpl::DelayWrite(uint64_t num_bytes,
 
 // REQUIRES: mutex_ is held
 // REQUIRES: this thread is currently at the front of the writer queue
-void DBImpl::WriteBufferManagerStallWrites() {
+void DBImpl::WriteBufferManagerStallWrites(size_t stall_manager_index) {
   mutex_.AssertHeld();
   // First block future writer threads who want to add themselves to the queue
   // of WriteThread.
@@ -1889,7 +1890,7 @@ void DBImpl::WriteBufferManagerStallWrites() {
       ->SetState(WBMStallInterface::State::BLOCKED);
   // Then WriteBufferManager will add DB instance to its queue
   // and block this thread by calling WBMStallInterface::Block().
-  write_buffer_manager_->BeginWriteStall(wbm_stall_.get());
+  write_buffer_manager_[stall_manager_index]->BeginWriteStall(wbm_stall_.get());
   wbm_stall_->Block();
 
   mutex_.Lock();
@@ -2279,9 +2280,9 @@ size_t DBImpl::GetWalPreallocateBlockSize(uint64_t write_buffer_size) const {
   if (immutable_db_options_.db_write_buffer_size > 0) {
     bsize = std::min<size_t>(bsize, immutable_db_options_.db_write_buffer_size);
   }
-  if (immutable_db_options_.write_buffer_manager) {
-    size_t buffer_size =
-        immutable_db_options_.write_buffer_manager->flush_size();
+
+  for (auto manager : immutable_db_options_.write_buffer_manager) {
+    size_t buffer_size = manager->flush_size();
     if (buffer_size > 0) {
       bsize = std::min<size_t>(bsize, buffer_size);
     }

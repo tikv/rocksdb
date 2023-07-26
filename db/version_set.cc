@@ -6041,7 +6041,8 @@ Status VersionSet::VerifyFileMetadata(const std::string& fpath,
 ReactiveVersionSet::ReactiveVersionSet(
     const std::string& dbname, const ImmutableDBOptions* _db_options,
     const FileOptions& _file_options, Cache* table_cache,
-    WriteBufferManager* write_buffer_manager, WriteController* write_controller,
+    std::vector<WriteBufferManager*> write_buffer_manager,
+    WriteController* write_controller,
     const std::shared_ptr<IOTracer>& io_tracer)
     : VersionSet(dbname, _db_options, _file_options, table_cache,
                  write_buffer_manager, write_controller,

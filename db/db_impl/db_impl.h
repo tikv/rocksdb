@@ -419,8 +419,7 @@ class DBImpl : public DB {
   virtual Status GetSortedWalFiles(VectorLogPtr& files) override;
   virtual Status GetCurrentWalFile(
       std::unique_ptr<LogFile>* current_log_file) override;
-  virtual Status GetCreationTimeOfOldestFile(
-      uint64_t* creation_time) override;
+  virtual Status GetCreationTimeOfOldestFile(uint64_t* creation_time) override;
 
   virtual Status GetUpdatesSince(
       SequenceNumber seq_number, std::unique_ptr<TransactionLogIterator>* iter,
@@ -1748,7 +1747,7 @@ class DBImpl : public DB {
 
   // Begin stalling of writes when memory usage increases beyond a certain
   // threshold.
-  void WriteBufferManagerStallWrites();
+  void WriteBufferManagerStallWrites(size_t);
 
   Status ThrottleLowPriWritesIfNeeded(const WriteOptions& write_options,
                                       WriteBatch* my_batch);
@@ -2282,8 +2281,8 @@ class DBImpl : public DB {
 
   Directories directories_;
 
-  WriteBufferManager* write_buffer_manager_;
-  WriteBufferManager* lock_write_buffer_manager_;
+  std::vector<WriteBufferManager*> write_buffer_manager_;
+  std::unordered_map<std::string, size_t> write_buffer_manager_map_;
 
   WriteThread write_thread_;
   WriteBatch tmp_batch_;

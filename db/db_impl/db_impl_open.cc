@@ -1896,26 +1896,24 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
   }
   if (s.ok()) {
     impl->StartPeriodicWorkScheduler();
-    if (impl->write_buffer_manager_) {
-      // Newly created handles are already registered during
-      // `CreateColumnFamily`. We must clear them all to avoid duplicate
-      // registration.
-      impl->write_buffer_manager_->UnregisterDB(impl);
-      if (impl->lock_write_buffer_manager_) {
-        impl->lock_write_buffer_manager_->UnregisterDB(impl);
-      }
-      for (auto* cf : *handles) {
-        if (cf->GetName() == kDefaultColumnFamilyName) {
-          impl->write_buffer_manager_->RegisterColumnFamily(
-              impl, impl->default_cf_handle_);
-        } else if (cf->GetName() == kPersistentStatsColumnFamilyName) {
-          impl->write_buffer_manager_->RegisterColumnFamily(
+
+    for (auto m : impl->write_buffer_manager_) {
+      m->UnregisterDB(impl);
+    }
+
+    for (auto* cf : *handles) {
+      std::string cf_name = cf->GetName();
+      if (impl->write_buffer_manager_map_.count(cf_name)) {
+        size_t idx = impl->write_buffer_manager_map_[cf_name];
+        auto write_buffer_manager = impl->write_buffer_manager_[idx];
+        if (cf_name == kDefaultColumnFamilyName) {
+          write_buffer_manager->RegisterColumnFamily(impl,
+                                                     impl->default_cf_handle_);
+        } else if (cf_name == kPersistentStatsColumnFamilyName) {
+          write_buffer_manager->RegisterColumnFamily(
               impl, impl->persist_stats_cf_handle_);
-        } else if (cf->GetName() == kLockColumnFamilyName && impl->lock_write_buffer_manager_) {
-          impl->lock_write_buffer_manager_->RegisterColumnFamily(
-              impl, cf);
         } else {
-          impl->write_buffer_manager_->RegisterColumnFamily(impl, cf);
+          write_buffer_manager->RegisterColumnFamily(impl, cf);
         }
       }
     }
