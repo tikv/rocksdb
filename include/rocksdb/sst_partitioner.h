@@ -63,7 +63,8 @@ class SstPartitioner {
                                 const Slice& largest_user_key) = 0;
 
   struct Segment {
-    Segment(uint64_t size_diff, Slice until) : size_in_this_segment(size_diff), segment_until_user_key(until) {}
+    Segment(uint64_t size_diff, Slice until)
+        : size_in_this_segment(size_diff), segment_until_user_key(until) {}
     uint64_t size_in_this_segment;
     Slice segment_until_user_key;
   };
@@ -82,7 +83,7 @@ class SstPartitioner {
     // Largest key for compaction
     Slice largest_user_key;
     // The segments consist with the next level of target level.
-    // This will be useful while deciding whether to partition 
+    // This will be useful while deciding whether to partition
     // files to finer parts for avoiding future huge compactions.
     std::vector<Segment> output_next_level_segments;
   };

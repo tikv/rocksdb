@@ -593,8 +593,7 @@ std::vector<SstPartitioner::Segment> Compaction::CreateSegmentsForLevel(
       });
   const auto end = files.files + files.num_files;
 
-  if (bgn == end) 
-  {
+  if (bgn == end) {
     return std::vector<SstPartitioner::Segment>();
   }
 
@@ -620,7 +619,8 @@ std::unique_ptr<SstPartitioner> Compaction::CreateSstPartitioner() const {
   context.output_level = output_level_;
   context.smallest_user_key = smallest_user_key_;
   context.largest_user_key = largest_user_key_;
-  context.output_next_level_segments = CreateSegmentsForLevel(output_level_ + 1);
+  context.output_next_level_segments =
+      CreateSegmentsForLevel(output_level_ + 1);
   return immutable_options_.sst_partitioner_factory->CreatePartitioner(context);
 }
 
