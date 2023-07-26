@@ -1135,6 +1135,7 @@ Status DBImpl::CompactRangeInternal(const CompactRangeOptions& options,
   if (s.ok() && flush_needed) {
     FlushOptions fo;
     fo.allow_write_stall = options.allow_write_stall;
+    fo.check_if_compaction_disabled = true;
     if (immutable_db_options_.atomic_flush) {
       s = AtomicFlushMemTables(fo, FlushReason::kManualCompaction);
     } else {

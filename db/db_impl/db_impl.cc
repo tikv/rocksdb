@@ -395,6 +395,7 @@ Status DBImpl::ResumeImpl(DBRecoverContext context) {
       FlushOptions flush_opts;
       // We allow flush to stall write since we are trying to resume from error.
       flush_opts.allow_write_stall = true;
+      flush_opts.check_if_compaction_disabled = true;
       s = FlushAllColumnFamilies(flush_opts, context.flush_reason);
     }
     if (!s.ok()) {
@@ -491,7 +492,10 @@ void DBImpl::CancelAllBackgroundWork(bool wait) {
   if (!shutting_down_.load(std::memory_order_acquire) &&
       has_unpersisted_data_.load(std::memory_order_relaxed) &&
       !mutable_db_options_.avoid_flush_during_shutdown) {
-    s = DBImpl::FlushAllColumnFamilies(FlushOptions(), FlushReason::kShutDown);
+    FlushOptions flush_opts;
+    flush_opts.allow_write_stall = true;
+    flush_opts.check_if_compaction_disabled = true;
+    s = DBImpl::FlushAllColumnFamilies(flush_opts, FlushReason::kShutDown);
     s.PermitUncheckedError();  //**TODO: What to do on error?
   }
 
@@ -5862,6 +5866,7 @@ Status DBImpl::IngestExternalFiles(
     if (status.ok() && at_least_one_cf_need_flush) {
       FlushOptions flush_opts;
       flush_opts.allow_write_stall = true;
+      flush_opts.check_if_compaction_disabled = true;
       if (immutable_db_options_.atomic_flush) {
         mutex_.Unlock();
         status = AtomicFlushMemTables(
