@@ -698,7 +698,6 @@ ImmutableDBOptions::ImmutableDBOptions(const DBOptions& options)
       experimental_mempurge_threshold(options.experimental_mempurge_threshold),
       db_write_buffer_size(options.db_write_buffer_size),
       write_buffer_manager(options.write_buffer_manager),
-      lock_write_buffer_manager(options.lock_write_buffer_manager),
       access_hint_on_compaction_start(options.access_hint_on_compaction_start),
       new_table_reader_for_compaction_inputs(
           options.new_table_reader_for_compaction_inputs),

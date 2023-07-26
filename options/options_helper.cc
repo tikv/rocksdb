@@ -124,7 +124,6 @@ DBOptions BuildDBOptions(const ImmutableDBOptions& immutable_db_options,
   options.advise_random_on_open = immutable_db_options.advise_random_on_open;
   options.db_write_buffer_size = immutable_db_options.db_write_buffer_size;
   options.write_buffer_manager = immutable_db_options.write_buffer_manager;
-  options.lock_write_buffer_manager = immutable_db_options.lock_write_buffer_manager;
   options.access_hint_on_compaction_start =
       immutable_db_options.access_hint_on_compaction_start;
   options.new_table_reader_for_compaction_inputs =

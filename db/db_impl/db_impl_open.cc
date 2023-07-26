@@ -7,6 +7,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 #include <cinttypes>
+#include <memory>
 
 #include "db/builder.h"
 #include "db/db_impl/db_impl.h"
@@ -62,10 +63,17 @@ DBOptions SanitizeOptions(const std::string& dbname, const DBOptions& src,
     }
   }
 
-  if (!result.write_buffer_manager) {
-    result.write_buffer_manager.reset(
-        new WriteBufferManager(result.db_write_buffer_size));
+  std::shared_ptr<WriteBufferManager> wbm;
+  if (result.write_buffer_manager.empty()) {
+    wbm.reset(new WriteBufferManager(result.db_write_buffer_size));
+  } else {
+    // use write buffer manager with disabled status for CFs not couppled with
+    // write buffer manager.
+    wbm.reset(new WriteBufferManager(0));
   }
+
+  result.write_buffer_manager.push_back(wbm);
+
   auto bg_job_limits = DBImpl::GetBGJobLimits(
       result.max_background_flushes, result.max_background_compactions,
       result.max_background_jobs, result.base_background_compactions,

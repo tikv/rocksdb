@@ -985,6 +985,7 @@ class VersionSet {
   VersionSet(const std::string& dbname, const ImmutableDBOptions* db_options,
              const FileOptions& file_options, Cache* table_cache,
              std::vector<WriteBufferManager*> write_buffer_manager,
+             std::unordered_map<std::string, size_t> write_buffer_manager_map,
              WriteController* write_controller,
              BlockCacheTracer* const block_cache_tracer,
              const std::shared_ptr<IOTracer>& io_tracer,

@@ -109,7 +109,6 @@
 namespace ROCKSDB_NAMESPACE {
 
 const std::string kDefaultColumnFamilyName("default");
-const std::string kLockColumnFamilyName("lock");
 const std::string kPersistentStatsColumnFamilyName(
     "___rocksdb_stats_history___");
 void DumpRocksDBBuildVersion(Logger* log);
@@ -185,8 +184,6 @@ DBImpl::DBImpl(const DBOptions& options, const std::string& dbname,
       log_sync_cv_(&log_write_mutex_),
       total_log_size_(0),
       is_snapshot_supported_(true),
-      lock_write_buffer_manager_(
-          immutable_db_options_.lock_write_buffer_manager.get()),
       write_thread_(immutable_db_options_),
       nonmem_write_thread_(immutable_db_options_),
       write_controller_(mutable_db_options_.delayed_write_rate),
@@ -260,10 +257,14 @@ DBImpl::DBImpl(const DBOptions& options, const std::string& dbname,
   SetDbSessionId();
   assert(!db_session_id_.empty());
 
-  versions_.reset(new VersionSet(dbname_, &immutable_db_options_, file_options_,
-                                 table_cache_.get(), write_buffer_manager_,
-                                 &write_controller_, &block_cache_tracer_,
-                                 io_tracer_, db_session_id_));
+  for (auto manager : immutable_db_options_.write_buffer_manager) {
+    write_buffer_manager_.push_back(manager.get());
+  }
+  wbm_stall_.reset(new WBMStallInterface());
+  versions_.reset(new VersionSet(
+      dbname_, &immutable_db_options_, file_options_, table_cache_.get(),
+      write_buffer_manager_, write_buffer_manager_map_, &write_controller_,
+      &block_cache_tracer_, io_tracer_, db_session_id_));
   column_family_memtables_.reset(
       new ColumnFamilyMemTablesImpl(versions_->GetColumnFamilySet()));
 
@@ -275,12 +276,6 @@ DBImpl::DBImpl(const DBOptions& options, const std::string& dbname,
 
   max_total_wal_size_.store(mutable_db_options_.max_total_wal_size,
                             std::memory_order_relaxed);
-  for (auto manager : immutable_db_options_.write_buffer_manager) {
-    write_buffer_manager_.push_back(manager.get());
-  }
-  if (!write_buffer_manager_.empty()) {
-    wbm_stall_.reset(new WBMStallInterface());
-  }
 }
 
 Status DBImpl::Resume() {

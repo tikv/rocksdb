@@ -1340,7 +1340,7 @@ Status DBImpl::PreprocessWrite(const WriteOptions& write_options,
   // It does soft checking because WriteBufferManager::buffer_limit_ has already
   // exceeded at this point so no new write (including current one) will go
   // through until memory usage is decreased.
-  for (int i = 0; i < write_buffer_manager_.size(); i++) {
+  for (size_t i = 0; i < write_buffer_manager_.size(); i++) {
     if (UNLIKELY(status.ok() && write_buffer_manager_[i]->ShouldStall())) {
       if (write_options.no_slowdown) {
         status = Status::Incomplete("Write stall");

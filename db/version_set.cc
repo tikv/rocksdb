@@ -4061,18 +4061,19 @@ void AtomicGroupReadBuffer::Clear() {
   replay_buffer_.clear();
 }
 
-VersionSet::VersionSet(const std::string& dbname,
-                       const ImmutableDBOptions* _db_options,
-                       const FileOptions& storage_options, Cache* table_cache,
-                       WriteBufferManager* write_buffer_manager,
-                       WriteController* write_controller,
-                       BlockCacheTracer* const block_cache_tracer,
-                       const std::shared_ptr<IOTracer>& io_tracer,
-                       const std::string& db_session_id)
-    : column_family_set_(
-          new ColumnFamilySet(dbname, _db_options, storage_options, table_cache,
-                              write_buffer_manager, write_controller,
-                              block_cache_tracer, io_tracer, db_session_id)),
+VersionSet::VersionSet(
+    const std::string& dbname, const ImmutableDBOptions* _db_options,
+    const FileOptions& storage_options, Cache* table_cache,
+    std::vector<WriteBufferManager*> write_buffer_manager,
+    std::unordered_map<std::string, size_t> write_buffer_manager_map,
+    WriteController* write_controller,
+    BlockCacheTracer* const block_cache_tracer,
+    const std::shared_ptr<IOTracer>& io_tracer,
+    const std::string& db_session_id)
+    : column_family_set_(new ColumnFamilySet(
+          dbname, _db_options, storage_options, table_cache,
+          write_buffer_manager, write_buffer_manager_map, write_controller,
+          block_cache_tracer, io_tracer, db_session_id)),
       table_cache_(table_cache),
       env_(_db_options->env),
       fs_(_db_options->fs, io_tracer),
@@ -4112,10 +4113,13 @@ VersionSet::~VersionSet() {
 
 void VersionSet::Reset() {
   if (column_family_set_) {
-    WriteBufferManager* wbm = column_family_set_->write_buffer_manager();
+    std::vector<WriteBufferManager*> wbm =
+        column_family_set_->write_buffer_manager();
+    std::unordered_map<std::string, size_t> wbmm =
+        column_family_set_->write_buffer_manager_map();
     WriteController* wc = column_family_set_->write_controller();
     column_family_set_.reset(new ColumnFamilySet(
-        dbname_, db_options_, file_options_, table_cache_, wbm, wc,
+        dbname_, db_options_, file_options_, table_cache_, wbm, wbmm, wc,
         block_cache_tracer_, io_tracer_, db_session_id_));
   }
   db_id_.clear();
@@ -6042,6 +6046,7 @@ ReactiveVersionSet::ReactiveVersionSet(
     const std::string& dbname, const ImmutableDBOptions* _db_options,
     const FileOptions& _file_options, Cache* table_cache,
     std::vector<WriteBufferManager*> write_buffer_manager,
+    std::unordered_map<std::string, size_t> write_buffer_manager_map,
     WriteController* write_controller,
     const std::shared_ptr<IOTracer>& io_tracer)
     : VersionSet(dbname, _db_options, _file_options, table_cache,
