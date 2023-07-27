@@ -1677,6 +1677,9 @@ ColumnFamilyData* ColumnFamilySet::CreateColumnFamily(
   if (write_buffer_manager_map_.count(name)) {
     write_buffer_manager =
         write_buffer_manager_[write_buffer_manager_map_[name]];
+  } else {
+    write_buffer_manager =
+        write_buffer_manager_[write_buffer_manager_.size() - 1];
   }
   ColumnFamilyData* new_cfd = new ColumnFamilyData(
       id, name, dummy_versions, table_cache_, write_buffer_manager, options,

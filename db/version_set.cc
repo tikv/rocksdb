@@ -5163,9 +5163,11 @@ Status VersionSet::ReduceNumberOfLevels(const std::string& dbname,
   std::shared_ptr<Cache> tc(NewLRUCache(options->max_open_files - 10,
                                         options->table_cache_numshardbits));
   WriteController wc(options->delayed_write_rate);
-  WriteBufferManager wb(options->db_write_buffer_size);
-  VersionSet versions(dbname, &db_options, file_options, tc.get(), &wb, &wc,
-                      nullptr /*BlockCacheTracer*/, nullptr /*IOTracer*/,
+  std::vector<WriteBufferManager*> wbms{
+      new WriteBufferManager(options->db_write_buffer_size)};
+  std::unordered_map<std::string, size_t> wbmm;
+  VersionSet versions(dbname, &db_options, file_options, tc.get(), wbms, wbmm,
+                      &wc, nullptr /*BlockCacheTracer*/, nullptr /*IOTracer*/,
                       /*db_session_id*/ "");
   Status status;
 
@@ -6050,7 +6052,8 @@ ReactiveVersionSet::ReactiveVersionSet(
     WriteController* write_controller,
     const std::shared_ptr<IOTracer>& io_tracer)
     : VersionSet(dbname, _db_options, _file_options, table_cache,
-                 write_buffer_manager, write_controller,
+                 write_buffer_manager, write_buffer_manager_map,
+                 write_controller,
                  /*block_cache_tracer=*/nullptr, io_tracer,
                  /*db_session_id*/ "") {}
 

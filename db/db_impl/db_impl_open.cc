@@ -1911,18 +1911,21 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
 
     for (auto* cf : *handles) {
       std::string cf_name = cf->GetName();
+      size_t idx;
       if (impl->write_buffer_manager_map_.count(cf_name)) {
-        size_t idx = impl->write_buffer_manager_map_[cf_name];
-        auto write_buffer_manager = impl->write_buffer_manager_[idx];
-        if (cf_name == kDefaultColumnFamilyName) {
-          write_buffer_manager->RegisterColumnFamily(impl,
-                                                     impl->default_cf_handle_);
-        } else if (cf_name == kPersistentStatsColumnFamilyName) {
-          write_buffer_manager->RegisterColumnFamily(
-              impl, impl->persist_stats_cf_handle_);
-        } else {
-          write_buffer_manager->RegisterColumnFamily(impl, cf);
-        }
+        idx = impl->write_buffer_manager_map_[cf_name];
+      } else {
+        idx = impl->write_buffer_manager_.size() - 1;
+      }
+      auto write_buffer_manager = impl->write_buffer_manager_[idx];
+      if (cf_name == kDefaultColumnFamilyName) {
+        write_buffer_manager->RegisterColumnFamily(impl,
+                                                   impl->default_cf_handle_);
+      } else if (cf_name == kPersistentStatsColumnFamilyName) {
+        write_buffer_manager->RegisterColumnFamily(
+            impl, impl->persist_stats_cf_handle_);
+      } else {
+        write_buffer_manager->RegisterColumnFamily(impl, cf);
       }
     }
   } else {
