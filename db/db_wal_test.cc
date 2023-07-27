@@ -1263,8 +1263,8 @@ class RecoveryTestHelper {
     WriteController write_controller;
 
     versions.reset(new VersionSet(test->dbname_, &db_options, file_options,
-                                  table_cache.get(), &write_buffer_manager,
-                                  &write_controller,
+                                  table_cache.get(), {&write_buffer_manager},
+                                  {}, &write_controller,
                                   /*block_cache_tracer=*/nullptr,
                                   /*io_tracer=*/nullptr, /*db_session_id*/ ""));
 
