@@ -548,7 +548,7 @@ DBOptions* DBOptions::OptimizeForSmallDb(std::shared_ptr<Cache>* cache) {
   std::shared_ptr<ROCKSDB_NAMESPACE::WriteBufferManager> wbm =
       std::make_shared<ROCKSDB_NAMESPACE::WriteBufferManager>(
           0, (cache != nullptr) ? *cache : std::shared_ptr<Cache>());
-  write_buffer_manager = wbm;
+  write_buffer_manager = {wbm};
 
   return this;
 }
