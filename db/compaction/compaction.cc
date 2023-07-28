@@ -622,7 +622,8 @@ std::unique_ptr<SstPartitioner> Compaction::CreateSstPartitioner() const {
   context.output_level = output_level_;
   context.smallest_user_key = smallest_user_key_;
   context.largest_user_key = largest_user_key_;
-  std::tie(context.output_next_level_boundaries, context.output_next_level_size) =
+  std::tie(context.output_next_level_boundaries,
+           context.output_next_level_size) =
       CreateSegmentsForLevel(output_level_ + 1);
   return immutable_options_.sst_partitioner_factory->CreatePartitioner(context);
 }
