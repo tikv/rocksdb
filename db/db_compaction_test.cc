@@ -1065,7 +1065,7 @@ TEST_F(DBCompactionTest, CompactionSstPartitionerNextLevel) {
   options.max_bytes_for_level_multiplier = 2;
   options.sst_partitioner_factory = std::unique_ptr<SstPartitionerFactory>(
       new SplitAllPatitionerFactory([this](const SstPartitioner::Context& cx) {
-        if (!cx.output_next_level_segments.empty()) {
+        if (!cx.output_next_level_boundaries.empty()) {
           std::vector<LiveFileMetaData> files;
           // We are holding the mutex in this context...
           // Perhaps we'd better make a `TEST_GetVersion` for fetching.
@@ -1080,10 +1080,9 @@ TEST_F(DBCompactionTest, CompactionSstPartitionerNextLevel) {
                        Slice(ld.largestkey).compare(cx.smallest_user_key) > 0 &&
                        ld.level == cx.output_level + 1;
               });
-          if (!cx.output_next_level_segments.empty()) {
-            ASSERT_EQ(next_level_overlap_files + 1,
-                      cx.output_next_level_segments.size());
-          }
+          ASSERT_EQ(next_level_overlap_files + 1,
+                    cx.output_next_level_boundaries.size());
+          ASSERT_EQ(next_level_overlap_files, cx.output_next_level_size.size());
         }
       }));
   DestroyAndReopen(options);

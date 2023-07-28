@@ -567,8 +567,8 @@ std::unique_ptr<CompactionFilter> Compaction::CreateCompactionFilter(
       context);
 }
 
-std::vector<SstPartitioner::Segment> Compaction::CreateSegmentsForLevel(
-    int in_level) const {
+std::pair<std::vector<Slice>, std::vector<uint64_t>>
+Compaction::CreateSegmentsForLevel(int in_level) const {
   // So... the below files should be adjacently sorted.
   // For now, this is only for creating the next-of-output level info, so it
   // makes sense for not supporting L0.
@@ -576,36 +576,39 @@ std::vector<SstPartitioner::Segment> Compaction::CreateSegmentsForLevel(
 
   // Some of test cases may not initialize the version...
   if (input_version_ == nullptr) {
-    return std::vector<SstPartitioner::Segment>();
+    return std::make_pair(std::vector<Slice>(), std::vector<uint64_t>());
   }
 
   const auto vsi = input_version_->storage_info();
   if (in_level >= vsi->num_non_empty_levels()) {
     // The level shall be empty.
-    return std::vector<SstPartitioner::Segment>();
+    return std::make_pair(std::vector<Slice>(), std::vector<uint64_t>());
   }
-  const auto files = vsi->LevelFilesBrief(in_level);
+  const auto& files = vsi->LevelFilesBrief(in_level);
   const auto cmp = immutable_options()->user_comparator;
-  const auto bgn = std::lower_bound(
+  const auto start = std::lower_bound(
       files.files, files.files + files.num_files, smallest_user_key_,
       [cmp](FdWithKeyRange& fd, const Slice& slice) {
         return cmp->Compare(fd.largest_key, slice) < 0;
       });
   const auto end = files.files + files.num_files;
 
-  if (bgn == end) {
-    return std::vector<SstPartitioner::Segment>();
+  if (start == end) {
+    // There is no overlapping of next level.
+    return std::make_pair(std::vector<Slice>(), std::vector<uint64_t>());
   }
 
-  std::vector<SstPartitioner::Segment> segs;
-  segs.emplace_back(0, bgn->smallest_key);
-  for (const FdWithKeyRange* iter = bgn; iter < end; iter++) {
+  std::vector<Slice> ranges;
+  std::vector<uint64_t> sizes;
+  ranges.push_back(start->smallest_key);
+  for (const FdWithKeyRange* iter = start; iter < end; iter++) {
     if (cmp->Compare(iter->smallest_key, largest_user_key_) > 0) {
       break;
     }
-    segs.emplace_back(iter->fd.GetFileSize(), iter->largest_key);
+    ranges.push_back(iter->largest_key);
+    sizes.push_back(iter->fd.GetFileSize());
   }
-  return segs;
+  return std::make_pair(ranges, sizes);
 }
 
 std::unique_ptr<SstPartitioner> Compaction::CreateSstPartitioner() const {
@@ -619,7 +622,7 @@ std::unique_ptr<SstPartitioner> Compaction::CreateSstPartitioner() const {
   context.output_level = output_level_;
   context.smallest_user_key = smallest_user_key_;
   context.largest_user_key = largest_user_key_;
-  context.output_next_level_segments =
+  std::tie(context.output_next_level_boundaries, context.output_next_level_size) =
       CreateSegmentsForLevel(output_level_ + 1);
   return immutable_options_.sst_partitioner_factory->CreatePartitioner(context);
 }

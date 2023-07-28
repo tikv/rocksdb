@@ -82,10 +82,20 @@ class SstPartitioner {
     Slice smallest_user_key;
     // Largest key for compaction
     Slice largest_user_key;
+
     // The segments consist with the next level of target level.
     // This will be useful while deciding whether to partition
-    // files to finer parts for avoiding future huge compactions.
-    std::vector<Segment> output_next_level_segments;
+    // files to finer parts for avoiding possible huge compactions.
+
+    // The boundaries of the next level of output level.
+    // For example, when the next level contains files with range ("001",
+    // "002"), ("003", "004"), The boundaries will be ["001", "002", "004"];
+    std::vector<Slice> output_next_level_boundaries;
+    // The size of each segment, for example, when
+    // `output_next_level_boundaries` is ["001", "002", "004"], this might be
+    // [42, 96], which means range ["001", "002") contains 42 bytes of data,
+    // ["002", "004") contains 96 bytes of data.
+    std::vector<uint64_t> output_next_level_size;
   };
 };
 
