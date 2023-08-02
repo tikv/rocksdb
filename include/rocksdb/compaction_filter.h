@@ -157,6 +157,10 @@ class CompactionFilter : public Customizable {
       }
       case ValueType::kBlobIndex:
         return Decision::kKeep;
+      case ValueType::kDeletion:
+        // Should not appear in this API.
+        assert(false);
+        return Decision::kKeep;
     }
     assert(false);
     return Decision::kKeep;
@@ -220,7 +224,7 @@ class CompactionFilter : public Customizable {
                                 const Slice& existing_value,
                                 std::string* new_value,
                                 std::string* skip_until) const {
-    if (value_type != ValueType::kTypeDeletion) {
+    if (value_type != ValueType::kDeletion) {
       return FilterV3(level, key, seqno, value_type, existing_value, new_value,
                       skip_until);
     } else {
