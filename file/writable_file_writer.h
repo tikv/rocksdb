@@ -195,7 +195,7 @@ class WritableFileWriter {
     TEST_SYNC_POINT_CALLBACK("WritableFileWriter::WritableFileWriter:0",
                              reinterpret_cast<void*>(max_buffer_size_));
     buf_.Alignment(writable_file_->GetRequiredBufferAlignment());
-    // Removed to reduce WAL writer memory usage.
+    // Moved to `Append` to reduce memory usage of unused writer.
     // buf_.AllocateNewBuffer(std::min((size_t)65536, max_buffer_size_));
 #ifndef ROCKSDB_LITE
     std::for_each(listeners.begin(), listeners.end(),
