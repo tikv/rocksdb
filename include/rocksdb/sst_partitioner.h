@@ -96,6 +96,25 @@ class SstPartitioner {
     // [42, 96], which means range ["001", "002") contains 42 bytes of data,
     // ["002", "004") contains 96 bytes of data.
     std::vector<uint64_t> output_next_level_size;
+
+    // Helper function to fetch the count of next level segments.
+    int OutputNextLevelSegmentCount() {
+      return output_next_level_boundaries.empty()
+                 ? 0
+                 : output_next_level_boundaries.size() - 1;
+    }
+
+    // Helper function to fetch the n-th segment of the next level of the output level.
+    // `index` shall less than `OutputNextLevelSegmentCount`.
+    void OutputNextLevelSegment(int index, Slice* start_key, Slice* end_key,
+                                int* size) {
+      assert(start_key != nullptr);
+      *start_key = output_next_level_boundaries[index];
+      assert(end_key != nullptr);
+      *end_key = output_next_level_boundaries[index + 1];
+      assert(size != nullptr);
+      *size = output_next_level_size[index];
+    }
   };
 };
 
