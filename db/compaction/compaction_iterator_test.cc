@@ -707,8 +707,9 @@ TEST_P(CompactionIteratorTest, SingleMergeOperand) {
 
 TEST_P(CompactionIteratorTest, RemoveAllSingleDeletes) {
   struct Filter : public CompactionFilter {
-    Decision UnsafeFilter(int /*level*/, const Slice& key, SequenceNumber seq,
-                          ValueType t, const Slice& /*existing_value*/,
+    Decision UnsafeFilter(int /*level*/, const Slice& key,
+                          SequenceNumber /*seq*/, ValueType t,
+                          const Slice& /*existing_value*/,
                           std::string* /*new_value*/,
                           std::string* skip_until) const override {
       if (t == ValueType::kDeletion) {
