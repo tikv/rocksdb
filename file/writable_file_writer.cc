@@ -69,6 +69,10 @@ IOStatus WritableFileWriter::Append(const Slice& data, uint32_t crc32c_checksum,
                                  io_options, nullptr);
   }
 
+  // The buffer initialization code previously in ctor.
+  if (buf_.Capacity() == 0) {
+    buf_.AllocateNewBuffer(std::min((size_t)65536, max_buffer_size_));
+  }
   // See whether we need to enlarge the buffer to avoid the flush
   if (buf_.Capacity() - buf_.CurrentSize() < left) {
     for (size_t cap = buf_.Capacity();

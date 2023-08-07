@@ -229,17 +229,20 @@ bool CompactionIterator::InvokeFilterIfNeeded(bool* need_skip,
   }
 
   if (ikey_.type != kTypeValue && ikey_.type != kTypeBlobIndex &&
-      ikey_.type != kTypeWideColumnEntity) {
+      ikey_.type != kTypeWideColumnEntity && ikey_.type != kTypeDeletion) {
     return true;
   }
 
   CompactionFilter::Decision decision =
       CompactionFilter::Decision::kUndetermined;
-  CompactionFilter::ValueType value_type =
-      ikey_.type == kTypeValue ? CompactionFilter::ValueType::kValue
-      : ikey_.type == kTypeBlobIndex
-          ? CompactionFilter::ValueType::kBlobIndex
-          : CompactionFilter::ValueType::kWideColumnEntity;
+  CompactionFilter::ValueType value_type = CompactionFilter::ValueType::kValue;
+  if (ikey_.type == kTypeBlobIndex) {
+    value_type = CompactionFilter::ValueType::kBlobIndex;
+  } else if (ikey_.type == kTypeWideColumnEntity) {
+    value_type = CompactionFilter::ValueType::kWideColumnEntity;
+  } else if (ikey_.type == kTypeDeletion) {
+    value_type = CompactionFilter::ValueType::kDeletion;
+  }
 
   // Hack: pass internal key to BlobIndexCompactionFilter since it needs
   // to get sequence number.

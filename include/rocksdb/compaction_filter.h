@@ -67,6 +67,7 @@ class CompactionFilter : public Customizable {
     kBlobIndex,
     // Wide-column entity
     kWideColumnEntity,
+    kDeletion,  // used only by TiKV's region range filter.
   };
 
   // Potential decisions that can be returned by the compaction filter's
@@ -254,8 +255,12 @@ class CompactionFilter : public Customizable {
       case ValueType::kBlobIndex:
         return Decision::kKeep;
 
-      default:
+      case ValueType::kDeletion:
+        // Should not appear in this API.
         assert(false);
+        return Decision::kKeep;
+
+      default:
         return Decision::kKeep;
     }
   }
@@ -298,8 +303,23 @@ class CompactionFilter : public Customizable {
       return Decision::kKeep;
     }
 
-    return FilterV2(level, key, value_type, *existing_value, new_value,
-                    skip_until);
+    return UnsafeFilter(level, key, value_type, *existing_value, new_value,
+                        skip_until);
+  }
+
+  // This interface is reserved for TiKV's region range filter. Only this
+  // interface can accept `value_type=kTypeDeletion`.
+  virtual Decision UnsafeFilter(int level, const Slice& key,
+                                ValueType value_type,
+                                const Slice& existing_value,
+                                std::string* new_value,
+                                std::string* skip_until) const {
+    if (value_type != ValueType::kDeletion) {
+      return FilterV2(level, key, value_type, existing_value, new_value,
+                      skip_until);
+    } else {
+      return Decision::kKeep;
+    }
   }
 
   // Internal (BlobDB) use only. Do not override in application code.
