@@ -184,7 +184,6 @@ DBImpl::DBImpl(const DBOptions& options, const std::string& dbname,
       log_sync_cv_(&log_write_mutex_),
       total_log_size_(0),
       is_snapshot_supported_(true),
-      write_buffer_manager_map_(immutable_db_options_.write_buffer_manager_map),
       write_thread_(immutable_db_options_),
       nonmem_write_thread_(immutable_db_options_),
       write_controller_(mutable_db_options_.delayed_write_rate),
@@ -258,6 +257,9 @@ DBImpl::DBImpl(const DBOptions& options, const std::string& dbname,
   SetDbSessionId();
   assert(!db_session_id_.empty());
 
+  for (size_t i = 0; i < immutable_db_options_.column_family.size(); ++i) {
+    write_buffer_manager_map_[immutable_db_options_.column_family[i]] = immutable_db_options_.write_buffer_manager_index[i];
+  }
   for (auto manager : immutable_db_options_.write_buffer_manager) {
     write_buffer_manager_.push_back(manager.get());
   }

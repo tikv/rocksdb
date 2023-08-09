@@ -742,6 +742,10 @@ ImmutableDBOptions::ImmutableDBOptions(const DBOptions& options)
       checksum_handoff_file_types(options.checksum_handoff_file_types),
       lowest_used_cache_tier(options.lowest_used_cache_tier),
       compaction_service(options.compaction_service) {
+  for (auto p: options.write_buffer_manager_map) {
+    column_family.push_back(p.first);
+    write_buffer_manager_index.push_back(p.second);
+  }
   stats = statistics.get();
   fs = env->GetFileSystem();
   if (env != nullptr) {
