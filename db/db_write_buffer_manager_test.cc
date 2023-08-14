@@ -36,7 +36,8 @@ TEST_P(DBWriteBufferManagerTest, SharedBufferAcrossCFs1) {
     options.write_buffer_manager.push_back(
         std::make_shared<WriteBufferManager>(100000, nullptr, 1.0));
   }
-  options.write_buffer_manager_map = {{"default", 0}, {"cf1", 0}, {"cf2", 0}, {"cf3", 0}};
+  options.write_buffer_manager_map = {
+      {"default", 0}, {"cf1", 0}, {"cf2", 0}, {"cf3", 0}};
 
   WriteOptions wo;
   wo.disableWAL = true;
@@ -62,9 +63,9 @@ TEST_P(DBWriteBufferManagerTest, SharedBufferAcrossCFs1) {
   ASSERT_OK(Put(0, Key(2), DummyString(1), wo));
 }
 
-// Test Single DB with single WriteBufferManager with multiple writer threads get blocked  when
-// WriteBufferManager execeeds buffer_size_ and flush is waiting to be
-// finished.
+// Test Single DB with single WriteBufferManager with multiple writer threads
+// get blocked  when WriteBufferManager execeeds buffer_size_ and flush is
+// waiting to be finished.
 TEST_P(DBWriteBufferManagerTest, SharedWriteBufferAcrossCFs2) {
   Options options = CurrentOptions();
   options.arena_block_size = 4096;
@@ -80,7 +81,8 @@ TEST_P(DBWriteBufferManagerTest, SharedWriteBufferAcrossCFs2) {
     options.write_buffer_manager.push_back(
         std::make_shared<WriteBufferManager>(100000, nullptr, 1.0));
   }
-  options.write_buffer_manager_map = {{"default", 0}, {"cf1", 0}, {"cf2", 0}, {"cf3", 0}};
+  options.write_buffer_manager_map = {
+      {"default", 0}, {"cf1", 0}, {"cf2", 0}, {"cf3", 0}};
 
   WriteOptions wo;
   wo.disableWAL = true;
@@ -205,7 +207,7 @@ TEST_P(DBWriteBufferManagerTest, SharedWriteBufferAcrossCFs3) {
         std::make_shared<WriteBufferManager>(100000, nullptr, 1.0));
   }
   options.write_buffer_manager_map = {{"default", 0}, {"cf1", 0}, {"cf2", 0},
-                                      {"cf3", 0}, {"cf4", 1}, {"cf5", 1}};
+                                      {"cf3", 0},     {"cf4", 1}, {"cf5", 1}};
 
   WriteOptions wo;
   wo.disableWAL = true;
@@ -817,7 +819,8 @@ TEST_P(DBWriteBufferManagerTest, MixedSlowDownOptionsSingleDB) {
     options.write_buffer_manager.push_back(
         std::make_shared<WriteBufferManager>(100000, nullptr, 1.0));
   }
-  options.write_buffer_manager_map = {{"default", 0}, {"cf1", 0}, {"cf2", 0}, {"cf3", 0}};
+  options.write_buffer_manager_map = {
+      {"default", 0}, {"cf1", 0}, {"cf2", 0}, {"cf3", 0}};
   WriteOptions wo;
   wo.disableWAL = true;
 

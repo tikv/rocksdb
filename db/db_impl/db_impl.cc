@@ -258,7 +258,8 @@ DBImpl::DBImpl(const DBOptions& options, const std::string& dbname,
   assert(!db_session_id_.empty());
 
   for (size_t i = 0; i < immutable_db_options_.column_family.size(); ++i) {
-    write_buffer_manager_map_[immutable_db_options_.column_family[i]] = immutable_db_options_.write_buffer_manager_index[i];
+    write_buffer_manager_map_[immutable_db_options_.column_family[i]] =
+        immutable_db_options_.write_buffer_manager_index[i];
   }
   for (auto manager : immutable_db_options_.write_buffer_manager) {
     write_buffer_manager_.push_back(manager.get());
