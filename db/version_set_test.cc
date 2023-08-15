@@ -926,9 +926,9 @@ class VersionSetTestBase {
                        {&write_buffer_manager_}, {}, &write_controller_,
                        /*block_cache_tracer=*/nullptr, /*io_tracer=*/nullptr,
                        /*db_session_id*/ ""));
-    reactive_versions_ = std::make_shared<ReactiveVersionSet>(
+    reactive_versions_.reset(new ReactiveVersionSet(
         dbname_, &db_options_, env_options_, table_cache_.get(),
-        &write_buffer_manager_, &write_controller_, nullptr);
+        {&write_buffer_manager_}, {}, &write_controller_, nullptr));
     db_options_.db_paths.emplace_back(dbname_,
                                       std::numeric_limits<uint64_t>::max());
   }
@@ -1600,7 +1600,7 @@ TEST_F(VersionSetTest, WalCloseWithoutSync) {
   {
     std::unique_ptr<VersionSet> new_versions(
         new VersionSet(dbname_, &db_options_, env_options_, table_cache_.get(),
-                       &write_buffer_manager_, &write_controller_,
+                       {&write_buffer_manager_}, {}, &write_controller_,
                        /*block_cache_tracer=*/nullptr, /*io_tracer=*/nullptr,
                        /*db_session_id*/ ""));
     ASSERT_OK(new_versions->Recover(column_families_, false));

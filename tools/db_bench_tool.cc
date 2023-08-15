@@ -3180,7 +3180,9 @@ class Benchmark {
     delete prefix_extractor_;
     if (cache_.get() != nullptr) {
       // Clear cache reference first
-      open_options_.write_buffer_manager.reset();
+      for (auto wfm : open_options_.write_buffer_manager) {
+        wfm.reset();
+      }
       // this will leak, but we're shutting down so nobody cares
       cache_->DisownData();
     }
@@ -4050,8 +4052,9 @@ class Benchmark {
     options.env = FLAGS_env;
     options.max_open_files = FLAGS_open_files;
     if (FLAGS_cost_write_buffer_to_cache || FLAGS_db_write_buffer_size != 0) {
-      options.write_buffer_manager.reset(
-          new WriteBufferManager(FLAGS_db_write_buffer_size, cache_));
+      options.write_buffer_manager.push_back(
+          std::make_shared<WriteBufferManager>(FLAGS_db_write_buffer_size,
+                                               cache_));
     }
     options.arena_block_size = FLAGS_arena_block_size;
     options.write_buffer_size = FLAGS_write_buffer_size;
