@@ -322,6 +322,12 @@ class DB {
     return Status::NotSupported("`MergeDisjointInstances` not implemented");
   }
 
+  // Check all data written before this call is in the range [begin, end).
+  // Return InvalidArgument if not.
+  virtual Status CheckInRange(const Slice* /*begin*/, const Slice* /*end*/) {
+    return Status::NotSupported("`AssertInRange` not implemented");
+  }
+
   virtual Status Resume() { return Status::NotSupported(); }
 
   // Close the DB by releasing resources, closing files etc. This should be

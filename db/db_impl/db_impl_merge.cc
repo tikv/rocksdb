@@ -57,6 +57,32 @@ Status DBImpl::ValidateForMerge(const MergeInstanceOptions& mopts,
   return Status::OK();
 }
 
+Status DBImpl::CheckInRange(const Slice* begin, const Slice* end) {
+  Status s;
+  if (begin == nullptr && end == nullptr) {
+    return s;
+  }
+  for (auto cfd : *versions_->GetColumnFamilySet()) {
+    assert(cfd != nullptr);
+    auto* comparator = cfd->user_comparator();
+    PinnableSlice smallest, largest;
+    bool found = false;
+    s = cfd->GetUserKeyRange(&smallest, &largest, &found);
+    if (!s.ok()) {
+      return s;
+    }
+    if (!found) {
+      continue;
+    }
+    if (begin != nullptr && comparator->Compare(smallest, *begin) < 0) {
+      return Status::InvalidArgument("Has data smaller than left boundary");
+    } else if (end != nullptr && comparator->Compare(largest, *end) >= 0) {
+      return Status::InvalidArgument("Has data larger than right boundary");
+    }
+  }
+  return s;
+}
+
 Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
                                       const std::vector<DB*>& instances) {
   Status s;
