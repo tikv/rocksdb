@@ -969,6 +969,7 @@ class DBImpl : public DB {
 
   Status MergeDisjointInstances(const MergeInstanceOptions& merge_options,
                                 const std::vector<DB*>& instances) override;
+  Status CheckInRange(const Slice* begin, const Slice* end) override;
 
   static IOStatus CreateAndNewDirectory(
       FileSystem* fs, const std::string& dirname,

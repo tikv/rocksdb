@@ -327,6 +327,12 @@ class DB {
     return Status::NotSupported("`MergeDisjointInstances` not implemented");
   }
 
+  // Check all data written before this call is in the range [begin, end).
+  // Return InvalidArgument if not.
+  virtual Status CheckInRange(const Slice* /*begin*/, const Slice* /*end*/) {
+    return Status::NotSupported("`AssertInRange` not implemented");
+  }
+
   // Experimental and subject to change
   // Open DB and trim data newer than specified timestamp.
   // The trim_ts specified the user-defined timestamp trim bound.
