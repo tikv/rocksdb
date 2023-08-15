@@ -257,12 +257,11 @@ DBImpl::DBImpl(const DBOptions& options, const std::string& dbname,
   SetDbSessionId();
   assert(!db_session_id_.empty());
 
-  for (size_t i = 0; i < immutable_db_options_.column_family.size(); ++i) {
-    write_buffer_manager_map_[immutable_db_options_.column_family[i]] =
-        immutable_db_options_.write_buffer_manager_index[i];
+  for (auto cf_to_idx : immutable_db_options_.cf_to_indexes) {
+    write_buffer_manager_map_[cf_to_idx.first] = cf_to_idx.second;
   }
-  for (auto manager : immutable_db_options_.write_buffer_manager) {
-    write_buffer_manager_.push_back(manager.get());
+  for (const auto& m : immutable_db_options_.write_buffer_manager) {
+    write_buffer_manager_.push_back(m.get());
   }
   wbm_stall_.reset(new WBMStallInterface());
   versions_.reset(new VersionSet(

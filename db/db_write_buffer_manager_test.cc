@@ -88,6 +88,9 @@ TEST_P(DBWriteBufferManagerTest, SharedWriteBufferAcrossCFs2) {
   wo.disableWAL = true;
 
   CreateAndReopenWithCF({"cf1", "cf2", "cf3"}, options);
+  auto opts = db_->GetOptions();
+  ASSERT_EQ(opts.write_buffer_manager.size(), 2);
+
   ASSERT_OK(Put(3, Key(1), DummyString(1), wo));
   Flush(3);
   ASSERT_OK(Put(3, Key(1), DummyString(1), wo));
@@ -213,6 +216,9 @@ TEST_P(DBWriteBufferManagerTest, SharedWriteBufferAcrossCFs3) {
   wo.disableWAL = true;
 
   CreateAndReopenWithCF({"cf1", "cf2", "cf3", "cf4", "cf5"}, options);
+  auto opts = db_->GetOptions();
+  ASSERT_EQ(opts.write_buffer_manager.size(), 3);
+
   ASSERT_OK(Put(3, Key(1), DummyString(1), wo));
   Flush(3);
   ASSERT_OK(Put(3, Key(1), DummyString(1), wo));
