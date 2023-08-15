@@ -342,7 +342,6 @@ TEST_P(DBWriteBufferManagerTest, SharedWriteBufferAcrossCFs4) {
   std::unordered_set<std::string> flush_cfs;
   std::vector<port::Thread> threads;
   int num_writers_total = 6;
-  int num_writers1 = 4;
   InstrumentedMutex mutex;
   InstrumentedCondVar cv(&mutex);
   std::atomic<int> thread_num(0);
