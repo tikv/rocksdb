@@ -223,6 +223,8 @@ TEST_F(OptionsSettableTest, DBOptionsAllFieldsSettable) {
       {offsetof(struct DBOptions, wal_dir), sizeof(std::string)},
       {offsetof(struct DBOptions, write_buffer_manager),
        sizeof(std::shared_ptr<WriteBufferManager>)},
+      {offsetof(struct DBOptions, write_buffer_manager_map),
+       sizeof(std::unordered_map<std::string, size_t>)},
       {offsetof(struct DBOptions, listeners),
        sizeof(std::vector<std::shared_ptr<EventListener>>)},
       {offsetof(struct DBOptions, row_cache), sizeof(std::shared_ptr<Cache>)},
@@ -347,7 +349,8 @@ TEST_F(OptionsSettableTest, DBOptionsAllFieldsSettable) {
                              "allow_data_in_errors=false",
                              new_options));
 
-  ASSERT_EQ(unset_bytes_base, NumUnsetBytes(new_options_ptr, sizeof(DBOptions),
+  // 8 is for write_buffer_manager_map, seems the default value of unordered_map will overwrite the special char
+  ASSERT_EQ(unset_bytes_base + 8, NumUnsetBytes(new_options_ptr, sizeof(DBOptions),
                                             kDBOptionsExcluded));
 
   options->~DBOptions();
