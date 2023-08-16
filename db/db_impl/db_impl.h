@@ -2283,7 +2283,7 @@ class DBImpl : public DB {
 
   // write_buffer_manager_map_ records the mapping from cf to write buffer
   // manager. The last write buffer manager of write_buffer_manager_ is a dummy
-  // write buffer manager, and those column family not in
+  // write buffer manager (with flush_size 0), and those column family not in
   // write_buffer_manager_map_ will use it.
   std::vector<WriteBufferManager*> write_buffer_manager_;
   std::unordered_map<std::string, size_t> write_buffer_manager_map_;
