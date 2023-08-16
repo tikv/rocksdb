@@ -349,9 +349,11 @@ TEST_F(OptionsSettableTest, DBOptionsAllFieldsSettable) {
                              "allow_data_in_errors=false",
                              new_options));
 
-  // 8 is for write_buffer_manager_map, seems the default value of unordered_map will overwrite the special char
-  ASSERT_EQ(unset_bytes_base + 8, NumUnsetBytes(new_options_ptr, sizeof(DBOptions),
-                                            kDBOptionsExcluded));
+  // 8 is for write_buffer_manager_map, seems the default value of unordered_map
+  // will overwrite the special char
+  ASSERT_EQ(
+      unset_bytes_base + 8,
+      NumUnsetBytes(new_options_ptr, sizeof(DBOptions), kDBOptionsExcluded));
 
   options->~DBOptions();
   new_options->~DBOptions();
