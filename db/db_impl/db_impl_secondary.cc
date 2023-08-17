@@ -663,9 +663,7 @@ Status DB::OpenAsSecondary(
   DBImplSecondary* impl = new DBImplSecondary(tmp_opts, dbname, secondary_path);
   impl->versions_.reset(new ReactiveVersionSet(
       dbname, &impl->immutable_db_options_, impl->file_options_,
-      impl->table_cache_.get(), impl->write_buffer_manager_,
-      impl->write_buffer_manager_map_, &impl->write_controller_,
-      impl->io_tracer_));
+      impl->table_cache_.get(), &impl->write_controller_, impl->io_tracer_));
   impl->column_family_memtables_.reset(
       new ColumnFamilyMemTablesImpl(impl->versions_->GetColumnFamilySet()));
   impl->wal_in_db_path_ = impl->immutable_db_options_.IsWalDirSameAsDBPath();

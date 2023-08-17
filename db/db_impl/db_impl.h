@@ -2286,7 +2286,6 @@ class DBImpl : public DB {
   // write buffer manager (with flush_size 0), and those column family not in
   // write_buffer_manager_map_ will use it.
   std::vector<WriteBufferManager*> write_buffer_manager_;
-  std::unordered_map<std::string, size_t> write_buffer_manager_map_;
 
   WriteThread write_thread_;
   WriteBatch tmp_batch_;

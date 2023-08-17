@@ -63,17 +63,6 @@ DBOptions SanitizeOptions(const std::string& dbname, const DBOptions& src,
     }
   }
 
-  std::shared_ptr<WriteBufferManager> wbm;
-  if (result.write_buffer_manager.empty()) {
-    wbm.reset(new WriteBufferManager(result.db_write_buffer_size));
-  } else {
-    // use write buffer manager with disabled status for CFs not couppled with
-    // write buffer manager.
-    wbm.reset(new WriteBufferManager(0));
-  }
-
-  result.write_buffer_manager.push_back(wbm);
-
   auto bg_job_limits = DBImpl::GetBGJobLimits(
       result.max_background_flushes, result.max_background_compactions,
       result.max_background_jobs, result.base_background_compactions,
@@ -1633,6 +1622,22 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
   }
 
   DBImpl* impl = new DBImpl(db_options, dbname, seq_per_batch, batch_per_txn);
+  for (auto cf: column_families) {
+    if (cf.options.write_buffer_manager != nullptr) {
+      WriteBufferManager* wfm = cf.options.write_buffer_manager.get();
+      bool already_exist = false;
+      for (auto m : impl->write_buffer_manager_) {
+        if (m == wfm) {
+          already_exist = true;
+          break;
+        }
+      }
+      if (!already_exist) {
+        impl->write_buffer_manager_.push_back(wfm);
+      }
+    }
+  }
+
   s = impl->env_->CreateDirIfMissing(impl->immutable_db_options_.GetWalDir());
   if (s.ok()) {
     std::vector<std::string> paths;
@@ -1909,23 +1914,21 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
       m->UnregisterDB(impl);
     }
 
-    for (auto* cf : *handles) {
-      std::string cf_name = cf->GetName();
-      size_t idx;
-      if (impl->write_buffer_manager_map_.count(cf_name)) {
-        idx = impl->write_buffer_manager_map_[cf_name];
-      } else {
-        idx = impl->write_buffer_manager_.size() - 1;
-      }
-      auto write_buffer_manager = impl->write_buffer_manager_[idx];
-      if (cf_name == kDefaultColumnFamilyName) {
-        write_buffer_manager->RegisterColumnFamily(impl,
-                                                   impl->default_cf_handle_);
-      } else if (cf_name == kPersistentStatsColumnFamilyName) {
-        write_buffer_manager->RegisterColumnFamily(
-            impl, impl->persist_stats_cf_handle_);
-      } else {
-        write_buffer_manager->RegisterColumnFamily(impl, cf);
+    for (size_t i = 0; i < (*handles).size(); ++i) {
+      auto cf_opt = column_families[i].options;
+      if (cf_opt.write_buffer_manager != nullptr) {
+        auto* cf = (*handles)[i];
+        std::string cf_name = cf->GetName();
+        auto* write_buffer_manager = cf_opt.write_buffer_manager.get();
+        if (cf->GetName() == kDefaultColumnFamilyName) {
+          write_buffer_manager->RegisterColumnFamily(impl,
+                                                     impl->default_cf_handle_);
+        } else if (cf->GetName() == kPersistentStatsColumnFamilyName) {
+          write_buffer_manager->RegisterColumnFamily(
+              impl, impl->persist_stats_cf_handle_);
+        } else {
+          write_buffer_manager->RegisterColumnFamily(impl, cf);
+        }
       }
     }
   } else {

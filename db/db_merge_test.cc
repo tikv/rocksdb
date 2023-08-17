@@ -32,8 +32,6 @@ class DBMergeTest : public testing::Test {
  public:
   DBMergeTest() {
     options_.create_if_missing = true;
-    options_.write_buffer_manager.push_back(
-        std::make_shared<WriteBufferManager>(options_.db_write_buffer_size));
     // avoid stalling the tests.
     options_.disable_write_stall = true;
     options_.avoid_flush_during_shutdown = true;

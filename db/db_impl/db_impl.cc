@@ -257,17 +257,9 @@ DBImpl::DBImpl(const DBOptions& options, const std::string& dbname,
   SetDbSessionId();
   assert(!db_session_id_.empty());
 
-  for (auto cf_to_idx : immutable_db_options_.cf_to_indexes) {
-    write_buffer_manager_map_[cf_to_idx.first] = cf_to_idx.second;
-  }
-  for (const auto& m : immutable_db_options_.write_buffer_manager) {
-    write_buffer_manager_.push_back(m.get());
-  }
-  wbm_stall_.reset(new WBMStallInterface());
   versions_.reset(new VersionSet(
       dbname_, &immutable_db_options_, file_options_, table_cache_.get(),
-      write_buffer_manager_, write_buffer_manager_map_, &write_controller_,
-      &block_cache_tracer_, io_tracer_, db_session_id_));
+      &write_controller_, &block_cache_tracer_, io_tracer_, db_session_id_));
   column_family_memtables_.reset(
       new ColumnFamilyMemTablesImpl(versions_->GetColumnFamilySet()));
 
@@ -279,6 +271,7 @@ DBImpl::DBImpl(const DBOptions& options, const std::string& dbname,
 
   max_total_wal_size_.store(mutable_db_options_.max_total_wal_size,
                             std::memory_order_relaxed);
+  wbm_stall_.reset(new WBMStallInterface());
 }
 
 Status DBImpl::Resume() {
@@ -2832,11 +2825,18 @@ Status DBImpl::CreateColumnFamilyImpl(const ColumnFamilyOptions& cf_options,
   if (s.ok()) {
     NewThreadStatusCfInfo(
         static_cast_with_check<ColumnFamilyHandleImpl>(*handle)->cfd());
-
-    if (write_buffer_manager_map_.count(column_family_name)) {
-      size_t idx = write_buffer_manager_map_[column_family_name];
-      auto write_buffer_manager = write_buffer_manager_[idx];
-      write_buffer_manager->RegisterColumnFamily(this, *handle);
+    if (cf_options.write_buffer_manager != nullptr) {
+      auto wfm = cf_options.write_buffer_manager.get();
+      wfm->RegisterColumnFamily(this, *handle);
+      bool already_exists = false;
+      for (auto m : write_buffer_manager_) {
+        if (wfm == m) {
+          already_exists = true;
+        }
+      }
+      if (!already_exists) {
+        write_buffer_manager_.push_back(wfm);
+      }
     }
   }
   return s;

@@ -59,8 +59,6 @@ struct ImmutableDBOptions {
   bool advise_random_on_open;
   double experimental_mempurge_threshold;
   size_t db_write_buffer_size;
-  std::vector<std::shared_ptr<WriteBufferManager>> write_buffer_manager;
-  std::vector<std::pair<std::string, size_t>> cf_to_indexes;
   DBOptions::AccessHint access_hint_on_compaction_start;
   bool new_table_reader_for_compaction_inputs;
   size_t random_access_max_buffer_size;

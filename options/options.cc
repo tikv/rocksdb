@@ -544,12 +544,6 @@ DBOptions* DBOptions::OptimizeForSmallDb(std::shared_ptr<Cache>* cache) {
   max_file_opening_threads = 1;
   max_open_files = 5000;
 
-  // Cost memtable to block cache too.
-  std::shared_ptr<ROCKSDB_NAMESPACE::WriteBufferManager> wbm =
-      std::make_shared<ROCKSDB_NAMESPACE::WriteBufferManager>(
-          0, (cache != nullptr) ? *cache : std::shared_ptr<Cache>());
-  write_buffer_manager = {wbm};
-
   return this;
 }
 

@@ -1588,8 +1588,6 @@ FSDirectory* ColumnFamilyData::GetDataDir(size_t path_id) const {
 ColumnFamilySet::ColumnFamilySet(
     const std::string& dbname, const ImmutableDBOptions* db_options,
     const FileOptions& file_options, Cache* table_cache,
-    std::vector<WriteBufferManager*> _write_buffer_manager,
-    std::unordered_map<std::string, size_t> _write_buffer_manager_map,
     WriteController* _write_controller,
     BlockCacheTracer* const block_cache_tracer,
     const std::shared_ptr<IOTracer>& io_tracer,
@@ -1604,8 +1602,6 @@ ColumnFamilySet::ColumnFamilySet(
       db_name_(dbname),
       db_options_(db_options),
       table_cache_(table_cache),
-      write_buffer_manager_(std::move(_write_buffer_manager)),
-      write_buffer_manager_map_(std::move(_write_buffer_manager_map)),
       write_controller_(_write_controller),
       block_cache_tracer_(block_cache_tracer),
       io_tracer_(io_tracer),
@@ -1673,18 +1669,13 @@ ColumnFamilyData* ColumnFamilySet::CreateColumnFamily(
     const std::string& name, uint32_t id, Version* dummy_versions,
     const ColumnFamilyOptions& options) {
   assert(column_families_.find(name) == column_families_.end());
-  WriteBufferManager* write_buffer_manager = nullptr;
-  if (write_buffer_manager_map_.count(name)) {
-    write_buffer_manager =
-        write_buffer_manager_[write_buffer_manager_map_[name]];
-  } else {
-    write_buffer_manager =
-        write_buffer_manager_[write_buffer_manager_.size() - 1];
-  }
-  ColumnFamilyData* new_cfd = new ColumnFamilyData(
-      id, name, dummy_versions, table_cache_, write_buffer_manager, options,
-      *db_options_, &file_options_, this, block_cache_tracer_, io_tracer_,
-      db_session_id_);
+  ColumnFamilyData* new_cfd =
+      new ColumnFamilyData(id, name, dummy_versions, table_cache_,
+                           options.write_buffer_manager != nullptr
+                               ? options.write_buffer_manager.get()
+                               : nullptr,
+                           options, *db_options_, &file_options_, this,
+                           block_cache_tracer_, io_tracer_, db_session_id_);
   column_families_.insert({name, id});
   column_family_data_.insert({id, new_cfd});
   max_column_family_ = std::max(max_column_family_, id);

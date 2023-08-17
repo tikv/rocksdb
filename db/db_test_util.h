@@ -968,22 +968,22 @@ class DBTestBase : public testing::Test {
   DBImpl* dbfull() { return static_cast_with_check<DBImpl>(db_); }
 
   void CreateColumnFamilies(const std::vector<std::string>& cfs,
-                            const Options& options);
+                            const Options& options, std::unordered_map<std::string, std::shared_ptr<WriteBufferManager>> wfms = {});
 
   void CreateAndReopenWithCF(const std::vector<std::string>& cfs,
-                             const Options& options);
+                             const Options& options, std::unordered_map<std::string, std::shared_ptr<WriteBufferManager>> wfms = {});
 
   void ReopenWithColumnFamilies(const std::vector<std::string>& cfs,
                                 const std::vector<Options>& options);
 
   void ReopenWithColumnFamilies(const std::vector<std::string>& cfs,
-                                const Options& options);
+                                const Options& options, std::unordered_map<std::string, std::shared_ptr<WriteBufferManager>> wfms = {});
 
   Status TryReopenWithColumnFamilies(const std::vector<std::string>& cfs,
-                                     const std::vector<Options>& options);
+                                     const std::vector<Options>& options, std::unordered_map<std::string, std::shared_ptr<WriteBufferManager>> wfms = {});
 
   Status TryReopenWithColumnFamilies(const std::vector<std::string>& cfs,
-                                     const Options& options);
+                                     const Options& options, std::unordered_map<std::string, std::shared_ptr<WriteBufferManager>> wfms = {});
 
   void Reopen(const Options& options);
 

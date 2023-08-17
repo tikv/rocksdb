@@ -667,8 +667,6 @@ class ColumnFamilySet {
   ColumnFamilySet(
       const std::string& dbname, const ImmutableDBOptions* db_options,
       const FileOptions& file_options, Cache* table_cache,
-      std::vector<WriteBufferManager*> _write_buffer_manager,
-      std::unordered_map<std::string, size_t> write_buffer_manager_map,
       WriteController* _write_controller,
       BlockCacheTracer* const block_cache_tracer,
       const std::shared_ptr<IOTracer>& io_tracer,
@@ -696,14 +694,6 @@ class ColumnFamilySet {
   iterator end() { return iterator(dummy_cfd_); }
 
   Cache* get_table_cache() { return table_cache_; }
-
-  std::vector<WriteBufferManager*> write_buffer_manager() {
-    return write_buffer_manager_;
-  }
-
-  std::unordered_map<std::string, size_t> write_buffer_manager_map() {
-    return write_buffer_manager_map_;
-  }
 
   WriteController* write_controller() { return write_controller_; }
 
@@ -736,8 +726,6 @@ class ColumnFamilySet {
   const std::string db_name_;
   const ImmutableDBOptions* const db_options_;
   Cache* table_cache_;
-  std::vector<WriteBufferManager*> write_buffer_manager_;
-  std::unordered_map<std::string, size_t> write_buffer_manager_map_;
   WriteController* write_controller_;
   BlockCacheTracer* const block_cache_tracer_;
   std::shared_ptr<IOTracer> io_tracer_;

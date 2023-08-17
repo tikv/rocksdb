@@ -697,7 +697,6 @@ ImmutableDBOptions::ImmutableDBOptions(const DBOptions& options)
       advise_random_on_open(options.advise_random_on_open),
       experimental_mempurge_threshold(options.experimental_mempurge_threshold),
       db_write_buffer_size(options.db_write_buffer_size),
-      write_buffer_manager(options.write_buffer_manager),
       access_hint_on_compaction_start(options.access_hint_on_compaction_start),
       new_table_reader_for_compaction_inputs(
           options.new_table_reader_for_compaction_inputs),
@@ -742,9 +741,6 @@ ImmutableDBOptions::ImmutableDBOptions(const DBOptions& options)
       checksum_handoff_file_types(options.checksum_handoff_file_types),
       lowest_used_cache_tier(options.lowest_used_cache_tier),
       compaction_service(options.compaction_service) {
-  for (const auto& p : options.write_buffer_manager_map) {
-    cf_to_indexes.emplace_back(p);
-  }
   stats = statistics.get();
   fs = env->GetFileSystem();
   if (env != nullptr) {
