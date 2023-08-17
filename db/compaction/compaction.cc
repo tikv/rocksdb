@@ -597,15 +597,15 @@ Compaction::CreateSegmentsForLevel(int in_level) const {
     // There is no overlapping of next level.
     return std::make_pair(std::vector<Slice>(), std::vector<uint64_t>());
   }
-
   std::vector<Slice> ranges;
   std::vector<uint64_t> sizes;
-  ranges.push_back(start->smallest_key);
+  // The LevelFileBrief holds raw key...
+  ranges.push_back(ExtractUserKey(start->smallest_key));
   for (const FdWithKeyRange* iter = start; iter < end; iter++) {
-    if (cmp->Compare(iter->smallest_key, largest_user_key_) > 0) {
+    if (cmp->Compare(ExtractUserKey(iter->smallest_key), largest_user_key_) > 0) {
       break;
     }
-    ranges.push_back(iter->largest_key);
+    ranges.push_back(ExtractUserKey(iter->largest_key));
     sizes.push_back(iter->fd.GetFileSize());
   }
   return std::make_pair(ranges, sizes);

@@ -98,22 +98,23 @@ class SstPartitioner {
     std::vector<uint64_t> output_next_level_size;
 
     // Helper function to fetch the count of next level segments.
-    int OutputNextLevelSegmentCount() {
-      return output_next_level_boundaries.empty()
-                 ? 0
-                 : output_next_level_boundaries.size() - 1;
+    int OutputNextLevelSegmentCount() const {
+      return output_next_level_size.size();
     }
 
-    // Helper function to fetch the n-th segment of the next level of the output level.
-    // `index` shall less than `OutputNextLevelSegmentCount`.
-    void OutputNextLevelSegment(int index, Slice* start_key, Slice* end_key,
-                                int* size) {
-      assert(start_key != nullptr);
-      *start_key = output_next_level_boundaries[index];
-      assert(end_key != nullptr);
-      *end_key = output_next_level_boundaries[index + 1];
-      assert(size != nullptr);
-      *size = output_next_level_size[index];
+    // Helper function to fetch the n-th segment of the next level of the output
+    // level. `index` shall less than `OutputNextLevelSegmentCount`.
+    void OutputNextLevelSegment(int index, Slice* smallest_key, Slice* largest_key,
+                                int* size) const {
+      if (smallest_key != nullptr) {
+        *smallest_key = output_next_level_boundaries[index];
+      }
+      if (largest_key != nullptr) {
+        *largest_key = output_next_level_boundaries[index + 1];
+      }
+      if (size != nullptr) {
+        *size = output_next_level_size[index];
+      }
     }
   };
 };
