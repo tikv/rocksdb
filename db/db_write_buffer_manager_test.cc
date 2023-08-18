@@ -36,7 +36,7 @@ TEST_P(DBWriteBufferManagerTest, SharedBufferAcrossCFs1) {
     write_buffer_manager.reset(new WriteBufferManager(100000, nullptr, 1.0));
   }
   std::unordered_map<std::string, std::shared_ptr<WriteBufferManager>> write_buffer_manager_map = {
-      {"default", write_buffer_manager}, {"cf1", write_buffer_manager}, {"cf2", write_buffer_manager}, {"cf3", write_buffer_manager}};
+      {"cf1", write_buffer_manager}, {"cf2", write_buffer_manager}, {"cf3", write_buffer_manager}};
 
   WriteOptions wo;
   wo.disableWAL = true;

@@ -2830,12 +2830,12 @@ Status DBImpl::CreateColumnFamilyImpl(const ColumnFamilyOptions& cf_options,
       wfm->RegisterColumnFamily(this, *handle);
       bool already_exists = false;
       for (auto m : write_buffer_manager_) {
-        if (wfm == m) {
+        if (cf_options.write_buffer_manager == m) {
           already_exists = true;
         }
       }
       if (!already_exists) {
-        write_buffer_manager_.push_back(wfm);
+        write_buffer_manager_.push_back(cf_options.write_buffer_manager);
       }
     }
   }

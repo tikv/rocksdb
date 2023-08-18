@@ -907,6 +907,8 @@ struct DBOptions {
   // Default: 0 (disabled)
   size_t db_write_buffer_size = 0;
 
+  std::vector<std::shared_ptr<WriteBufferManager>> write_buffer_manager = {};
+
   // Specify the file access pattern once a compaction is started.
   // It will be applied to all input files of a compaction.
   // Default: NORMAL

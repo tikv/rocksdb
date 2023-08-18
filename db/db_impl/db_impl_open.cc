@@ -1624,16 +1624,15 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
   DBImpl* impl = new DBImpl(db_options, dbname, seq_per_batch, batch_per_txn);
   for (auto cf: column_families) {
     if (cf.options.write_buffer_manager != nullptr) {
-      WriteBufferManager* wfm = cf.options.write_buffer_manager.get();
       bool already_exist = false;
       for (auto m : impl->write_buffer_manager_) {
-        if (m == wfm) {
+        if (m == cf.options.write_buffer_manager) {
           already_exist = true;
           break;
         }
       }
       if (!already_exist) {
-        impl->write_buffer_manager_.push_back(wfm);
+        impl->write_buffer_manager_.push_back(cf.options.write_buffer_manager);
       }
     }
   }
