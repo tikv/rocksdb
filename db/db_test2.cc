@@ -392,19 +392,22 @@ TEST_P(DBTestSharedWriteBufferAcrossCFs, SharedWriteBufferAcrossCFs) {
   std::shared_ptr<Cache> cache = NewLRUCache(4 * 1024 * 1024, 2);
   ASSERT_LT(cache->GetUsage(), 256 * 1024);
 
+  std::shared_ptr<WriteBufferManager> write_buffer_manager = nullptr;
   if (use_old_interface_) {
     options.db_write_buffer_size = 100000;
   } else if (!cost_cache_) {
-    options.write_buffer_manager.push_back(
-        std::make_shared<WriteBufferManager>(100000));
+    write_buffer_manager = std::make_shared<WriteBufferManager>(100000);
   } else {
-    options.write_buffer_manager.push_back(
-        std::make_shared<WriteBufferManager>(100000, cache));
+    write_buffer_manager = std::make_shared<WriteBufferManager>(100000, cache);
   }
-  options.write_buffer_manager_map = {
-      {"default", 0}, {"pikachu", 0}, {"dobrynia", 0}, {"nikitich", 0}};
+  std::unordered_map<std::string, std::shared_ptr<WriteBufferManager>>
+      write_buffer_manager_map = {{"default", write_buffer_manager},
+                                  {"pikachu", write_buffer_manager},
+                                  {"dobrynia", write_buffer_manager},
+                                  {"nikitich", write_buffer_manager}};
   options.write_buffer_size = 500000;  // this is never hit
-  CreateAndReopenWithCF({"pikachu", "dobrynia", "nikitich"}, options);
+  CreateAndReopenWithCF({"pikachu", "dobrynia", "nikitich"}, options,
+                        write_buffer_manager_map);
 
   WriteOptions wo;
   wo.disableWAL = true;
@@ -536,8 +539,6 @@ TEST_P(DBTestSharedWriteBufferAcrossCFs, SharedWriteBufferAcrossCFs) {
   if (cost_cache_) {
     ASSERT_GE(cache->GetUsage(), 256 * 1024);
     Close();
-    options.write_buffer_manager.clear();
-    last_options_.write_buffer_manager.clear();
     ASSERT_LT(cache->GetUsage(), 256 * 1024);
   }
   ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->DisableProcessing();
@@ -574,10 +575,12 @@ TEST_F(DBTest2, SharedWriteBufferLimitAcrossDB) {
   ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->EnableProcessing();
 
   options.write_buffer_size = 500000;  // this is never hit
-  options.write_buffer_manager.push_back(
-      std::make_shared<WriteBufferManager>(100000));
-  options.write_buffer_manager_map = {{"default", 0}, {"cf1", 0}};
-  CreateAndReopenWithCF({"cf1"}, options);
+  std::shared_ptr<WriteBufferManager> write_buffer_manager =
+      std::make_shared<WriteBufferManager>(100000);
+  std::unordered_map<std::string, std::shared_ptr<WriteBufferManager>>
+      write_buffer_manager_map = {{"default", write_buffer_manager},
+                                  {"cf1", write_buffer_manager}};
+  CreateAndReopenWithCF({"cf1"}, options, write_buffer_manager_map);
 
   ASSERT_OK(DestroyDB(dbname2, options));
   DB* db2 = nullptr;
@@ -683,14 +686,18 @@ TEST_F(DBTest2, SharedWriteBufferLimitAcrossDB_RankByAge) {
   ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->EnableProcessing();
 
   options.write_buffer_size = 500000;  // this is never hit
-  options.write_buffer_manager.push_back(std::make_shared<WriteBufferManager>(
-      100000, nullptr /*cache*/, 0.0 /*stall_ratio*/, true /*flush_oldest*/));
-  options.write_buffer_manager_map = {{"default", 0}, {"cf1", 0}};
+  std::shared_ptr<WriteBufferManager> write_buffer_manager =
+      std::make_shared<WriteBufferManager>(100000, nullptr /*cache*/,
+                                           0.0 /*stall_ratio*/,
+                                           true /*flush_oldest*/);
+  std::unordered_map<std::string, std::shared_ptr<WriteBufferManager>>
+      write_buffer_manager_map = {{"default", write_buffer_manager},
+                                  {"cf1", write_buffer_manager}};
 
   auto mock_clock = std::make_shared<MockSystemClock>(SystemClock::Default());
   options.env = new CompositeEnvWrapper(options.env, mock_clock);
 
-  CreateAndReopenWithCF({"cf1"}, options);
+  CreateAndReopenWithCF({"cf1"}, options, write_buffer_manager_map);
 
   ASSERT_OK(DestroyDB(dbname2, options));
   DB* db2 = nullptr;
@@ -769,10 +776,11 @@ TEST_F(DBTest2, TestWriteBufferNoLimitWithCache) {
   options.write_buffer_size = 50000;  // this is never hit
   // Use a write buffer total size so that the soft limit is about
   // 105000.
-  options.write_buffer_manager.push_back(
-      std::make_shared<WriteBufferManager>(0, cache));
-  options.write_buffer_manager_map = {{"default", 0}, {"foo", 0}, {"bar", 0}};
-  Reopen(options);
+  std::shared_ptr<WriteBufferManager> write_buffer_manager =
+      std::make_shared<WriteBufferManager>(0, cache);
+  std::unordered_map<std::string, std::shared_ptr<WriteBufferManager>>
+      write_buffer_manager_map = {{"default", write_buffer_manager}};
+  ReopenWithColumnFamilies({"default"}, options, write_buffer_manager_map);
 
   ASSERT_OK(Put("foo", "bar"));
   // One dummy entry is 256KB.
@@ -5984,18 +5992,21 @@ TEST_F(DBTest2, SeekFileRangeDeleteTail) {
 
 TEST_F(DBTest2, BackgroundPurgeTest) {
   Options options = CurrentOptions();
-  options.write_buffer_manager.push_back(
-      std::make_shared<ROCKSDB_NAMESPACE::WriteBufferManager>(1 << 20));
-  options.write_buffer_manager_map = {{"default", 0}};
+  std::shared_ptr<WriteBufferManager> write_buffer_manager =
+      std::make_shared<WriteBufferManager>(1 << 20);
+  std::unordered_map<std::string, std::shared_ptr<WriteBufferManager>>
+      write_buffer_manager_map = {{"default", write_buffer_manager}};
+
   options.avoid_unnecessary_blocking_io = true;
-  DestroyAndReopen(options);
-  size_t base_value = options.write_buffer_manager[0]->memory_usage();
+  Destroy(last_options_);
+  ReopenWithColumnFamilies({"default"}, options, write_buffer_manager_map);
+  size_t base_value = write_buffer_manager->memory_usage();
 
   ASSERT_OK(Put("a", "a"));
   Iterator* iter = db_->NewIterator(ReadOptions());
   ASSERT_OK(iter->status());
   ASSERT_OK(Flush());
-  size_t value = options.write_buffer_manager[0]->memory_usage();
+  size_t value = write_buffer_manager->memory_usage();
   ASSERT_GT(value, base_value);
 
   db_->GetEnv()->SetBackgroundThreads(1, Env::Priority::HIGH);
@@ -6005,7 +6016,7 @@ TEST_F(DBTest2, BackgroundPurgeTest) {
   delete iter;
 
   Env::Default()->SleepForMicroseconds(100000);
-  value = options.write_buffer_manager[0]->memory_usage();
+  value = write_buffer_manager->memory_usage();
   ASSERT_GT(value, base_value);
 
   sleeping_task_after.WakeUp();
@@ -6017,7 +6028,7 @@ TEST_F(DBTest2, BackgroundPurgeTest) {
   sleeping_task_after2.WakeUp();
   sleeping_task_after2.WaitUntilDone();
 
-  value = options.write_buffer_manager[0]->memory_usage();
+  value = write_buffer_manager->memory_usage();
   ASSERT_EQ(base_value, value);
 }
 

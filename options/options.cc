@@ -564,6 +564,12 @@ ColumnFamilyOptions* ColumnFamilyOptions::OptimizeForSmallDb(
       BlockBasedTableOptions::IndexType::kTwoLevelIndexSearch;
   table_factory.reset(new BlockBasedTableFactory(table_options));
 
+  // Cost memtable to block cache too.
+  std::shared_ptr<ROCKSDB_NAMESPACE::WriteBufferManager> wbm =
+      std::make_shared<ROCKSDB_NAMESPACE::WriteBufferManager>(
+          0, (cache != nullptr) ? *cache : std::shared_ptr<Cache>());
+  write_buffer_manager = wbm;
+
   return this;
 }
 

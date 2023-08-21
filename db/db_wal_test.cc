@@ -827,9 +827,9 @@ TEST_F(DBWALTest, PreallocateBlock) {
   expected_preallocation_size = 700 * 1000;
   std::shared_ptr<WriteBufferManager> write_buffer_manager =
       std::make_shared<WriteBufferManager>(static_cast<uint64_t>(700 * 1000));
-  options.write_buffer_manager.push_back(write_buffer_manager);
-  options.write_buffer_manager_map = {{"default", 0}};
-  Reopen(options);
+  std::unordered_map<std::string, std::shared_ptr<WriteBufferManager>>
+      write_buffer_manager_map = {{"default", write_buffer_manager}};
+  ReopenWithColumnFamilies({"default"}, options, write_buffer_manager_map);
   called.store(0);
   ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->SetCallBack(
       "DBTestWalFile.GetPreallocationStatus", [&](void* arg) {
@@ -1257,15 +1257,13 @@ class RecoveryTestHelper {
 
     std::shared_ptr<Cache> table_cache = NewLRUCache(50, 0);
     FileOptions file_options;
-    WriteBufferManager write_buffer_manager(db_options.db_write_buffer_size);
 
     std::unique_ptr<VersionSet> versions;
     std::unique_ptr<WalManager> wal_manager;
     WriteController write_controller;
 
     versions.reset(new VersionSet(test->dbname_, &db_options, file_options,
-                                  table_cache.get(), {&write_buffer_manager},
-                                  {}, &write_controller,
+                                  table_cache.get(), &write_controller,
                                   /*block_cache_tracer=*/nullptr,
                                   /*io_tracer=*/nullptr, /*db_session_id*/ ""));
 

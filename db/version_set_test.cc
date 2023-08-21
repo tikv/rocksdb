@@ -901,7 +901,6 @@ class VersionSetTestBase {
         immutable_options_(db_options_, cf_options_),
         mutable_cf_options_(cf_options_),
         table_cache_(NewLRUCache(50000, 16)),
-        write_buffer_manager_(db_options_.db_write_buffer_size),
         shutting_down_(false),
         mock_table_factory_(std::make_shared<mock::MockTableFactory>()) {
     EXPECT_OK(test::CreateEnvFromSystem(ConfigOptions(), &env_, &env_guard_));
@@ -921,14 +920,14 @@ class VersionSetTestBase {
     immutable_options_.fs = fs_;
     immutable_options_.clock = env_->GetSystemClock().get();
 
-    versions_.reset(
-        new VersionSet(dbname_, &db_options_, env_options_, table_cache_.get(),
-                       {&write_buffer_manager_}, {}, &write_controller_,
-                       /*block_cache_tracer=*/nullptr, /*io_tracer=*/nullptr,
-                       /*db_session_id*/ ""));
+    versions_.reset(new VersionSet(dbname_, &db_options_, env_options_,
+                                   table_cache_.get(), &write_controller_,
+                                   /*block_cache_tracer=*/nullptr,
+                                   /*io_tracer=*/nullptr,
+                                   /*db_session_id*/ ""));
     reactive_versions_.reset(new ReactiveVersionSet(
         dbname_, &db_options_, env_options_, table_cache_.get(),
-        {&write_buffer_manager_}, {}, &write_controller_, nullptr));
+        &write_controller_, nullptr));
     db_options_.db_paths.emplace_back(dbname_,
                                       std::numeric_limits<uint64_t>::max());
   }
@@ -1025,11 +1024,11 @@ class VersionSetTestBase {
   }
 
   void ReopenDB() {
-    versions_.reset(
-        new VersionSet(dbname_, &db_options_, env_options_, table_cache_.get(),
-                       {&write_buffer_manager_}, {}, &write_controller_,
-                       /*block_cache_tracer=*/nullptr, /*io_tracer=*/nullptr,
-                       /*db_session_id*/ ""));
+    versions_.reset(new VersionSet(dbname_, &db_options_, env_options_,
+                                   table_cache_.get(), &write_controller_,
+                                   /*block_cache_tracer=*/nullptr,
+                                   /*io_tracer=*/nullptr,
+                                   /*db_session_id*/ ""));
     EXPECT_OK(versions_->Recover(column_families_, false));
   }
 
@@ -1111,7 +1110,6 @@ class VersionSetTestBase {
   MutableCFOptions mutable_cf_options_;
   std::shared_ptr<Cache> table_cache_;
   WriteController write_controller_;
-  WriteBufferManager write_buffer_manager_;
   std::shared_ptr<VersionSet> versions_;
   std::shared_ptr<ReactiveVersionSet> reactive_versions_;
   InstrumentedMutex mutex_;
@@ -1533,7 +1531,7 @@ TEST_F(VersionSetTest, WalAddition) {
   {
     std::unique_ptr<VersionSet> new_versions(
         new VersionSet(dbname_, &db_options_, env_options_, table_cache_.get(),
-                       {&write_buffer_manager_}, {}, &write_controller_,
+                       &write_controller_,
                        /*block_cache_tracer=*/nullptr, /*io_tracer=*/nullptr,
                        /*db_session_id*/ ""));
     ASSERT_OK(new_versions->Recover(column_families_, /*read_only=*/false));
@@ -1600,7 +1598,7 @@ TEST_F(VersionSetTest, WalCloseWithoutSync) {
   {
     std::unique_ptr<VersionSet> new_versions(
         new VersionSet(dbname_, &db_options_, env_options_, table_cache_.get(),
-                       {&write_buffer_manager_}, {}, &write_controller_,
+                       &write_controller_,
                        /*block_cache_tracer=*/nullptr, /*io_tracer=*/nullptr,
                        /*db_session_id*/ ""));
     ASSERT_OK(new_versions->Recover(column_families_, false));
@@ -1653,7 +1651,7 @@ TEST_F(VersionSetTest, WalDeletion) {
   {
     std::unique_ptr<VersionSet> new_versions(
         new VersionSet(dbname_, &db_options_, env_options_, table_cache_.get(),
-                       {&write_buffer_manager_}, {}, &write_controller_,
+                       &write_controller_,
                        /*block_cache_tracer=*/nullptr, /*io_tracer=*/nullptr,
                        /*db_session_id*/ ""));
     ASSERT_OK(new_versions->Recover(column_families_, false));
@@ -1691,7 +1689,7 @@ TEST_F(VersionSetTest, WalDeletion) {
   {
     std::unique_ptr<VersionSet> new_versions(
         new VersionSet(dbname_, &db_options_, env_options_, table_cache_.get(),
-                       {&write_buffer_manager_}, {}, &write_controller_,
+                       &write_controller_,
                        /*block_cache_tracer=*/nullptr, /*io_tracer=*/nullptr,
                        /*db_session_id*/ ""));
     ASSERT_OK(new_versions->Recover(column_families_, false));
@@ -1811,7 +1809,7 @@ TEST_F(VersionSetTest, DeleteWalsBeforeNonExistingWalNumber) {
   {
     std::unique_ptr<VersionSet> new_versions(
         new VersionSet(dbname_, &db_options_, env_options_, table_cache_.get(),
-                       {&write_buffer_manager_}, {}, &write_controller_,
+                       &write_controller_,
                        /*block_cache_tracer=*/nullptr, /*io_tracer=*/nullptr,
                        /*db_session_id*/ ""));
     ASSERT_OK(new_versions->Recover(column_families_, false));
@@ -1847,7 +1845,7 @@ TEST_F(VersionSetTest, DeleteAllWals) {
   {
     std::unique_ptr<VersionSet> new_versions(
         new VersionSet(dbname_, &db_options_, env_options_, table_cache_.get(),
-                       {&write_buffer_manager_}, {}, &write_controller_,
+                       &write_controller_,
                        /*block_cache_tracer=*/nullptr, /*io_tracer=*/nullptr,
                        /*db_session_id*/ ""));
     ASSERT_OK(new_versions->Recover(column_families_, false));
@@ -1889,7 +1887,7 @@ TEST_F(VersionSetTest, AtomicGroupWithWalEdits) {
   {
     std::unique_ptr<VersionSet> new_versions(
         new VersionSet(dbname_, &db_options_, env_options_, table_cache_.get(),
-                       {&write_buffer_manager_}, {}, &write_controller_,
+                       &write_controller_,
                        /*block_cache_tracer=*/nullptr, /*io_tracer=*/nullptr,
                        /*db_session_id*/ ""));
     std::string db_id;
@@ -1943,7 +1941,7 @@ class VersionSetWithTimestampTest : public VersionSetTest {
   void VerifyFullHistoryTsLow(uint64_t expected_ts_low) {
     std::unique_ptr<VersionSet> vset(
         new VersionSet(dbname_, &db_options_, env_options_, table_cache_.get(),
-                       {&write_buffer_manager_}, {}, &write_controller_,
+                       &write_controller_,
                        /*block_cache_tracer=*/nullptr, /*io_tracer=*/nullptr,
                        /*db_session_id*/ ""));
     ASSERT_OK(vset->Recover(column_families_, /*read_only=*/false,
