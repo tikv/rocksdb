@@ -540,7 +540,7 @@ ColumnFamilyOptions* ColumnFamilyOptions::OldDefaults(
 }
 
 // Optimization functions
-DBOptions* DBOptions::OptimizeForSmallDb(std::shared_ptr<Cache>* cache) {
+DBOptions* DBOptions::OptimizeForSmallDb(std::shared_ptr<Cache>*) {
   max_file_opening_threads = 1;
   max_open_files = 5000;
 

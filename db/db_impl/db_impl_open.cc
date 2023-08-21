@@ -1622,7 +1622,7 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
   }
 
   DBImpl* impl = new DBImpl(db_options, dbname, seq_per_batch, batch_per_txn);
-  for (auto cf: column_families) {
+  for (auto cf : column_families) {
     if (cf.options.write_buffer_manager != nullptr) {
       bool already_exist = false;
       for (auto m : impl->write_buffer_manager_) {

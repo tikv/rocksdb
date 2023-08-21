@@ -35,13 +35,16 @@ TEST_P(DBWriteBufferManagerTest, SharedBufferAcrossCFs1) {
   } else {
     write_buffer_manager.reset(new WriteBufferManager(100000, nullptr, 1.0));
   }
-  std::unordered_map<std::string, std::shared_ptr<WriteBufferManager>> write_buffer_manager_map = {
-      {"cf1", write_buffer_manager}, {"cf2", write_buffer_manager}, {"cf3", write_buffer_manager}};
+  std::unordered_map<std::string, std::shared_ptr<WriteBufferManager>>
+      write_buffer_manager_map = {{"cf1", write_buffer_manager},
+                                  {"cf2", write_buffer_manager},
+                                  {"cf3", write_buffer_manager}};
 
   WriteOptions wo;
   wo.disableWAL = true;
 
-  CreateAndReopenWithCF({"cf1", "cf2", "cf3"}, options, write_buffer_manager_map);
+  CreateAndReopenWithCF({"cf1", "cf2", "cf3"}, options,
+                        write_buffer_manager_map);
   ASSERT_OK(Put(3, Key(1), DummyString(1), wo));
   Flush(3);
   ASSERT_OK(Put(3, Key(1), DummyString(1), wo));
@@ -79,13 +82,17 @@ TEST_P(DBWriteBufferManagerTest, SharedWriteBufferAcrossCFs2) {
   } else {
     write_buffer_manager.reset(new WriteBufferManager(100000, nullptr, 1.0));
   }
-  std::unordered_map<std::string, std::shared_ptr<WriteBufferManager>> write_buffer_manager_map = {
-      {"default", write_buffer_manager}, {"cf1", write_buffer_manager}, {"cf2", write_buffer_manager}, {"cf3", write_buffer_manager}};
+  std::unordered_map<std::string, std::shared_ptr<WriteBufferManager>>
+      write_buffer_manager_map = {{"default", write_buffer_manager},
+                                  {"cf1", write_buffer_manager},
+                                  {"cf2", write_buffer_manager},
+                                  {"cf3", write_buffer_manager}};
 
   WriteOptions wo;
   wo.disableWAL = true;
 
-  CreateAndReopenWithCF({"cf1", "cf2", "cf3"}, options, write_buffer_manager_map);
+  CreateAndReopenWithCF({"cf1", "cf2", "cf3"}, options,
+                        write_buffer_manager_map);
 
   ASSERT_OK(Put(3, Key(1), DummyString(1), wo));
   Flush(3);

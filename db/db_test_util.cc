@@ -591,8 +591,9 @@ Options DBTestBase::GetOptions(
   return options;
 }
 
-void DBTestBase::CreateColumnFamilies(const std::vector<std::string>& cfs,
-                                      const Options& options, std::unordered_map<std::string, std::shared_ptr<WriteBufferManager>> wfms) {
+void DBTestBase::CreateColumnFamilies(
+    const std::vector<std::string>& cfs, const Options& options,
+    std::unordered_map<std::string, std::shared_ptr<WriteBufferManager>> wfms) {
   size_t cfi = handles_.size();
   handles_.resize(cfi + cfs.size());
   for (auto cf : cfs) {
@@ -605,8 +606,9 @@ void DBTestBase::CreateColumnFamilies(const std::vector<std::string>& cfs,
   }
 }
 
-void DBTestBase::CreateAndReopenWithCF(const std::vector<std::string>& cfs,
-                                       const Options& options, std::unordered_map<std::string, std::shared_ptr<WriteBufferManager>> wfms) {
+void DBTestBase::CreateAndReopenWithCF(
+    const std::vector<std::string>& cfs, const Options& options,
+    std::unordered_map<std::string, std::shared_ptr<WriteBufferManager>> wfms) {
   CreateColumnFamilies(cfs, options, wfms);
   std::vector<std::string> cfs_plus_default = cfs;
   cfs_plus_default.insert(cfs_plus_default.begin(), kDefaultColumnFamilyName);
@@ -618,8 +620,9 @@ void DBTestBase::ReopenWithColumnFamilies(const std::vector<std::string>& cfs,
   ASSERT_OK(TryReopenWithColumnFamilies(cfs, options));
 }
 
-void DBTestBase::ReopenWithColumnFamilies(const std::vector<std::string>& cfs,
-                                          const Options& options, std::unordered_map<std::string, std::shared_ptr<WriteBufferManager>> wfms) {
+void DBTestBase::ReopenWithColumnFamilies(
+    const std::vector<std::string>& cfs, const Options& options,
+    std::unordered_map<std::string, std::shared_ptr<WriteBufferManager>> wfms) {
   ASSERT_OK(TryReopenWithColumnFamilies(cfs, options, wfms));
 }
 
@@ -657,7 +660,8 @@ void DBTestBase::MaybeInstallTimeElapseOnlySleep(const DBOptions& options) {
 }
 
 Status DBTestBase::TryReopenWithColumnFamilies(
-    const std::vector<std::string>& cfs, const std::vector<Options>& options, std::unordered_map<std::string, std::shared_ptr<WriteBufferManager>> wfms) {
+    const std::vector<std::string>& cfs, const std::vector<Options>& options,
+    std::unordered_map<std::string, std::shared_ptr<WriteBufferManager>> wfms) {
   Close();
   EXPECT_EQ(cfs.size(), options.size());
   std::vector<ColumnFamilyDescriptor> column_families;
@@ -674,7 +678,8 @@ Status DBTestBase::TryReopenWithColumnFamilies(
 }
 
 Status DBTestBase::TryReopenWithColumnFamilies(
-    const std::vector<std::string>& cfs, const Options& options, std::unordered_map<std::string, std::shared_ptr<WriteBufferManager>> wfms) {
+    const std::vector<std::string>& cfs, const Options& options,
+    std::unordered_map<std::string, std::shared_ptr<WriteBufferManager>> wfms) {
   Close();
   std::vector<Options> v_opts(cfs.size(), options);
   return TryReopenWithColumnFamilies(cfs, v_opts, wfms);

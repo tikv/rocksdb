@@ -1586,13 +1586,14 @@ FSDirectory* ColumnFamilyData::GetDataDir(size_t path_id) const {
   return data_dirs_[path_id].get();
 }
 
-ColumnFamilySet::ColumnFamilySet(
-    const std::string& dbname, const ImmutableDBOptions* db_options,
-    const FileOptions& file_options, Cache* table_cache,
-    WriteController* _write_controller,
-    BlockCacheTracer* const block_cache_tracer,
-    const std::shared_ptr<IOTracer>& io_tracer,
-    const std::string& db_session_id)
+ColumnFamilySet::ColumnFamilySet(const std::string& dbname,
+                                 const ImmutableDBOptions* db_options,
+                                 const FileOptions& file_options,
+                                 Cache* table_cache,
+                                 WriteController* _write_controller,
+                                 BlockCacheTracer* const block_cache_tracer,
+                                 const std::shared_ptr<IOTracer>& io_tracer,
+                                 const std::string& db_session_id)
     : max_column_family_(0),
       file_options_(file_options),
       dummy_cfd_(new ColumnFamilyData(

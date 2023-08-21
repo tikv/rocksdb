@@ -1486,11 +1486,11 @@ class VersionSet {
 // reconstruct and install versions.
 class ReactiveVersionSet : public VersionSet {
  public:
-  ReactiveVersionSet(
-      const std::string& dbname, const ImmutableDBOptions* _db_options,
-      const FileOptions& _file_options, Cache* table_cache,
-      WriteController* write_controller,
-      const std::shared_ptr<IOTracer>& io_tracer);
+  ReactiveVersionSet(const std::string& dbname,
+                     const ImmutableDBOptions* _db_options,
+                     const FileOptions& _file_options, Cache* table_cache,
+                     WriteController* write_controller,
+                     const std::shared_ptr<IOTracer>& io_tracer);
 
   ~ReactiveVersionSet() override;
 

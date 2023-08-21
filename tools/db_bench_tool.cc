@@ -3180,9 +3180,6 @@ class Benchmark {
     delete prefix_extractor_;
     if (cache_.get() != nullptr) {
       // Clear cache reference first
-      for (auto wfm : open_options_.write_buffer_manager) {
-        wfm.reset();
-      }
       // this will leak, but we're shutting down so nobody cares
       cache_->DisownData();
     }
