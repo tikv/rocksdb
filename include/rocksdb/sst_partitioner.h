@@ -104,8 +104,8 @@ class SstPartitioner {
 
     // Helper function to fetch the n-th segment of the next level of the output
     // level. `index` shall less than `OutputNextLevelSegmentCount`.
-    void OutputNextLevelSegment(int index, Slice* smallest_key, Slice* largest_key,
-                                int* size) const {
+    void OutputNextLevelSegment(int index, Slice* smallest_key,
+                                Slice* largest_key, int* size) const {
       if (smallest_key != nullptr) {
         *smallest_key = output_next_level_boundaries[index];
       }

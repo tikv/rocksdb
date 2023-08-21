@@ -1074,23 +1074,26 @@ TEST_F(DBCompactionTest, CompactionSstPartitionerNextLevel) {
           dbfull()->TEST_LockMutex();
           std::vector<LiveFileMetaData> overlapped_files;
           std::copy_if(
-              files.begin(), files.end(), std::back_inserter(overlapped_files), [&](const LiveFileMetaData& ld) {
+              files.begin(), files.end(), std::back_inserter(overlapped_files),
+              [&](const LiveFileMetaData& ld) {
                 return Slice(ld.smallestkey).compare(cx.largest_user_key) < 0 &&
                        Slice(ld.largestkey).compare(cx.smallest_user_key) > 0 &&
                        ld.level == cx.output_level + 1;
               });
-          std::sort(overlapped_files.begin(), overlapped_files.end(), [](LiveFileMetaData& x, LiveFileMetaData& y) {
-            return x.largestkey < y.largestkey;
-          });
+          std::sort(overlapped_files.begin(), overlapped_files.end(),
+                    [](LiveFileMetaData& x, LiveFileMetaData& y) {
+                      return x.largestkey < y.largestkey;
+                    });
           auto next_level_overlap_files = overlapped_files.size();
           ASSERT_EQ(next_level_overlap_files + 1,
                     cx.output_next_level_boundaries.size());
           ASSERT_EQ(next_level_overlap_files, cx.output_next_level_size.size());
           ASSERT_EQ(next_level_overlap_files, cx.OutputNextLevelSegmentCount());
-          for (size_t i = 0; i < overlapped_files.size(); i ++) {
+          for (size_t i = 0; i < overlapped_files.size(); i++) {
             Slice next_level_lower, next_level_upper;
             int next_level_size;
-            cx.OutputNextLevelSegment(i, &next_level_lower, &next_level_upper, &next_level_size);
+            cx.OutputNextLevelSegment(i, &next_level_lower, &next_level_upper,
+                                      &next_level_size);
 
             if (i == 0) {
               ASSERT_EQ(overlapped_files[i].smallestkey, next_level_lower);
@@ -1116,8 +1119,10 @@ TEST_F(DBCompactionTest, CompactionSstPartitionerNextLevel) {
   ASSERT_OK(Flush());
   ASSERT_OK(dbfull()->TEST_WaitForFlushMemTable());
   ASSERT_OK(dbfull()->TEST_WaitForCompact(true));
-  ASSERT_OK(Put(InternalKey("A", 0, ValueType::kTypeDeletion).Encode(), "And a tricker: he pretends to be A, but not A."));
-  ASSERT_OK(Put(InternalKey("B", 0, ValueType::kTypeDeletion).Encode(), "Yeah, another tricker."));
+  ASSERT_OK(Put(InternalKey("A", 0, ValueType::kTypeDeletion).Encode(),
+                "And a tricker: he pretends to be A, but not A."));
+  ASSERT_OK(Put(InternalKey("B", 0, ValueType::kTypeDeletion).Encode(),
+                "Yeah, another tricker."));
   ASSERT_OK(Flush());
   ASSERT_OK(dbfull()->TEST_WaitForFlushMemTable());
   ASSERT_OK(dbfull()->TEST_WaitForCompact(true));
