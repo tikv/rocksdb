@@ -21,6 +21,19 @@ class DBWriteBufferManagerTest : public DBTestBase,
   bool cost_cache_;
 };
 
+void OpenWithDefaultCfWithWriteBufferManager(
+    const Options& options, const std::string& dbname, DB** dbptr,
+    std::shared_ptr<WriteBufferManager> write_buffer_manager) {
+  DBOptions db_options(options);
+  ColumnFamilyOptions cf_options(options);
+  cf_options.write_buffer_manager = write_buffer_manager;
+  std::vector<ColumnFamilyDescriptor> column_families;
+  column_families.emplace_back(kDefaultColumnFamilyName, cf_options);
+  std::vector<ColumnFamilyHandle*> handles;
+  ASSERT_OK(DB::Open(db_options, dbname, column_families, &handles, dbptr));
+  delete handles[0];
+}
+
 TEST_P(DBWriteBufferManagerTest, SharedBufferAcrossCFs1) {
   Options options = CurrentOptions();
   options.arena_block_size = 4096;
@@ -496,7 +509,8 @@ TEST_P(DBWriteBufferManagerTest, DynamicFlushSize) {
   std::string db2_name = test::PerThreadDBPath("dynamic_flush_db2");
   DB* db2 = nullptr;
   ASSERT_OK(DestroyDB(db2_name, options));
-  ASSERT_OK(DB::Open(options, db2_name, &db2));
+  OpenWithDefaultCfWithWriteBufferManager(options, db2_name, &db2,
+                                          write_buffer_manager);
 
   ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->LoadDependency(
       {{"DBWriteBufferManagerTest::SharedWriteBufferAcrossCFs:0",
