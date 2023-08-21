@@ -372,6 +372,7 @@ Status DBImpl::ResumeImpl(DBRecoverContext context) {
     FlushOptions flush_opts;
     // We allow flush to stall write since we are trying to resume from error.
     flush_opts.allow_write_stall = true;
+    flush_opts.check_if_compaction_disabled = true;
     if (immutable_db_options_.atomic_flush) {
       autovector<ColumnFamilyData*> cfds;
       SelectColumnFamiliesForAtomicFlush(&cfds);
@@ -487,19 +488,21 @@ void DBImpl::CancelAllBackgroundWork(bool wait) {
   if (!shutting_down_.load(std::memory_order_acquire) &&
       has_unpersisted_data_.load(std::memory_order_relaxed) &&
       !mutable_db_options_.avoid_flush_during_shutdown) {
+    auto flush_opts = FlushOptions();
+    flush_opts.allow_write_stall = true;
+    flush_opts.check_if_compaction_disabled = true;
     if (immutable_db_options_.atomic_flush) {
       autovector<ColumnFamilyData*> cfds;
       SelectColumnFamiliesForAtomicFlush(&cfds);
       mutex_.Unlock();
-      Status s =
-          AtomicFlushMemTables(cfds, FlushOptions(), FlushReason::kShutDown);
+      Status s = AtomicFlushMemTables(cfds, flush_opts, FlushReason::kShutDown);
       s.PermitUncheckedError();  //**TODO: What to do on error?
       mutex_.Lock();
     } else {
       for (auto cfd : versions_->GetRefedColumnFamilySet()) {
         if (!cfd->IsDropped() && cfd->initialized() && !cfd->mem()->IsEmpty()) {
           InstrumentedMutexUnlock u(&mutex_);
-          Status s = FlushMemTable(cfd, FlushOptions(), FlushReason::kShutDown);
+          Status s = FlushMemTable(cfd, flush_opts, FlushReason::kShutDown);
           s.PermitUncheckedError();  //**TODO: What to do on error?
         }
       }
@@ -574,18 +577,20 @@ Status DBImpl::CloseHelper() {
   if (immutable_db_options_.experimental_mempurge_threshold > 0.0) {
     Status flush_ret;
     mutex_.Unlock();
+    auto flush_opts = FlushOptions();
+    flush_opts.allow_write_stall = true;
+    flush_opts.check_if_compaction_disabled = true;
     for (ColumnFamilyData* cf : *versions_->GetColumnFamilySet()) {
       if (immutable_db_options_.atomic_flush) {
-        flush_ret = AtomicFlushMemTables({cf}, FlushOptions(),
-                                         FlushReason::kManualFlush);
+        flush_ret =
+            AtomicFlushMemTables({cf}, flush_opts, FlushReason::kManualFlush);
         if (!flush_ret.ok()) {
           ROCKS_LOG_INFO(
               immutable_db_options_.info_log,
               "Atomic flush memtables failed upon closing (mempurge).");
         }
       } else {
-        flush_ret =
-            FlushMemTable(cf, FlushOptions(), FlushReason::kManualFlush);
+        flush_ret = FlushMemTable(cf, flush_opts, FlushReason::kManualFlush);
         if (!flush_ret.ok()) {
           ROCKS_LOG_INFO(immutable_db_options_.info_log,
                          "Flush memtables failed upon closing (mempurge).");
@@ -4811,6 +4816,7 @@ Status DBImpl::IngestExternalFiles(
     if (status.ok() && at_least_one_cf_need_flush) {
       FlushOptions flush_opts;
       flush_opts.allow_write_stall = true;
+      flush_opts.check_if_compaction_disabled = true;
       if (immutable_db_options_.atomic_flush) {
         autovector<ColumnFamilyData*> cfds_to_flush;
         SelectColumnFamiliesForAtomicFlush(&cfds_to_flush);
