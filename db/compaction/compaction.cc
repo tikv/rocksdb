@@ -585,11 +585,12 @@ Compaction::CreateSegmentsForLevel(int in_level) const {
     return std::make_pair(std::vector<Slice>(), std::vector<uint64_t>());
   }
   const auto& files = vsi->LevelFilesBrief(in_level);
-  const auto cmp = immutable_options()->user_comparator;
+  // The file metadata hold internal keys, however the compaction is bounded by user keys.
+  const auto user_cmp = immutable_options()->user_comparator;
   const auto start = std::lower_bound(
       files.files, files.files + files.num_files, smallest_user_key_,
-      [cmp](FdWithKeyRange& fd, const Slice& slice) {
-        return cmp->Compare(fd.largest_key, slice) < 0;
+      [user_cmp](FdWithKeyRange& fd, const Slice& slice) {
+        return user_cmp->Compare(ExtractUserKey(fd.largest_key), slice) < 0;
       });
   const auto end = files.files + files.num_files;
 
@@ -599,15 +600,15 @@ Compaction::CreateSegmentsForLevel(int in_level) const {
   }
   std::vector<Slice> ranges;
   std::vector<uint64_t> sizes;
-  // The LevelFileBrief holds raw key...
   ranges.push_back(ExtractUserKey(start->smallest_key));
   for (const FdWithKeyRange* iter = start; iter < end; iter++) {
-    if (cmp->Compare(ExtractUserKey(iter->smallest_key), largest_user_key_) > 0) {
+    if (user_cmp->Compare(ExtractUserKey(iter->smallest_key), largest_user_key_) > 0) {
       break;
     }
     ranges.push_back(ExtractUserKey(iter->largest_key));
     sizes.push_back(iter->fd.GetFileSize());
   }
+  InternalKey("A", 0, ValueType::kTypeDeletion);
   return std::make_pair(ranges, sizes);
 }
 

@@ -1116,10 +1116,15 @@ TEST_F(DBCompactionTest, CompactionSstPartitionerNextLevel) {
   ASSERT_OK(Flush());
   ASSERT_OK(dbfull()->TEST_WaitForFlushMemTable());
   ASSERT_OK(dbfull()->TEST_WaitForCompact(true));
+  ASSERT_OK(Put(InternalKey("A", 0, ValueType::kTypeDeletion).Encode(), "And a tricker: he pretends to be A, but not A."));
+  ASSERT_OK(Put(InternalKey("B", 0, ValueType::kTypeDeletion).Encode(), "Yeah, another tricker."));
+  ASSERT_OK(Flush());
+  ASSERT_OK(dbfull()->TEST_WaitForFlushMemTable());
+  ASSERT_OK(dbfull()->TEST_WaitForCompact(true));
 
   std::vector<LiveFileMetaData> files;
   dbfull()->GetLiveFilesMetaData(&files);
-  ASSERT_EQ(6, files.size());
+  ASSERT_EQ(8, files.size());
 }
 
 TEST_F(DBCompactionTest, ZeroSeqIdCompaction) {
