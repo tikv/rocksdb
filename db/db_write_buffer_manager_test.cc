@@ -610,7 +610,8 @@ TEST_P(DBWriteBufferManagerTest, SharedWriteBufferLimitAcrossDB) {
 
   for (int i = 0; i < num_dbs; i++) {
     ASSERT_OK(DestroyDB(dbnames[i], options));
-    ASSERT_OK(DB::Open(options, dbnames[i], &(dbs[i])));
+    OpenWithDefaultCfWithWriteBufferManager(options, dbnames[i], &(dbs[i]),
+                                            write_buffer_manager);
   }
   WriteOptions wo;
   wo.disableWAL = true;
@@ -735,7 +736,8 @@ TEST_P(DBWriteBufferManagerTest, SharedWriteBufferLimitAcrossDB1) {
 
   for (int i = 0; i < num_dbs; i++) {
     ASSERT_OK(DestroyDB(dbnames[i], options));
-    ASSERT_OK(DB::Open(options, dbnames[i], &(dbs[i])));
+    OpenWithDefaultCfWithWriteBufferManager(options, dbnames[i], &(dbs[i]),
+                                            write_buffer_manager);
   }
   WriteOptions wo;
   wo.disableWAL = true;
@@ -1053,7 +1055,8 @@ TEST_P(DBWriteBufferManagerTest, MixedSlowDownOptionsMultipleDB) {
 
   for (int i = 0; i < num_dbs; i++) {
     ASSERT_OK(DestroyDB(dbnames[i], options));
-    ASSERT_OK(DB::Open(options, dbnames[i], &(dbs[i])));
+    OpenWithDefaultCfWithWriteBufferManager(options, dbnames[i], &(dbs[i]),
+                                            write_buffer_manager);
   }
   WriteOptions wo;
   wo.disableWAL = true;
@@ -1233,14 +1236,14 @@ TEST_P(DBWriteBufferManagerTest, BackgroundWorkPaused) {
         std::make_shared<WriteBufferManager>(100000, nullptr, 0.0);
   }
   std::unordered_map<std::string, std::shared_ptr<WriteBufferManager>>
-      write_buffer_manager_map = {{"default", write_buffer_manager},
-                                  {"cf1", write_buffer_manager},
-                                  {"cf2", write_buffer_manager}};
-  DestroyAndReopen(options);
+      write_buffer_manager_map = {{"default", write_buffer_manager}};
+  Destroy(last_options_);
+  ReopenWithColumnFamilies({"default"}, options, write_buffer_manager_map);
 
   for (int i = 0; i < num_dbs; i++) {
     ASSERT_OK(DestroyDB(dbnames[i], options));
-    ASSERT_OK(DB::Open(options, dbnames[i], &(dbs[i])));
+    OpenWithDefaultCfWithWriteBufferManager(options, dbnames[i], &(dbs[i]),
+                                            write_buffer_manager);
   }
 
   dbfull()->DisableManualCompaction();
