@@ -47,6 +47,20 @@ class DBTest2 : public DBTestBase {
 #endif  // ROCKSDB_LITE
 };
 
+void OpenWithDefaultCfWithWriteBufferManager(
+    const Options& options, const std::string& dbname, DB** dbptr,
+    std::shared_ptr<WriteBufferManager> write_buffer_manager) {
+  DBOptions db_options(options);
+  ColumnFamilyOptions cf_options(options);
+  cf_options.write_buffer_manager = write_buffer_manager;
+  std::vector<ColumnFamilyDescriptor> column_families;
+  column_families.push_back(
+      ColumnFamilyDescriptor(kDefaultColumnFamilyName, cf_options));
+  std::vector<ColumnFamilyHandle*> handles;
+  ASSERT_OK(DB::Open(db_options, dbname, column_families, &handles, dbptr));
+  delete handles[0];
+}
+
 #ifndef ROCKSDB_LITE
 TEST_F(DBTest2, OpenForReadOnly) {
   DB* db_ptr = nullptr;
@@ -394,7 +408,7 @@ TEST_P(DBTestSharedWriteBufferAcrossCFs, SharedWriteBufferAcrossCFs) {
 
   std::shared_ptr<WriteBufferManager> write_buffer_manager = nullptr;
   if (use_old_interface_) {
-    options.db_write_buffer_size = 100000;
+    write_buffer_manager = std::make_shared<WriteBufferManager>(100000);
   } else if (!cost_cache_) {
     write_buffer_manager = std::make_shared<WriteBufferManager>(100000);
   } else {
@@ -584,7 +598,8 @@ TEST_F(DBTest2, SharedWriteBufferLimitAcrossDB) {
 
   ASSERT_OK(DestroyDB(dbname2, options));
   DB* db2 = nullptr;
-  ASSERT_OK(DB::Open(options, dbname2, &db2));
+  OpenWithDefaultCfWithWriteBufferManager(options, dbname2, &db2,
+                                          write_buffer_manager);
 
   WriteOptions wo;
   wo.disableWAL = true;
@@ -701,7 +716,8 @@ TEST_F(DBTest2, SharedWriteBufferLimitAcrossDB_RankByAge) {
 
   ASSERT_OK(DestroyDB(dbname2, options));
   DB* db2 = nullptr;
-  ASSERT_OK(DB::Open(options, dbname2, &db2));
+  OpenWithDefaultCfWithWriteBufferManager(options, dbname2, &db2,
+                                          write_buffer_manager);
 
   WriteOptions wo;
   wo.disableWAL = true;
