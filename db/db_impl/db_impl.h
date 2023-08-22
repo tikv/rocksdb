@@ -2281,10 +2281,6 @@ class DBImpl : public DB {
 
   Directories directories_;
 
-  // write_buffer_manager_map_ records the mapping from cf to write buffer
-  // manager. The last write buffer manager of write_buffer_manager_ is a dummy
-  // write buffer manager (with flush_size 0), and those column family not in
-  // write_buffer_manager_map_ will use it.
   std::vector<std::shared_ptr<WriteBufferManager>> write_buffer_manager_;
 
   WriteThread write_thread_;
