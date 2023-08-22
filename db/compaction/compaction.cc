@@ -588,12 +588,12 @@ Compaction::CreateSegmentsForLevel(int in_level) const {
   // The file metadata hold internal keys, however the compaction is bounded by
   // user keys.
   const auto user_cmp = immutable_options()->user_comparator;
+  const auto end = files.files + files.num_files;
   const auto start = std::lower_bound(
       files.files, files.files + files.num_files, smallest_user_key_,
       [user_cmp](FdWithKeyRange& fd, const Slice& slice) {
         return user_cmp->Compare(ExtractUserKey(fd.largest_key), slice) < 0;
       });
-  const auto end = files.files + files.num_files;
 
   if (start == end) {
     // There is no overlapping of next level.
@@ -610,7 +610,6 @@ Compaction::CreateSegmentsForLevel(int in_level) const {
     ranges.push_back(ExtractUserKey(iter->largest_key));
     sizes.push_back(iter->fd.GetFileSize());
   }
-  InternalKey("A", 0, ValueType::kTypeDeletion);
   return std::make_pair(ranges, sizes);
 }
 
