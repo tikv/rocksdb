@@ -4048,12 +4048,6 @@ class Benchmark {
 
     options.env = FLAGS_env;
     options.max_open_files = FLAGS_open_files;
-    //    if (FLAGS_cost_write_buffer_to_cache || FLAGS_db_write_buffer_size !=
-    //    0) {
-    //      options.write_buffer_manager.push_back(
-    //          std::make_shared<WriteBufferManager>(FLAGS_db_write_buffer_size,
-    //                                               cache_));
-    //    }
     options.arena_block_size = FLAGS_arena_block_size;
     options.write_buffer_size = FLAGS_write_buffer_size;
     options.max_write_buffer_number = FLAGS_max_write_buffer_number;

@@ -200,9 +200,10 @@ class FileChecksumTestHelper {
     options_.db_paths.emplace_back(dbname_, 0);
     options_.num_levels = 64;
     WriteController wc(options_.delayed_write_rate);
+    WriteBufferManager wb(options_.db_write_buffer_size);
     ImmutableDBOptions immutable_db_options(options_);
-    VersionSet versions(dbname_, &immutable_db_options, sopt, tc.get(), &wc,
-                        nullptr, nullptr, "");
+    VersionSet versions(dbname_, &immutable_db_options, sopt, tc.get(), &wb,
+                        &wc, nullptr, nullptr, "");
     std::vector<std::string> cf_name_list;
     Status s;
     s = versions.ListColumnFamilies(&cf_name_list, dbname_,

@@ -4064,13 +4064,15 @@ void AtomicGroupReadBuffer::Clear() {
 VersionSet::VersionSet(const std::string& dbname,
                        const ImmutableDBOptions* _db_options,
                        const FileOptions& storage_options, Cache* table_cache,
+                       WriteBufferManager* write_buffer_manager,
                        WriteController* write_controller,
                        BlockCacheTracer* const block_cache_tracer,
                        const std::shared_ptr<IOTracer>& io_tracer,
                        const std::string& db_session_id)
-    : column_family_set_(new ColumnFamilySet(
-          dbname, _db_options, storage_options, table_cache, write_controller,
-          block_cache_tracer, io_tracer, db_session_id)),
+    : column_family_set_(
+          new ColumnFamilySet(dbname, _db_options, storage_options, table_cache,
+                              write_buffer_manager, write_controller,
+                              block_cache_tracer, io_tracer, db_session_id)),
       table_cache_(table_cache),
       env_(_db_options->env),
       fs_(_db_options->fs, io_tracer),
@@ -4112,7 +4114,7 @@ void VersionSet::Reset() {
   if (column_family_set_) {
     WriteController* wc = column_family_set_->write_controller();
     column_family_set_.reset(new ColumnFamilySet(
-        dbname_, db_options_, file_options_, table_cache_, wc,
+        dbname_, db_options_, file_options_, table_cache_, nullptr, wc,
         block_cache_tracer_, io_tracer_, db_session_id_));
   }
   db_id_.clear();
@@ -5156,10 +5158,8 @@ Status VersionSet::ReduceNumberOfLevels(const std::string& dbname,
   std::shared_ptr<Cache> tc(NewLRUCache(options->max_open_files - 10,
                                         options->table_cache_numshardbits));
   WriteController wc(options->delayed_write_rate);
-  std::vector<WriteBufferManager*> wbms{
-      new WriteBufferManager(options->db_write_buffer_size)};
-  std::unordered_map<std::string, size_t> wbmm;
-  VersionSet versions(dbname, &db_options, file_options, tc.get(), &wc,
+  WriteBufferManager wb(options->db_write_buffer_size);
+  VersionSet versions(dbname, &db_options, file_options, tc.get(), &wb, &wc,
                       nullptr /*BlockCacheTracer*/, nullptr /*IOTracer*/,
                       /*db_session_id*/ "");
   Status status;
@@ -6040,10 +6040,10 @@ Status VersionSet::VerifyFileMetadata(const std::string& fpath,
 ReactiveVersionSet::ReactiveVersionSet(
     const std::string& dbname, const ImmutableDBOptions* _db_options,
     const FileOptions& _file_options, Cache* table_cache,
-    WriteController* write_controller,
+    WriteBufferManager* write_buffer_manager, WriteController* write_controller,
     const std::shared_ptr<IOTracer>& io_tracer)
     : VersionSet(dbname, _db_options, _file_options, table_cache,
-                 write_controller,
+                 write_buffer_manager, write_controller,
                  /*block_cache_tracer=*/nullptr, io_tracer,
                  /*db_session_id*/ "") {}
 

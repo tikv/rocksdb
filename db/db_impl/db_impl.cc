@@ -257,9 +257,10 @@ DBImpl::DBImpl(const DBOptions& options, const std::string& dbname,
   SetDbSessionId();
   assert(!db_session_id_.empty());
 
-  versions_.reset(new VersionSet(
-      dbname_, &immutable_db_options_, file_options_, table_cache_.get(),
-      &write_controller_, &block_cache_tracer_, io_tracer_, db_session_id_));
+  versions_.reset(new VersionSet(dbname_, &immutable_db_options_, file_options_,
+                                 table_cache_.get(), nullptr,
+                                 &write_controller_, &block_cache_tracer_,
+                                 io_tracer_, db_session_id_));
   column_family_memtables_.reset(
       new ColumnFamilyMemTablesImpl(versions_->GetColumnFamilySet()));
 

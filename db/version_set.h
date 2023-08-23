@@ -984,6 +984,7 @@ class VersionSet {
  public:
   VersionSet(const std::string& dbname, const ImmutableDBOptions* db_options,
              const FileOptions& file_options, Cache* table_cache,
+             WriteBufferManager* write_buffer_manager,
              WriteController* write_controller,
              BlockCacheTracer* const block_cache_tracer,
              const std::shared_ptr<IOTracer>& io_tracer,
@@ -1489,6 +1490,7 @@ class ReactiveVersionSet : public VersionSet {
   ReactiveVersionSet(const std::string& dbname,
                      const ImmutableDBOptions* _db_options,
                      const FileOptions& _file_options, Cache* table_cache,
+                     WriteBufferManager* write_buffer_manager,
                      WriteController* write_controller,
                      const std::shared_ptr<IOTracer>& io_tracer);
 

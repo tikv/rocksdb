@@ -1590,6 +1590,7 @@ ColumnFamilySet::ColumnFamilySet(const std::string& dbname,
                                  const ImmutableDBOptions* db_options,
                                  const FileOptions& file_options,
                                  Cache* table_cache,
+                                 WriteBufferManager*, /*non-used parameter*/
                                  WriteController* _write_controller,
                                  BlockCacheTracer* const block_cache_tracer,
                                  const std::shared_ptr<IOTracer>& io_tracer,

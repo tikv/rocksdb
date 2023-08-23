@@ -97,11 +97,12 @@ class MemTableListTest : public testing::Test {
     ImmutableDBOptions immutable_db_options(db_options);
     EnvOptions env_options;
     std::shared_ptr<Cache> table_cache(NewLRUCache(50000, 16));
+    WriteBufferManager write_buffer_manager(db_options.db_write_buffer_size);
     WriteController write_controller(10000000u);
 
     VersionSet versions(dbname, &immutable_db_options, env_options,
-                        table_cache.get(), &write_controller,
-                        /*block_cache_tracer=*/nullptr,
+                        table_cache.get(), &write_buffer_manager,
+                        &write_controller, /*block_cache_tracer=*/nullptr,
                         /*io_tracer=*/nullptr, /*db_session_id*/ "");
     std::vector<ColumnFamilyDescriptor> cf_descs;
     cf_descs.emplace_back(kDefaultColumnFamilyName, ColumnFamilyOptions());
@@ -150,8 +151,8 @@ class MemTableListTest : public testing::Test {
     WriteController write_controller(10000000u);
 
     VersionSet versions(dbname, &immutable_db_options, env_options,
-                        table_cache.get(), &write_controller,
-                        /*block_cache_tracer=*/nullptr,
+                        table_cache.get(), &write_buffer_manager,
+                        &write_controller, /*block_cache_tracer=*/nullptr,
                         /*io_tracer=*/nullptr, /*db_session_id*/ "");
     std::vector<ColumnFamilyDescriptor> cf_descs;
     cf_descs.emplace_back(kDefaultColumnFamilyName, ColumnFamilyOptions());
