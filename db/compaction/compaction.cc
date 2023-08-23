@@ -590,7 +590,7 @@ Compaction::CreateSegmentsForLevel(int in_level) const {
   const auto user_cmp = immutable_options()->user_comparator;
   const auto end = files.files + files.num_files;
   const auto start = std::lower_bound(
-      files.files, files.files + files.num_files, smallest_user_key_,
+      files.files, end, smallest_user_key_,
       [user_cmp](FdWithKeyRange& fd, const Slice& slice) {
         return user_cmp->Compare(ExtractUserKey(fd.largest_key), slice) < 0;
       });
