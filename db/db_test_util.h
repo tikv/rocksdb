@@ -967,33 +967,28 @@ class DBTestBase : public testing::Test {
 
   DBImpl* dbfull() { return static_cast_with_check<DBImpl>(db_); }
 
-  void CreateColumnFamilies(
-      const std::vector<std::string>& cfs, const Options& options,
-      std::unordered_map<std::string, std::shared_ptr<WriteBufferManager>>
-          wfms = {});
+  void CreateColumnFamilies(const std::vector<std::string>& cfs,
+                            const Options& options);
 
-  void CreateAndReopenWithCF(
-      const std::vector<std::string>& cfs, const Options& options,
-      std::unordered_map<std::string, std::shared_ptr<WriteBufferManager>>
-          wfms = {});
+  void CreateAndReopenWithCF(const std::vector<std::string>& cfs,
+                             const Options& options);
 
   void ReopenWithColumnFamilies(const std::vector<std::string>& cfs,
                                 const std::vector<Options>& options);
 
-  void ReopenWithColumnFamilies(
-      const std::vector<std::string>& cfs, const Options& options,
-      std::unordered_map<std::string, std::shared_ptr<WriteBufferManager>>
-          wfms = {});
+  void ReopenWithColumnFamilies(const std::vector<std::string>& cfs,
+                                const Options& options);
 
-  Status TryReopenWithColumnFamilies(
-      const std::vector<std::string>& cfs, const std::vector<Options>& options,
-      std::unordered_map<std::string, std::shared_ptr<WriteBufferManager>>
-          wfms = {});
+  Status TryReopenWithColumnFamilies(const std::vector<std::string>& cfs,
+                                     const std::vector<Options>& options);
 
-  Status TryReopenWithColumnFamilies(
-      const std::vector<std::string>& cfs, const Options& options,
-      std::unordered_map<std::string, std::shared_ptr<WriteBufferManager>>
-          wfms = {});
+  Status TryReopenWithColumnFamilies(const std::vector<std::string>& cfs,
+                                     const Options& options);
+
+  void OpenWithCFWriteBufferManager(
+      const std::vector<std::string>& cfs,
+      const std::vector<std::shared_ptr<WriteBufferManager>> wbms,
+      const Options& options);
 
   void Reopen(const Options& options);
 

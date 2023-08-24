@@ -2287,6 +2287,7 @@ class DBImpl : public DB {
   // Note: std::shared_ptr<WriteBufferManager> is store in ColumnfamilyOptions
   // which is destroyed before DBimpl, so we use
   // std::shared_ptr<WriteBufferManager> here in the vector.
+  //       And it's only modifed in Open, so mutex is not needed.
   autovector<std::shared_ptr<WriteBufferManager>>
       cf_based_write_buffer_manager_;
 

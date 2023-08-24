@@ -721,6 +721,9 @@ Status DBImpl::CloseHelper() {
   if (write_buffer_manager_) {
     write_buffer_manager_->UnregisterDB(this);
   }
+  for (auto m : cf_based_write_buffer_manager_) {
+    m->UnregisterDB(this);
+  }
 
   if (ret.IsAborted()) {
     // Reserve IsAborted() error for those where users didn't release
@@ -2827,7 +2830,19 @@ Status DBImpl::CreateColumnFamilyImpl(const ColumnFamilyOptions& cf_options,
   if (s.ok()) {
     NewThreadStatusCfInfo(
         static_cast_with_check<ColumnFamilyHandleImpl>(*handle)->cfd());
-    if (write_buffer_manager_ != nullptr) {
+    if (cf_options.cf_write_buffer_manager != nullptr) {
+      bool exist = false;
+      for (auto m : cf_based_write_buffer_manager_) {
+        if (m == cf_options.cf_write_buffer_manager) {
+          exist = true;
+        }
+      }
+      if (!exist) {
+        return Status::NotSupported(
+            "New cf write buffer manager is not supported after Open");
+      }
+      cf_options.cf_write_buffer_manager->RegisterColumnFamily(this, *handle);
+    } else if (write_buffer_manager_ != nullptr) {
       write_buffer_manager_->RegisterColumnFamily(this, *handle);
     }
   }

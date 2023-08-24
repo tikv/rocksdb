@@ -201,15 +201,19 @@ TEST_P(DBWriteBufferManagerTest, SharedWriteBufferAcrossCFs3) {
         new WriteBufferManager(100000, nullptr, 1.0));
     cf_write_buffer_manager.reset(new WriteBufferManager(100000, nullptr, 1.0));
   }
-  std::unordered_map<std::string, std::shared_ptr<WriteBufferManager>>
-      write_buffer_manager_map = {{"cf4", cf_write_buffer_manager},
-                                  {"cf5", cf_write_buffer_manager}};
 
   WriteOptions wo;
   wo.disableWAL = true;
 
-  CreateAndReopenWithCF({"cf1", "cf2", "cf3", "cf4", "cf5"}, options,
-                        write_buffer_manager_map);
+  std::vector<std::string> cfs = {"cf1", "cf2", "cf3", "cf4", "cf5"};
+  std::vector<std::shared_ptr<WriteBufferManager>> wbms = {
+      nullptr,
+      nullptr,
+      nullptr,
+      nullptr,
+      cf_write_buffer_manager,
+      cf_write_buffer_manager};
+  OpenWithCFWriteBufferManager(cfs, wbms, options);
   auto opts = db_->GetOptions();
 
   ASSERT_OK(Put(4, Key(1), DummyString(30000), wo));
@@ -323,14 +327,20 @@ TEST_P(DBWriteBufferManagerTest, SharedWriteBufferAcrossCFs4) {
         new WriteBufferManager(100000, nullptr, 0.0));
     cf_write_buffer_manager.reset(new WriteBufferManager(100000, nullptr, 0.0));
   }
-  std::unordered_map<std::string, std::shared_ptr<WriteBufferManager>>
-      write_buffer_manager_map = {{"cf4", cf_write_buffer_manager},
-                                  {"cf5", cf_write_buffer_manager}};
+
   WriteOptions wo;
   wo.disableWAL = true;
 
-  CreateAndReopenWithCF({"cf1", "cf2", "cf3", "cf4", "cf5"}, options,
-                        write_buffer_manager_map);
+  std::vector<std::string> cfs = {"cf1", "cf2", "cf3", "cf4", "cf5"};
+  std::vector<std::shared_ptr<WriteBufferManager>> wbms = {
+      nullptr,
+      nullptr,
+      nullptr,
+      nullptr,
+      cf_write_buffer_manager,
+      cf_write_buffer_manager};
+  OpenWithCFWriteBufferManager(cfs, wbms, options);
+
   ASSERT_OK(Put(4, Key(1), DummyString(30000), wo));
   ASSERT_OK(Put(4, Key(1), DummyString(40000), wo));
 
