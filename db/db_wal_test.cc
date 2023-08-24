@@ -827,9 +827,8 @@ TEST_F(DBWALTest, PreallocateBlock) {
   expected_preallocation_size = 700 * 1000;
   std::shared_ptr<WriteBufferManager> write_buffer_manager =
       std::make_shared<WriteBufferManager>(static_cast<uint64_t>(700 * 1000));
-  std::unordered_map<std::string, std::shared_ptr<WriteBufferManager>>
-      write_buffer_manager_map = {{"default", write_buffer_manager}};
-  ReopenWithColumnFamilies({"default"}, options, write_buffer_manager_map);
+  options.write_buffer_manager = write_buffer_manager;
+  Reopen(options);
   called.store(0);
   ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->SetCallBack(
       "DBTestWalFile.GetPreallocationStatus", [&](void* arg) {

@@ -21,19 +21,6 @@ class DBWriteBufferManagerTest : public DBTestBase,
   bool cost_cache_;
 };
 
-void OpenWithDefaultCfWithWriteBufferManager(
-    const Options& options, const std::string& dbname, DB** dbptr,
-    std::shared_ptr<WriteBufferManager> write_buffer_manager) {
-  DBOptions db_options(options);
-  ColumnFamilyOptions cf_options(options);
-  cf_options.write_buffer_manager = write_buffer_manager;
-  std::vector<ColumnFamilyDescriptor> column_families;
-  column_families.emplace_back(kDefaultColumnFamilyName, cf_options);
-  std::vector<ColumnFamilyHandle*> handles;
-  ASSERT_OK(DB::Open(db_options, dbname, column_families, &handles, dbptr));
-  delete handles[0];
-}
-
 TEST_P(DBWriteBufferManagerTest, SharedBufferAcrossCFs1) {
   Options options = CurrentOptions();
   options.arena_block_size = 4096;
@@ -42,22 +29,18 @@ TEST_P(DBWriteBufferManagerTest, SharedBufferAcrossCFs1) {
   ASSERT_LT(cache->GetUsage(), 256 * 1024);
   cost_cache_ = GetParam();
 
-  std::shared_ptr<WriteBufferManager> write_buffer_manager;
   if (cost_cache_) {
-    write_buffer_manager.reset(new WriteBufferManager(100000, cache, 1.0));
+    options.write_buffer_manager.reset(
+        new WriteBufferManager(100000, cache, 1.0));
   } else {
-    write_buffer_manager.reset(new WriteBufferManager(100000, nullptr, 1.0));
+    options.write_buffer_manager.reset(
+        new WriteBufferManager(100000, nullptr, 1.0));
   }
-  std::unordered_map<std::string, std::shared_ptr<WriteBufferManager>>
-      write_buffer_manager_map = {{"cf1", write_buffer_manager},
-                                  {"cf2", write_buffer_manager},
-                                  {"cf3", write_buffer_manager}};
 
   WriteOptions wo;
   wo.disableWAL = true;
 
-  CreateAndReopenWithCF({"cf1", "cf2", "cf3"}, options,
-                        write_buffer_manager_map);
+  CreateAndReopenWithCF({"cf1", "cf2", "cf3"}, options);
   ASSERT_OK(Put(3, Key(1), DummyString(1), wo));
   Flush(3);
   ASSERT_OK(Put(3, Key(1), DummyString(1), wo));
@@ -78,9 +61,9 @@ TEST_P(DBWriteBufferManagerTest, SharedBufferAcrossCFs1) {
   ASSERT_OK(Put(0, Key(2), DummyString(1), wo));
 }
 
-// Test Single DB with single WriteBufferManager with multiple writer threads
-// get blocked  when WriteBufferManager execeeds buffer_size_ and flush is
-// waiting to be finished.
+// Test Single DB with multiple writer threads get blocked when
+// WriteBufferManager execeeds buffer_size_ and flush is waiting to be
+// finished.
 TEST_P(DBWriteBufferManagerTest, SharedWriteBufferAcrossCFs2) {
   Options options = CurrentOptions();
   options.arena_block_size = 4096;
@@ -89,24 +72,17 @@ TEST_P(DBWriteBufferManagerTest, SharedWriteBufferAcrossCFs2) {
   ASSERT_LT(cache->GetUsage(), 256 * 1024);
   cost_cache_ = GetParam();
 
-  std::shared_ptr<WriteBufferManager> write_buffer_manager;
   if (cost_cache_) {
-    write_buffer_manager.reset(new WriteBufferManager(100000, cache, 1.0));
+    options.write_buffer_manager.reset(
+        new WriteBufferManager(100000, cache, 1.0));
   } else {
-    write_buffer_manager.reset(new WriteBufferManager(100000, nullptr, 1.0));
+    options.write_buffer_manager.reset(
+        new WriteBufferManager(100000, nullptr, 1.0));
   }
-  std::unordered_map<std::string, std::shared_ptr<WriteBufferManager>>
-      write_buffer_manager_map = {{"default", write_buffer_manager},
-                                  {"cf1", write_buffer_manager},
-                                  {"cf2", write_buffer_manager},
-                                  {"cf3", write_buffer_manager}};
-
   WriteOptions wo;
   wo.disableWAL = true;
 
-  CreateAndReopenWithCF({"cf1", "cf2", "cf3"}, options,
-                        write_buffer_manager_map);
-
+  CreateAndReopenWithCF({"cf1", "cf2", "cf3"}, options);
   ASSERT_OK(Put(3, Key(1), DummyString(1), wo));
   Flush(3);
   ASSERT_OK(Put(3, Key(1), DummyString(1), wo));
@@ -203,9 +179,10 @@ TEST_P(DBWriteBufferManagerTest, SharedWriteBufferAcrossCFs2) {
   ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->DisableProcessing();
 }
 
-// The only difference between this test and `SharedWriteBufferAcrossCFs2` is
-// that this test uses more than one write buffer manager, and only one write
-// buffer manager with stall ratio >= 1 can block the whole write process.
+// Compared with `SharedWriteBufferAcrossCFs2` this test uses CF based write
+// buffer manager CF level write buffer manager will not block write even
+// exceeds the stall threshold DB level write buffer manager will block all
+// write including CFs not use it.
 TEST_P(DBWriteBufferManagerTest, SharedWriteBufferAcrossCFs3) {
   Options options = CurrentOptions();
   options.arena_block_size = 4096;
@@ -214,20 +191,19 @@ TEST_P(DBWriteBufferManagerTest, SharedWriteBufferAcrossCFs3) {
   ASSERT_LT(cache->GetUsage(), 256 * 1024);
   cost_cache_ = GetParam();
 
-  std::shared_ptr<WriteBufferManager> write_buffer_manager1;
-  std::shared_ptr<WriteBufferManager> write_buffer_manager2;
+  std::shared_ptr<WriteBufferManager> cf_write_buffer_manager;
   if (cost_cache_) {
-    write_buffer_manager1.reset(new WriteBufferManager(100000, cache, 1.0));
-    write_buffer_manager2.reset(new WriteBufferManager(100000, cache, 1.0));
+    options.write_buffer_manager.reset(
+        new WriteBufferManager(100000, cache, 1.0));
+    cf_write_buffer_manager.reset(new WriteBufferManager(100000, cache, 1.0));
   } else {
-    write_buffer_manager1.reset(new WriteBufferManager(100000, nullptr, 1.0));
-    write_buffer_manager2.reset(new WriteBufferManager(100000, nullptr, 1.0));
+    options.write_buffer_manager.reset(
+        new WriteBufferManager(100000, nullptr, 1.0));
+    cf_write_buffer_manager.reset(new WriteBufferManager(100000, nullptr, 1.0));
   }
   std::unordered_map<std::string, std::shared_ptr<WriteBufferManager>>
-      write_buffer_manager_map = {
-          {"default", write_buffer_manager1}, {"cf1", write_buffer_manager1},
-          {"cf2", write_buffer_manager1},     {"cf3", write_buffer_manager1},
-          {"cf4", write_buffer_manager2},     {"cf5", write_buffer_manager2}};
+      write_buffer_manager_map = {{"cf4", cf_write_buffer_manager},
+                                  {"cf5", cf_write_buffer_manager}};
 
   WriteOptions wo;
   wo.disableWAL = true;
@@ -235,6 +211,17 @@ TEST_P(DBWriteBufferManagerTest, SharedWriteBufferAcrossCFs3) {
   CreateAndReopenWithCF({"cf1", "cf2", "cf3", "cf4", "cf5"}, options,
                         write_buffer_manager_map);
   auto opts = db_->GetOptions();
+
+  ASSERT_OK(Put(4, Key(1), DummyString(30000), wo));
+  ASSERT_OK(Put(5, Key(1), DummyString(40000), wo));
+  ASSERT_OK(Put(4, Key(1), DummyString(40000), wo));
+  // Now, cf_write_buffer_manager reaches the stall level, but it will not block
+  // the write
+
+  int num_writers_total = 6;
+  for (int i = 0; i < num_writers_total; i++) {
+    ASSERT_OK(Put(i, Key(1), DummyString(1), wo));
+  }
 
   ASSERT_OK(Put(3, Key(1), DummyString(1), wo));
   Flush(3);
@@ -254,8 +241,7 @@ TEST_P(DBWriteBufferManagerTest, SharedWriteBufferAcrossCFs3) {
   std::unordered_set<WriteThread::Writer*> w_set;
   std::vector<port::Thread> threads;
   int wait_count_db = 0;
-  int num_writers_total = 6;
-  int num_writers1 = 4;
+  int num_writers1 = 4;  // default, cf1-cf3
   InstrumentedMutex mutex;
   InstrumentedCondVar cv(&mutex);
   std::atomic<int> thread_num(0);
@@ -327,24 +313,19 @@ TEST_P(DBWriteBufferManagerTest, SharedWriteBufferAcrossCFs4) {
   ASSERT_LT(cache->GetUsage(), 256 * 1024);
   cost_cache_ = GetParam();
 
-  std::shared_ptr<WriteBufferManager> write_buffer_manager1;
-  std::shared_ptr<WriteBufferManager> write_buffer_manager2;
+  std::shared_ptr<WriteBufferManager> cf_write_buffer_manager;
   if (cost_cache_) {
-    write_buffer_manager1 =
-        std::make_shared<WriteBufferManager>(100000, cache, 0);
-    write_buffer_manager2 =
-        std::make_shared<WriteBufferManager>(100000, cache, 0);
+    options.write_buffer_manager.reset(
+        new WriteBufferManager(100000, cache, 0.0));
+    cf_write_buffer_manager.reset(new WriteBufferManager(100000, cache, 0.0));
   } else {
-    write_buffer_manager1 =
-        std::make_shared<WriteBufferManager>(100000, nullptr, 0);
-    write_buffer_manager2 =
-        std::make_shared<WriteBufferManager>(100000, nullptr, 0);
+    options.write_buffer_manager.reset(
+        new WriteBufferManager(100000, nullptr, 0.0));
+    cf_write_buffer_manager.reset(new WriteBufferManager(100000, nullptr, 0.0));
   }
   std::unordered_map<std::string, std::shared_ptr<WriteBufferManager>>
-      write_buffer_manager_map = {
-          {"default", write_buffer_manager1}, {"cf1", write_buffer_manager1},
-          {"cf2", write_buffer_manager1},     {"cf3", write_buffer_manager1},
-          {"cf4", write_buffer_manager2},     {"cf5", write_buffer_manager2}};
+      write_buffer_manager_map = {{"cf4", cf_write_buffer_manager},
+                                  {"cf5", cf_write_buffer_manager}};
   WriteOptions wo;
   wo.disableWAL = true;
 
@@ -428,22 +409,15 @@ TEST_P(DBWriteBufferManagerTest, FreeMemoryOnDestroy) {
   ASSERT_LT(cache->GetUsage(), 256 * 1024);
   cost_cache_ = GetParam();
 
-  std::shared_ptr<WriteBufferManager> write_buffer_manager;
   if (cost_cache_) {
-    write_buffer_manager =
-        std::make_shared<WriteBufferManager>(100000, cache, 1.0);
+    options.write_buffer_manager.reset(
+        new WriteBufferManager(100000, cache, 1.0));
   } else {
-    write_buffer_manager =
-        std::make_shared<WriteBufferManager>(100000, nullptr, 1.0);
+    options.write_buffer_manager.reset(
+        new WriteBufferManager(100000, nullptr, 1.0));
   }
-  std::unordered_map<std::string, std::shared_ptr<WriteBufferManager>>
-      write_buffer_manager_map = {
-          {"default", write_buffer_manager},
-          {"cf1", write_buffer_manager},
-          {"cf2", write_buffer_manager},
-      };
 
-  CreateAndReopenWithCF({"cf1", "cf2"}, options, write_buffer_manager_map);
+  CreateAndReopenWithCF({"cf1", "cf2"}, options);
   std::string db2_name = test::PerThreadDBPath("free_memory_on_destroy_db2");
   DB* db2 = nullptr;
   ASSERT_OK(DestroyDB(db2_name, options));
@@ -461,7 +435,7 @@ TEST_P(DBWriteBufferManagerTest, FreeMemoryOnDestroy) {
   ASSERT_OK(Put(0, Key(1), DummyString(40000), wo));
 
   // Decrease flush size, at least two cfs must be freed to not stall write.
-  write_buffer_manager->SetFlushSize(50000);
+  options.write_buffer_manager->SetFlushSize(50000);
   ASSERT_TRUE(Put(0, Key(1), DummyString(30000), wo).IsIncomplete());
 
   ASSERT_OK(db2->ContinueBackgroundWork());  // Close waits on pending jobs.
@@ -490,27 +464,19 @@ TEST_P(DBWriteBufferManagerTest, DynamicFlushSize) {
   ASSERT_LT(cache->GetUsage(), 256 * 1024);
   cost_cache_ = GetParam();
 
-  std::shared_ptr<WriteBufferManager> write_buffer_manager;
   if (cost_cache_) {
-    write_buffer_manager =
-        std::make_shared<WriteBufferManager>(100000, cache, 1.0);
+    options.write_buffer_manager.reset(
+        new WriteBufferManager(100000, cache, 1.0));
   } else {
-    write_buffer_manager =
-        std::make_shared<WriteBufferManager>(100000, nullptr, 1.0);
+    options.write_buffer_manager.reset(
+        new WriteBufferManager(100000, nullptr, 1.0));
   }
-  std::unordered_map<std::string, std::shared_ptr<WriteBufferManager>>
-      write_buffer_manager_map = {
-          {"default", write_buffer_manager},
-          {"cf1", write_buffer_manager},
-          {"cf2", write_buffer_manager},
-      };
 
-  CreateAndReopenWithCF({"cf1", "cf2"}, options, write_buffer_manager_map);
+  CreateAndReopenWithCF({"cf1", "cf2"}, options);
   std::string db2_name = test::PerThreadDBPath("dynamic_flush_db2");
   DB* db2 = nullptr;
   ASSERT_OK(DestroyDB(db2_name, options));
-  OpenWithDefaultCfWithWriteBufferManager(options, db2_name, &db2,
-                                          write_buffer_manager);
+  ASSERT_OK(DB::Open(options, db2_name, &db2));
 
   ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->LoadDependency(
       {{"DBWriteBufferManagerTest::SharedWriteBufferAcrossCFs:0",
@@ -542,7 +508,7 @@ TEST_P(DBWriteBufferManagerTest, DynamicFlushSize) {
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
     // Increase.
-    write_buffer_manager->SetFlushSize(200000);
+    options.write_buffer_manager->SetFlushSize(200000);
     for (auto& t : threads) {
       t.join();
     }
@@ -557,7 +523,7 @@ TEST_P(DBWriteBufferManagerTest, DynamicFlushSize) {
     ASSERT_OK(Put(0, Key(1), DummyString(60000), wo));
     // All memtables must be flushed to satisfy the new flush_size.
     // Not too small because memtable has a minimum size.
-    write_buffer_manager->SetFlushSize(10240);
+    options.write_buffer_manager->SetFlushSize(10240);
     ASSERT_OK(dbfull()->TEST_WaitForFlushMemTable(handles_[0]));
     ASSERT_OK(dbfull()->TEST_WaitForFlushMemTable(handles_[1]));
     ASSERT_OK(db2->Put(wo, Key(1), DummyString(200000)));
@@ -591,27 +557,18 @@ TEST_P(DBWriteBufferManagerTest, SharedWriteBufferLimitAcrossDB) {
   ASSERT_LT(cache->GetUsage(), 256 * 1024);
   cost_cache_ = GetParam();
 
-  std::shared_ptr<WriteBufferManager> write_buffer_manager;
   if (cost_cache_) {
-    write_buffer_manager =
-        std::make_shared<WriteBufferManager>(100000, cache, 1.0);
+    options.write_buffer_manager.reset(
+        new WriteBufferManager(100000, cache, 1.0));
   } else {
-    write_buffer_manager =
-        std::make_shared<WriteBufferManager>(100000, nullptr, 1.0);
+    options.write_buffer_manager.reset(
+        new WriteBufferManager(100000, nullptr, 1.0));
   }
-  std::unordered_map<std::string, std::shared_ptr<WriteBufferManager>>
-      write_buffer_manager_map = {
-          {"default", write_buffer_manager},
-          {"cf1", write_buffer_manager},
-          {"cf2", write_buffer_manager},
-      };
-
-  CreateAndReopenWithCF({"cf1", "cf2"}, options, write_buffer_manager_map);
+  CreateAndReopenWithCF({"cf1", "cf2"}, options);
 
   for (int i = 0; i < num_dbs; i++) {
     ASSERT_OK(DestroyDB(dbnames[i], options));
-    OpenWithDefaultCfWithWriteBufferManager(options, dbnames[i], &(dbs[i]),
-                                            write_buffer_manager);
+    ASSERT_OK(DB::Open(options, dbnames[i], &(dbs[i])));
   }
   WriteOptions wo;
   wo.disableWAL = true;
@@ -717,27 +674,18 @@ TEST_P(DBWriteBufferManagerTest, SharedWriteBufferLimitAcrossDB1) {
   ASSERT_LT(cache->GetUsage(), 256 * 1024);
   cost_cache_ = GetParam();
 
-  std::shared_ptr<WriteBufferManager> write_buffer_manager;
   if (cost_cache_) {
-    write_buffer_manager =
-        std::make_shared<WriteBufferManager>(100000, cache, 1.0);
+    options.write_buffer_manager.reset(
+        new WriteBufferManager(100000, cache, 1.0));
   } else {
-    write_buffer_manager =
-        std::make_shared<WriteBufferManager>(100000, nullptr, 1.0);
+    options.write_buffer_manager.reset(
+        new WriteBufferManager(100000, nullptr, 1.0));
   }
-  std::unordered_map<std::string, std::shared_ptr<WriteBufferManager>>
-      write_buffer_manager_map = {
-          {"default", write_buffer_manager},
-          {"cf1", write_buffer_manager},
-          {"cf2", write_buffer_manager},
-      };
-
-  CreateAndReopenWithCF({"cf1", "cf2"}, options, write_buffer_manager_map);
+  CreateAndReopenWithCF({"cf1", "cf2"}, options);
 
   for (int i = 0; i < num_dbs; i++) {
     ASSERT_OK(DestroyDB(dbnames[i], options));
-    OpenWithDefaultCfWithWriteBufferManager(options, dbnames[i], &(dbs[i]),
-                                            write_buffer_manager);
+    ASSERT_OK(DB::Open(options, dbnames[i], &(dbs[i])));
   }
   WriteOptions wo;
   wo.disableWAL = true;
@@ -868,25 +816,17 @@ TEST_P(DBWriteBufferManagerTest, MixedSlowDownOptionsSingleDB) {
   ASSERT_LT(cache->GetUsage(), 256 * 1024);
   cost_cache_ = GetParam();
 
-  std::shared_ptr<WriteBufferManager> write_buffer_manager;
   if (cost_cache_) {
-    write_buffer_manager =
-        std::make_shared<WriteBufferManager>(100000, cache, 1.0);
+    options.write_buffer_manager.reset(
+        new WriteBufferManager(100000, cache, 1.0));
   } else {
-    write_buffer_manager =
-        std::make_shared<WriteBufferManager>(100000, nullptr, 1.0);
+    options.write_buffer_manager.reset(
+        new WriteBufferManager(100000, nullptr, 1.0));
   }
-  std::unordered_map<std::string, std::shared_ptr<WriteBufferManager>>
-      write_buffer_manager_map = {{"default", write_buffer_manager},
-                                  {"cf1", write_buffer_manager},
-                                  {"cf2", write_buffer_manager},
-                                  {"cf3", write_buffer_manager}};
-
   WriteOptions wo;
   wo.disableWAL = true;
 
-  CreateAndReopenWithCF({"cf1", "cf2", "cf3"}, options,
-                        write_buffer_manager_map);
+  CreateAndReopenWithCF({"cf1", "cf2", "cf3"}, options);
 
   ASSERT_OK(Put(3, Key(1), DummyString(1), wo));
   Flush(3);
@@ -1038,25 +978,18 @@ TEST_P(DBWriteBufferManagerTest, MixedSlowDownOptionsMultipleDB) {
   ASSERT_LT(cache->GetUsage(), 256 * 1024);
   cost_cache_ = GetParam();
 
-  std::shared_ptr<WriteBufferManager> write_buffer_manager;
   if (cost_cache_) {
-    write_buffer_manager =
-        std::make_shared<WriteBufferManager>(100000, cache, 1.0);
+    options.write_buffer_manager.reset(
+        new WriteBufferManager(100000, cache, 1.0));
   } else {
-    write_buffer_manager =
-        std::make_shared<WriteBufferManager>(100000, nullptr, 1.0);
+    options.write_buffer_manager.reset(
+        new WriteBufferManager(100000, nullptr, 1.0));
   }
-  std::unordered_map<std::string, std::shared_ptr<WriteBufferManager>>
-      write_buffer_manager_map = {{"default", write_buffer_manager},
-                                  {"cf1", write_buffer_manager},
-                                  {"cf2", write_buffer_manager}};
-
-  CreateAndReopenWithCF({"cf1", "cf2"}, options, write_buffer_manager_map);
+  CreateAndReopenWithCF({"cf1", "cf2"}, options);
 
   for (int i = 0; i < num_dbs; i++) {
     ASSERT_OK(DestroyDB(dbnames[i], options));
-    OpenWithDefaultCfWithWriteBufferManager(options, dbnames[i], &(dbs[i]),
-                                            write_buffer_manager);
+    ASSERT_OK(DB::Open(options, dbnames[i], &(dbs[i])));
   }
   WriteOptions wo;
   wo.disableWAL = true;
@@ -1227,23 +1160,18 @@ TEST_P(DBWriteBufferManagerTest, BackgroundWorkPaused) {
   cost_cache_ = GetParam();
 
   // Do not enable write stall.
-  std::shared_ptr<WriteBufferManager> write_buffer_manager;
   if (cost_cache_) {
-    write_buffer_manager =
-        std::make_shared<WriteBufferManager>(100000, cache, 0.0);
+    options.write_buffer_manager.reset(
+        new WriteBufferManager(100000, cache, 0.0));
   } else {
-    write_buffer_manager =
-        std::make_shared<WriteBufferManager>(100000, nullptr, 0.0);
+    options.write_buffer_manager.reset(
+        new WriteBufferManager(100000, nullptr, 0.0));
   }
-  std::unordered_map<std::string, std::shared_ptr<WriteBufferManager>>
-      write_buffer_manager_map = {{"default", write_buffer_manager}};
-  Destroy(last_options_);
-  ReopenWithColumnFamilies({"default"}, options, write_buffer_manager_map);
+  DestroyAndReopen(options);
 
   for (int i = 0; i < num_dbs; i++) {
     ASSERT_OK(DestroyDB(dbnames[i], options));
-    OpenWithDefaultCfWithWriteBufferManager(options, dbnames[i], &(dbs[i]),
-                                            write_buffer_manager);
+    ASSERT_OK(DB::Open(options, dbnames[i], &(dbs[i])));
   }
 
   dbfull()->DisableManualCompaction();

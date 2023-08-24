@@ -327,7 +327,7 @@ struct ColumnFamilyOptions : public AdvancedColumnFamilyOptions {
   // to enable it.
   //
   // Default: null
-  std::shared_ptr<WriteBufferManager> write_buffer_manager = nullptr;
+  std::shared_ptr<WriteBufferManager> cf_write_buffer_manager = nullptr;
 
   // Create ColumnFamilyOptions with default values for all fields
   ColumnFamilyOptions();
@@ -891,7 +891,6 @@ struct DBOptions {
   // [experimental]
   double experimental_mempurge_threshold = 0.0;
 
-  // [Deprecated] please use column family based write buffer manager
   // Amount of data to build up in memtables across all column
   // families before writing to disk.
   //
@@ -903,6 +902,22 @@ struct DBOptions {
   //
   // Default: 0 (disabled)
   size_t db_write_buffer_size = 0;
+
+  // The memory usage of memtable will report to this object. The same object
+  // can be passed into multiple DBs and it will track the sum of size of all
+  // the DBs. If the total size of all live memtables of all the DBs exceeds
+  // a limit, a flush will be triggered in the next DB to which the next write
+  // is issued.
+  //
+  // If the object is only passed to one DB, the behavior is the same as
+  // db_write_buffer_size. When write_buffer_manager is set, the value set will
+  // override db_write_buffer_size.
+  //
+  // This feature is disabled by default. Specify a non-zero value
+  // to enable it.
+  //
+  // Default: null
+  std::shared_ptr<WriteBufferManager> write_buffer_manager = nullptr;
 
   // Specify the file access pattern once a compaction is started.
   // It will be applied to all input files of a compaction.

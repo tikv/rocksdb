@@ -221,6 +221,8 @@ TEST_F(OptionsSettableTest, DBOptionsAllFieldsSettable) {
       {offsetof(struct DBOptions, db_paths), sizeof(std::vector<DbPath>)},
       {offsetof(struct DBOptions, db_log_dir), sizeof(std::string)},
       {offsetof(struct DBOptions, wal_dir), sizeof(std::string)},
+      {offsetof(struct DBOptions, write_buffer_manager),
+       sizeof(std::shared_ptr<WriteBufferManager>)},
       {offsetof(struct DBOptions, listeners),
        sizeof(std::vector<std::shared_ptr<EventListener>>)},
       {offsetof(struct DBOptions, row_cache), sizeof(std::shared_ptr<Cache>)},
@@ -405,7 +407,7 @@ TEST_F(OptionsSettableTest, ColumnFamilyOptionsAllFieldsSettable) {
        sizeof(std::shared_ptr<ConcurrentTaskLimiter>)},
       {offset_of(&ColumnFamilyOptions::sst_partitioner_factory),
        sizeof(std::shared_ptr<SstPartitionerFactory>)},
-      {offset_of(&ColumnFamilyOptions::write_buffer_manager),
+      {offset_of(&ColumnFamilyOptions::cf_write_buffer_manager),
        sizeof(std::shared_ptr<WriteBufferManager>)},
   };
 

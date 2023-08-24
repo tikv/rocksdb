@@ -1590,7 +1590,7 @@ ColumnFamilySet::ColumnFamilySet(const std::string& dbname,
                                  const ImmutableDBOptions* db_options,
                                  const FileOptions& file_options,
                                  Cache* table_cache,
-                                 WriteBufferManager*, /*non-used parameter*/
+                                 WriteBufferManager* _write_buffer_manager,
                                  WriteController* _write_controller,
                                  BlockCacheTracer* const block_cache_tracer,
                                  const std::shared_ptr<IOTracer>& io_tracer,
@@ -1605,6 +1605,7 @@ ColumnFamilySet::ColumnFamilySet(const std::string& dbname,
       db_name_(dbname),
       db_options_(db_options),
       table_cache_(table_cache),
+      write_buffer_manager_(_write_buffer_manager),
       write_controller_(_write_controller),
       block_cache_tracer_(block_cache_tracer),
       io_tracer_(io_tracer),
@@ -1674,9 +1675,9 @@ ColumnFamilyData* ColumnFamilySet::CreateColumnFamily(
   assert(column_families_.find(name) == column_families_.end());
   ColumnFamilyData* new_cfd =
       new ColumnFamilyData(id, name, dummy_versions, table_cache_,
-                           options.write_buffer_manager != nullptr
-                               ? options.write_buffer_manager.get()
-                               : nullptr,
+                           options.cf_write_buffer_manager != nullptr
+                               ? options.cf_write_buffer_manager.get()
+                               : write_buffer_manager_,
                            options, *db_options_, &file_options_, this,
                            block_cache_tracer_, io_tracer_, db_session_id_);
   column_families_.insert({name, id});

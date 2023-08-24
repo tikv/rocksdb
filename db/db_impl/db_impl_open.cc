@@ -63,6 +63,10 @@ DBOptions SanitizeOptions(const std::string& dbname, const DBOptions& src,
     }
   }
 
+  if (!result.write_buffer_manager) {
+    result.write_buffer_manager.reset(
+        new WriteBufferManager(result.db_write_buffer_size));
+  }
   auto bg_job_limits = DBImpl::GetBGJobLimits(
       result.max_background_flushes, result.max_background_compactions,
       result.max_background_jobs, result.base_background_compactions,
@@ -1623,16 +1627,17 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
 
   DBImpl* impl = new DBImpl(db_options, dbname, seq_per_batch, batch_per_txn);
   for (auto cf : column_families) {
-    if (cf.options.write_buffer_manager != nullptr) {
+    if (cf.options.cf_write_buffer_manager != nullptr) {
       bool already_exist = false;
-      for (auto m : impl->write_buffer_manager_) {
-        if (m == cf.options.write_buffer_manager) {
+      for (auto m : impl->cf_based_write_buffer_manager_) {
+        if (m == cf.options.cf_write_buffer_manager) {
           already_exist = true;
           break;
         }
       }
       if (!already_exist) {
-        impl->write_buffer_manager_.push_back(cf.options.write_buffer_manager);
+        impl->cf_based_write_buffer_manager_.push_back(
+            cf.options.cf_write_buffer_manager);
       }
     }
   }
@@ -1909,16 +1914,25 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
   if (s.ok()) {
     impl->StartPeriodicWorkScheduler();
 
-    for (auto m : impl->write_buffer_manager_) {
+    // Newly created handles are already registered during
+    // `CreateColumnFamily`. We must clear them all to avoid duplicate
+    // registration.
+    if (impl->write_buffer_manager_) {
+      impl->write_buffer_manager_->UnregisterDB(impl);
+    }
+    for (auto m : impl->cf_based_write_buffer_manager_) {
       m->UnregisterDB(impl);
     }
 
     for (size_t i = 0; i < (*handles).size(); ++i) {
       auto cf_opt = column_families[i].options;
-      if (cf_opt.write_buffer_manager != nullptr) {
-        auto* cf = (*handles)[i];
-        std::string cf_name = cf->GetName();
-        auto* write_buffer_manager = cf_opt.write_buffer_manager.get();
+
+      auto* cf = (*handles)[i];
+      std::string cf_name = cf->GetName();
+      auto* write_buffer_manager = cf_opt.cf_write_buffer_manager != nullptr
+                                       ? cf_opt.cf_write_buffer_manager.get()
+                                       : impl->write_buffer_manager_;
+      if (write_buffer_manager) {
         if (cf->GetName() == kDefaultColumnFamilyName) {
           write_buffer_manager->RegisterColumnFamily(impl,
                                                      impl->default_cf_handle_);

@@ -3180,6 +3180,7 @@ class Benchmark {
     delete prefix_extractor_;
     if (cache_.get() != nullptr) {
       // Clear cache reference first
+      open_options_.write_buffer_manager.reset();
       // this will leak, but we're shutting down so nobody cares
       cache_->DisownData();
     }
@@ -4048,6 +4049,10 @@ class Benchmark {
 
     options.env = FLAGS_env;
     options.max_open_files = FLAGS_open_files;
+    if (FLAGS_cost_write_buffer_to_cache || FLAGS_db_write_buffer_size != 0) {
+      options.write_buffer_manager.reset(
+          new WriteBufferManager(FLAGS_db_write_buffer_size, cache_));
+    }
     options.arena_block_size = FLAGS_arena_block_size;
     options.write_buffer_size = FLAGS_write_buffer_size;
     options.max_write_buffer_number = FLAGS_max_write_buffer_number;
@@ -4617,16 +4622,9 @@ class Benchmark {
         FLAGS_num_hot_column_families = FLAGS_num_column_families;
       }
       std::vector<ColumnFamilyDescriptor> column_families;
-      std::shared_ptr<WriteBufferManager> write_buffer_manager = nullptr;
-      if (FLAGS_cost_write_buffer_to_cache || FLAGS_db_write_buffer_size != 0) {
-        write_buffer_manager = std::make_shared<WriteBufferManager>(
-            FLAGS_db_write_buffer_size, cache_);
-      }
       for (size_t i = 0; i < num_hot; i++) {
         column_families.push_back(ColumnFamilyDescriptor(
               ColumnFamilyName(i), ColumnFamilyOptions(options)));
-        column_families.back().options.write_buffer_manager =
-            write_buffer_manager;
       }
       std::vector<int> cfh_idx_to_prob;
       if (!FLAGS_column_family_distribution.empty()) {

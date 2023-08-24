@@ -1323,7 +1323,7 @@ if set to something > 0 user will see 2 changes in iterators behavior 1) only ke
 ### New Features
 * Change ticker/histogram statistics implementations to use core-local storage. This improves aggregation speed compared to our previous thread-local approach, particularly for applications with many threads.
 * Users can pass a cache object to write buffer manager, so that they can cap memory usage for memtable and block cache using one single limit.
-* Flush will be triggered when 7/8 of the limit introduced by write_buffer_manager or db_write_buffer_size is triggered, so that the hard threshold is hard to hit.
+* Flush will be triggered when 7/8 of the limit introduced by cf_write_buffer_manager or db_write_buffer_size is triggered, so that the hard threshold is hard to hit.
 * Introduce WriteOptions.low_pri. If it is true, low priority writes will be throttled if the compaction is behind.
 * `DB::IngestExternalFile()` now supports ingesting files into a database containing range deletions.
 
@@ -1459,7 +1459,7 @@ if set to something > 0 user will see 2 changes in iterators behavior 1) only ke
 * Add avoid_flush_during_recovery option.
 * Add a read option background_purge_on_iterator_cleanup to avoid deleting files in foreground when destroying iterators. Instead, a job is scheduled in high priority queue and would be executed in a separate background thread.
 * RepairDB support for column families. RepairDB now associates data with non-default column families using information embedded in the SST/WAL files (4.7 or later). For data written by 4.6 or earlier, RepairDB associates it with the default column family.
-* Add options.write_buffer_manager which allows users to control total memtable sizes across multiple DB instances.
+* Add options.cf_write_buffer_manager which allows users to control total memtable sizes across multiple DB instances.
 
 ## 4.9.0 (2016-06-09)
 ### Public API changes

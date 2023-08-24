@@ -6,7 +6,7 @@
 package org.rocksdb;
 
 /**
- * Java wrapper over native write_buffer_manager class
+ * Java wrapper over native cf_write_buffer_manager class
  */
 public class WriteBufferManager extends RocksObject {
   static {
@@ -20,7 +20,7 @@ public class WriteBufferManager extends RocksObject {
    *     https://github.com/facebook/rocksdb/wiki/Write-Buffer-Manager</a>
    * for more details on when to use it
    *
-   * @param bufferSizeBytes buffer size(in bytes) to use for native write_buffer_manager
+   * @param bufferSizeBytes buffer size(in bytes) to use for native cf_write_buffer_manager
    * @param cache cache whose memory should be bounded by this write buffer manager
    * @param allowStall if set true, it will enable stalling of writes when memory_usage() exceeds
    *     buffer_size.

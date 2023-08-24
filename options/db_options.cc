@@ -697,6 +697,7 @@ ImmutableDBOptions::ImmutableDBOptions(const DBOptions& options)
       advise_random_on_open(options.advise_random_on_open),
       experimental_mempurge_threshold(options.experimental_mempurge_threshold),
       db_write_buffer_size(options.db_write_buffer_size),
+      write_buffer_manager(options.write_buffer_manager),
       access_hint_on_compaction_start(options.access_hint_on_compaction_start),
       new_table_reader_for_compaction_inputs(
           options.new_table_reader_for_compaction_inputs),
@@ -835,6 +836,8 @@ void ImmutableDBOptions::Dump(Logger* log) const {
   ROCKS_LOG_HEADER(
       log, "                   Options.db_write_buffer_size: %" ROCKSDB_PRIszt,
       db_write_buffer_size);
+  ROCKS_LOG_HEADER(log, "                   Options.write_buffer_manager: %p",
+                   write_buffer_manager.get());
   ROCKS_LOG_HEADER(log, "        Options.access_hint_on_compaction_start: %d",
                    static_cast<int>(access_hint_on_compaction_start));
   ROCKS_LOG_HEADER(log, " Options.new_table_reader_for_compaction_inputs: %d",

@@ -184,6 +184,7 @@ DBImpl::DBImpl(const DBOptions& options, const std::string& dbname,
       log_sync_cv_(&log_write_mutex_),
       total_log_size_(0),
       is_snapshot_supported_(true),
+      write_buffer_manager_(immutable_db_options_.write_buffer_manager.get()),
       write_thread_(immutable_db_options_),
       nonmem_write_thread_(immutable_db_options_),
       write_controller_(mutable_db_options_.delayed_write_rate),
@@ -258,7 +259,7 @@ DBImpl::DBImpl(const DBOptions& options, const std::string& dbname,
   assert(!db_session_id_.empty());
 
   versions_.reset(new VersionSet(dbname_, &immutable_db_options_, file_options_,
-                                 table_cache_.get(), nullptr,
+                                 table_cache_.get(), write_buffer_manager_,
                                  &write_controller_, &block_cache_tracer_,
                                  io_tracer_, db_session_id_));
   column_family_memtables_.reset(
@@ -272,7 +273,9 @@ DBImpl::DBImpl(const DBOptions& options, const std::string& dbname,
 
   max_total_wal_size_.store(mutable_db_options_.max_total_wal_size,
                             std::memory_order_relaxed);
-  wbm_stall_.reset(new WBMStallInterface());
+  if (write_buffer_manager_) {
+    wbm_stall_.reset(new WBMStallInterface());
+  }
 }
 
 Status DBImpl::Resume() {
@@ -712,13 +715,11 @@ Status DBImpl::CloseHelper() {
     }
   }
 
-  if (wbm_stall_) {
-    for (auto write_buffer_manager : write_buffer_manager_) {
-      write_buffer_manager->RemoveFromStallQueue(wbm_stall_.get());
-    }
+  if (write_buffer_manager_ && wbm_stall_) {
+    write_buffer_manager_->RemoveFromStallQueue(wbm_stall_.get());
   }
-  for (auto write_buffer_manager : write_buffer_manager_) {
-    write_buffer_manager->UnregisterDB(this);
+  if (write_buffer_manager_) {
+    write_buffer_manager_->UnregisterDB(this);
   }
 
   if (ret.IsAborted()) {
@@ -2826,18 +2827,8 @@ Status DBImpl::CreateColumnFamilyImpl(const ColumnFamilyOptions& cf_options,
   if (s.ok()) {
     NewThreadStatusCfInfo(
         static_cast_with_check<ColumnFamilyHandleImpl>(*handle)->cfd());
-    if (cf_options.write_buffer_manager != nullptr) {
-      auto wfm = cf_options.write_buffer_manager.get();
-      wfm->RegisterColumnFamily(this, *handle);
-      bool already_exists = false;
-      for (auto m : write_buffer_manager_) {
-        if (cf_options.write_buffer_manager == m) {
-          already_exists = true;
-        }
-      }
-      if (!already_exists) {
-        write_buffer_manager_.push_back(cf_options.write_buffer_manager);
-      }
+    if (write_buffer_manager_ != nullptr) {
+      write_buffer_manager_->RegisterColumnFamily(this, *handle);
     }
   }
   return s;

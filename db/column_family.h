@@ -696,6 +696,8 @@ class ColumnFamilySet {
 
   Cache* get_table_cache() { return table_cache_; }
 
+  WriteBufferManager* write_buffer_manager() { return write_buffer_manager_; }
+
   WriteController* write_controller() { return write_controller_; }
 
  private:
@@ -727,6 +729,7 @@ class ColumnFamilySet {
   const std::string db_name_;
   const ImmutableDBOptions* const db_options_;
   Cache* table_cache_;
+  WriteBufferManager* write_buffer_manager_;
   WriteController* write_controller_;
   BlockCacheTracer* const block_cache_tracer_;
   std::shared_ptr<IOTracer> io_tracer_;

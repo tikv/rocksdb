@@ -1747,7 +1747,7 @@ class DBImpl : public DB {
 
   // Begin stalling of writes when memory usage increases beyond a certain
   // threshold.
-  void WriteBufferManagerStallWrites(size_t);
+  void WriteBufferManagerStallWrites();
 
   Status ThrottleLowPriWritesIfNeeded(const WriteOptions& write_options,
                                       WriteBatch* my_batch);
@@ -2281,7 +2281,11 @@ class DBImpl : public DB {
 
   Directories directories_;
 
-  std::vector<std::shared_ptr<WriteBufferManager>> write_buffer_manager_;
+  WriteBufferManager* write_buffer_manager_;
+  // For simplicity, CF based write buffer manager does not support stall the
+  // write.
+  autovector<std::shared_ptr<WriteBufferManager>>
+      cf_based_write_buffer_manager_;
 
   WriteThread write_thread_;
   WriteBatch tmp_batch_;

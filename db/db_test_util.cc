@@ -599,7 +599,7 @@ void DBTestBase::CreateColumnFamilies(
   for (auto cf : cfs) {
     ColumnFamilyOptions cf_opts(options);
     if (wfms.find(cf) != wfms.end()) {
-      cf_opts.write_buffer_manager = wfms[cf];
+      cf_opts.cf_write_buffer_manager = wfms[cf];
     }
     Status s = db_->CreateColumnFamily(cf_opts, cf, &handles_[cfi++]);
     ASSERT_OK(s);
@@ -668,7 +668,7 @@ Status DBTestBase::TryReopenWithColumnFamilies(
   for (size_t i = 0; i < cfs.size(); ++i) {
     column_families.push_back(ColumnFamilyDescriptor(cfs[i], options[i]));
     if (wfms.find(cfs[i]) != wfms.end()) {
-      column_families.back().options.write_buffer_manager = wfms[cfs[i]];
+      column_families.back().options.cf_write_buffer_manager = wfms[cfs[i]];
     }
   }
   DBOptions db_opts = DBOptions(options[0]);

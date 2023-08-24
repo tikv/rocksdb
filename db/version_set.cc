@@ -4112,9 +4112,10 @@ VersionSet::~VersionSet() {
 
 void VersionSet::Reset() {
   if (column_family_set_) {
+    WriteBufferManager* wbm = column_family_set_->write_buffer_manager();
     WriteController* wc = column_family_set_->write_controller();
     column_family_set_.reset(new ColumnFamilySet(
-        dbname_, db_options_, file_options_, table_cache_, nullptr, wc,
+        dbname_, db_options_, file_options_, table_cache_, wbm, wc,
         block_cache_tracer_, io_tracer_, db_session_id_));
   }
   db_id_.clear();
