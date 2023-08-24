@@ -685,6 +685,8 @@ Status DBImpl::CloseHelper() {
     delete txn_entry.second;
   }
 
+  // We can only access cf_based_write_buffer_manager_ before versions_.reset(),
+  // after which all cf write buffer managers will be freed.
   for (auto m : cf_based_write_buffer_manager_) {
     m->UnregisterDB(this);
   }
