@@ -317,14 +317,9 @@ struct ColumnFamilyOptions : public AdvancedColumnFamilyOptions {
   // Default: nullptr
   std::shared_ptr<SstPartitionerFactory> sst_partitioner_factory = nullptr;
 
-  // The memory usage of memtable of this CF will report to this object. The
-  // same object can be passed into multiple CFs of different DBs and it will
-  // track the sum of size them. If the total size of all live memtables of them
-  // exceeds a limit, a flush will be triggered in the next DB to which the next
-  // write is issued.
-  //
-  // This feature is disabled by default. Specify a non-zero value
-  // to enable it.
+  // Column family based write buffer manager, if this is set, this column
+  // facmily will not report memtable memory usage to the write buffer manager
+  // in DBImpl.
   //
   // Default: null
   std::shared_ptr<WriteBufferManager> cf_write_buffer_manager = nullptr;

@@ -2284,6 +2284,9 @@ class DBImpl : public DB {
   WriteBufferManager* write_buffer_manager_;
   // For simplicity, CF based write buffer manager does not support stall the
   // write.
+  // Note: std::shared_ptr<WriteBufferManager> is store in ColumnfamilyOptions
+  // which is destroyed before DBimpl, so we use
+  // std::shared_ptr<WriteBufferManager> here in the vector.
   autovector<std::shared_ptr<WriteBufferManager>>
       cf_based_write_buffer_manager_;
 

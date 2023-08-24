@@ -301,7 +301,7 @@ TEST_F(DBFlushTest, ScheduleOnlyOneBgThread) {
 //     after a write.
 // 2 - Total memtable size across all column families exceeds
 // DBOptions::db_write_buffer_size,
-//     or DBOptions::cf_write_buffer_manager signals a flush. In this scenario
+//     or DBOptions::write_buffer_manager signals a flush. In this scenario
 //     the largest memtable will be flushed.
 // 3 - Total WAL file size exceeds DBOptions::max_total_wal_size.
 //     In this scenario the memtable with the oldest data will be flushed,
