@@ -36,6 +36,7 @@ class CompactionFilter : public Customizable {
     kValue,
     kMergeOperand,
     kBlobIndex,  // used internally by BlobDB.
+    kDeletion,   // used only by TiKV's region range filter.
   };
 
   enum class Decision {
@@ -156,6 +157,10 @@ class CompactionFilter : public Customizable {
       }
       case ValueType::kBlobIndex:
         return Decision::kKeep;
+      case ValueType::kDeletion:
+        // Should not appear in this API.
+        assert(false);
+        return Decision::kKeep;
     }
     assert(false);
     return Decision::kKeep;
@@ -210,6 +215,21 @@ class CompactionFilter : public Customizable {
                             std::string* skip_until) const {
     return FilterV2(level, key, value_type, existing_value, new_value,
                     skip_until);
+  }
+
+  // This interface is reserved for TiKV's region range filter. Only this
+  // interface can accept `value_type=kTypeDeletion`.
+  virtual Decision UnsafeFilter(int level, const Slice& key,
+                                SequenceNumber seqno, ValueType value_type,
+                                const Slice& existing_value,
+                                std::string* new_value,
+                                std::string* skip_until) const {
+    if (value_type != ValueType::kDeletion) {
+      return FilterV3(level, key, seqno, value_type, existing_value, new_value,
+                      skip_until);
+    } else {
+      return Decision::kKeep;
+    }
   }
 
   // Internal (BlobDB) use only. Do not override in application code.

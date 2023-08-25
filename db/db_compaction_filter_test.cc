@@ -753,7 +753,7 @@ TEST_F(DBTestCompactionFilter, CompactionFilterContextCfId) {
 }
 
 #ifndef ROCKSDB_LITE
-// Compaction filters aplies to all records, regardless snapshots.
+// Compaction filters applies to all records, regardless snapshots.
 TEST_F(DBTestCompactionFilter, CompactionFilterIgnoreSnapshot) {
   std::string five = ToString(5);
   Options options = CurrentOptions();

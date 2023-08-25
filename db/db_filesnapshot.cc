@@ -36,6 +36,9 @@ Status DBImpl::FlushForGetLiveFiles() {
   Status status;
   FlushOptions opts;
   opts.allow_write_stall = true;
+  // In TiKV context: If tablet is to be destroyed, its background work will be
+  // paused. Manual flush can never make progress.
+  opts.check_if_compaction_disabled = true;
   if (immutable_db_options_.atomic_flush) {
     autovector<ColumnFamilyData*> cfds;
     SelectColumnFamiliesForAtomicFlush(&cfds);

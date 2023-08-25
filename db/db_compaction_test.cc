@@ -56,11 +56,12 @@ class DBCompactionTestWithParam
 
 class DBCompactionTestWithBottommostParam
     : public DBTestBase,
-      public testing::WithParamInterface<BottommostLevelCompaction> {
+      public testing::WithParamInterface<
+          std::tuple<BottommostLevelCompaction, bool>> {
  public:
   DBCompactionTestWithBottommostParam()
       : DBTestBase("db_compaction_test", /*env_do_fsync=*/true) {
-    bottommost_level_compaction_ = GetParam();
+    bottommost_level_compaction_ = std::get<0>(GetParam());
   }
 
   BottommostLevelCompaction bottommost_level_compaction_;
@@ -5625,6 +5626,9 @@ TEST_P(DBCompactionTestWithBottommostParam, SequenceKeysManualCompaction) {
   constexpr int kSstNum = 10;
   Options options = CurrentOptions();
   options.disable_auto_compactions = true;
+  options.num_levels = 7;
+  const bool dynamic_level = std::get<1>(GetParam());
+  options.level_compaction_dynamic_level_bytes = dynamic_level;
   DestroyAndReopen(options);
 
   // Generate some sst files on level 0 with sequence keys (no overlap)
@@ -5642,25 +5646,42 @@ TEST_P(DBCompactionTestWithBottommostParam, SequenceKeysManualCompaction) {
 
   auto cro = CompactRangeOptions();
   cro.bottommost_level_compaction = bottommost_level_compaction_;
+  bool trivial_moved = false;
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->SetCallBack(
+      "DBImpl::BackgroundCompaction:TrivialMove",
+      [&](void* /*arg*/) { trivial_moved = true; });
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->EnableProcessing();
+  // All bottommost_level_compaction options should allow l0 -> l1 trivial move.
   ASSERT_OK(db_->CompactRange(cro, nullptr, nullptr));
+  ASSERT_TRUE(trivial_moved);
   if (bottommost_level_compaction_ == BottommostLevelCompaction::kForce ||
       bottommost_level_compaction_ ==
           BottommostLevelCompaction::kForceOptimized) {
-    // Real compaction to compact all sst files from level 0 to 1 file on level
-    // 1
-    ASSERT_EQ("0,1", FilesPerLevel(0));
+    // bottommost level should go through intra-level compaction
+    // and has only 1 file
+    if (dynamic_level) {
+      ASSERT_EQ("0,0,0,0,0,0,1", FilesPerLevel(0));
+    } else {
+      ASSERT_EQ("0,1", FilesPerLevel(0));
+    }
   } else {
-    // Just trivial move from level 0 -> 1
-    ASSERT_EQ("0," + ToString(kSstNum), FilesPerLevel(0));
+    // Just trivial move from level 0 -> 1/base
+    if (dynamic_level) {
+      ASSERT_EQ("0,0,0,0,0,0," + std::to_string(kSstNum), FilesPerLevel(0));
+    } else {
+      ASSERT_EQ("0," + std::to_string(kSstNum), FilesPerLevel(0));
+    }
   }
 }
 
 INSTANTIATE_TEST_CASE_P(
     DBCompactionTestWithBottommostParam, DBCompactionTestWithBottommostParam,
-    ::testing::Values(BottommostLevelCompaction::kSkip,
-                      BottommostLevelCompaction::kIfHaveCompactionFilter,
-                      BottommostLevelCompaction::kForce,
-                      BottommostLevelCompaction::kForceOptimized));
+    ::testing::Combine(
+        ::testing::Values(BottommostLevelCompaction::kSkip,
+                          BottommostLevelCompaction::kIfHaveCompactionFilter,
+                          BottommostLevelCompaction::kForce,
+                          BottommostLevelCompaction::kForceOptimized),
+        ::testing::Bool()));
 
 TEST_F(DBCompactionTest, UpdateLevelSubCompactionTest) {
   Options options = CurrentOptions();
@@ -5953,26 +5974,14 @@ TEST_F(DBCompactionTest, ChangeLevelErrorPathTest) {
   auto start_idx = key_idx;
   GenerateNewFile(&rnd, &key_idx);
   GenerateNewFile(&rnd, &key_idx);
-  auto end_idx = key_idx - 1;
   ASSERT_EQ("1,1,2", FilesPerLevel(0));
 
-  // Next two CompactRange() calls are used to test exercise error paths within
+  MoveFilesToLevel(1);
+  ASSERT_EQ("0,2,2", FilesPerLevel(0));
+
+  // The next CompactRange() call is used to test exercise error paths within
   // RefitLevel() before triggering a valid RefitLevel() call
-
-  // Trigger a refit to L1 first
-  {
-    std::string begin_string = Key(start_idx);
-    std::string end_string = Key(end_idx);
-    Slice begin(begin_string);
-    Slice end(end_string);
-
-    CompactRangeOptions cro;
-    cro.change_level = true;
-    cro.target_level = 1;
-    ASSERT_OK(dbfull()->CompactRange(cro, &begin, &end));
-  }
-  ASSERT_EQ("0,3,2", FilesPerLevel(0));
-
+  //
   // Try a refit from L2->L1 - this should fail and exercise error paths in
   // RefitLevel()
   {
@@ -5987,7 +5996,7 @@ TEST_F(DBCompactionTest, ChangeLevelErrorPathTest) {
     cro.target_level = 1;
     ASSERT_NOK(dbfull()->CompactRange(cro, &begin, &end));
   }
-  ASSERT_EQ("0,3,2", FilesPerLevel(0));
+  ASSERT_EQ("0,2,2", FilesPerLevel(0));
 
   // Try a valid Refit request to ensure, the path is still working
   {
