@@ -349,6 +349,13 @@ struct ColumnFamilyOptions : public AdvancedColumnFamilyOptions {
   // Dynamically changeable through SetOptions() API
   uint32_t memtable_max_range_deletions = 0;
 
+  // Column family based write buffer manager, if this is set, this column
+  // facmily will not report memtable memory usage to the write buffer manager
+  // in DBImpl.
+  //
+  // Default: null
+  std::shared_ptr<WriteBufferManager> cf_write_buffer_manager = nullptr;
+
   // Create ColumnFamilyOptions with default values for all fields
   ColumnFamilyOptions();
   // Create ColumnFamilyOptions from Options

@@ -2596,6 +2596,10 @@ class DBImpl : public DB {
   Directories directories_;
 
   WriteBufferManager* write_buffer_manager_;
+  // For simplicity, CF based write buffer manager does not support stall the
+  // write.
+  // Note: It's only modifed in Open, so mutex is not needed.
+  autovector<WriteBufferManager*> cf_based_write_buffer_manager_;
 
   WriteThread write_thread_;
   WriteBatch tmp_batch_;

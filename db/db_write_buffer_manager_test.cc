@@ -179,6 +179,237 @@ TEST_P(DBWriteBufferManagerTest, SharedWriteBufferAcrossCFs2) {
   ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->DisableProcessing();
 }
 
+// Compared with `SharedWriteBufferAcrossCFs2` this test uses CF based write
+// buffer manager CF level write buffer manager will not block write even
+// exceeds the stall threshold DB level write buffer manager will block all
+// write including CFs not use it.
+TEST_P(DBWriteBufferManagerTest, SharedWriteBufferAcrossCFs3) {
+  Options options = CurrentOptions();
+  options.arena_block_size = 4096;
+  options.write_buffer_size = 500000;  // this is never hit
+  std::shared_ptr<Cache> cache = NewLRUCache(4 * 1024 * 1024, 2);
+  ASSERT_LT(cache->GetUsage(), 256 * 1024);
+  cost_cache_ = GetParam();
+
+  std::shared_ptr<WriteBufferManager> cf_write_buffer_manager;
+  if (cost_cache_) {
+    options.write_buffer_manager.reset(
+        new WriteBufferManager(100000, cache, 1.0));
+    cf_write_buffer_manager.reset(new WriteBufferManager(100000, cache, 1.0));
+  } else {
+    options.write_buffer_manager.reset(
+        new WriteBufferManager(100000, nullptr, 1.0));
+    cf_write_buffer_manager.reset(new WriteBufferManager(100000, nullptr, 1.0));
+  }
+
+  WriteOptions wo;
+  wo.disableWAL = true;
+
+  std::vector<std::string> cfs = {"cf1", "cf2", "cf3", "cf4", "cf5"};
+  std::vector<std::shared_ptr<WriteBufferManager>> wbms = {
+      nullptr,
+      nullptr,
+      nullptr,
+      nullptr,
+      cf_write_buffer_manager,
+      cf_write_buffer_manager};
+  OpenWithCFWriteBufferManager(cfs, wbms, options);
+  auto opts = db_->GetOptions();
+
+  ASSERT_OK(Put(4, Key(1), DummyString(30000), wo));
+  ASSERT_OK(Put(5, Key(1), DummyString(40000), wo));
+  ASSERT_OK(Put(4, Key(1), DummyString(40000), wo));
+  // Now, cf_write_buffer_manager reaches the stall level, but it will not block
+  // the write
+
+  int num_writers_total = 6;
+  for (int i = 0; i < num_writers_total; i++) {
+    ASSERT_OK(Put(i, Key(1), DummyString(1), wo));
+  }
+
+  ASSERT_OK(Put(3, Key(1), DummyString(1), wo));
+  Flush(3);
+  ASSERT_OK(Put(3, Key(1), DummyString(1), wo));
+  ASSERT_OK(Put(0, Key(1), DummyString(1), wo));
+  Flush(0);
+
+  // Write to "Default", "cf2" and "cf3". No flush will be triggered.
+  ASSERT_OK(Put(3, Key(1), DummyString(30000), wo));
+  ASSERT_OK(Put(0, Key(1), DummyString(40000), wo));
+  ASSERT_OK(Put(2, Key(1), DummyString(1), wo));
+
+  ASSERT_OK(Put(3, Key(2), DummyString(40000), wo));
+  // WriteBufferManager::buffer_size_ has exceeded after the previous write is
+  // completed.
+
+  std::unordered_set<WriteThread::Writer*> w_set;
+  std::vector<port::Thread> threads;
+  int wait_count_db = 0;
+  int num_writers1 = 4;  // default, cf1-cf3
+  InstrumentedMutex mutex;
+  InstrumentedCondVar cv(&mutex);
+  std::atomic<int> thread_num(0);
+
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->LoadDependency(
+      {{"DBWriteBufferManagerTest::SharedWriteBufferAcrossCFs:0",
+        "DBImpl::BackgroundCallFlush:start"}});
+
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->SetCallBack(
+      "WBMStallInterface::BlockDB", [&](void*) {
+        InstrumentedMutexLock lock(&mutex);
+        wait_count_db++;
+        cv.SignalAll();
+      });
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->SetCallBack(
+      "WriteThread::WriteStall::Wait", [&](void* arg) {
+        InstrumentedMutexLock lock(&mutex);
+        WriteThread::Writer* w = reinterpret_cast<WriteThread::Writer*>(arg);
+        w_set.insert(w);
+        // Allow the flush to continue if all writer threads are blocked.
+        if (w_set.size() == (unsigned long)num_writers1) {
+          TEST_SYNC_POINT(
+              "DBWriteBufferManagerTest::SharedWriteBufferAcrossCFs:0");
+        }
+      });
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->EnableProcessing();
+
+  bool s = true;
+
+  std::function<void(int)> writer = [&](int cf) {
+    int a = thread_num.fetch_add(1);
+    std::string key = "foo" + std::to_string(a);
+    Status tmp = Put(cf, Slice(key), DummyString(1), wo);
+    InstrumentedMutexLock lock(&mutex);
+    s = s && tmp.ok();
+  };
+
+  threads.emplace_back(writer, 1);
+  {
+    InstrumentedMutexLock lock(&mutex);
+    while (wait_count_db != 1) {
+      cv.Wait();
+    }
+  }
+  for (int i = 0; i < num_writers_total; i++) {
+    threads.emplace_back(writer, i % 6);
+  }
+  for (auto& t : threads) {
+    t.join();
+  }
+
+  ASSERT_TRUE(s);
+
+  // Number of DBs blocked.
+  ASSERT_EQ(wait_count_db, 1);
+  // Number of Writer threads blocked.
+  ASSERT_EQ(w_set.size(), num_writers_total);
+
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->ClearAllCallBacks();
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->DisableProcessing();
+}
+
+// Test multiple WriteBufferManager are independent to flush
+TEST_P(DBWriteBufferManagerTest, SharedWriteBufferAcrossCFs4) {
+  Options options = CurrentOptions();
+  options.arena_block_size = 4096;
+  options.write_buffer_size = 500000;  // this is never hit
+  std::shared_ptr<Cache> cache = NewLRUCache(4 * 1024 * 1024, 2);
+  ASSERT_LT(cache->GetUsage(), 256 * 1024);
+  cost_cache_ = GetParam();
+
+  std::shared_ptr<WriteBufferManager> cf_write_buffer_manager;
+  if (cost_cache_) {
+    options.write_buffer_manager.reset(
+        new WriteBufferManager(100000, cache, 0.0));
+    cf_write_buffer_manager.reset(new WriteBufferManager(100000, cache, 0.0));
+  } else {
+    options.write_buffer_manager.reset(
+        new WriteBufferManager(100000, nullptr, 0.0));
+    cf_write_buffer_manager.reset(new WriteBufferManager(100000, nullptr, 0.0));
+  }
+
+  WriteOptions wo;
+  wo.disableWAL = true;
+
+  std::vector<std::string> cfs = {"cf1", "cf2", "cf3", "cf4", "cf5"};
+  std::vector<std::shared_ptr<WriteBufferManager>> wbms = {
+      nullptr,
+      nullptr,
+      nullptr,
+      nullptr,
+      cf_write_buffer_manager,
+      cf_write_buffer_manager};
+  OpenWithCFWriteBufferManager(cfs, wbms, options);
+
+  ASSERT_OK(Put(4, Key(1), DummyString(30000), wo));
+  ASSERT_OK(Put(4, Key(1), DummyString(40000), wo));
+
+  ASSERT_OK(Put(1, Key(1), DummyString(40000), wo));
+  ASSERT_OK(Put(2, Key(1), DummyString(30000), wo));
+
+  ASSERT_OK(Put(5, Key(1), DummyString(50000), wo));
+
+  // The second WriteBufferManager::buffer_size_ has exceeded after the previous
+  // write is completed.
+
+  std::unordered_set<std::string> flush_cfs;
+  std::vector<port::Thread> threads;
+  int num_writers_total = 6;
+  InstrumentedMutex mutex;
+  InstrumentedCondVar cv(&mutex);
+  std::atomic<int> thread_num(0);
+
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->LoadDependency(
+      {{"DBWriteBufferManagerTest::SharedWriteBufferAcrossCFs:0",
+        "DBImpl::BackgroundCallFlush:start"}});
+
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->SetCallBack(
+      "DBImpl::Flush:ScheduleFlushReq", [&](void* arg) {
+        InstrumentedMutexLock lock(&mutex);
+        ColumnFamilyHandle* cfd = reinterpret_cast<ColumnFamilyHandle*>(arg);
+        flush_cfs.insert(cfd->GetName());
+      });
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->EnableProcessing();
+
+  bool s = true;
+
+  std::function<void(int, int)> writer = [&](int cf, int val_size) {
+    int a = thread_num.fetch_add(1);
+    std::string key = "foo" + std::to_string(a);
+    Status tmp = Put(cf, Slice(key), DummyString(val_size), wo);
+    InstrumentedMutexLock lock(&mutex);
+    s = s && tmp.ok();
+  };
+
+  for (int i = 0; i < num_writers_total; i++) {
+    threads.emplace_back(writer, i % 6, 1);
+  }
+  for (auto& t : threads) {
+    t.join();
+  }
+  threads.clear();
+
+  ASSERT_TRUE(s);
+  ASSERT_EQ(flush_cfs.size(), 1);
+  ASSERT_NE(flush_cfs.find("cf4"), flush_cfs.end());
+  flush_cfs.clear();
+
+  ASSERT_OK(Put(0, Key(1), DummyString(30000), wo));
+
+  for (int i = 0; i < num_writers_total; i++) {
+    threads.emplace_back(writer, i % 6, 1);
+  }
+  for (auto& t : threads) {
+    t.join();
+  }
+
+  ASSERT_EQ(flush_cfs.size(), 1);
+  ASSERT_NE(flush_cfs.find("cf1"), flush_cfs.end());
+
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->ClearAllCallBacks();
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->DisableProcessing();
+}
+
 TEST_P(DBWriteBufferManagerTest, FreeMemoryOnDestroy) {
   Options options = CurrentOptions();
   options.arena_block_size = 4096;

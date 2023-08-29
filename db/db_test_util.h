@@ -1118,6 +1118,11 @@ class DBTestBase : public testing::Test {
   Status TryReopenWithColumnFamilies(const std::vector<std::string>& cfs,
                                      const Options& options);
 
+  void OpenWithCFWriteBufferManager(
+      const std::vector<std::string>& cfs,
+      const std::vector<std::shared_ptr<WriteBufferManager>> wbms,
+      const Options& options);
+
   void Reopen(const Options& options);
 
   void Close();

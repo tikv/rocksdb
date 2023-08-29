@@ -438,6 +438,8 @@ TEST_F(OptionsSettableTest, ColumnFamilyOptionsAllFieldsSettable) {
        sizeof(std::shared_ptr<ConcurrentTaskLimiter>)},
       {offsetof(struct ColumnFamilyOptions, sst_partitioner_factory),
        sizeof(std::shared_ptr<SstPartitionerFactory>)},
+      {offset_of(&ColumnFamilyOptions::cf_write_buffer_manager),
+       sizeof(std::shared_ptr<WriteBufferManager>)},
   };
 
   char* options_ptr = new char[sizeof(ColumnFamilyOptions)];

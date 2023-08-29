@@ -1969,6 +1969,22 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
   }
 
   DBImpl* impl = new DBImpl(db_options, dbname, seq_per_batch, batch_per_txn);
+  for (auto cf : column_families) {
+    if (cf.options.cf_write_buffer_manager != nullptr) {
+      auto* write_buffer_manager = cf.options.cf_write_buffer_manager.get();
+      bool already_exist = false;
+      for (auto m : impl->cf_based_write_buffer_manager_) {
+        if (m == write_buffer_manager) {
+          already_exist = true;
+          break;
+        }
+      }
+      if (!already_exist) {
+        impl->cf_based_write_buffer_manager_.push_back(write_buffer_manager);
+      }
+    }
+  }
+
   if (!impl->immutable_db_options_.info_log) {
     s = impl->init_logger_creation_s_;
     delete impl;
@@ -2266,19 +2282,29 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
   if (s.ok()) {
     s = impl->StartPeriodicTaskScheduler();
     if (impl->write_buffer_manager_) {
-      // Newly created handles are already registered during
-      // `CreateColumnFamily`. We must clear them all to avoid duplicate
-      // registration.
       impl->write_buffer_manager_->UnregisterDB(impl);
-      for (auto* cf : *handles) {
+    }
+    for (auto m : impl->cf_based_write_buffer_manager_) {
+      m->UnregisterDB(impl);
+    }
+
+    for (size_t i = 0; i < (*handles).size(); ++i) {
+      auto cf_opt = column_families[i].options;
+
+      auto* cf = (*handles)[i];
+      std::string cf_name = cf->GetName();
+      auto* write_buffer_manager = cf_opt.cf_write_buffer_manager != nullptr
+                                       ? cf_opt.cf_write_buffer_manager.get()
+                                       : impl->write_buffer_manager_;
+      if (write_buffer_manager) {
         if (cf->GetName() == kDefaultColumnFamilyName) {
-          impl->write_buffer_manager_->RegisterColumnFamily(
-              impl, impl->default_cf_handle_);
+          write_buffer_manager->RegisterColumnFamily(impl,
+                                                     impl->default_cf_handle_);
         } else if (cf->GetName() == kPersistentStatsColumnFamilyName) {
-          impl->write_buffer_manager_->RegisterColumnFamily(
+          write_buffer_manager->RegisterColumnFamily(
               impl, impl->persist_stats_cf_handle_);
         } else {
-          impl->write_buffer_manager_->RegisterColumnFamily(impl, cf);
+          write_buffer_manager->RegisterColumnFamily(impl, cf);
         }
       }
     }

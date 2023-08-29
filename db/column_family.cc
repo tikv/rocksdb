@@ -1835,8 +1835,11 @@ ColumnFamilyData* ColumnFamilySet::CreateColumnFamily(
     const std::string& name, uint32_t id, Version* dummy_versions,
     const ColumnFamilyOptions& options) {
   assert(column_families_.find(name) == column_families_.end());
+  auto* write_buffer_manager = options.cf_write_buffer_manager != nullptr
+                                   ? options.cf_write_buffer_manager.get()
+                                   : write_buffer_manager_;
   ColumnFamilyData* new_cfd = new ColumnFamilyData(
-      id, name, dummy_versions, table_cache_, write_buffer_manager_, options,
+      id, name, dummy_versions, table_cache_, write_buffer_manager, options,
       *db_options_, &file_options_, this, block_cache_tracer_, io_tracer_,
       db_id_, db_session_id_);
   column_families_.insert({name, id});

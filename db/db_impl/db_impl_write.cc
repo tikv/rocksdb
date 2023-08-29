@@ -1456,6 +1456,11 @@ Status DBImpl::PreprocessWrite(const WriteOptions& write_options,
   if (UNLIKELY(status.ok() && write_buffer_manager_->ShouldFlush())) {
     write_buffer_manager_->MaybeFlush(this);
   }
+  for (auto write_buffer_manager : cf_based_write_buffer_manager_) {
+    if (UNLIKELY(status.ok() && write_buffer_manager->ShouldFlush())) {
+      write_buffer_manager->MaybeFlush(this);
+    }
+  }
 
   if (UNLIKELY(status.ok() && !trim_history_scheduler_.Empty())) {
     InstrumentedMutexLock l(&mutex_);
@@ -2516,6 +2521,9 @@ size_t DBImpl::GetWalPreallocateBlockSize(uint64_t write_buffer_size) const {
   if (immutable_db_options_.write_buffer_manager) {
     size_t buffer_size =
         immutable_db_options_.write_buffer_manager->flush_size();
+    for (auto manager : cf_based_write_buffer_manager_) {
+      buffer_size += manager->flush_size();
+    }
     if (buffer_size > 0) {
       bsize = std::min<size_t>(bsize, buffer_size);
     }
