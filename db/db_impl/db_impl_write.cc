@@ -2254,7 +2254,7 @@ Status DBImpl::SwitchMemtable(ColumnFamilyData* cfd, WriteContext* context) {
                                      mutable_cf_options);
 
 #ifndef ROCKSDB_LITE
-  // From above, the mmetable has been converted to imm memtable and apended to
+  // From above, the memtable has been converted to imm memtable and apended to
   // memlist. If we unlock here, it has possibility to be picked by a concurrent
   // flush job. Furthermore, that flush job may even be completed and calls
   // NotifyOnFlushCompleted before the following NotifyOnMemTableSealed which
