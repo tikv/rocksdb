@@ -568,11 +568,11 @@ std::unique_ptr<CompactionFilter> Compaction::CreateCompactionFilter(
 }
 
 std::pair<std::vector<Slice>, std::vector<uint64_t>>
-Compaction::CreateSegmentsForLevel(int in_level) const {
+Compaction::CreateSegmentsForLevel(int level) const {
   // So... the below files should be adjacently sorted.
   // For now, this is only for creating the next-of-output level info, so it
   // makes sense for not supporting L0.
-  assert(in_level != 0);
+  assert(level != 0);
 
   // Some of test cases may not initialize the version...
   if (input_version_ == nullptr) {
@@ -580,11 +580,11 @@ Compaction::CreateSegmentsForLevel(int in_level) const {
   }
 
   const auto vsi = input_version_->storage_info();
-  if (in_level >= vsi->num_non_empty_levels()) {
+  if (level >= vsi->num_non_empty_levels()) {
     // The level shall be empty.
     return std::make_pair(std::vector<Slice>(), std::vector<uint64_t>());
   }
-  const auto& files = vsi->LevelFilesBrief(in_level);
+  const auto& files = vsi->LevelFilesBrief(level);
   // The file metadata hold internal keys, however the compaction is bounded by
   // user keys.
   const auto user_cmp = immutable_options()->user_comparator;
