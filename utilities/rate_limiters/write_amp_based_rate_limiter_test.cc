@@ -26,9 +26,9 @@ namespace ROCKSDB_NAMESPACE {
 class WriteAmpBasedRateLimiterTest : public testing::Test {};
 
 TEST_F(WriteAmpBasedRateLimiterTest, OverflowRate) {
-  WriteAmpBasedRateLimiter limiter(port::kMaxInt64, 1000, 10,
-                                   RateLimiter::Mode::kWritesOnly,
-                                   Env::Default(), false /* auto_tuned */);
+  WriteAmpBasedRateLimiter limiter(
+      port::kMaxInt64, 1000, 10, RateLimiter::Mode::kWritesOnly, Env::Default(),
+      false /* auto_tuned */, 1, 100, 10);
   ASSERT_GT(limiter.GetSingleBurstBytes(), 1000000000ll);
 }
 
@@ -42,7 +42,8 @@ TEST_F(WriteAmpBasedRateLimiterTest, Modes) {
                     RateLimiter::Mode::kReadsOnly, RateLimiter::Mode::kAllIo}) {
     WriteAmpBasedRateLimiter limiter(
         2000 /* rate_bytes_per_sec */, 1000 * 1000 /* refill_period_us */,
-        10 /* fairness */, mode, Env::Default(), false /* auto_tuned */);
+        10 /* fairness */, mode, Env::Default(), false /* auto_tuned */,
+        1 /* secs_per_tune */, 100 /* smooth_window */, 10 /* recent_window */);
     limiter.Request(1000 /* bytes */, Env::IO_HIGH, nullptr /* stats */,
                     RateLimiter::OpType::kRead);
     if (mode == RateLimiter::Mode::kWritesOnly) {

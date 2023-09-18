@@ -26,7 +26,9 @@ class WriteAmpBasedRateLimiter : public RateLimiter {
  public:
   WriteAmpBasedRateLimiter(int64_t refill_bytes, int64_t refill_period_us,
                            int32_t fairness, RateLimiter::Mode mode, Env* env,
-                           bool auto_tuned);
+                           bool auto_tuned, int secs_per_tune,
+                           size_t auto_tune_smooth_window,
+                           size_t auto_tune_recent_window);
 
   virtual ~WriteAmpBasedRateLimiter();
 
@@ -119,47 +121,42 @@ class WriteAmpBasedRateLimiter : public RateLimiter {
   port::Mutex auto_tuned_mutex_;
 
   std::atomic<bool> auto_tuned_;
+  int secs_per_tune_;
   std::atomic<int64_t> max_bytes_per_sec_;
   std::chrono::microseconds tuned_time_;
   int64_t duration_highpri_bytes_through_;
   int64_t duration_bytes_through_;
 
-  template <size_t kWindowSize, size_t kRecentWindowSize = 1>
   class WindowSmoother {
    public:
-    WindowSmoother() {
-      static_assert(kWindowSize >= kRecentWindowSize,
-                    "Expect recent window no larger than full window");
-      static_assert(kRecentWindowSize >= 1, "Expect window size larger than 0");
-      memset(data_, 0, sizeof(int64_t) * kWindowSize);
-    }
+    WindowSmoother(size_t smooth_window_size, size_t recent_window_size)
+        : recent_window_size_(recent_window_size),
+          data_(0, smooth_window_size) {}
     void AddSample(int64_t v) {
       auto recent_cursor =
-          (cursor_ + 1 + kWindowSize - kRecentWindowSize) % kWindowSize;
-      cursor_ = (cursor_ + 1) % kWindowSize;
+          (cursor_ + 1 + smooth_window_size_ - recent_window_size_) %
+          smooth_window_size_;
+      cursor_ = (cursor_ + 1) % smooth_window_size_;
       full_sum_ += v - data_[cursor_];
       recent_sum_ += v - data_[recent_cursor];
       data_[cursor_] = v;
     }
-    int64_t GetFullValue() { return full_sum_ / kWindowSize; }
-    int64_t GetRecentValue() { return recent_sum_ / kRecentWindowSize; }
+    int64_t GetFullValue() { return full_sum_ / smooth_window_size_; }
+    int64_t GetRecentValue() { return recent_sum_ / recent_window_size_; }
     bool AtTimePoint() const { return cursor_ == 0; }
 
    private:
     uint32_t cursor_{0};  // point to the most recent sample
-    int64_t data_[kWindowSize];
+    std::vector<size_t> data_;
+    size_t smooth_window_size_;
+    size_t recent_window_size_;
     int64_t full_sum_{0};
     int64_t recent_sum_{0};
   };
 
-  static constexpr size_t kSmoothWindowSize = 300;       // 300 * 1s = 5m
-  static constexpr size_t kRecentSmoothWindowSize = 30;  // 30 * 1s = 30s
-
-  WindowSmoother<kSmoothWindowSize, kRecentSmoothWindowSize> bytes_sampler_;
-  WindowSmoother<kSmoothWindowSize, kRecentSmoothWindowSize>
-      highpri_bytes_sampler_;
-  WindowSmoother<kRecentSmoothWindowSize, kRecentSmoothWindowSize>
-      limit_bytes_sampler_;
+  WindowSmoother bytes_sampler_;
+  WindowSmoother highpri_bytes_sampler_;
+  WindowSmoother limit_bytes_sampler_;
   std::atomic<bool> critical_pace_up_;
   std::atomic<bool> normal_pace_up_;
   uint32_t percent_delta_;

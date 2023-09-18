@@ -28,10 +28,6 @@ struct WriteAmpBasedRateLimiter::Req {
 };
 
 namespace {
-constexpr int kSecondsPerTune = 1;
-constexpr int kMillisPerTune = 1000 * kSecondsPerTune;
-constexpr int kMicrosPerTune = 1000 * 1000 * kSecondsPerTune;
-
 // Due to the execution model of compaction, large waves of pending compactions
 // could possibly be hidden behind a constant rate of I/O requests. It's then
 // wise to raise the threshold slightly above estimation to ensure those
@@ -45,11 +41,10 @@ int64_t CalculatePadding(int64_t base) {
 }
 }  // unnamed namespace
 
-WriteAmpBasedRateLimiter::WriteAmpBasedRateLimiter(int64_t rate_bytes_per_sec,
-                                                   int64_t refill_period_us,
-                                                   int32_t fairness,
-                                                   RateLimiter::Mode mode,
-                                                   Env* env, bool auto_tuned)
+WriteAmpBasedRateLimiter::WriteAmpBasedRateLimiter(
+    int64_t rate_bytes_per_sec, int64_t refill_period_us, int32_t fairness,
+    RateLimiter::Mode mode, Env* env, bool auto_tuned, int secs_per_tune,
+    size_t smooth_window_size, size_t recent_window_size)
     : RateLimiter(mode),
       refill_period_us_(refill_period_us),
       rate_bytes_per_sec_(auto_tuned ? rate_bytes_per_sec / 2
@@ -72,7 +67,11 @@ WriteAmpBasedRateLimiter::WriteAmpBasedRateLimiter(int64_t rate_bytes_per_sec,
       duration_bytes_through_(0),
       critical_pace_up_(false),
       normal_pace_up_(false),
-      percent_delta_(0) {
+      percent_delta_(0),
+      secs_per_tune_(secs_per_tune == 0 ? 1 : secs_per_tune),
+      bytes_sampler_(smooth_window_size, recent_window_size),
+      highpri_bytes_sampler_(smooth_window_size, recent_window_size),
+      limit_bytes_sampler_(recent_window_size, recent_window_size) {
   total_requests_[0] = 0;
   total_requests_[1] = 0;
   total_bytes_through_[0] = 0;
@@ -139,10 +138,9 @@ void WriteAmpBasedRateLimiter::Request(int64_t bytes, const Env::IOPriority pri,
                            &rate_bytes_per_sec_);
   if (auto_tuned_.load(std::memory_order_acquire) && pri == Env::IO_HIGH &&
       duration_highpri_bytes_through_ + duration_bytes_through_ + bytes <=
-          max_bytes_per_sec_.load(std::memory_order_relaxed) *
-              kSecondsPerTune) {
+          max_bytes_per_sec_.load(std::memory_order_relaxed) * secs_per_tune_) {
     // In the case where low-priority request is absent, actual time elapsed
-    // will be larger than kSecondsPerTune, making the limit even tighter.
+    // will be larger than secs_per_tune_, making the limit even tighter.
     total_bytes_through_[Env::IO_HIGH] += bytes;
     ++total_requests_[Env::IO_HIGH];
     duration_highpri_bytes_through_ += bytes;
@@ -153,7 +151,8 @@ void WriteAmpBasedRateLimiter::Request(int64_t bytes, const Env::IOPriority pri,
 
   if (auto_tuned_.load(std::memory_order_acquire)) {
     std::chrono::microseconds now(NowMicrosMonotonic(env_));
-    if (now - tuned_time_ >= std::chrono::microseconds(kMicrosPerTune)) {
+    auto micros_per_tune = 1000 * 1000 * secs_per_tune_;
+    if (now - tuned_time_ >= std::chrono::microseconds(micros_per_tune)) {
       Tune();
     }
   }
@@ -315,7 +314,7 @@ int64_t WriteAmpBasedRateLimiter::CalculateRefillBytesPerPeriod(
 }
 
 // The core function used to dynamically adjust the compaction rate limit,
-// called **at most** once every `kSecondsPerTune`.
+// called **at most** once every `secs_per_tune`.
 // I/O throughput threshold is automatically tuned based on history samples of
 // compaction and flush flow. This algorithm excels by taking into account the
 // limiter's inability to estimate the pressure of pending compactions, and the
@@ -340,7 +339,8 @@ Status WriteAmpBasedRateLimiter::Tune() {
   // This function can be called less frequent than we anticipate when
   // compaction rate is low. Loop through the actual time slice to correct
   // the estimation.
-  for (uint32_t i = 0; i < duration_ms / kMillisPerTune; i++) {
+  auto millis_per_tune = 1000 * secs_per_tune_;
+  for (uint32_t i = 0; i < duration_ms / millis_per_tune; i++) {
     bytes_sampler_.AddSample(duration_bytes_through_ * 1000 / duration_ms);
     highpri_bytes_sampler_.AddSample(duration_highpri_bytes_through_ * 1000 /
                                      duration_ms);
@@ -412,13 +412,24 @@ RateLimiter* NewWriteAmpBasedRateLimiter(
     int64_t rate_bytes_per_sec, int64_t refill_period_us /* = 100 * 1000 */,
     int32_t fairness /* = 10 */,
     RateLimiter::Mode mode /* = RateLimiter::Mode::kWritesOnly */,
-    bool auto_tuned /* = false */) {
+    bool auto_tuned /* = false */, int tune_per_sec /* = 1 */,
+    size_t smooth_window_size /* = 300 */,
+    size_t recent_window_size /* = 30 */) {
   assert(rate_bytes_per_sec > 0);
   assert(refill_period_us > 0);
   assert(fairness > 0);
-  return new WriteAmpBasedRateLimiter(rate_bytes_per_sec, refill_period_us,
-                                      fairness, mode, Env::Default(),
-                                      auto_tuned);
+  assert(tune_per_sec >= 0);
+  assert(smooth_window_size >= 0 && recent_window_size >= 0 &&
+         smooth_window_size >= recent_window_size);
+  if (smooth_window_size == 0) {
+    smooth_window_size = 300;
+  }
+  if (recent_window_size == 0) {
+    recent_window_size = 30;
+  }
+  return new WriteAmpBasedRateLimiter(
+      rate_bytes_per_sec, refill_period_us, fairness, mode, Env::Default(),
+      auto_tuned, tune_per_sec, smooth_window_size, recent_window_size);
 }
 
 }  // namespace ROCKSDB_NAMESPACE
