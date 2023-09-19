@@ -61,16 +61,16 @@ WriteAmpBasedRateLimiter::WriteAmpBasedRateLimiter(
       rnd_((uint32_t)time(nullptr)),
       leader_(nullptr),
       auto_tuned_(auto_tuned),
+      secs_per_tune_(secs_per_tune == 0 ? 1 : secs_per_tune),
       max_bytes_per_sec_(rate_bytes_per_sec),
       tuned_time_(NowMicrosMonotonic(env_)),
       duration_highpri_bytes_through_(0),
       duration_bytes_through_(0),
-      critical_pace_up_(false),
-      normal_pace_up_(false),
-      secs_per_tune_(secs_per_tune == 0 ? 1 : secs_per_tune),
       bytes_sampler_(smooth_window_size, recent_window_size),
       highpri_bytes_sampler_(smooth_window_size, recent_window_size),
       limit_bytes_sampler_(recent_window_size, recent_window_size),
+      critical_pace_up_(false),
+      normal_pace_up_(false),
       percent_delta_(0) {
   total_requests_[0] = 0;
   total_requests_[1] = 0;
