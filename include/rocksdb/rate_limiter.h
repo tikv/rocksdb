@@ -178,6 +178,7 @@ extern RateLimiter* NewWriteAmpBasedRateLimiter(
     int64_t rate_bytes_per_sec, int64_t refill_period_us = 100 * 1000,
     int32_t fairness = 10,
     RateLimiter::Mode mode = RateLimiter::Mode::kWritesOnly,
-    bool auto_tuned = false);
+    bool auto_tuned = false, int tune_per_sec = 1,
+    size_t smooth_window_size = 300, size_t recent_window_size = 30);
 
 }  // namespace ROCKSDB_NAMESPACE
