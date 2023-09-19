@@ -130,7 +130,8 @@ class WriteAmpBasedRateLimiter : public RateLimiter {
   class WindowSmoother {
    public:
     WindowSmoother(size_t smooth_window_size, size_t recent_window_size)
-        : recent_window_size_(recent_window_size),
+        : smooth_window_size_(smooth_window_size),
+          recent_window_size_(recent_window_size),
           data_(0, smooth_window_size) {}
     void AddSample(int64_t v) {
       auto recent_cursor =
@@ -147,9 +148,9 @@ class WriteAmpBasedRateLimiter : public RateLimiter {
 
    private:
     uint32_t cursor_{0};  // point to the most recent sample
-    std::vector<size_t> data_;
     size_t smooth_window_size_;
     size_t recent_window_size_;
+    std::vector<size_t> data_;
     int64_t full_sum_{0};
     int64_t recent_sum_{0};
   };
