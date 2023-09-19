@@ -67,11 +67,11 @@ WriteAmpBasedRateLimiter::WriteAmpBasedRateLimiter(
       duration_bytes_through_(0),
       critical_pace_up_(false),
       normal_pace_up_(false),
-      percent_delta_(0),
       secs_per_tune_(secs_per_tune == 0 ? 1 : secs_per_tune),
       bytes_sampler_(smooth_window_size, recent_window_size),
       highpri_bytes_sampler_(smooth_window_size, recent_window_size),
-      limit_bytes_sampler_(recent_window_size, recent_window_size) {
+      limit_bytes_sampler_(recent_window_size, recent_window_size),
+      percent_delta_(0) {
   total_requests_[0] = 0;
   total_requests_[1] = 0;
   total_bytes_through_[0] = 0;
@@ -419,8 +419,7 @@ RateLimiter* NewWriteAmpBasedRateLimiter(
   assert(refill_period_us > 0);
   assert(fairness > 0);
   assert(tune_per_sec >= 0);
-  assert(smooth_window_size >= 0 && recent_window_size >= 0 &&
-         smooth_window_size >= recent_window_size);
+  assert(smooth_window_size >= recent_window_size);
   if (smooth_window_size == 0) {
     smooth_window_size = 300;
   }
