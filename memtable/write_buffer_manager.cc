@@ -73,6 +73,7 @@ void WriteBufferManager::SetFlushSize(size_t new_size) {
   }
 }
 
+// Must be called without holding db mutex.
 void WriteBufferManager::RegisterColumnFamily(DB* db, ColumnFamilyHandle* cf) {
   assert(db != nullptr);
   auto sentinel = std::make_shared<WriteBufferSentinel>();
@@ -83,6 +84,7 @@ void WriteBufferManager::RegisterColumnFamily(DB* db, ColumnFamilyHandle* cf) {
   sentinels_.push_back(sentinel);
 }
 
+// Must be called without holding db mutex.
 void WriteBufferManager::UnregisterDB(DB* db) {
   std::lock_guard<std::mutex> lock(sentinels_mu_);
   sentinels_.remove_if([=](const std::shared_ptr<WriteBufferSentinel>& s) {
@@ -91,6 +93,7 @@ void WriteBufferManager::UnregisterDB(DB* db) {
   MaybeFlushLocked();
 }
 
+// Must be called without holding db mutex.
 void WriteBufferManager::UnregisterColumnFamily(ColumnFamilyHandle* cf) {
   std::lock_guard<std::mutex> lock(sentinels_mu_);
   sentinels_.remove_if([=](const std::shared_ptr<WriteBufferSentinel>& s) {
@@ -99,6 +102,7 @@ void WriteBufferManager::UnregisterColumnFamily(ColumnFamilyHandle* cf) {
   MaybeFlushLocked();
 }
 
+// Must be called without holding db mutex.
 void WriteBufferManager::ReserveMem(size_t mem) {
   size_t local_size = flush_size();
   if (cache_res_mgr_ != nullptr) {
@@ -174,6 +178,7 @@ void WriteBufferManager::FreeMemWithCache(size_t mem) {
 #endif  // ROCKSDB_LITE
 }
 
+// Must be called without holding db mutex.
 void WriteBufferManager::MaybeFlushLocked(DB* this_db) {
   if (!ShouldFlush()) {
     return;
