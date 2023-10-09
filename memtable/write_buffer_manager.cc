@@ -111,6 +111,7 @@ void WriteBufferManager::ReserveMem(size_t mem) {
   }
 }
 
+// Should only be called from write thread
 void WriteBufferManager::ReserveMemWithCache(size_t mem) {
 #ifndef ROCKSDB_LITE
   assert(cache_res_mgr_ != nullptr);
