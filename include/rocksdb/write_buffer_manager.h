@@ -154,6 +154,8 @@ class WriteBufferManager final {
     }
   }
 
+  // Must ensure that the mutex of all dbs except this_db are not held. If
+  // this_db is not nullptr, the mutex of it must be held.
   void MaybeFlushLocked(DB* this_db = nullptr);
 
   // Returns true if stall is active.

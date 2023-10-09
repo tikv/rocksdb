@@ -659,11 +659,14 @@ Status DBImpl::CloseHelper() {
     delete txn_entry.second;
   }
 
+  mutex_.Unlock();
   // We can only access cf_based_write_buffer_manager_ before versions_.reset(),
   // after which all cf write buffer managers will be freed.
   for (auto m : cf_based_write_buffer_manager_) {
     m->UnregisterDB(this);
   }
+  mutex_.Lock();
+
   // versions need to be destroyed before table_cache since it can hold
   // references to table_cache.
   versions_.reset();
