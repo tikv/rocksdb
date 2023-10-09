@@ -73,7 +73,6 @@ void WriteBufferManager::SetFlushSize(size_t new_size) {
   }
 }
 
-// Must be called without holding db mutex.
 void WriteBufferManager::RegisterColumnFamily(DB* db, ColumnFamilyHandle* cf) {
   assert(db != nullptr);
   auto sentinel = std::make_shared<WriteBufferSentinel>();
@@ -174,7 +173,6 @@ void WriteBufferManager::FreeMemWithCache(size_t mem) {
 #endif  // ROCKSDB_LITE
 }
 
-// Must be called without holding db mutex.
 void WriteBufferManager::MaybeFlushLocked(DB* this_db) {
   if (!ShouldFlush()) {
     return;
