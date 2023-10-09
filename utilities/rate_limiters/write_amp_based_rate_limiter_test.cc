@@ -62,6 +62,25 @@ TEST_F(WriteAmpBasedRateLimiterTest, Modes) {
   }
 }
 
+TEST_F(WriteAmpBasedRateLimiterTest, AutoTune) {
+  auto* thread_env = Env::Default();
+  WriteAmpBasedRateLimiter limiter(
+      10000 /* rate_bytes_per_sec */, 1000 * 1000 /* refill_period_us */,
+      10 /* fairness */, RateLimiter::Mode::kAllIo, Env::Default(),
+      true /* auto_tuned */, 1 /* secs_per_tune */, 100 /* smooth_window */,
+      10 /* recent_window */);
+  limiter.Request(8000 /* bytes */, Env::IO_HIGH, nullptr /* stats */,
+                  RateLimiter::OpType::kWrite);
+  ASSERT_EQ(8000, limiter.GetTotalBytesThrough(Env::IO_HIGH));
+
+  thread_env->SleepForMicroseconds(1000 * 1000);
+  // request from low io can trigger auto tune.
+  limiter.Request(1000 /* bytes */, Env::IO_LOW, nullptr /* stats */,
+                  RateLimiter::OpType::kWrite);
+  ASSERT_EQ(10485760, limiter.GetBytesPerSecond());
+  // TODO: add more logic for auto-tune
+}
+
 #if !(defined(TRAVIS) && defined(OS_MACOSX))
 TEST_F(WriteAmpBasedRateLimiterTest, Rate) {
   auto* env = Env::Default();
@@ -154,7 +173,7 @@ TEST_F(WriteAmpBasedRateLimiterTest, LimitChangeTest) {
       std::shared_ptr<RateLimiter> limiter =
           std::make_shared<WriteAmpBasedRateLimiter>(
               target, refill_period, 10, RateLimiter::Mode::kWritesOnly,
-              Env::Default(), false /* auto_tuned */);
+              Env::Default(), false /* auto_tuned */, 1, 300, 30);
       rocksdb::SyncPoint::GetInstance()->LoadDependency(
           {{"WriteAmpBasedRateLimiter::Request",
             "WriteAmpBasedRateLimiterTest::LimitChangeTest:changeLimitStart"},

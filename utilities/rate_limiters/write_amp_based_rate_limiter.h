@@ -132,7 +132,7 @@ class WriteAmpBasedRateLimiter : public RateLimiter {
     WindowSmoother(size_t smooth_window_size, size_t recent_window_size)
         : smooth_window_size_(smooth_window_size),
           recent_window_size_(recent_window_size),
-          data_(0, smooth_window_size) {}
+          data_(smooth_window_size, 0) {}
     void AddSample(int64_t v) {
       auto recent_cursor =
           (cursor_ + 1 + smooth_window_size_ - recent_window_size_) %

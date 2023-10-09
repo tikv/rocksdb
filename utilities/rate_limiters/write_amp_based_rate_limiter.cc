@@ -72,10 +72,8 @@ WriteAmpBasedRateLimiter::WriteAmpBasedRateLimiter(
       critical_pace_up_(false),
       normal_pace_up_(false),
       percent_delta_(0) {
-  total_requests_[0] = 0;
-  total_requests_[1] = 0;
-  total_bytes_through_[0] = 0;
-  total_bytes_through_[1] = 0;
+  std::fill(total_requests_, total_requests_ + Env::IO_TOTAL, 0);
+  std::fill(total_bytes_through_, total_bytes_through_ + Env::IO_TOTAL, 0);
 }
 
 WriteAmpBasedRateLimiter::~WriteAmpBasedRateLimiter() {
