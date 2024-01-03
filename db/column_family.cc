@@ -51,11 +51,13 @@ ColumnFamilyHandleImpl::ColumnFamilyHandleImpl(
 }
 
 ColumnFamilyHandleImpl::ColumnFamilyHandleImpl(
-    const ColumnFamilyHandleImpl& other)
-    : cfd_(other.cfd_), db_(other.db_), mutex_(other.mutex_) {
-  if (cfd_ != nullptr) {
-    cfd_->Ref();
-  }
+    ColumnFamilyHandleImpl&& other) {
+  other.cfd_ = cfd_;
+  other.db_ = db_;
+  other.mutex_ = mutex_;
+  cfd_ = nullptr;
+  db_ = nullptr;
+  mutex_ = nullptr;
 }
 
 ColumnFamilyHandleImpl::~ColumnFamilyHandleImpl() {

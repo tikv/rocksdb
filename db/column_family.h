@@ -162,7 +162,7 @@ class ColumnFamilyHandleImpl : public ColumnFamilyHandle {
   // create while holding the mutex
   ColumnFamilyHandleImpl(
       ColumnFamilyData* cfd, DBImpl* db, InstrumentedMutex* mutex);
-  ColumnFamilyHandleImpl(const ColumnFamilyHandleImpl& other);
+  ColumnFamilyHandleImpl(ColumnFamilyHandleImpl&& other);
   // destroy without mutex
   virtual ~ColumnFamilyHandleImpl();
   virtual ColumnFamilyData* cfd() const { return cfd_; }
