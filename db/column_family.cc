@@ -50,8 +50,7 @@ ColumnFamilyHandleImpl::ColumnFamilyHandleImpl(
   }
 }
 
-ColumnFamilyHandleImpl::ColumnFamilyHandleImpl(
-    ColumnFamilyHandleImpl&& other) {
+ColumnFamilyHandleImpl::ColumnFamilyHandleImpl(ColumnFamilyHandleImpl&& other) {
   other.cfd_ = cfd_;
   other.db_ = db_;
   other.mutex_ = mutex_;
