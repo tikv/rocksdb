@@ -51,9 +51,9 @@ ColumnFamilyHandleImpl::ColumnFamilyHandleImpl(
 }
 
 ColumnFamilyHandleImpl::ColumnFamilyHandleImpl(
-  const ColumnFamilyHandleImpl& other)
-  : cfd_(other.cfd_), db_(other.db_), mutex_(other.mutex_) {
-    cfd_->Ref();
+    const ColumnFamilyHandleImpl& other)
+    : cfd_(other.cfd_), db_(other.db_), mutex_(other.mutex_) {
+  cfd_->Ref();
 }
 
 ColumnFamilyHandleImpl::~ColumnFamilyHandleImpl() {
