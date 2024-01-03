@@ -50,13 +50,10 @@ ColumnFamilyHandleImpl::ColumnFamilyHandleImpl(
   }
 }
 
-ColumnFamilyHandleImpl::ColumnFamilyHandleImpl(ColumnFamilyHandleImpl&& other) {
-  cfd_ = other.cfd_;
-  db_ = other.db_;
-  mutex_ = other.mutex_;
-  other.cfd_ = nullptr;
-  other.db_ = nullptr;
-  other.mutex_ = nullptr;
+ColumnFamilyHandleImpl::ColumnFamilyHandleImpl(
+  const ColumnFamilyHandleImpl& other)
+  : cfd_(other.cfd_), db_(other.db_), mutex_(other.mutex_) {
+    cfd_->Ref();
 }
 
 ColumnFamilyHandleImpl::~ColumnFamilyHandleImpl() {
