@@ -1822,7 +1822,7 @@ class DBImpl : public DB {
 
   IOStatus WriteToWAL(const WriteBatch& merged_batch, log::Writer* log_writer,
                       uint64_t* log_used, uint64_t* log_size,
-                      LogFileNumberSize& log_file_number_size);
+                      LogFileNumberSize& log_file_number_size, int caller_id);
 
   IOStatus WriteToWAL(const WriteThread::WriteGroup& write_group,
                       log::Writer* log_writer, uint64_t* log_used,
