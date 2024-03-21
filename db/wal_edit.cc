@@ -58,13 +58,15 @@ Status WalAddition::DecodeFrom(Slice* src) {
 
 JSONWriter& operator<<(JSONWriter& jw, const WalAddition& wal) {
   jw << "LogNumber" << wal.GetLogNumber() << "SyncedSizeInBytes"
-     << wal.GetMetadata().GetSyncedSizeInBytes();
+     << wal.GetMetadata().GetSyncedSizeInBytes() << "LastSeqNumber"
+     << wal.GetMetadata().GetLastSequence();
   return jw;
 }
 
 std::ostream& operator<<(std::ostream& os, const WalAddition& wal) {
   os << "log_number: " << wal.GetLogNumber()
-     << " synced_size_in_bytes: " << wal.GetMetadata().GetSyncedSizeInBytes();
+     << " synced_size_in_bytes: " << wal.GetMetadata().GetSyncedSizeInBytes()
+     << " last_seq_number: " << wal.GetMetadata().GetLastSequence();
   return os;
 }
 
