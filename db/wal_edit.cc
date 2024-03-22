@@ -18,6 +18,8 @@ void WalAddition::EncodeTo(std::string* dst) const {
     PutVarint32(dst, static_cast<uint32_t>(WalAdditionTag::kSyncedSize));
     PutVarint64(dst, metadata_.GetSyncedSizeInBytes());
   }
+  PutVarint32(dst, static_cast<uint32_t>(WalAdditionTag::kLastSyncSeq));
+  PutVarint64(dst, metadata_.GetLastSequence());
 
   PutVarint32(dst, static_cast<uint32_t>(WalAdditionTag::kTerminate));
 }
@@ -44,6 +46,14 @@ Status WalAddition::DecodeFrom(Slice* src) {
         metadata_.SetSyncedSizeInBytes(size);
         break;
       }
+      case WalAdditionTag::kLastSyncSeq: {
+        uint64_t lsn = 0;
+        if (!GetVarint64(src, &lsn)) {
+          return Status::Corruption(class_name, "Error decoding WAL file size");
+        }
+        metadata_.SetLastSequence(lsn);
+        break; 
+      }
       // TODO: process future tags such as checksum.
       case WalAdditionTag::kTerminate:
         return Status::OK();
@@ -58,13 +68,15 @@ Status WalAddition::DecodeFrom(Slice* src) {
 
 JSONWriter& operator<<(JSONWriter& jw, const WalAddition& wal) {
   jw << "LogNumber" << wal.GetLogNumber() << "SyncedSizeInBytes"
-     << wal.GetMetadata().GetSyncedSizeInBytes();
+     << wal.GetMetadata().GetSyncedSizeInBytes() << "LastSeqNumber"
+     << wal.GetMetadata().GetLastSequence();
   return jw;
 }
 
 std::ostream& operator<<(std::ostream& os, const WalAddition& wal) {
   os << "log_number: " << wal.GetLogNumber()
-     << " synced_size_in_bytes: " << wal.GetMetadata().GetSyncedSizeInBytes();
+     << " synced_size_in_bytes: " << wal.GetMetadata().GetSyncedSizeInBytes()
+     << " last_seq_number: " << wal.GetMetadata().GetLastSequence();
   return os;
 }
 
@@ -139,6 +151,7 @@ Status WalSet::AddWal(const WalAddition& wal) {
 
   // Update synced size for the given WAL.
   it->second.SetSyncedSizeInBytes(wal.GetMetadata().GetSyncedSizeInBytes());
+  it->second.SetLastSequence(wal.GetMetadata().GetLastSequence());
   return Status::OK();
 }
 
