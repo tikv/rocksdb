@@ -32,14 +32,18 @@ class WalMetadata {
  public:
   WalMetadata() = default;
 
-  explicit WalMetadata(uint64_t synced_size_bytes)
-      : synced_size_bytes_(synced_size_bytes) {}
+  explicit WalMetadata(uint64_t synced_size_bytes,
+                       uint64_t last_sequence_number)
+      : synced_size_bytes_(synced_size_bytes),
+        last_sequence_number_(last_sequence_number) {}
 
   bool HasSyncedSize() const { return synced_size_bytes_ != kUnknownWalSize; }
 
   void SetSyncedSizeInBytes(uint64_t bytes) { synced_size_bytes_ = bytes; }
 
   uint64_t GetSyncedSizeInBytes() const { return synced_size_bytes_; }
+
+  uint64_t GetLastSequence() const { return last_sequence_number_; }
 
  private:
   friend bool operator==(const WalMetadata& lhs, const WalMetadata& rhs);
@@ -50,6 +54,8 @@ class WalMetadata {
 
   // Size of the most recently synced WAL in bytes.
   uint64_t synced_size_bytes_ = kUnknownWalSize;
+
+  uint64_t last_sequence_number_ = 0;
 };
 
 inline bool operator==(const WalMetadata& lhs, const WalMetadata& rhs) {

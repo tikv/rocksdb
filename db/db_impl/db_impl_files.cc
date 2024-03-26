@@ -280,6 +280,7 @@ void DBImpl::FindObsoleteFiles(JobContext* job_context, bool force,
     return;
   }
 
+  VersionEdit synced_wals;
   if (!alive_log_files_.empty() && !logs_.empty()) {
     uint64_t min_log_number = job_context->log_number;
     size_t num_alive_log_files = alive_log_files_.size();

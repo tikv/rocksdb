@@ -1476,13 +1476,23 @@ void DBImpl::MarkLogsSynced(uint64_t up_to, bool synced_dir,
     if (logs_.size() > 1) {
       if (immutable_db_options_.track_and_verify_wals_in_manifest &&
           wal.GetPreSyncSize() > 0) {
-        synced_wals->AddWal(wal.number, WalMetadata(wal.GetPreSyncSize()));
+        synced_wals->AddWal(
+            wal.number,
+            WalMetadata(wal.GetPreSyncSize(), wal.writer->GetLastSequence()));
+      }
+      if (wal.GetPreSyncSize() == wal.writer->file()->GetFlushedSize()) {
+        // Fully synced
+        ROCKS_LOG_INFO(immutable_db_options_.info_log,
+                   "Synced log %" PRIu64 " from logs_, last seq number %" PRIu64
+                   "\n",
+                   wal.number, wal.writer->GetLastSequence());
+      } else {
+        ROCKS_LOG_INFO(immutable_db_options_.info_log,
+                   "Retry Syncing log %" PRIu64 " from logs_, last seq number %" PRIu64
+                   "\n",
+                   wal.number, wal.writer->GetLastSequence());
       }
       auto writer = wal.ReleaseWriter();
-      ROCKS_LOG_INFO(immutable_db_options_.info_log,
-                     "deleting log %" PRIu64
-                     " from logs_. Last Seq number of the WAL is %" PRIu64 "\n",
-                     wal.number, writer->GetLastSequence());
       logs_to_free_.push_back(writer);
       it = logs_.erase(it);
     } else {
