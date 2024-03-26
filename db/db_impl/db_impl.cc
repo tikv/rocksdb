@@ -1471,33 +1471,33 @@ void DBImpl::MarkLogsSynced(uint64_t up_to, bool synced_dir,
   for (auto it = logs_.begin(); it != logs_.end() && it->number <= up_to;) {
     auto& wal = *it;
     assert(wal.IsSyncing());
-    ROCKS_LOG_INFO(immutable_db_options_.info_log,
-                   "Synced log %" PRIu64 " from logs_\n", wal.number);
-    if (logs_.size() > 1) {
+
+    if (wal.number < logs_.back().number) {
+      // Inactive WAL
       if (immutable_db_options_.track_and_verify_wals_in_manifest &&
           wal.GetPreSyncSize() > 0) {
         synced_wals->AddWal(wal.number, WalMetadata(wal.GetPreSyncSize()));
       }
-      if (wal.GetPreSyncSize() != wal.writer->file()->GetFlushedSize()) {
-            ROCKS_LOG_INFO(immutable_db_options_.info_log,
-                     "size doesn't match log %" PRIu64
-                     " presync size %" PRIu64 " flushed size %" PRIu64 "\n",
-                     wal.number, wal.GetPreSyncSize(), wal.writer->file()->GetFlushedSize());
+      if (wal.GetPreSyncSize() == wal.writer->file()->GetFlushedSize()) {
+        // Fully synced
+        logs_to_free_.push_back(wal.ReleaseWriter());
+        it = logs_.erase(it);
+      } else {
+        assert(wal.GetPreSyncSize() < wal.writer->file()->GetFlushedSize());
+        ROCKS_LOG_INFO(immutable_db_options_.info_log,
+                "size doesn't match log %" PRIu64
+                " presync size %" PRIu64 " flushed size %" PRIu64 "\n",
+                wal.number, wal.GetPreSyncSize(), wal.writer->file()->GetFlushedSize());
+        wal.FinishSync();
+        ++it;
       }
-      auto writer = wal.ReleaseWriter();
-      ROCKS_LOG_INFO(immutable_db_options_.info_log,
-                     "deleting log %" PRIu64
-                     " from logs_. Last Seq number of the WAL is %" PRIu64 "\n",
-                     wal.number, writer->GetLastSequence());
-      logs_to_free_.push_back(writer);
-      it = logs_.erase(it);
     } else {
+      assert(wal.number == logs_.back().number);
+      // Active WAL
       wal.FinishSync();
       ++it;
     }
   }
-  assert(logs_.empty() || logs_[0].number > up_to ||
-         (logs_.size() == 1 && !logs_[0].IsSyncing()));
   log_sync_cv_.SignalAll();
 }
 
