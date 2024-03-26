@@ -1443,6 +1443,12 @@ IOStatus DBImpl::WriteToWAL(const WriteBatch& merged_batch,
   }
   IOStatus io_s = log_writer->AddRecord(log_entry);
 
+  if (log_writer->get_log_number() != logs_.back().number) {
+      ROCKS_LOG_INFO(
+              immutable_db_options_.info_log,
+              "Not writing to latest WAL after write: [%" PRIu64 ", %" PRIu64 "] CallerId: %d",
+              log_writer->get_log_number(), logs_.back().number, caller_id);
+  }
   if (UNLIKELY(needs_locking)) {
     log_write_mutex_.Unlock();
   }

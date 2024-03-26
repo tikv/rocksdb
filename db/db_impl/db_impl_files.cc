@@ -320,12 +320,6 @@ void DBImpl::FindObsoleteFiles(JobContext* job_context, bool force,
         // logs_ could have changed while we were waiting.
         continue;
       }
-      if (immutable_db_options_.track_and_verify_wals_in_manifest &&
-          log.GetPreSyncSize() > 0) {
-        synced_wals.AddWal(
-            log.number,
-            WalMetadata(log.GetPreSyncSize(), log.writer->GetLastSequence()));
-      }
       auto writer = log.ReleaseWriter();
       ROCKS_LOG_INFO(immutable_db_options_.info_log,
                      "deleting log %" PRIu64
@@ -345,9 +339,6 @@ void DBImpl::FindObsoleteFiles(JobContext* job_context, bool force,
   logs_to_free_.clear();
   log_write_mutex_.Unlock();
   mutex_.Lock();
-  if (synced_wals.IsWalAddition()) {
-    ApplyWALToManifest(&synced_wals);
-  }
   job_context->log_recycle_files.assign(log_recycle_files_.begin(),
                                         log_recycle_files_.end());
 }

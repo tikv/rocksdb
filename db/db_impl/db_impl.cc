@@ -1474,10 +1474,6 @@ void DBImpl::MarkLogsSynced(uint64_t up_to, bool synced_dir,
 
     if (wal.number < logs_.back().number) {
       // Inactive WAL
-       ROCKS_LOG_INFO(immutable_db_options_.info_log,
-                   "Synced log %" PRIu64 " from logs_, last seq number %" PRIu64
-                   "\n",
-                   wal.number, wal.writer->GetLastSequence());
       if (immutable_db_options_.track_and_verify_wals_in_manifest &&
           wal.GetPreSyncSize() > 0) {
         synced_wals->AddWal(
@@ -1487,10 +1483,18 @@ void DBImpl::MarkLogsSynced(uint64_t up_to, bool synced_dir,
       if (wal.GetPreSyncSize() == wal.writer->file()->GetFlushedSize()) {
         // Fully synced
         logs_to_free_.push_back(wal.ReleaseWriter());
+        ROCKS_LOG_INFO(immutable_db_options_.info_log,
+                   "Synced log %" PRIu64 " from logs_, last seq number %" PRIu64
+                   "\n",
+                   wal.number, wal.writer->GetLastSequence());
         it = logs_.erase(it);
       } else {
         assert(wal.GetPreSyncSize() < wal.writer->file()->GetFlushedSize());
         wal.FinishSync();
+        ROCKS_LOG_INFO(immutable_db_options_.info_log,
+                   "Retry Syncing log %" PRIu64 " from logs_, last seq number %" PRIu64
+                   "\n",
+                   wal.number, wal.writer->GetLastSequence());
         ++it;
       }
     } else {
