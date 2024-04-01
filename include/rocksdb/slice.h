@@ -152,6 +152,7 @@ class PinnableSlice : public Slice, public Cleanable {
 
   // No copy constructor and copy assignment allowed.
   PinnableSlice(PinnableSlice&) = delete;
+  PinnableSlice(const PinnableSlice&) = delete;
   PinnableSlice& operator=(PinnableSlice&) = delete;
 
   inline void PinSlice(const Slice& s, CleanupFunction f, void* arg1,

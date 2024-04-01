@@ -425,7 +425,7 @@ enum Tickers : uint32_t {
   WARM_FILE_READ_COUNT,
   COLD_FILE_READ_COUNT,
 
-  TICKER_ENUM_MAX
+  TICKER_ENUM_MAX,
 };
 
 // The order of items listed in  Tickers should be the same as

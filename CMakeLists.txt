@@ -688,6 +688,7 @@ set(SOURCES
         db/db_impl/db_impl_experimental.cc
         db/db_impl/db_impl_readonly.cc
         db/db_impl/db_impl_secondary.cc
+        db/db_impl/db_impl_merge.cc
         db/db_info_dumper.cc
         db/db_iter.cc
         db/dbformat.cc
@@ -1228,6 +1229,7 @@ if(WITH_TESTS)
         db/db_memtable_test.cc
         db/db_merge_operator_test.cc
         db/db_merge_operand_test.cc
+        db/db_merge_test.cc
         db/db_options_test.cc
         db/db_properties_test.cc
         db/db_range_del_test.cc
@@ -1242,6 +1244,7 @@ if(WITH_TESTS)
         db/db_universal_compaction_test.cc
         db/db_wal_test.cc
         db/db_with_timestamp_compaction_test.cc
+        db/db_write_buffer_manager_test.cc
         db/db_write_test.cc
         db/dbformat_test.cc
         db/deletefile_test.cc

@@ -62,6 +62,13 @@ class SstPartitioner {
   virtual bool CanDoTrivialMove(const Slice& smallest_user_key,
                                 const Slice& largest_user_key) = 0;
 
+  struct Segment {
+    Segment(uint64_t size_diff, Slice until)
+        : size_in_this_segment(size_diff), segment_until_user_key(until) {}
+    uint64_t size_in_this_segment;
+    Slice segment_until_user_key;
+  };
+
   // Context information of a compaction run
   struct Context {
     // Does this compaction run include all data files
@@ -75,6 +82,40 @@ class SstPartitioner {
     Slice smallest_user_key;
     // Largest key for compaction
     Slice largest_user_key;
+
+    // The segments consist with the next level of target level.
+    // This will be useful while deciding whether to partition
+    // files to finer parts for avoiding possible huge compactions.
+
+    // The boundaries of the next level of output level.
+    // For example, when the next level contains files with range ("001",
+    // "002"), ("003", "004"), The boundaries will be ["001", "002", "004"];
+    std::vector<Slice> output_next_level_boundaries;
+    // The size of each segment, for example, when
+    // `output_next_level_boundaries` is ["001", "002", "004"], this might be
+    // [42, 96], which means range ["001", "002") contains 42 bytes of data,
+    // ["002", "004") contains 96 bytes of data.
+    std::vector<uint64_t> output_next_level_size;
+
+    // Helper function to fetch the count of next level segments.
+    int OutputNextLevelSegmentCount() const {
+      return output_next_level_size.size();
+    }
+
+    // Helper function to fetch the n-th segment of the next level of the output
+    // level. `index` shall less than `OutputNextLevelSegmentCount`.
+    void OutputNextLevelSegment(int index, Slice* smallest_key,
+                                Slice* largest_key, int* size) const {
+      if (smallest_key != nullptr) {
+        *smallest_key = output_next_level_boundaries[index];
+      }
+      if (largest_key != nullptr) {
+        *largest_key = output_next_level_boundaries[index + 1];
+      }
+      if (size != nullptr) {
+        *size = output_next_level_size[index];
+      }
+    }
   };
 };
 

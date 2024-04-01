@@ -397,6 +397,15 @@ class MemTable {
     return earliest_seqno_.store(earliest_seqno, std::memory_order_relaxed);
   }
 
+  // Returns the sequence number that is guaranteed to be larger than the
+  // sequence number of any key that could be inserted into this memtable.
+  //
+  // If the largest sequence number could not be determined,
+  // 0 will be returned.
+  SequenceNumber GetLargestSequenceNumber() {
+    return largest_seqno_.load(std::memory_order_relaxed);
+  }
+
   // DB's latest sequence ID when the memtable is created. This number
   // may be updated to a more recent one before any key is inserted.
   SequenceNumber GetCreationSeq() const { return creation_seq_; }
@@ -543,6 +552,9 @@ class MemTable {
   // if not set.
   std::atomic<SequenceNumber> earliest_seqno_;
 
+  // The largest sequence number of writes in this memtable.
+  std::atomic<SequenceNumber> largest_seqno_;
+
   SequenceNumber creation_seq_;
 
   // The log files earlier than this number can be deleted.
@@ -556,7 +568,14 @@ class MemTable {
   std::vector<port::RWMutex> locks_;
 
   const SliceTransform* const prefix_extractor_;
+  // Bloom filter initialization is delayed to the actual read/write. This is to
+  // reduce memory footprint of empty memtable.
+  const bool needs_bloom_filter_;
+  std::atomic<DynamicBloom*> bloom_filter_ptr_;
+  SpinMutex bloom_filter_mutex_;
   std::unique_ptr<DynamicBloom> bloom_filter_;
+  // Only used to initialize bloom filter.
+  Logger* logger_;
 
   std::atomic<FlushStateEnum> flush_state_;
 
@@ -604,6 +623,25 @@ class MemTable {
   // Always returns non-null and assumes certain pre-checks are done
   FragmentedRangeTombstoneIterator* NewRangeTombstoneIteratorInternal(
       const ReadOptions& read_options, SequenceNumber read_seq);
+
+  inline DynamicBloom* GetBloomFilter() {
+    if (needs_bloom_filter_) {
+      auto ptr = bloom_filter_ptr_.load(std::memory_order_relaxed);
+      if (UNLIKELY(ptr == nullptr)) {
+        std::lock_guard<SpinMutex> guard(bloom_filter_mutex_);
+        if (bloom_filter_ == nullptr) {
+          bloom_filter_.reset(
+              new DynamicBloom(&arena_, moptions_.memtable_prefix_bloom_bits,
+                               6 /* hard coded 6 probes */,
+                               moptions_.memtable_huge_page_size, logger_));
+        }
+        ptr = bloom_filter_.get();
+        bloom_filter_ptr_.store(ptr, std::memory_order_relaxed);
+      }
+      return ptr;
+    }
+    return nullptr;
+  }
 };
 
 extern const char* EncodeKey(std::string* scratch, const Slice& target);

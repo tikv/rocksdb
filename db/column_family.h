@@ -162,6 +162,7 @@ class ColumnFamilyHandleImpl : public ColumnFamilyHandle {
   // create while holding the mutex
   ColumnFamilyHandleImpl(
       ColumnFamilyData* cfd, DBImpl* db, InstrumentedMutex* mutex);
+  ColumnFamilyHandleImpl(const ColumnFamilyHandleImpl& other);
   // destroy without mutex
   virtual ~ColumnFamilyHandleImpl();
   virtual ColumnFamilyData* cfd() const { return cfd_; }
@@ -400,6 +401,14 @@ class ColumnFamilyData {
   Status RangesOverlapWithMemtables(const autovector<Range>& ranges,
                                     SuperVersion* super_version,
                                     bool allow_data_in_errors, bool* overlap);
+
+  // Get user key range of memtables. Tombstones are counted.
+  Status GetMemtablesUserKeyRange(PinnableSlice* smallest,
+                                  PinnableSlice* largest, bool* found);
+
+  // Get user key range of all data. Tombstones are counted.
+  Status GetUserKeyRange(PinnableSlice* smallest, PinnableSlice* largest,
+                         bool* found);
 
   // A flag to tell a manual compaction is to compact all levels together
   // instead of a specific level.

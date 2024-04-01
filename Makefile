@@ -1526,6 +1526,9 @@ db_merge_operator_test: $(OBJ_DIR)/db/db_merge_operator_test.o $(TEST_LIBRARY) $
 db_merge_operand_test: $(OBJ_DIR)/db/db_merge_operand_test.o $(TEST_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 
+db_merge_test: $(OBJ_DIR)/db/db_merge_test.o $(TEST_LIBRARY) $(LIBRARY)
+	$(AM_LINK)
+
 db_options_test: $(OBJ_DIR)/db/db_options_test.o $(TEST_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 

@@ -383,6 +383,23 @@ void MemTableList::PickMemtablesToFlush(uint64_t max_memtable_id,
             });
 }
 
+void MemTableList::ExportMemtables(autovector<MemTable*>* ret) {
+  const auto& memlist = current_->memlist_;
+  autovector<MemTable*> tmp;
+  for (auto it = memlist.rbegin(); it != memlist.rend(); ++it) {
+    MemTable* m = *it;
+    tmp.push_back(m);
+  }
+  // For mempurge feature.
+  std::sort(tmp.begin(), tmp.end(),
+            [](const MemTable* m1, const MemTable* m2) -> bool {
+              return m1->GetID() < m2->GetID();
+            });
+  for (auto m : tmp) {
+    ret->push_back(m);
+  }
+}
+
 void MemTableList::RollbackMemtableFlush(const autovector<MemTable*>& mems,
                                          uint64_t /*file_number*/) {
   AutoThreadOperationStageUpdater stage_updater(

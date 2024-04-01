@@ -198,8 +198,10 @@ void CompactionIterator::Next() {
 
 bool CompactionIterator::InvokeFilterIfNeeded(bool* need_skip,
                                               Slice* skip_until) {
+  // Note: Filtering kTypeDeletion is UB. Only `UnsafeFilter` accepts it.
   if (!compaction_filter_ ||
-      (ikey_.type != kTypeValue && ikey_.type != kTypeBlobIndex)) {
+      (ikey_.type != kTypeValue && ikey_.type != kTypeBlobIndex &&
+       ikey_.type != kTypeDeletion)) {
     return true;
   }
   bool error = false;
@@ -210,9 +212,12 @@ bool CompactionIterator::InvokeFilterIfNeeded(bool* need_skip,
   CompactionFilter::Decision filter = CompactionFilter::Decision::kUndetermined;
   compaction_filter_value_.clear();
   compaction_filter_skip_until_.Clear();
-  CompactionFilter::ValueType value_type =
-      ikey_.type == kTypeValue ? CompactionFilter::ValueType::kValue
-                               : CompactionFilter::ValueType::kBlobIndex;
+  CompactionFilter::ValueType value_type = CompactionFilter::ValueType::kValue;
+  if (ikey_.type == kTypeBlobIndex) {
+    value_type = CompactionFilter::ValueType::kBlobIndex;
+  } else if (ikey_.type == kTypeDeletion) {
+    value_type = CompactionFilter::ValueType::kDeletion;
+  }
   // Hack: pass internal key to BlobIndexCompactionFilter since it needs
   // to get sequence number.
   assert(compaction_filter_);
@@ -273,7 +278,7 @@ bool CompactionIterator::InvokeFilterIfNeeded(bool* need_skip,
       }
     }
     if (CompactionFilter::Decision::kUndetermined == filter) {
-      filter = compaction_filter_->FilterV3(
+      filter = compaction_filter_->UnsafeFilter(
           level_, filter_key, ikey_.sequence, value_type,
           blob_value_.empty() ? value_ : blob_value_, &compaction_filter_value_,
           compaction_filter_skip_until_.rep());

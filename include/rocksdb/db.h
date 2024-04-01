@@ -144,6 +144,14 @@ struct GetMergeOperandsOptions {
 using TablePropertiesCollection =
     std::unordered_map<std::string, std::shared_ptr<const TableProperties>>;
 
+class PostWriteCallback {
+ public:
+  virtual ~PostWriteCallback() {}
+
+  // Will be called while on the write thread after the write executes.
+  virtual void Callback(SequenceNumber seq) = 0;
+};
+
 // A DB is a persistent, versioned ordered map from keys to values.
 // A DB is safe for concurrent access from multiple threads without
 // any external synchronization.
@@ -275,6 +283,50 @@ class DB {
       const std::string& name, const std::string& output_directory,
       const std::string& input, std::string* output,
       const CompactionServiceOptionsOverride& override_options);
+
+  // Merge multiple DBs into this one. All DBs must have disjoint internal
+  // keys.
+  //
+  // # Tips
+  //
+  // The provided DBs must be disjoint: their internal key ranges don't overlap
+  // each other. Calling `CompactRange` on the complementary ranges can make
+  // sure user-visible key range consistent with internal key range. Caveats are
+  // (1) sometimes `bottommost_level_compaction` needs to be configured to avoid
+  // trivial move; (2) range tombstones are very tricky, they might be retained
+  // even if there's no out-of-ranges key.
+  //
+  // To avoid triggering L0 (or Memtable) stall conditions, user can consider
+  // dynamically decreasing the corresponding limits before entering merge.
+  //
+  // WAL merge is not supported. User must write with disableWAL=true, or wait
+  // for all WALs to be retired before merging.
+  //
+  // To have the best performance, use the same `block_cache` and
+  // `prefix_extractor` in DB options.
+  //
+  // # Safety
+  //
+  // Performing merge on DBs that are still undergoing writes results in
+  // undefined behavior.
+  //
+  // Using different implementations of user comparator results in undefined
+  // behavior as well.
+  //
+  // Concurrently apply several merge operations on the same instance can cause
+  // deadlock.
+  //
+  virtual Status MergeDisjointInstances(
+      const MergeInstanceOptions& /*merge_options*/,
+      const std::vector<DB*>& /*instances*/) {
+    return Status::NotSupported("`MergeDisjointInstances` not implemented");
+  }
+
+  // Check all data written before this call is in the range [begin, end).
+  // Return InvalidArgument if not.
+  virtual Status CheckInRange(const Slice* /*begin*/, const Slice* /*end*/) {
+    return Status::NotSupported("`AssertInRange` not implemented");
+  }
 
   virtual Status Resume() { return Status::NotSupported(); }
 
@@ -472,14 +524,14 @@ class DB {
   // Returns OK on success, non-OK on failure.
   // Note: consider setting options.sync = true.
   virtual Status Write(const WriteOptions& options, WriteBatch* updates,
-                       uint64_t* seq) = 0;
+                       PostWriteCallback* callback) = 0;
   virtual Status Write(const WriteOptions& options, WriteBatch* updates) {
     return Write(options, updates, nullptr);
   }
 
   virtual Status MultiBatchWrite(const WriteOptions& /*options*/,
                                  std::vector<WriteBatch*>&& /*updates*/,
-                                 uint64_t* /*seq*/) {
+                                 PostWriteCallback* /*callback*/) {
     return Status::NotSupported();
   }
 
@@ -1184,6 +1236,10 @@ class DB {
                                            uint64_t* const size) {
     GetApproximateMemTableStats(DefaultColumnFamily(), range, count, size);
   }
+
+  virtual void GetApproximateActiveMemTableStats(
+      ColumnFamilyHandle* /*column_family*/, uint64_t* const /*memory_bytes*/,
+      uint64_t* const /*oldest_key_time*/) {}
 
   // Deprecated versions of GetApproximateSizes
   ROCKSDB_DEPRECATED_FUNC virtual void GetApproximateSizes(

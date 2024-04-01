@@ -403,14 +403,17 @@ class VersionBuilder::Rep {
 
               return Status::Corruption("VersionBuilder", oss.str());
             }
-          } else if (lhs->fd.smallest_seqno <= rhs->fd.smallest_seqno) {
-            std::ostringstream oss;
-            oss << "L0 file #" << lhs->fd.GetNumber() << " with seqno "
-                << lhs->fd.smallest_seqno << ' ' << lhs->fd.largest_seqno
-                << " vs. file #" << rhs->fd.GetNumber() << " with seqno "
-                << rhs->fd.smallest_seqno << ' ' << rhs->fd.largest_seqno;
+            // The following check is disabled due to instance merge.
+            /*
+            } else if (lhs->fd.smallest_seqno <= rhs->fd.smallest_seqno) {
+              std::ostringstream oss;
+              oss << "L0 file #" << lhs->fd.GetNumber() << " with seqno "
+                  << lhs->fd.smallest_seqno << ' ' << lhs->fd.largest_seqno
+                  << " vs. file #" << rhs->fd.GetNumber() << " with seqno "
+                  << rhs->fd.smallest_seqno << ' ' << rhs->fd.largest_seqno;
 
-            return Status::Corruption("VersionBuilder", oss.str());
+              return Status::Corruption("VersionBuilder", oss.str());
+            */
           }
 
           return Status::OK();

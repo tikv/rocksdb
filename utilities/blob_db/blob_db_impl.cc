@@ -998,7 +998,7 @@ class BlobDBImpl::BlobInserter : public WriteBatch::Handler {
 };
 
 Status BlobDBImpl::Write(const WriteOptions& options, WriteBatch* updates,
-                         uint64_t* seq) {
+                         PostWriteCallback* callback) {
   StopWatch write_sw(clock_, statistics_, BLOB_DB_WRITE_MICROS);
   RecordTick(statistics_, BLOB_DB_NUM_WRITE);
   uint32_t default_cf_id =
@@ -1016,7 +1016,7 @@ Status BlobDBImpl::Write(const WriteOptions& options, WriteBatch* updates,
   if (!s.ok()) {
     return s;
   }
-  return db_->Write(options, blob_inserter.batch(), seq);
+  return db_->Write(options, blob_inserter.batch(), callback);
 }
 
 Status BlobDBImpl::Put(const WriteOptions& options, const Slice& key,

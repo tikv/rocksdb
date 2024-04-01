@@ -346,6 +346,9 @@ class Compaction {
   static bool IsFullCompaction(VersionStorageInfo* vstorage,
                                const std::vector<CompactionInputFiles>& inputs);
 
+  std::pair<std::vector<Slice>, std::vector<uint64_t>> CreateSegmentsForLevel(
+      int in_level) const;
+
   VersionStorageInfo* input_vstorage_;
 
   const int start_level_;   // the lowest level to be compacted

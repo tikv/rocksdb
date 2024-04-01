@@ -1514,6 +1514,13 @@ TEST_F(DBFlushTest, FireOnFlushCompletedAfterCommittedResult) {
       }
     }
 
+    void OnFlushBegin(DB* /*db*/, const FlushJobInfo& info) override {
+      ASSERT_LE(info.smallest_seqno, info.largest_seqno);
+      if (info.largest_seqno != seq1) {
+        ASSERT_EQ(info.largest_seqno, seq2);
+      }
+    }
+
     void CheckFlushResultCommitted(DB* db, SequenceNumber seq) {
       DBImpl* db_impl = static_cast_with_check<DBImpl>(db);
       InstrumentedMutex* mutex = db_impl->mutex();
@@ -2652,6 +2659,27 @@ TEST_P(DBAtomicFlushTest, BgThreadNoWaitAfterManifestError) {
   Close();
   SyncPoint::GetInstance()->DisableProcessing();
   SyncPoint::GetInstance()->ClearAllCallBacks();
+}
+
+TEST_P(DBAtomicFlushTest, DisableManualCompaction) {
+  Options options = CurrentOptions();
+  options.create_if_missing = true;
+  options.atomic_flush = GetParam();
+  CreateAndReopenWithCF({"pikachu"}, options);
+  ASSERT_EQ(2, handles_.size());
+  ASSERT_OK(dbfull()->PauseBackgroundWork());
+  ASSERT_OK(Put(0, "key00", "value00"));
+  ASSERT_OK(Put(1, "key10", "value10"));
+  dbfull()->DisableManualCompaction();
+  FlushOptions flush_opts;
+  flush_opts.wait = true;
+  flush_opts.check_if_compaction_disabled = true;
+  ASSERT_TRUE(dbfull()->Flush(flush_opts, handles_).IsIncomplete());
+  ASSERT_OK(Put(0, "key01", "value01"));
+  ASSERT_OK(db_->ContinueBackgroundWork());
+  dbfull()->EnableManualCompaction();
+  ASSERT_OK(dbfull()->Flush(flush_opts, handles_));
+  Close();
 }
 
 INSTANTIATE_TEST_CASE_P(DBFlushDirectIOTest, DBFlushDirectIOTest,

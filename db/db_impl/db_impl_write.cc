@@ -106,17 +106,18 @@ void DBImpl::SetRecoverableStatePreReleaseCallback(
 }
 
 Status DBImpl::Write(const WriteOptions& write_options, WriteBatch* my_batch,
-                     uint64_t* seq) {
+                     PostWriteCallback* callback) {
   return WriteImpl(write_options, my_batch, /*callback=*/nullptr,
                    /*log_used=*/nullptr, /*log_ref=*/0,
-                   /*disable_memtable=*/false, seq);
+                   /*disable_memtable=*/false, /*seq=*/nullptr, /*batch_cnt=*/0,
+                   /*pre_release_callback=*/nullptr, callback);
 }
 
 #ifndef ROCKSDB_LITE
 Status DBImpl::WriteWithCallback(const WriteOptions& write_options,
                                  WriteBatch* my_batch,
                                  WriteCallback* callback) {
-  return WriteImpl(write_options, my_batch, callback, nullptr);
+  return WriteImpl(write_options, my_batch, callback);
 }
 #endif  // ROCKSDB_LITE
 
@@ -135,10 +136,11 @@ void DBImpl::MultiBatchWriteCommit(CommitRequest* request) {
 
 Status DBImpl::MultiBatchWrite(const WriteOptions& options,
                                std::vector<WriteBatch*>&& updates,
-                               uint64_t* seq) {
+                               PostWriteCallback* callback) {
   if (immutable_db_options_.enable_multi_batch_write) {
-    return MultiBatchWriteImpl(options, std::move(updates), nullptr, nullptr, 0,
-                               seq);
+    return MultiBatchWriteImpl(options, std::move(updates),
+                               /*callback=*/nullptr, /*log_used=*/nullptr,
+                               /*log_ref=*/0, /*seq=*/nullptr, callback);
   } else {
     return Status::NotSupported();
   }
@@ -187,12 +189,14 @@ Status DBImpl::MultiBatchWrite(const WriteOptions& options,
 Status DBImpl::MultiBatchWriteImpl(const WriteOptions& write_options,
                                    std::vector<WriteBatch*>&& my_batch,
                                    WriteCallback* callback, uint64_t* log_used,
-                                   uint64_t log_ref, uint64_t* seq_used) {
+                                   uint64_t log_ref, uint64_t* seq_used,
+                                   PostWriteCallback* post_callback) {
   PERF_TIMER_GUARD(write_pre_and_post_process_time);
   StopWatch write_sw(immutable_db_options_.clock,
                      immutable_db_options_.statistics.get(), DB_WRITE);
   WriteThread::Writer writer(write_options, std::move(my_batch), callback,
-                             log_ref, false /*disable_memtable*/);
+                             post_callback, log_ref,
+                             false /*disable_memtable*/);
   CommitRequest request(&writer);
   writer.request = &request;
   write_thread_.JoinBatchGroup(&writer);
@@ -240,6 +244,8 @@ Status DBImpl::MultiBatchWriteImpl(const WriteOptions& write_options,
               next_sequence += count;
               total_count += count;
               memtable_write_cnt++;
+            } else if (w->post_callback) {
+              w->post_callback->Callback(w->sequence);
             }
           }
           total_byte_size = WriteBatchInternal::AppendedByteSize(
@@ -346,7 +352,8 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
                          uint64_t* log_used, uint64_t log_ref,
                          bool disable_memtable, uint64_t* seq_used,
                          size_t batch_cnt,
-                         PreReleaseCallback* pre_release_callback) {
+                         PreReleaseCallback* pre_release_callback,
+                         PostWriteCallback* post_callback) {
   assert(!seq_per_batch_ || batch_cnt != 0);
   if (my_batch == nullptr) {
     return Status::Corruption("Batch is nullptr!");
@@ -375,6 +382,14 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
   if (two_write_queues_ && immutable_db_options_.enable_multi_batch_write) {
     return Status::NotSupported(
         "pipelined_writes is not compatible with concurrent prepares");
+  }
+  if (two_write_queues_ && post_callback) {
+    return Status::NotSupported(
+        "post write callback is not compatible with concurrent prepares");
+  }
+  if (disable_memtable && post_callback) {
+    return Status::NotSupported(
+        "post write callback is not compatible with disabling memtable");
   }
   if (seq_per_batch_ && immutable_db_options_.enable_pipelined_write) {
     // TODO(yiwu): update pipeline write with seq_per_batch and batch_cnt
@@ -429,8 +444,9 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
     }
     if (!disable_memtable) {
       TEST_SYNC_POINT("DBImpl::WriteImpl:BeforeUnorderedWriteMemtable");
-      status = UnorderedWriteMemtable(write_options, my_batch, callback,
-                                      log_ref, seq, sub_batch_cnt);
+      status =
+          UnorderedWriteMemtable(write_options, my_batch, callback, log_ref,
+                                 seq, sub_batch_cnt, post_callback);
     }
     return status;
   }
@@ -439,17 +455,19 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
     std::vector<WriteBatch*> updates(1);
     updates[0] = my_batch;
     return MultiBatchWriteImpl(write_options, std::move(updates), callback,
-                               log_used, log_ref, seq_used);
+                               log_used, log_ref, seq_used, post_callback);
   }
 
   if (immutable_db_options_.enable_pipelined_write) {
     return PipelinedWriteImpl(write_options, my_batch, callback, log_used,
-                              log_ref, disable_memtable, seq_used);
+                              log_ref, disable_memtable, seq_used,
+                              post_callback);
   }
 
   PERF_TIMER_GUARD(write_pre_and_post_process_time);
-  WriteThread::Writer w(write_options, my_batch, callback, log_ref,
-                        disable_memtable, batch_cnt, pre_release_callback);
+  WriteThread::Writer w(write_options, my_batch, callback, post_callback,
+                        log_ref, disable_memtable, batch_cnt,
+                        pre_release_callback);
   StopWatch write_sw(immutable_db_options_.clock, stats_, DB_WRITE);
 
   write_thread_.JoinBatchGroup(&w);
@@ -779,14 +797,15 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
 Status DBImpl::PipelinedWriteImpl(const WriteOptions& write_options,
                                   WriteBatch* my_batch, WriteCallback* callback,
                                   uint64_t* log_used, uint64_t log_ref,
-                                  bool disable_memtable, uint64_t* seq_used) {
+                                  bool disable_memtable, uint64_t* seq_used,
+                                  PostWriteCallback* post_callback) {
   PERF_TIMER_GUARD(write_pre_and_post_process_time);
   StopWatch write_sw(immutable_db_options_.clock, stats_, DB_WRITE);
 
   WriteContext write_context;
 
-  WriteThread::Writer w(write_options, my_batch, callback, log_ref,
-                        disable_memtable, /*_batch_cnt=*/0,
+  WriteThread::Writer w(write_options, my_batch, callback, post_callback,
+                        log_ref, disable_memtable, /*_batch_cnt=*/0,
                         /*_pre_release_callback=*/nullptr);
   write_thread_.JoinBatchGroup(&w);
   TEST_SYNC_POINT("DBImplWrite::PipelinedWriteImpl:AfterJoinBatchGroup");
@@ -956,12 +975,13 @@ Status DBImpl::UnorderedWriteMemtable(const WriteOptions& write_options,
                                       WriteBatch* my_batch,
                                       WriteCallback* callback, uint64_t log_ref,
                                       SequenceNumber seq,
-                                      const size_t sub_batch_cnt) {
+                                      const size_t sub_batch_cnt,
+                                      PostWriteCallback* post_callback) {
   PERF_TIMER_GUARD(write_pre_and_post_process_time);
   StopWatch write_sw(immutable_db_options_.clock, stats_, DB_WRITE);
 
-  WriteThread::Writer w(write_options, my_batch, callback, log_ref,
-                        false /*disable_memtable*/);
+  WriteThread::Writer w(write_options, my_batch, callback, post_callback,
+                        log_ref, false /*disable_memtable*/);
 
   if (w.CheckCallback(this) && w.ShouldWriteToMemtable()) {
     w.sequence = seq;
@@ -1010,8 +1030,9 @@ Status DBImpl::WriteImplWALOnly(
     PreReleaseCallback* pre_release_callback, const AssignOrder assign_order,
     const PublishLastSeq publish_last_seq, const bool disable_memtable) {
   PERF_TIMER_GUARD(write_pre_and_post_process_time);
-  WriteThread::Writer w(write_options, my_batch, callback, log_ref,
-                        disable_memtable, sub_batch_cnt, pre_release_callback);
+  WriteThread::Writer w(write_options, my_batch, callback,
+                        /*post_callback=*/nullptr, log_ref, disable_memtable,
+                        sub_batch_cnt, pre_release_callback);
   StopWatch write_sw(immutable_db_options_.clock, stats_, DB_WRITE);
 
   write_thread->JoinBatchGroup(&w);
@@ -1279,15 +1300,14 @@ Status DBImpl::PreprocessWrite(const WriteOptions& write_options,
     }
   }
 
+  // Ordering: before write delay.
   if (UNLIKELY(status.ok() && write_buffer_manager_->ShouldFlush())) {
-    // Before a new memtable is added in SwitchMemtable(),
-    // write_buffer_manager_->ShouldFlush() will keep returning true. If another
-    // thread is writing to another DB with the same write buffer, they may also
-    // be flushed. We may end up with flushing much more DBs than needed. It's
-    // suboptimal but still correct.
-    InstrumentedMutexLock l(&mutex_);
-    WaitForPendingWrites();
-    status = HandleWriteBufferManagerFlush(write_context);
+    write_buffer_manager_->MaybeFlush(this);
+  }
+  for (auto write_buffer_manager : cf_based_write_buffer_manager_) {
+    if (UNLIKELY(status.ok() && write_buffer_manager->ShouldFlush())) {
+      write_buffer_manager->MaybeFlush(this);
+    }
   }
 
   if (UNLIKELY(status.ok() && !trim_history_scheduler_.Empty())) {
@@ -1785,92 +1805,6 @@ Status DBImpl::SwitchWAL(WriteContext* write_context) {
   return status;
 }
 
-Status DBImpl::HandleWriteBufferManagerFlush(WriteContext* write_context) {
-  mutex_.AssertHeld();
-  assert(write_context != nullptr);
-  Status status;
-
-  // Before a new memtable is added in SwitchMemtable(),
-  // write_buffer_manager_->ShouldFlush() will keep returning true. If another
-  // thread is writing to another DB with the same write buffer, they may also
-  // be flushed. We may end up with flushing much more DBs than needed. It's
-  // suboptimal but still correct.
-  ROCKS_LOG_INFO(
-      immutable_db_options_.info_log,
-      "Flushing column family with oldest memtable entry. Write buffers are "
-      "using %" ROCKSDB_PRIszt " bytes out of a total of %" ROCKSDB_PRIszt ".",
-      write_buffer_manager_->memory_usage(),
-      write_buffer_manager_->buffer_size());
-  // no need to refcount because drop is happening in write thread, so can't
-  // happen while we're in the write thread
-  autovector<ColumnFamilyData*> cfds;
-  if (immutable_db_options_.atomic_flush) {
-    SelectColumnFamiliesForAtomicFlush(&cfds);
-  } else {
-    ColumnFamilyData* cfd_picked = nullptr;
-    SequenceNumber seq_num_for_cf_picked = kMaxSequenceNumber;
-
-    for (auto cfd : *versions_->GetColumnFamilySet()) {
-      if (cfd->IsDropped()) {
-        continue;
-      }
-      if (!cfd->mem()->IsEmpty()) {
-        // We only consider active mem table, hoping immutable memtable is
-        // already in the process of flushing.
-        uint64_t seq = cfd->mem()->GetCreationSeq();
-        if (cfd_picked == nullptr || seq < seq_num_for_cf_picked) {
-          cfd_picked = cfd;
-          seq_num_for_cf_picked = seq;
-        }
-      }
-    }
-    if (cfd_picked != nullptr) {
-      cfds.push_back(cfd_picked);
-    }
-    MaybeFlushStatsCF(&cfds);
-  }
-
-  WriteThread::Writer nonmem_w;
-  if (two_write_queues_) {
-    nonmem_write_thread_.EnterUnbatched(&nonmem_w, &mutex_);
-  }
-  for (const auto cfd : cfds) {
-    if (cfd->mem()->IsEmpty()) {
-      continue;
-    }
-    cfd->Ref();
-    status = SwitchMemtable(cfd, write_context);
-    cfd->UnrefAndTryDelete();
-    if (!status.ok()) {
-      break;
-    }
-  }
-  if (two_write_queues_) {
-    nonmem_write_thread_.ExitUnbatched(&nonmem_w);
-  }
-
-  if (status.ok()) {
-    if (immutable_db_options_.atomic_flush) {
-      AssignAtomicFlushSeq(cfds);
-    }
-    for (const auto cfd : cfds) {
-      cfd->imm()->FlushRequested();
-      if (!immutable_db_options_.atomic_flush) {
-        FlushRequest flush_req;
-        GenerateFlushRequest({cfd}, &flush_req);
-        SchedulePendingFlush(flush_req, FlushReason::kWriteBufferManager);
-      }
-    }
-    if (immutable_db_options_.atomic_flush) {
-      FlushRequest flush_req;
-      GenerateFlushRequest(cfds, &flush_req);
-      SchedulePendingFlush(flush_req, FlushReason::kWriteBufferManager);
-    }
-    MaybeScheduleFlushOrCompaction();
-  }
-  return status;
-}
-
 uint64_t DBImpl::GetMaxTotalWalSize() const {
   uint64_t max_total_wal_size =
       max_total_wal_size_.load(std::memory_order_acquire);
@@ -2186,6 +2120,7 @@ Status DBImpl::SwitchMemtable(ColumnFamilyData* cfd, WriteContext* context) {
   memtable_info.cf_name = cfd->GetName();
   memtable_info.first_seqno = cfd->mem()->GetFirstSequenceNumber();
   memtable_info.earliest_seqno = cfd->mem()->GetEarliestSequenceNumber();
+  memtable_info.largest_seqno = cfd->mem()->GetLargestSequenceNumber();
   memtable_info.num_entries = cfd->mem()->num_entries();
   memtable_info.num_deletes = cfd->mem()->num_deletes();
 #endif  // ROCKSDB_LITE
@@ -2339,11 +2274,16 @@ Status DBImpl::SwitchMemtable(ColumnFamilyData* cfd, WriteContext* context) {
                                      mutable_cf_options);
 
 #ifndef ROCKSDB_LITE
-  mutex_.Unlock();
+  // From above, the memtable has been converted to imm memtable and apended to
+  // memlist. If we unlock here, it has possibility to be picked by a concurrent
+  // flush job. Furthermore, that flush job may even be completed and calls
+  // NotifyOnFlushCompleted before the following NotifyOnMemTableSealed which
+  // can cause troubles.
+  // So, unlike Facebook/Rocksdb, we does not unlock here.
+
   // Notify client that memtable is sealed, now that we have successfully
   // installed a new memtable
   NotifyOnMemTableSealed(cfd, memtable_info);
-  mutex_.Lock();
 #endif  // ROCKSDB_LITE
   // It is possible that we got here without checking the value of i_os, but
   // that is okay.  If we did, it most likely means that s was already an error.
@@ -2365,10 +2305,15 @@ size_t DBImpl::GetWalPreallocateBlockSize(uint64_t write_buffer_size) const {
   if (immutable_db_options_.db_write_buffer_size > 0) {
     bsize = std::min<size_t>(bsize, immutable_db_options_.db_write_buffer_size);
   }
-  if (immutable_db_options_.write_buffer_manager &&
-      immutable_db_options_.write_buffer_manager->enabled()) {
-    bsize = std::min<size_t>(
-        bsize, immutable_db_options_.write_buffer_manager->buffer_size());
+  if (immutable_db_options_.write_buffer_manager) {
+    size_t buffer_size =
+        immutable_db_options_.write_buffer_manager->flush_size();
+    for (auto manager : cf_based_write_buffer_manager_) {
+      buffer_size += manager->flush_size();
+    }
+    if (buffer_size > 0) {
+      bsize = std::min<size_t>(bsize, buffer_size);
+    }
   }
 
   return bsize;

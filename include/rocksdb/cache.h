@@ -72,6 +72,17 @@ struct LRUCacheOptions {
   // BlockBasedTableOptions::cache_index_and_filter_blocks_with_high_priority.
   double high_pri_pool_ratio = 0.5;
 
+  // Percentage of cache reserved for low priority entries.
+  // If greater than zero, the LRU list will be split into a high-pri list, a
+  // low-pri list and a bottom-pri list. High-pri entries will be inserted to
+  // the tail of high-pri list, while low-pri entries will be first inserted to
+  // the low-pri list (the midpoint) and bottom-pri entries will be first
+  // inserted to the bottom-pri list.
+  //
+  //
+  // See also high_pri_pool_ratio.
+  double low_pri_pool_ratio = 0.0;
+
   // If non-nullptr will use this allocator instead of system allocator when
   // allocating memory for cache blocks. Call this method before you start using
   // the cache!
@@ -99,11 +110,13 @@ struct LRUCacheOptions {
                   std::shared_ptr<MemoryAllocator> _memory_allocator = nullptr,
                   bool _use_adaptive_mutex = kDefaultToAdaptiveMutex,
                   CacheMetadataChargePolicy _metadata_charge_policy =
-                      kDefaultCacheMetadataChargePolicy)
+                      kDefaultCacheMetadataChargePolicy,
+                  double _low_pri_pool_ratio = 0.0)
       : capacity(_capacity),
         num_shard_bits(_num_shard_bits),
         strict_capacity_limit(_strict_capacity_limit),
         high_pri_pool_ratio(_high_pri_pool_ratio),
+        low_pri_pool_ratio(_low_pri_pool_ratio),
         memory_allocator(std::move(_memory_allocator)),
         use_adaptive_mutex(_use_adaptive_mutex),
         metadata_charge_policy(_metadata_charge_policy) {}
@@ -123,7 +136,8 @@ extern std::shared_ptr<Cache> NewLRUCache(
     std::shared_ptr<MemoryAllocator> memory_allocator = nullptr,
     bool use_adaptive_mutex = kDefaultToAdaptiveMutex,
     CacheMetadataChargePolicy metadata_charge_policy =
-        kDefaultCacheMetadataChargePolicy);
+        kDefaultCacheMetadataChargePolicy,
+    double low_pri_pool_ratio = 0.0);
 
 extern std::shared_ptr<Cache> NewLRUCache(const LRUCacheOptions& cache_opts);
 
@@ -145,7 +159,17 @@ class Cache {
  public:
   // Depending on implementation, cache entries with high priority could be less
   // likely to get evicted than low priority entries.
-  enum class Priority { HIGH, LOW };
+  //
+  // The BOTTOM priority is mainly used for blob caching. Blobs are typically
+  // lower-value targets for caching than data blocks, since 1) with BlobDB,
+  // data blocks containing blob references conceptually form an index structure
+  // which has to be consulted before we can read the blob value, and 2) cached
+  // blobs represent only a single key-value, while cached data blocks generally
+  // contain multiple KVs. Since we would like to make it possible to use the
+  // same backing cache for the block cache and the blob cache, it would make
+  // sense to add a new, bottom cache priority level for blobs so data blocks
+  // are prioritized over them.
+  enum class Priority { HIGH, LOW, BOTTOM };
 
   // A set of callbacks to allow objects in the primary block cache to be
   // be persisted in a secondary cache. The purpose of the secondary cache
@@ -348,8 +372,8 @@ class Cache {
   // memory - call this only if you're shutting down the process.
   // Any attempts of using cache after this call will fail terribly.
   // Always delete the DB object before calling this method!
-  virtual void DisownData(){
-      // default implementation is noop
+  virtual void DisownData() {
+    // default implementation is noop
   }
 
   struct ApplyToAllEntriesOptions {

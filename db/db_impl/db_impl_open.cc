@@ -1625,6 +1625,22 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
   }
 
   DBImpl* impl = new DBImpl(db_options, dbname, seq_per_batch, batch_per_txn);
+  for (auto cf : column_families) {
+    if (cf.options.cf_write_buffer_manager != nullptr) {
+      auto* write_buffer_manager = cf.options.cf_write_buffer_manager.get();
+      bool already_exist = false;
+      for (auto m : impl->cf_based_write_buffer_manager_) {
+        if (m == write_buffer_manager) {
+          already_exist = true;
+          break;
+        }
+      }
+      if (!already_exist) {
+        impl->cf_based_write_buffer_manager_.push_back(write_buffer_manager);
+      }
+    }
+  }
+
   s = impl->env_->CreateDirIfMissing(impl->immutable_db_options_.GetWalDir());
   if (s.ok()) {
     std::vector<std::string> paths;
@@ -1896,6 +1912,37 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
   }
   if (s.ok()) {
     impl->StartPeriodicWorkScheduler();
+
+    // Newly created handles are already registered during
+    // `CreateColumnFamily`. We must clear them all to avoid duplicate
+    // registration.
+    if (impl->write_buffer_manager_) {
+      impl->write_buffer_manager_->UnregisterDB(impl);
+    }
+    for (auto m : impl->cf_based_write_buffer_manager_) {
+      m->UnregisterDB(impl);
+    }
+
+    for (size_t i = 0; i < (*handles).size(); ++i) {
+      auto cf_opt = column_families[i].options;
+
+      auto* cf = (*handles)[i];
+      std::string cf_name = cf->GetName();
+      auto* write_buffer_manager = cf_opt.cf_write_buffer_manager != nullptr
+                                       ? cf_opt.cf_write_buffer_manager.get()
+                                       : impl->write_buffer_manager_;
+      if (write_buffer_manager) {
+        if (cf->GetName() == kDefaultColumnFamilyName) {
+          write_buffer_manager->RegisterColumnFamily(impl,
+                                                     impl->default_cf_handle_);
+        } else if (cf->GetName() == kPersistentStatsColumnFamilyName) {
+          write_buffer_manager->RegisterColumnFamily(
+              impl, impl->persist_stats_cf_handle_);
+        } else {
+          write_buffer_manager->RegisterColumnFamily(impl, cf);
+        }
+      }
+    }
   } else {
     for (auto* h : *handles) {
       delete h;

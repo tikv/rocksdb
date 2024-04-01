@@ -23,6 +23,7 @@
 #include "rocksdb/trace_record_result.h"
 #include "rocksdb/utilities/replayer.h"
 #include "rocksdb/wal_filter.h"
+#include "test_util/mock_time_env.h"
 #include "test_util/testutil.h"
 #include "util/random.h"
 #include "utilities/fault_injection_env.h"
@@ -392,11 +393,11 @@ TEST_P(DBTestSharedWriteBufferAcrossCFs, SharedWriteBufferAcrossCFs) {
   ASSERT_LT(cache->GetUsage(), 256 * 1024);
 
   if (use_old_interface_) {
-    options.db_write_buffer_size = 120000;  // this is the real limit
+    options.db_write_buffer_size = 100000;
   } else if (!cost_cache_) {
-    options.write_buffer_manager.reset(new WriteBufferManager(114285));
+    options.write_buffer_manager.reset(new WriteBufferManager(100000));
   } else {
-    options.write_buffer_manager.reset(new WriteBufferManager(114285, cache));
+    options.write_buffer_manager.reset(new WriteBufferManager(100000, cache));
   }
   options.write_buffer_size = 500000;  // this is never hit
   CreateAndReopenWithCF({"pikachu", "dobrynia", "nikitich"}, options);
@@ -424,7 +425,6 @@ TEST_P(DBTestSharedWriteBufferAcrossCFs, SharedWriteBufferAcrossCFs) {
   ASSERT_EQ(GetNumberOfSstFilesForColumnFamily(db_, "nikitich"),
             static_cast<uint64_t>(1));
 
-  flush_listener->expected_flush_reason = FlushReason::kWriteBufferManager;
   ASSERT_OK(Put(3, Key(1), DummyString(30000), wo));
   if (cost_cache_) {
     ASSERT_GE(cache->GetUsage(), 256 * 1024);
@@ -570,10 +570,8 @@ TEST_F(DBTest2, SharedWriteBufferLimitAcrossDB) {
   ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->EnableProcessing();
 
   options.write_buffer_size = 500000;  // this is never hit
-  // Use a write buffer total size so that the soft limit is about
-  // 105000.
-  options.write_buffer_manager.reset(new WriteBufferManager(120000));
-  CreateAndReopenWithCF({"cf1", "cf2"}, options);
+  options.write_buffer_manager.reset(new WriteBufferManager(100000));
+  CreateAndReopenWithCF({"cf1"}, options);
 
   ASSERT_OK(DestroyDB(dbname2, options));
   DB* db2 = nullptr;
@@ -585,53 +583,137 @@ TEST_F(DBTest2, SharedWriteBufferLimitAcrossDB) {
   std::function<void()> wait_flush = [&]() {
     ASSERT_OK(dbfull()->TEST_WaitForFlushMemTable(handles_[0]));
     ASSERT_OK(dbfull()->TEST_WaitForFlushMemTable(handles_[1]));
-    ASSERT_OK(dbfull()->TEST_WaitForFlushMemTable(handles_[2]));
     ASSERT_OK(static_cast<DBImpl*>(db2)->TEST_WaitForFlushMemTable());
   };
 
-  // Trigger a flush on cf2
-  flush_listener->expected_flush_reason = FlushReason::kWriteBufferManager;
-  ASSERT_OK(Put(2, Key(1), DummyString(70000), wo));
-  wait_flush();
+  // Trigger a flush on DB1.cf1
+  flush_listener->expected_flush_reason = FlushReason::kManualFlush;
   ASSERT_OK(Put(0, Key(1), DummyString(20000), wo));
+  wait_flush();
+  ASSERT_OK(Put(1, Key(1), DummyString(70000), wo));
   wait_flush();
 
   // Insert to DB2
+  // [20000, 70000, 20000]
   ASSERT_OK(db2->Put(wo, Key(2), DummyString(20000)));
   wait_flush();
 
-  ASSERT_OK(Put(2, Key(1), DummyString(1), wo));
+  ASSERT_OK(Put(1, Key(1), DummyString(1), wo));
   wait_flush();
-  ASSERT_OK(static_cast<DBImpl*>(db2)->TEST_WaitForFlushMemTable());
   {
-    ASSERT_EQ(GetNumberOfSstFilesForColumnFamily(db_, "default") +
-                  GetNumberOfSstFilesForColumnFamily(db_, "cf1") +
-                  GetNumberOfSstFilesForColumnFamily(db_, "cf2"),
+    ASSERT_EQ(GetNumberOfSstFilesForColumnFamily(db_, "default"),
+              static_cast<uint64_t>(0));
+    ASSERT_EQ(GetNumberOfSstFilesForColumnFamily(db_, "cf1"),
               static_cast<uint64_t>(1));
     ASSERT_EQ(GetNumberOfSstFilesForColumnFamily(db2, "default"),
               static_cast<uint64_t>(0));
   }
 
-  // Triggering to flush another CF in DB1
+  // Triggering to flush DB2 by writing to DB1
+  // [20000, 0, 90000]
   ASSERT_OK(db2->Put(wo, Key(2), DummyString(70000)));
   wait_flush();
-  ASSERT_OK(Put(2, Key(1), DummyString(1), wo));
-  wait_flush();
   {
     ASSERT_EQ(GetNumberOfSstFilesForColumnFamily(db_, "default"),
-              static_cast<uint64_t>(1));
-    ASSERT_EQ(GetNumberOfSstFilesForColumnFamily(db_, "cf1"),
               static_cast<uint64_t>(0));
-    ASSERT_EQ(GetNumberOfSstFilesForColumnFamily(db_, "cf2"),
+    ASSERT_EQ(GetNumberOfSstFilesForColumnFamily(db_, "cf1"),
               static_cast<uint64_t>(1));
     ASSERT_EQ(GetNumberOfSstFilesForColumnFamily(db2, "default"),
               static_cast<uint64_t>(0));
   }
-
-  // Triggering flush in DB2.
-  ASSERT_OK(db2->Put(wo, Key(3), DummyString(40000)));
+  ASSERT_OK(Put(1, Key(1), DummyString(1), wo));
   wait_flush();
-  ASSERT_OK(db2->Put(wo, Key(1), DummyString(1)));
+  {
+    ASSERT_EQ(GetNumberOfSstFilesForColumnFamily(db_, "default"),
+              static_cast<uint64_t>(0));
+    ASSERT_EQ(GetNumberOfSstFilesForColumnFamily(db_, "cf1"),
+              static_cast<uint64_t>(1));
+    ASSERT_EQ(GetNumberOfSstFilesForColumnFamily(db2, "default"),
+              static_cast<uint64_t>(1));
+  }
+
+  // Triggering flush in DB2 by writing to DB2
+  // [20000, 0, 80000]
+  ASSERT_OK(db2->Put(wo, Key(3), DummyString(80000)));
+  ASSERT_OK(db2->Put(wo, Key(1), DummyString(10000)));
+  wait_flush();
+  ASSERT_OK(static_cast<DBImpl*>(db2)->TEST_WaitForFlushMemTable());
+  {
+    ASSERT_EQ(GetNumberOfSstFilesForColumnFamily(db_, "default"),
+              static_cast<uint64_t>(0));
+    ASSERT_EQ(GetNumberOfSstFilesForColumnFamily(db_, "cf1"),
+              static_cast<uint64_t>(1));
+    ASSERT_EQ(GetNumberOfSstFilesForColumnFamily(db2, "default"),
+              static_cast<uint64_t>(2));
+  }
+
+  delete db2;
+  ASSERT_OK(DestroyDB(dbname2, options));
+
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->DisableProcessing();
+}
+
+TEST_F(DBTest2, SharedWriteBufferLimitAcrossDB_RankByAge) {
+  std::string dbname2 = test::PerThreadDBPath("db_shared_wb_age_db2");
+  Options options = CurrentOptions();
+  options.arena_block_size = 4096;
+  auto flush_listener = std::make_shared<FlushCounterListener>();
+  options.listeners.push_back(flush_listener);
+  // Don't trip the listener at shutdown.
+  options.avoid_flush_during_shutdown = true;
+  // Avoid undeterministic value by malloc_usable_size();
+  // Force arena block size to 1
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->SetCallBack(
+      "Arena::Arena:0", [&](void* arg) {
+        size_t* block_size = static_cast<size_t*>(arg);
+        *block_size = 1;
+      });
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->SetCallBack(
+      "Arena::AllocateNewBlock:0", [&](void* arg) {
+        std::pair<size_t*, size_t*>* pair =
+            static_cast<std::pair<size_t*, size_t*>*>(arg);
+        *std::get<0>(*pair) = *std::get<1>(*pair);
+      });
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->EnableProcessing();
+
+  options.write_buffer_size = 500000;  // this is never hit
+  options.write_buffer_manager.reset(new WriteBufferManager(
+      100000, nullptr /*cache*/, 0.0 /*stall_ratio*/, true /*flush_oldest*/));
+
+  auto mock_clock = std::make_shared<MockSystemClock>(SystemClock::Default());
+  options.env = new CompositeEnvWrapper(options.env, mock_clock);
+
+  CreateAndReopenWithCF({"cf1"}, options);
+
+  ASSERT_OK(DestroyDB(dbname2, options));
+  DB* db2 = nullptr;
+  ASSERT_OK(DB::Open(options, dbname2, &db2));
+
+  WriteOptions wo;
+  wo.disableWAL = true;
+
+  std::function<void()> wait_flush = [&]() {
+    ASSERT_OK(dbfull()->TEST_WaitForFlushMemTable(handles_[0]));
+    ASSERT_OK(dbfull()->TEST_WaitForFlushMemTable(handles_[1]));
+    ASSERT_OK(static_cast<DBImpl*>(db2)->TEST_WaitForFlushMemTable());
+  };
+
+  // Trigger a flush on DB1.cf2
+  flush_listener->expected_flush_reason = FlushReason::kManualFlush;
+  mock_clock->SetCurrentTime(50);
+  ASSERT_OK(Put(0, Key(1), DummyString(20000), wo));
+  wait_flush();
+  mock_clock->SetCurrentTime(100);
+  ASSERT_OK(Put(1, Key(1), DummyString(70000), wo));
+  wait_flush();
+  mock_clock->SetCurrentTime(150);
+
+  // Insert to DB2
+  // [20000, 70000, 20000]
+  ASSERT_OK(db2->Put(wo, Key(2), DummyString(20000)));
+  wait_flush();
+
+  ASSERT_OK(Put(1, Key(1), DummyString(1), wo));
   wait_flush();
   ASSERT_OK(static_cast<DBImpl*>(db2)->TEST_WaitForFlushMemTable());
   {
@@ -639,10 +721,31 @@ TEST_F(DBTest2, SharedWriteBufferLimitAcrossDB) {
               static_cast<uint64_t>(1));
     ASSERT_EQ(GetNumberOfSstFilesForColumnFamily(db_, "cf1"),
               static_cast<uint64_t>(0));
-    ASSERT_EQ(GetNumberOfSstFilesForColumnFamily(db_, "cf2"),
+    ASSERT_EQ(GetNumberOfSstFilesForColumnFamily(db2, "default"),
+              static_cast<uint64_t>(0));
+  }
+
+  // Triggering to flush DB1 by writing to DB2
+  // [20000, 0, 90000]
+  ASSERT_OK(db2->Put(wo, Key(2), DummyString(70000)));
+  wait_flush();
+  {
+    ASSERT_EQ(GetNumberOfSstFilesForColumnFamily(db_, "default"),
+              static_cast<uint64_t>(1));
+    ASSERT_EQ(GetNumberOfSstFilesForColumnFamily(db_, "cf1"),
+              static_cast<uint64_t>(0));
+    ASSERT_EQ(GetNumberOfSstFilesForColumnFamily(db2, "default"),
+              static_cast<uint64_t>(0));
+  }
+  ASSERT_OK(db2->Put(wo, Key(3), DummyString(1)));
+  wait_flush();
+  {
+    ASSERT_EQ(GetNumberOfSstFilesForColumnFamily(db_, "default"),
+              static_cast<uint64_t>(1));
+    ASSERT_EQ(GetNumberOfSstFilesForColumnFamily(db_, "cf1"),
               static_cast<uint64_t>(1));
     ASSERT_EQ(GetNumberOfSstFilesForColumnFamily(db2, "default"),
-              static_cast<uint64_t>(1));
+              static_cast<uint64_t>(0));
   }
 
   delete db2;
@@ -654,8 +757,12 @@ TEST_F(DBTest2, SharedWriteBufferLimitAcrossDB) {
 TEST_F(DBTest2, TestWriteBufferNoLimitWithCache) {
   Options options = CurrentOptions();
   options.arena_block_size = 4096;
-  std::shared_ptr<Cache> cache =
-      NewLRUCache(LRUCacheOptions(10000000, 1, false, 0.0));
+  std::shared_ptr<Cache> cache = NewLRUCache(LRUCacheOptions(
+      10000000 /* capacity */, 1 /* num_shard_bits */,
+      false /* strict_capacity_limit */, 0.0 /* high_pri_pool_ratio */,
+      nullptr /* memory_allocator */, kDefaultToAdaptiveMutex,
+      kDontChargeCacheMetadata));
+
   options.write_buffer_size = 50000;  // this is never hit
   // Use a write buffer total size so that the soft limit is about
   // 105000.
@@ -2103,6 +2210,7 @@ class PinL0IndexAndFilterBlocksTest
     ASSERT_OK(Flush(1));
     // move this table to L1
     ASSERT_OK(dbfull()->TEST_CompactRange(0, nullptr, nullptr, handles_[1]));
+    ASSERT_EQ(1, NumTableFilesAtLevel(1, 1));
 
     // reset block cache
     table_options.block_cache = NewLRUCache(64 * 1024);
@@ -2260,7 +2368,7 @@ TEST_P(PinL0IndexAndFilterBlocksTest, DisablePrefetchingNonL0IndexAndFilter) {
   // this should be read from L1
   value = Get(1, "a");
   if (!disallow_preload_) {
-    // In inifinite max files case, there's a cache miss in executing Get()
+    // In infinite max files case, there's a cache miss in executing Get()
     // because index and filter are not prefetched before.
     ASSERT_EQ(fm + 2, TestGetTickerCount(options, BLOCK_CACHE_FILTER_MISS));
     ASSERT_EQ(fh, TestGetTickerCount(options, BLOCK_CACHE_FILTER_HIT));
@@ -2288,12 +2396,12 @@ TEST_P(PinL0IndexAndFilterBlocksTest, DisablePrefetchingNonL0IndexAndFilter) {
     ASSERT_EQ(fm + 3, TestGetTickerCount(options, BLOCK_CACHE_FILTER_MISS));
     ASSERT_EQ(fh, TestGetTickerCount(options, BLOCK_CACHE_FILTER_HIT));
     ASSERT_EQ(im + 3, TestGetTickerCount(options, BLOCK_CACHE_INDEX_MISS));
-    ASSERT_EQ(ih + 3, TestGetTickerCount(options, BLOCK_CACHE_INDEX_HIT));
+    ASSERT_EQ(ih + 2, TestGetTickerCount(options, BLOCK_CACHE_INDEX_HIT));
   } else {
     ASSERT_EQ(fm + 3, TestGetTickerCount(options, BLOCK_CACHE_FILTER_MISS));
     ASSERT_EQ(fh + 1, TestGetTickerCount(options, BLOCK_CACHE_FILTER_HIT));
     ASSERT_EQ(im + 3, TestGetTickerCount(options, BLOCK_CACHE_INDEX_MISS));
-    ASSERT_EQ(ih + 4, TestGetTickerCount(options, BLOCK_CACHE_INDEX_HIT));
+    ASSERT_EQ(ih + 3, TestGetTickerCount(options, BLOCK_CACHE_INDEX_HIT));
   }
 
   // Bloom and index hit will happen when a Get() happens.
@@ -2302,12 +2410,12 @@ TEST_P(PinL0IndexAndFilterBlocksTest, DisablePrefetchingNonL0IndexAndFilter) {
     ASSERT_EQ(fm + 3, TestGetTickerCount(options, BLOCK_CACHE_FILTER_MISS));
     ASSERT_EQ(fh + 1, TestGetTickerCount(options, BLOCK_CACHE_FILTER_HIT));
     ASSERT_EQ(im + 3, TestGetTickerCount(options, BLOCK_CACHE_INDEX_MISS));
-    ASSERT_EQ(ih + 4, TestGetTickerCount(options, BLOCK_CACHE_INDEX_HIT));
+    ASSERT_EQ(ih + 3, TestGetTickerCount(options, BLOCK_CACHE_INDEX_HIT));
   } else {
     ASSERT_EQ(fm + 3, TestGetTickerCount(options, BLOCK_CACHE_FILTER_MISS));
     ASSERT_EQ(fh + 2, TestGetTickerCount(options, BLOCK_CACHE_FILTER_HIT));
     ASSERT_EQ(im + 3, TestGetTickerCount(options, BLOCK_CACHE_INDEX_MISS));
-    ASSERT_EQ(ih + 5, TestGetTickerCount(options, BLOCK_CACHE_INDEX_HIT));
+    ASSERT_EQ(ih + 4, TestGetTickerCount(options, BLOCK_CACHE_INDEX_HIT));
   }
 }
 

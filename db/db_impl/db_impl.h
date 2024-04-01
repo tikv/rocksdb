@@ -86,6 +86,7 @@ class WriteCallback;
 struct JobContext;
 struct ExternalSstFileInfo;
 struct MemTableInfo;
+class WriteBlocker;
 
 // Class to maintain directories for all database paths other than main one.
 class Directories {
@@ -178,12 +179,12 @@ class DBImpl : public DB {
 
   using DB::Write;
   virtual Status Write(const WriteOptions& options, WriteBatch* updates,
-                       uint64_t* seq) override;
+                       PostWriteCallback* callback) override;
 
   using DB::MultiBatchWrite;
   virtual Status MultiBatchWrite(const WriteOptions& options,
                                  std::vector<WriteBatch*>&& updates,
-                                 uint64_t* seq) override;
+                                 PostWriteCallback* callback) override;
 
   using DB::Get;
   virtual Status Get(const ReadOptions& options,
@@ -311,6 +312,12 @@ class DBImpl : public DB {
                                            const Range& range,
                                            uint64_t* const count,
                                            uint64_t* const size) override;
+
+  using DB::GetApproximateActiveMemTableStats;
+  virtual void GetApproximateActiveMemTableStats(
+      ColumnFamilyHandle* column_family, uint64_t* const memory_bytes,
+      uint64_t* const oldest_key_time) override;
+
   using DB::CompactRange;
   virtual Status CompactRange(const CompactRangeOptions& options,
                               ColumnFamilyHandle* column_family,
@@ -663,12 +670,16 @@ class DBImpl : public DB {
   // max_file_num_to_ignore allows bottom level compaction to filter out newly
   // compacted SST files. Setting max_file_num_to_ignore to kMaxUint64 will
   // disable the filtering
+  // If `final_output_level` is not nullptr, it is set to manual compaction's
+  // output level if returned status is OK, and it may or may not be set to
+  // manual compaction's output level if returned status is not OK.
   Status RunManualCompaction(ColumnFamilyData* cfd, int input_level,
                              int output_level,
                              const CompactRangeOptions& compact_range_options,
                              const Slice* begin, const Slice* end,
                              bool exclusive, bool disallow_trivial_move,
-                             uint64_t max_file_num_to_ignore);
+                             uint64_t max_file_num_to_ignore,
+                             int* final_output_level = nullptr);
 
   // Return an internal iterator over the current state of the database.
   // The keys of this iterator are internal keys (see format.h).
@@ -952,6 +963,14 @@ class DBImpl : public DB {
                      std::vector<ColumnFamilyHandle*>* handles, DB** dbptr,
                      const bool seq_per_batch, const bool batch_per_txn);
 
+  // Validate `rhs` can be merged into this DB with given merge options.
+  Status ValidateForMerge(const MergeInstanceOptions& merge_options,
+                          DBImpl* rhs);
+
+  Status MergeDisjointInstances(const MergeInstanceOptions& merge_options,
+                                const std::vector<DB*>& instances) override;
+  Status CheckInRange(const Slice* begin, const Slice* end) override;
+
   static IOStatus CreateAndNewDirectory(
       FileSystem* fs, const std::string& dirname,
       std::unique_ptr<FSDirectory>* directory);
@@ -1098,6 +1117,7 @@ class DBImpl : public DB {
   size_t TEST_GetWalPreallocateBlockSize(uint64_t write_buffer_size) const;
   void TEST_WaitForStatsDumpRun(std::function<void()> callback) const;
   size_t TEST_EstimateInMemoryStatsHistorySize() const;
+  void TEST_ClearBackgroundJobs();
 
   uint64_t TEST_GetCurrentLogNumber() const {
     InstrumentedMutexLock l(mutex());
@@ -1271,7 +1291,8 @@ class DBImpl : public DB {
 
   void NotifyOnFlushBegin(ColumnFamilyData* cfd, FileMetaData* file_meta,
                           const MutableCFOptions& mutable_cf_options,
-                          int job_id);
+                          int job_id, SequenceNumber earliest_seqno,
+                          SequenceNumber largest_seqno);
 
   void NotifyOnFlushCompleted(
       ColumnFamilyData* cfd, const MutableCFOptions& mutable_cf_options,
@@ -1321,26 +1342,30 @@ class DBImpl : public DB {
                    uint64_t* log_used = nullptr, uint64_t log_ref = 0,
                    bool disable_memtable = false, uint64_t* seq_used = nullptr,
                    size_t batch_cnt = 0,
-                   PreReleaseCallback* pre_release_callback = nullptr);
+                   PreReleaseCallback* pre_release_callback = nullptr,
+                   PostWriteCallback* post_callback = nullptr);
 
   Status MultiBatchWriteImpl(const WriteOptions& write_options,
                              std::vector<WriteBatch*>&& my_batch,
                              WriteCallback* callback = nullptr,
                              uint64_t* log_used = nullptr, uint64_t log_ref = 0,
-                             uint64_t* seq_used = nullptr);
+                             uint64_t* seq_used = nullptr,
+                             PostWriteCallback* post_callback = nullptr);
   void MultiBatchWriteCommit(CommitRequest* request);
 
   Status PipelinedWriteImpl(const WriteOptions& options, WriteBatch* updates,
                             WriteCallback* callback = nullptr,
                             uint64_t* log_used = nullptr, uint64_t log_ref = 0,
                             bool disable_memtable = false,
-                            uint64_t* seq_used = nullptr);
+                            uint64_t* seq_used = nullptr,
+                            PostWriteCallback* post_callback = nullptr);
 
   // Write only to memtables without joining any write queue
   Status UnorderedWriteMemtable(const WriteOptions& write_options,
                                 WriteBatch* my_batch, WriteCallback* callback,
                                 uint64_t log_ref, SequenceNumber seq,
-                                const size_t sub_batch_cnt);
+                                const size_t sub_batch_cnt,
+                                PostWriteCallback* post_callback = nullptr);
 
   // Whether the batch requires to be assigned with an order
   enum AssignOrder : bool { kDontAssignOrder, kDoAssignOrder };
@@ -1420,6 +1445,7 @@ class DBImpl : public DB {
   friend class WriteBatchWithIndex;
   friend class WriteUnpreparedTxnDB;
   friend class WriteUnpreparedTxn;
+  friend class WriteBlocker;
 
 #ifndef ROCKSDB_LITE
   friend class ForwardIterator;
@@ -1808,9 +1834,6 @@ class DBImpl : public DB {
 
   // REQUIRES: mutex locked and in write thread.
   Status SwitchWAL(WriteContext* write_context);
-
-  // REQUIRES: mutex locked and in write thread.
-  Status HandleWriteBufferManagerFlush(WriteContext* write_context);
 
   // REQUIRES: mutex locked
   Status PreprocessWrite(const WriteOptions& write_options,
@@ -2265,6 +2288,10 @@ class DBImpl : public DB {
   Directories directories_;
 
   WriteBufferManager* write_buffer_manager_;
+  // For simplicity, CF based write buffer manager does not support stall the
+  // write.
+  // Note: It's only modifed in Open, so mutex is not needed.
+  autovector<WriteBufferManager*> cf_based_write_buffer_manager_;
 
   WriteThread write_thread_;
   WriteBatch tmp_batch_;

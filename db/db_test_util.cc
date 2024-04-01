@@ -620,6 +620,22 @@ void DBTestBase::ReopenWithColumnFamilies(const std::vector<std::string>& cfs,
   ASSERT_OK(TryReopenWithColumnFamilies(cfs, options));
 }
 
+void DBTestBase::OpenWithCFWriteBufferManager(
+    const std::vector<std::string>& cfs,
+    const std::vector<std::shared_ptr<WriteBufferManager>> wbms,
+    const Options& options) {
+  CreateColumnFamilies(cfs, options);
+  std::vector<std::string> cfs_plus_default = cfs;
+  cfs_plus_default.insert(cfs_plus_default.begin(), kDefaultColumnFamilyName);
+  std::vector<Options> cf_options;
+  for (size_t i = 0; i < wbms.size(); ++i) {
+    auto o = options;
+    o.cf_write_buffer_manager = wbms[i];
+    cf_options.push_back(o);
+  }
+  ReopenWithColumnFamilies(cfs_plus_default, cf_options);
+}
+
 void DBTestBase::SetTimeElapseOnlySleepOnReopen(DBOptions* options) {
   time_elapse_only_sleep_on_reopen_ = true;
 

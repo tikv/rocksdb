@@ -75,13 +75,12 @@ MemTable::MemTable(const InternalKeyComparator& cmp,
       refs_(0),
       kArenaBlockSize(OptimizeBlockSize(moptions_.arena_block_size)),
       mem_tracker_(write_buffer_manager),
-      arena_(moptions_.arena_block_size,
-             (write_buffer_manager != nullptr &&
-              (write_buffer_manager->enabled() ||
-               write_buffer_manager->cost_to_cache()))
-                 ? &mem_tracker_
-                 : nullptr,
-             mutable_cf_options.memtable_huge_page_size),
+      arena_(
+          moptions_.arena_block_size,
+          (write_buffer_manager != nullptr && (write_buffer_manager->enabled()))
+              ? &mem_tracker_
+              : nullptr,
+          mutable_cf_options.memtable_huge_page_size),
       table_(ioptions.memtable_factory->CreateMemTableRep(
           comparator_, &arena_, mutable_cf_options.prefix_extractor.get(),
           ioptions.logger, column_family_id)),
@@ -98,6 +97,7 @@ MemTable::MemTable(const InternalKeyComparator& cmp,
       file_number_(0),
       first_seqno_(0),
       earliest_seqno_(latest_seq),
+      largest_seqno_(latest_seq),
       creation_seq_(latest_seq),
       mem_next_logfile_number_(0),
       min_prep_log_referenced_(0),
@@ -105,6 +105,12 @@ MemTable::MemTable(const InternalKeyComparator& cmp,
                  ? moptions_.inplace_update_num_locks
                  : 0),
       prefix_extractor_(mutable_cf_options.prefix_extractor.get()),
+      needs_bloom_filter_(
+          (prefix_extractor_ || moptions_.memtable_whole_key_filtering) &&
+          moptions_.memtable_prefix_bloom_bits > 0),
+      bloom_filter_ptr_(nullptr),
+      bloom_filter_(nullptr),
+      logger_(ioptions.logger),
       flush_state_(FLUSH_NOT_REQUESTED),
       clock_(ioptions.clock),
       insert_with_hint_prefix_extractor_(
@@ -115,15 +121,6 @@ MemTable::MemTable(const InternalKeyComparator& cmp,
   UpdateFlushState();
   // something went wrong if we need to flush before inserting anything
   assert(!ShouldScheduleFlush());
-
-  // use bloom_filter_ for both whole key and prefix bloom filter
-  if ((prefix_extractor_ || moptions_.memtable_whole_key_filtering) &&
-      moptions_.memtable_prefix_bloom_bits > 0) {
-    bloom_filter_.reset(
-        new DynamicBloom(&arena_, moptions_.memtable_prefix_bloom_bits,
-                         6 /* hard coded 6 probes */,
-                         moptions_.memtable_huge_page_size, ioptions.logger));
-  }
 }
 
 MemTable::~MemTable() {
@@ -282,8 +279,8 @@ const char* EncodeKey(std::string* scratch, const Slice& target) {
 
 class MemTableIterator : public InternalIterator {
  public:
-  MemTableIterator(const MemTable& mem, const ReadOptions& read_options,
-                   Arena* arena, bool use_range_del_table = false)
+  MemTableIterator(MemTable& mem, const ReadOptions& read_options, Arena* arena,
+                   bool use_range_del_table = false)
       : bloom_(nullptr),
         prefix_extractor_(mem.prefix_extractor_),
         comparator_(mem.comparator_),
@@ -296,7 +293,7 @@ class MemTableIterator : public InternalIterator {
     } else if (prefix_extractor_ != nullptr && !read_options.total_order_seek &&
                !read_options.auto_prefix_mode) {
       // Auto prefix mode is not implemented in memtable yet.
-      bloom_ = mem.bloom_filter_.get();
+      bloom_ = mem.GetBloomFilter();
       iter_ = mem.table_->GetDynamicPrefixIterator(arena);
     } else {
       iter_ = mem.table_->GetIterator(arena);
@@ -601,12 +598,13 @@ Status MemTable::Add(SequenceNumber s, ValueType type,
                          std::memory_order_relaxed);
     }
 
-    if (bloom_filter_ && prefix_extractor_ &&
+    auto bloom_filter = GetBloomFilter();
+    if (bloom_filter && prefix_extractor_ &&
         prefix_extractor_->InDomain(key_without_ts)) {
-      bloom_filter_->Add(prefix_extractor_->Transform(key_without_ts));
+      bloom_filter->Add(prefix_extractor_->Transform(key_without_ts));
     }
-    if (bloom_filter_ && moptions_.memtable_whole_key_filtering) {
-      bloom_filter_->Add(key_without_ts);
+    if (bloom_filter && moptions_.memtable_whole_key_filtering) {
+      bloom_filter->Add(key_without_ts);
     }
 
     // The first sequence number inserted into the memtable
@@ -619,6 +617,9 @@ Status MemTable::Add(SequenceNumber s, ValueType type,
                               std::memory_order_relaxed);
       }
       assert(first_seqno_.load() >= earliest_seqno_.load());
+    }
+    if (s > largest_seqno_) {
+      largest_seqno_.store(s, std::memory_order_relaxed);
     }
     assert(post_process_info == nullptr);
     UpdateFlushState();
@@ -637,16 +638,17 @@ Status MemTable::Add(SequenceNumber s, ValueType type,
       post_process_info->num_deletes++;
     }
 
-    if (bloom_filter_ && prefix_extractor_ &&
+    auto bloom_filter = GetBloomFilter();
+    if (bloom_filter && prefix_extractor_ &&
         prefix_extractor_->InDomain(key_without_ts)) {
-      bloom_filter_->AddConcurrently(
+      bloom_filter->AddConcurrently(
           prefix_extractor_->Transform(key_without_ts));
     }
-    if (bloom_filter_ && moptions_.memtable_whole_key_filtering) {
-      bloom_filter_->AddConcurrently(key_without_ts);
+    if (bloom_filter && moptions_.memtable_whole_key_filtering) {
+      bloom_filter->AddConcurrently(key_without_ts);
     }
 
-    // atomically update first_seqno_ and earliest_seqno_.
+    // atomically update first_seqno_, earliest_seqno_ and largest_seqno_.
     uint64_t cur_seq_num = first_seqno_.load(std::memory_order_relaxed);
     while ((cur_seq_num == 0 || s < cur_seq_num) &&
            !first_seqno_.compare_exchange_weak(cur_seq_num, s)) {
@@ -656,6 +658,10 @@ Status MemTable::Add(SequenceNumber s, ValueType type,
     while (
         (cur_earliest_seqno == kMaxSequenceNumber || s < cur_earliest_seqno) &&
         !first_seqno_.compare_exchange_weak(cur_earliest_seqno, s)) {
+    }
+    uint64_t cur_largest_seqno = largest_seqno_.load(std::memory_order_acquire);
+    while (s > cur_largest_seqno &&
+           !largest_seqno_.compare_exchange_weak(cur_largest_seqno, s)) {
     }
   }
   if (type == kTypeRangeDeletion) {
@@ -889,25 +895,26 @@ bool MemTable::Get(const LookupKey& key, std::string* value,
   bool may_contain = true;
   size_t ts_sz = GetInternalKeyComparator().user_comparator()->timestamp_size();
   Slice user_key_without_ts = StripTimestampFromUserKey(key.user_key(), ts_sz);
-  if (bloom_filter_) {
+  auto bloom_filter = GetBloomFilter();
+  if (bloom_filter) {
     // when both memtable_whole_key_filtering and prefix_extractor_ are set,
     // only do whole key filtering for Get() to save CPU
     if (moptions_.memtable_whole_key_filtering) {
-      may_contain = bloom_filter_->MayContain(user_key_without_ts);
+      may_contain = bloom_filter->MayContain(user_key_without_ts);
     } else {
       assert(prefix_extractor_);
       may_contain = !prefix_extractor_->InDomain(user_key_without_ts) ||
-                    bloom_filter_->MayContain(
+                    bloom_filter->MayContain(
                         prefix_extractor_->Transform(user_key_without_ts));
     }
   }
 
-  if (bloom_filter_ && !may_contain) {
+  if (bloom_filter && !may_contain) {
     // iter is null if prefix bloom says the key does not exist
     PERF_COUNTER_ADD(bloom_memtable_miss_count, 1);
     *seq = kMaxSequenceNumber;
   } else {
-    if (bloom_filter_) {
+    if (bloom_filter) {
       PERF_COUNTER_ADD(bloom_memtable_hit_count, 1);
     }
     GetFromTable(key, *max_covering_tombstone_seq, do_merge, callback,
@@ -969,7 +976,8 @@ void MemTable::MultiGet(const ReadOptions& read_options, MultiGetRange* range,
   bool no_range_del = read_options.ignore_range_deletions ||
                       is_range_del_table_empty_.load(std::memory_order_relaxed);
   MultiGetRange temp_range(*range, range->begin(), range->end());
-  if (bloom_filter_ && no_range_del) {
+  auto bloom_filter = GetBloomFilter();
+  if (bloom_filter && no_range_del) {
     bool whole_key =
         !prefix_extractor_ || moptions_.memtable_whole_key_filtering;
     std::array<Slice, MultiGetContext::MAX_BATCH_SIZE> bloom_keys;
@@ -990,7 +998,7 @@ void MemTable::MultiGet(const ReadOptions& read_options, MultiGetRange* range,
         PERF_COUNTER_ADD(bloom_memtable_hit_count, 1);
       }
     }
-    bloom_filter_->MayContain(num_keys, &bloom_keys[0], &may_match[0]);
+    bloom_filter->MayContain(num_keys, &bloom_keys[0], &may_match[0]);
     for (int i = 0; i < num_keys; ++i) {
       if (!may_match[i]) {
         temp_range.SkipIndex(range_indexes[i]);

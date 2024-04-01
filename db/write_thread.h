@@ -186,6 +186,7 @@ class WriteThread {
     uint64_t log_used;  // log number that this batch was inserted into
     uint64_t log_ref;   // log number that memtable insert should reference
     WriteCallback* callback;
+    PostWriteCallback* post_callback;
     bool made_waitable;          // records lazy construction of mutex and cv
     std::atomic<uint8_t> state;  // write under StateMutex() or pre-link
     WriteGroup* write_group;
@@ -213,6 +214,7 @@ class WriteThread {
           log_used(0),
           log_ref(0),
           callback(nullptr),
+          post_callback(nullptr),
           made_waitable(false),
           state(STATE_INIT),
           write_group(nullptr),
@@ -222,8 +224,8 @@ class WriteThread {
           link_newer(nullptr) {}
 
     Writer(const WriteOptions& write_options, WriteBatch* _batch,
-           WriteCallback* _callback, uint64_t _log_ref, bool _disable_memtable,
-           size_t _batch_cnt = 0,
+           WriteCallback* _callback, PostWriteCallback* _post_callback,
+           uint64_t _log_ref, bool _disable_memtable, size_t _batch_cnt = 0,
            PreReleaseCallback* _pre_release_callback = nullptr)
         : sync(write_options.sync),
           no_slowdown(write_options.no_slowdown),
@@ -235,6 +237,7 @@ class WriteThread {
           log_used(0),
           log_ref(_log_ref),
           callback(_callback),
+          post_callback(_post_callback),
           made_waitable(false),
           state(STATE_INIT),
           write_group(nullptr),
@@ -247,7 +250,8 @@ class WriteThread {
     }
 
     Writer(const WriteOptions& write_options, std::vector<WriteBatch*>&& _batch,
-           WriteCallback* _callback, uint64_t _log_ref, bool _disable_memtable,
+           WriteCallback* _callback, PostWriteCallback* _post_callback,
+           uint64_t _log_ref, bool _disable_memtable,
            PreReleaseCallback* _pre_release_callback = nullptr)
         : sync(write_options.sync),
           no_slowdown(write_options.no_slowdown),
@@ -258,6 +262,7 @@ class WriteThread {
           log_used(0),
           log_ref(_log_ref),
           callback(_callback),
+          post_callback(_post_callback),
           made_waitable(false),
           state(STATE_INIT),
           write_group(nullptr),

@@ -314,5 +314,19 @@ PeriodicWorkTestScheduler* DBImpl::TEST_GetPeriodicWorkScheduler() const {
 size_t DBImpl::TEST_EstimateInMemoryStatsHistorySize() const {
   return EstimateInMemoryStatsHistorySize();
 }
+
+void DBImpl::TEST_ClearBackgroundJobs() {
+  // Matching `CloseHelper()`.
+  while (!flush_queue_.empty()) {
+    const FlushRequest& flush_req = PopFirstFromFlushQueue();
+    for (const auto& iter : flush_req) {
+      iter.first->UnrefAndTryDelete();
+    }
+  }
+  while (!compaction_queue_.empty()) {
+    auto cfd = PopFirstFromCompactionQueue();
+    cfd->UnrefAndTryDelete();
+  }
+}
 }  // namespace ROCKSDB_NAMESPACE
 #endif  // NDEBUG

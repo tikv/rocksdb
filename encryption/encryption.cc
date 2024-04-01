@@ -527,13 +527,22 @@ Status KeyManagedEncryptedEnv::RenameFile(const std::string& src_fname,
   }
   s = target()->RenameFile(src_fname, dst_fname);
   if (s.ok()) {
-    s = key_manager_->DeleteFile(src_fname);
+    s = key_manager_->DeleteFileExt(src_fname, dst_fname);
   } else {
     Status delete_status __attribute__((__unused__)) =
-        key_manager_->DeleteFile(dst_fname);
+        key_manager_->DeleteFileExt(dst_fname, src_fname);
     assert(delete_status.ok());
   }
   return s;
+}
+
+Status KeyManagedEncryptedEnv::DeleteDir(const std::string& dname) {
+  // We don't guarantee atomicity. Delete keys first.
+  Status s = key_manager_->DeleteFile(dname);
+  if (!s.ok()) {
+    return s;
+  }
+  return target()->DeleteDir(dname);
 }
 
 Env* NewKeyManagedEncryptedEnv(Env* base_env,

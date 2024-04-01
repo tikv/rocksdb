@@ -2552,6 +2552,9 @@ Status WriteBatchInternal::InsertInto(
     if (!w->status.ok()) {
       return w->status;
     }
+    if (w->post_callback) {
+      w->post_callback->Callback(w->sequence);
+    }
     assert(!seq_per_batch || w->batch_cnt != 0);
     assert(!seq_per_batch || inserter.sequence() - w->sequence == w->batch_cnt);
   }
@@ -2579,6 +2582,9 @@ Status WriteBatchInternal::InsertInto(
   inserter.set_log_number_ref(writer->log_ref);
   inserter.set_prot_info(writer->multi_batch.batches[0]->prot_info_.get());
   Status s = writer->multi_batch.batches[0]->Iterate(&inserter);
+  if (writer->post_callback && s.ok()) {
+    writer->post_callback->Callback(sequence);
+  }
   assert(!seq_per_batch || batch_cnt != 0);
   assert(!seq_per_batch || inserter.sequence() - sequence == batch_cnt);
   if (concurrent_memtable_writes) {

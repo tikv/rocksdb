@@ -9,6 +9,7 @@
 
 #include "db/compaction/compaction.h"
 
+#include <algorithm>
 #include <cinttypes>
 #include <vector>
 
@@ -566,6 +567,52 @@ std::unique_ptr<CompactionFilter> Compaction::CreateCompactionFilter(
       context);
 }
 
+std::pair<std::vector<Slice>, std::vector<uint64_t>>
+Compaction::CreateSegmentsForLevel(int level) const {
+  // So... the below files should be adjacently sorted.
+  // For now, this is only for creating the next-of-output level info, so it
+  // makes sense for not supporting L0.
+  assert(level != 0);
+
+  // Some of test cases may not initialize the version...
+  if (input_version_ == nullptr) {
+    return std::make_pair(std::vector<Slice>(), std::vector<uint64_t>());
+  }
+
+  const auto vsi = input_version_->storage_info();
+  if (level >= vsi->num_non_empty_levels()) {
+    // The level shall be empty.
+    return std::make_pair(std::vector<Slice>(), std::vector<uint64_t>());
+  }
+  const auto& files = vsi->LevelFilesBrief(level);
+  // The file metadata hold internal keys, however the compaction is bounded by
+  // user keys.
+  const auto user_cmp = immutable_options()->user_comparator;
+  const auto end = files.files + files.num_files;
+  const auto start = std::lower_bound(
+      files.files, end, smallest_user_key_,
+      [user_cmp](FdWithKeyRange& fd, const Slice& slice) {
+        return user_cmp->Compare(ExtractUserKey(fd.largest_key), slice) < 0;
+      });
+
+  if (start == end) {
+    // There is no overlapping of next level.
+    return std::make_pair(std::vector<Slice>(), std::vector<uint64_t>());
+  }
+  std::vector<Slice> ranges;
+  std::vector<uint64_t> sizes;
+  ranges.push_back(ExtractUserKey(start->smallest_key));
+  for (const FdWithKeyRange* iter = start; iter < end; iter++) {
+    if (user_cmp->Compare(ExtractUserKey(iter->smallest_key),
+                          largest_user_key_) > 0) {
+      break;
+    }
+    ranges.push_back(ExtractUserKey(iter->largest_key));
+    sizes.push_back(iter->fd.GetFileSize());
+  }
+  return std::make_pair(ranges, sizes);
+}
+
 std::unique_ptr<SstPartitioner> Compaction::CreateSstPartitioner() const {
   if (!immutable_options_.sst_partitioner_factory) {
     return nullptr;
@@ -577,6 +624,9 @@ std::unique_ptr<SstPartitioner> Compaction::CreateSstPartitioner() const {
   context.output_level = output_level_;
   context.smallest_user_key = smallest_user_key_;
   context.largest_user_key = largest_user_key_;
+  std::tie(context.output_next_level_boundaries,
+           context.output_next_level_size) =
+      CreateSegmentsForLevel(output_level_ + 1);
   return immutable_options_.sst_partitioner_factory->CreatePartitioner(context);
 }
 

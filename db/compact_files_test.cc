@@ -421,16 +421,13 @@ TEST_F(CompactFilesTest, CompactionFilterWithGetSv) {
       return true;
     }
 
-    void SetDB(DB* db) {
-      db_ = db;
-    }
+    void SetDB(DB* db) { db_ = db; }
 
     const char* Name() const override { return "FilterWithGet"; }
 
    private:
     DB* db_;
   };
-
 
   std::shared_ptr<FilterWithGet> cf(new FilterWithGet());
 
@@ -458,7 +455,6 @@ TEST_F(CompactFilesTest, CompactionFilterWithGetSv) {
         db->CompactFiles(ROCKSDB_NAMESPACE::CompactionOptions(), {fname}, 0));
   }
 
-
   delete db;
 }
 
@@ -473,10 +469,9 @@ TEST_F(CompactFilesTest, SentinelCompressionType) {
   }
   // Check that passing `CompressionType::kDisableCompressionOption` to
   // `CompactFiles` causes it to use the column family compression options.
-  for (auto compaction_style :
-       {CompactionStyle::kCompactionStyleLevel,
-        CompactionStyle::kCompactionStyleUniversal,
-        CompactionStyle::kCompactionStyleNone}) {
+  for (auto compaction_style : {CompactionStyle::kCompactionStyleLevel,
+                                CompactionStyle::kCompactionStyleUniversal,
+                                CompactionStyle::kCompactionStyleNone}) {
     DestroyDB(db_name_, Options());
     Options options;
     options.compaction_style = compaction_style;
@@ -607,7 +602,8 @@ TEST_F(CompactFilesTest, IsWriteStalled) {
     for (int j = 0; j < 100; ++j) {
       char key[16];
       bzero(key, 16);
-      sprintf(key, "foo%.2d", j);
+      snprintf(key, sizeof(key), "foo%.2d", j);
+
       ASSERT_OK(wb.Put(handles[0], key, "bar"));
     }
 
