@@ -1478,6 +1478,12 @@ void DBImpl::MarkLogsSynced(uint64_t up_to, bool synced_dir,
           wal.GetPreSyncSize() > 0) {
         synced_wals->AddWal(wal.number, WalMetadata(wal.GetPreSyncSize()));
       }
+      if (wal.GetPreSyncSize() != wal.writer->file()->GetFlushedSize()) {
+            ROCKS_LOG_INFO(immutable_db_options_.info_log,
+                     "size doesn't match log %" PRIu64
+                     " presync size %" PRIu64, "flushed size %" PRIu64 "\n",
+                     wal.number, wal.GetPreSyncSize(), wal.writer->file()->GetFlushedSize());
+      }
       auto writer = wal.ReleaseWriter();
       ROCKS_LOG_INFO(immutable_db_options_.info_log,
                      "deleting log %" PRIu64
