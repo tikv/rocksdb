@@ -1508,11 +1508,31 @@ IOStatus DBImpl::WriteToWAL(const WriteThread::WriteGroup& write_group,
       log_write_mutex_.Lock();
     }
 
+    if (logs_.back().number != log_writer->get_log_number()) {
+      ROCKS_LOG_INFO(immutable_db_options_.info_log,
+                     "new log file added after last write %" PRIu64 "writer log number %" PRIu64 "thread id %" PRIu64 "\n",
+                     logs_.back().number, log_writer->get_log_number(), pthread_self()); 
+    }
+    bool found = false;
     for (auto& log : logs_) {
       io_s = log.writer->file()->Sync(immutable_db_options_.use_fsync);
+      if (logs_.back().number == log_writer->get_log_number()) {
+        found = true;
+      }
       if (!io_s.ok()) {
+        ROCKS_LOG_INFO(immutable_db_options_.info_log,
+                     "WAL sync failed with log number %" PRIu64 "writer log number %" PRIu64 "thread id %" PRIu64 "\n",
+                     log.number, log_writer->get_log_number(), pthread_self());
         break;
       }
+      ROCKS_LOG_INFO(immutable_db_options_.info_log,
+                     "WAL sync completed with log number %" PRIu64 " writer log number %" PRIu64 "thread id %" PRIu64 "\n",
+                     log.number, log_writer->get_log_number(), pthread_self());
+    }
+
+    if (!found) {
+      ROCKS_LOG_INFO(immutable_db_options_.info_log,
+                     "write log file not found %" PRIu64 " thread id %" PRIu64 "\n", log_writer->get_log_number(), pthread_self());
     }
 
     if (UNLIKELY(needs_locking)) {
