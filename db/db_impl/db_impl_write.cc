@@ -2205,8 +2205,8 @@ Status DBImpl::SwitchMemtable(ColumnFamilyData* cfd, WriteContext* context) {
   }
   ROCKS_LOG_INFO(immutable_db_options_.info_log,
                  "[%s] New memtable created with log file: #%" PRIu64
-                 ". Immutable memtables: %d.\n",
-                 cfd->GetName().c_str(), new_log_number, num_imm_unflushed);
+                 ". Immutable memtables: %d.thread id %" PRIu64 "\n",
+                 cfd->GetName().c_str(), new_log_number, num_imm_unflushed, pthread_self());
   mutex_.Lock();
   if (recycle_log_number != 0) {
     // Since renaming the file is done outside DB mutex, we need to ensure
