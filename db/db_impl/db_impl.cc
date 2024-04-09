@@ -105,7 +105,7 @@
 #include "util/stop_watch.h"
 #include "util/string_util.h"
 #include "utilities/trace/replayer_impl.h"
-#include <logging.h>
+#include <thread>
 
 namespace ROCKSDB_NAMESPACE {
 
