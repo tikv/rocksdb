@@ -1483,16 +1483,16 @@ void DBImpl::MarkLogsSynced(uint64_t up_to, bool synced_dir,
         // Fully synced
         ROCKS_LOG_INFO(immutable_db_options_.info_log,
                 "erasing log %" PRIu64
-                " presync size %" PRIu64 " flushed size %" PRIu64 " thread id %" PRIu64 " thread name %s \n",
-                wal.number, wal.GetPreSyncSize(), wal.writer->file()->GetFlushedSize(), thread::get_id(), thread::get_name());
+                " presync size %" PRIu64 " flushed size %" PRIu64 " thread id %u\n",
+                wal.number, wal.GetPreSyncSize(), wal.writer->file()->GetFlushedSize(), pthread_self());
         logs_to_free_.push_back(wal.ReleaseWriter());
         it = logs_.erase(it);
       } else {
         assert(wal.GetPreSyncSize() < wal.writer->file()->GetFlushedSize());
         ROCKS_LOG_INFO(immutable_db_options_.info_log,
                 "size doesn't match log %" PRIu64
-                " presync size %" PRIu64 " flushed size %" PRIu64 " thread id %" PRIu64 " thread name %s \n",
-                wal.number, wal.GetPreSyncSize(), wal.writer->file()->GetFlushedSize(), thread::get_id(), thread::get_name());
+                " presync size %" PRIu64 " flushed size %" PRIu64 " thread id %u \n",
+                wal.number, wal.GetPreSyncSize(), wal.writer->file()->GetFlushedSize(), pthread_self());
         wal.FinishSync();
         ++it;
       }
