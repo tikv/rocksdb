@@ -322,8 +322,8 @@ void DBImpl::FindObsoleteFiles(JobContext* job_context, bool force,
       auto writer = log.ReleaseWriter();
       ROCKS_LOG_INFO(immutable_db_options_.info_log,
                      "deleting log %" PRIu64
-                     " from logs_, last seq number of WAL %" PRIu64 "\n",
-                     log.number, writer->GetLastSequence());
+                     " from logs_, last seq number of WAL %" PRIu64 "thread id %" PRIu64 "\n",
+                     log.number, writer->GetLastSequence(), pthread_self());
       logs_to_free_.push_back(writer);
       logs_.pop_front();
     }
@@ -500,8 +500,8 @@ void DBImpl::PurgeObsoleteFiles(JobContext& state, bool schedule_only) {
     // TODO: maybe check the return value of Close.
     ROCKS_LOG_INFO(immutable_db_options_.info_log,
                    "Close log %" PRIu64
-                   " from logs_, last Seq number in WAL %" PRIu64 "\n",
-                   w->get_log_number(), w->GetLastSequence());
+                   " from logs_, last Seq number in WAL %" PRIu64 , "thread id %" PRIu64 "\n",
+                   w->get_log_number(), w->GetLastSequence(), pthread_self());
     auto s = w->Close();
     s.PermitUncheckedError();
   }
