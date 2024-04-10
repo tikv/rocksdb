@@ -1528,7 +1528,7 @@ IOStatus DBImpl::WriteToWAL(const WriteThread::WriteGroup& write_group,
       ROCKS_LOG_INFO(immutable_db_options_.info_log,
                      "WAL sync completed with flush log number %" PRIu64 " current writer log number %" PRIu64 "presync size %" PRIu64 
                      " flushed size %" PRIu64 "last sequence %" PRIu64 "thread id %" PRIu64 "\n", log.number, log_writer->get_log_number(), log.GetPreSyncSize(), 
-                     log.writer->file()->GetFlushedSize(), log_writer->GetLastSequence(), pthread_self());
+                     log.writer->file()->GetFlushedSize(), log.writer->GetLastSequence(), pthread_self());
     }
 
     if (!found) {
