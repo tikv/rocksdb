@@ -1526,13 +1526,15 @@ IOStatus DBImpl::WriteToWAL(const WriteThread::WriteGroup& write_group,
         break;
       }
       ROCKS_LOG_INFO(immutable_db_options_.info_log,
-                     "WAL sync completed with log number %" PRIu64 " writer log number %" PRIu64 "thread id %" PRIu64 "\n",
-                     log.number, log_writer->get_log_number(), pthread_self());
+                     "WAL sync completed with flush log number %" PRIu64 " current writer log number %" PRIu64 "presync size %" PRIu64 
+                     " flushed size %" PRIu64 "last sequence %" PRIu64 "thread id %" PRIu64 "\n", log.number, log_writer->get_log_number(), log.GetPreSyncSize(), 
+                     log.writer->file()->GetFlushedSize(), log_writer->GetLastSequence(), pthread_self());
     }
 
     if (!found) {
       ROCKS_LOG_INFO(immutable_db_options_.info_log,
-                     "write log file not found %" PRIu64 " thread id %" PRIu64 "\n", log_writer->get_log_number(), pthread_self());
+                     "write log file not found %" PRIu64 "flushed size %" PRIu64 "last sequence %" PRIu64 "thread id %" PRIu64 "\n", 
+                     log_writer->get_log_number(), log_writer->file()->GetFlushedSize(), log_writer->GetLastSequence(), pthread_self());
     }
 
     if (UNLIKELY(needs_locking)) {
