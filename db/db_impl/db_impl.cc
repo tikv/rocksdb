@@ -1486,7 +1486,7 @@ void DBImpl::MarkLogsSynced(uint64_t up_to, bool synced_dir,
                      wal.number, wal.GetPreSyncSize(), wal.writer->file()->GetFlushedSize());
       } else {
         ROCKS_LOG_INFO(immutable_db_options_.info_log,
-                "erasing log %" PRIu64
+                "size match log %" PRIu64
                 " presync size %" PRIu64 " flushed size %" PRIu64 " thread id %" PRIu64 "\n",
                 wal.number, wal.GetPreSyncSize(), wal.writer->file()->GetFlushedSize(), pthread_self());
 
