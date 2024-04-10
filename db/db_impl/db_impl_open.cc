@@ -1735,7 +1735,7 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
         assert(log_writer->get_log_number() == log_file_number_size.number);
         impl->mutex_.AssertHeld();
         s = impl->WriteToWAL(empty_batch, log_writer, &log_used, &log_size,
-                             log_file_number_size);
+                             log_file_number_size, 0);
         if (s.ok()) {
           // Need to fsync, otherwise it might get lost after a power reset.
           s = impl->FlushWAL(false);

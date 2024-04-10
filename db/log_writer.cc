@@ -29,6 +29,7 @@ Writer::Writer(std::unique_ptr<WritableFileWriter>&& dest, uint64_t log_number,
     char t = static_cast<char>(i);
     type_crc_[i] = crc32c::Value(&t, 1);
   }
+  last_seq_ = 0;
 }
 
 Writer::~Writer() {

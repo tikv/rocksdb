@@ -15,6 +15,7 @@
 #include "rocksdb/io_status.h"
 #include "rocksdb/slice.h"
 #include "rocksdb/status.h"
+#include "rocksdb/types.h"
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -92,11 +93,16 @@ class Writer {
 
   bool TEST_BufferIsEmpty();
 
+  void SetLastSequence(SequenceNumber seq) { last_seq_ = seq; }
+
+  SequenceNumber GetLastSequence() const { return last_seq_; }
+
  private:
   std::unique_ptr<WritableFileWriter> dest_;
   size_t block_offset_;       // Current offset in block
   uint64_t log_number_;
   bool recycle_log_files_;
+  SequenceNumber last_seq_;
 
   // crc32c values for all supported record types.  These are
   // pre-computed to reduce the overhead of computing the crc of the

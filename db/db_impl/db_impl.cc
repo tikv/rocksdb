@@ -105,6 +105,7 @@
 #include "util/stop_watch.h"
 #include "util/string_util.h"
 #include "utilities/trace/replayer_impl.h"
+#include <thread>
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -1471,13 +1472,27 @@ void DBImpl::MarkLogsSynced(uint64_t up_to, bool synced_dir,
   for (auto it = logs_.begin(); it != logs_.end() && it->number <= up_to;) {
     auto& wal = *it;
     assert(wal.IsSyncing());
-
+    ROCKS_LOG_INFO(immutable_db_options_.info_log,
+                   "Synced log %" PRIu64 " from logs_\n", wal.number);
     if (logs_.size() > 1) {
       if (immutable_db_options_.track_and_verify_wals_in_manifest &&
           wal.GetPreSyncSize() > 0) {
         synced_wals->AddWal(wal.number, WalMetadata(wal.GetPreSyncSize()));
       }
-      logs_to_free_.push_back(wal.ReleaseWriter());
+      if (wal.GetPreSyncSize() != wal.writer->file()->GetFlushedSize()) {
+            ROCKS_LOG_INFO(immutable_db_options_.info_log,
+                     "size doesn't match log %" PRIu64
+                     " presync size %" PRIu64 " flushed size %" PRIu64 "sequence number %" PRIu64 "thread id %" PRIu64 "\n",
+                     wal.number, wal.GetPreSyncSize(), wal.writer->file()->GetFlushedSize(), wal.writer->GetLastSequence(), pthread_self());
+      } else {
+        ROCKS_LOG_INFO(immutable_db_options_.info_log,
+                "size match log %" PRIu64
+                " presync size %" PRIu64 " flushed size %" PRIu64 "sequence number %" PRIu64 " thread id %" PRIu64 "\n",
+                wal.number, wal.GetPreSyncSize(), wal.writer->file()->GetFlushedSize(), wal.writer->GetLastSequence(), pthread_self());
+
+      }
+      auto writer = wal.ReleaseWriter();
+      logs_to_free_.push_back(writer);
       it = logs_.erase(it);
     } else {
       wal.FinishSync();
@@ -1491,12 +1506,19 @@ void DBImpl::MarkLogsSynced(uint64_t up_to, bool synced_dir,
 
 void DBImpl::MarkLogsNotSynced(uint64_t up_to) {
   log_write_mutex_.AssertHeld();
+  uint64_t min_wal = 0;
   for (auto it = logs_.begin(); it != logs_.end() && it->number <= up_to;
        ++it) {
     auto& wal = *it;
+    if (min_wal == 0) {
+      min_wal = it->number;
+    }
     wal.FinishSync();
   }
   log_sync_cv_.SignalAll();
+  ROCKS_LOG_INFO(immutable_db_options_.info_log,
+                 "MarkLogsNotSynced from %" PRIu64 " to %" PRIu64 "\n", min_wal,
+                 up_to);
 }
 
 SequenceNumber DBImpl::GetLatestSequenceNumber() const {

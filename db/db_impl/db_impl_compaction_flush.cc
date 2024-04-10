@@ -1040,6 +1040,8 @@ Status DBImpl::CompactRangeInternal(const CompactRangeOptions& options,
   }
 
   if (s.ok() && flush_needed) {
+    ROCKS_LOG_INFO(immutable_db_options_.info_log,
+                   "flushing memtable thread id %" PRIu64 "\n", pthread_self()); 
     FlushOptions fo;
     fo.allow_write_stall = options.allow_write_stall;
     if (immutable_db_options_.atomic_flush) {
