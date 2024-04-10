@@ -1482,20 +1482,16 @@ void DBImpl::MarkLogsSynced(uint64_t up_to, bool synced_dir,
       if (wal.GetPreSyncSize() != wal.writer->file()->GetFlushedSize()) {
             ROCKS_LOG_INFO(immutable_db_options_.info_log,
                      "size doesn't match log %" PRIu64
-                     " presync size %" PRIu64 " flushed size %" PRIu64 "\n",
-                     wal.number, wal.GetPreSyncSize(), wal.writer->file()->GetFlushedSize());
+                     " presync size %" PRIu64 " flushed size %" PRIu64 "sequence number %" PRIu64 "thread id %" PRIu64 "\n",
+                     wal.number, wal.GetPreSyncSize(), wal.writer->file()->GetFlushedSize(), wal.writer->GetLastSequence(), pthread_self());
       } else {
         ROCKS_LOG_INFO(immutable_db_options_.info_log,
                 "size match log %" PRIu64
-                " presync size %" PRIu64 " flushed size %" PRIu64 " thread id %" PRIu64 "\n",
-                wal.number, wal.GetPreSyncSize(), wal.writer->file()->GetFlushedSize(), pthread_self());
+                " presync size %" PRIu64 " flushed size %" PRIu64 "sequence number %" PRIu64 " thread id %" PRIu64 "\n",
+                wal.number, wal.GetPreSyncSize(), wal.writer->file()->GetFlushedSize(), wal.writer->GetLastSequence(), pthread_self());
 
       }
       auto writer = wal.ReleaseWriter();
-      ROCKS_LOG_INFO(immutable_db_options_.info_log,
-                     "deleting log %" PRIu64
-                     " from logs_. Last Seq number of the WAL is %" PRIu64 "\n",
-                     wal.number, writer->GetLastSequence());
       logs_to_free_.push_back(writer);
       it = logs_.erase(it);
     } else {
