@@ -1516,7 +1516,7 @@ IOStatus DBImpl::WriteToWAL(const WriteThread::WriteGroup& write_group,
     bool found = false;
     for (auto& log : logs_) {
       io_s = log.writer->file()->Sync(immutable_db_options_.use_fsync);
-      if (logs_.back().number == log_writer->get_log_number()) {
+      if (log.number == log_writer->get_log_number()) {
         found = true;
       }
       if (!io_s.ok()) {
