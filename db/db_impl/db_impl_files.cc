@@ -500,7 +500,7 @@ void DBImpl::PurgeObsoleteFiles(JobContext& state, bool schedule_only) {
     // TODO: maybe check the return value of Close.
     ROCKS_LOG_INFO(immutable_db_options_.info_log,
                    "Close log %" PRIu64
-                   " from logs_, last Seq number in WAL %" PRIu64 , "thread id %" PRIu64 "\n",
+                   " from logs_, last Seq number in WAL %" PRIu64 "thread id %" PRIu64 "\n",
                    w->get_log_number(), w->GetLastSequence(), pthread_self());
     auto s = w->Close();
     s.PermitUncheckedError();
