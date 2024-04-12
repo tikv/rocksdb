@@ -1488,13 +1488,18 @@ IOStatus DBImpl::WriteToWAL(const WriteThread::WriteGroup& write_group,
   }
 
   {
-      log_write_mutex_.Lock();
+     const bool needs_locking = manual_wal_flush_ && !two_write_queues_;
+     if (UNLIKELY(needs_locking)) {
+       log_write_mutex_.Lock();
+     }
       auto num = logs_.back().number;
-      log_write_mutex_.Unlock(); 
+      if (UNLIKELY(needs_locking)) {
+        log_write_mutex_.Unlock(); 
+      }
       if (num != log_writer->get_log_number()) {
         ROCKS_LOG_INFO(immutable_db_options_.info_log,
                        "new log file added after last write %" PRIu64 "writer log number %" PRIu64 "thread id %" PRIu64 "\n",
-                       logs_.back().number, log_writer->get_log_number(), pthread_self()); 
+                       num, log_writer->get_log_number(), pthread_self()); 
       }
   }
 
