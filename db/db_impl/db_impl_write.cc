@@ -1487,6 +1487,17 @@ IOStatus DBImpl::WriteToWAL(const WriteThread::WriteGroup& write_group,
     cached_recoverable_state_empty_ = false;
   }
 
+  {
+      log_write_mutex_.Lock();
+      auto num = logs_.back().number;
+      log_write_mutex_.Unlock(); 
+      if (num == log_writer->get_log_number()) {
+        ROCKS_LOG_INFO(immutable_db_options_.info_log,
+                       "new log file added after last write %" PRIu64 "writer log number %" PRIu64 "thread id %" PRIu64 "\n",
+                       logs_.back().number, log_writer->get_log_number(), pthread_self()); 
+      }
+  }
+  
   if (io_s.ok() && need_log_sync) {
     StopWatch sw(immutable_db_options_.clock, stats_, WAL_FILE_SYNC_MICROS);
     // It's safe to access logs_ with unlocked mutex_ here because:
@@ -1504,15 +1515,7 @@ IOStatus DBImpl::WriteToWAL(const WriteThread::WriteGroup& write_group,
     //   corruption
 
     const bool needs_locking = manual_wal_flush_ && !two_write_queues_;
-    if (UNLIKELY(needs_locking)) {
-      log_write_mutex_.Lock();
-    }
 
-    if (logs_.back().number != log_writer->get_log_number()) {
-      ROCKS_LOG_INFO(immutable_db_options_.info_log,
-                     "new log file added after last write %" PRIu64 "writer log number %" PRIu64 "thread id %" PRIu64 "\n",
-                     logs_.back().number, log_writer->get_log_number(), pthread_self()); 
-    }
     bool found = false;
     for (auto& log : logs_) {
       io_s = log.writer->file()->Sync(immutable_db_options_.use_fsync);

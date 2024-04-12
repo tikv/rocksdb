@@ -1473,7 +1473,7 @@ void DBImpl::MarkLogsSynced(uint64_t up_to, bool synced_dir,
     auto& wal = *it;
     assert(wal.IsSyncing());
     ROCKS_LOG_INFO(immutable_db_options_.info_log,
-                   "Synced log %" PRIu64 " from logs_\n", wal.number);
+                   "Synced log %" PRIu64 " from logs_ thread id %" PRIu64 "\n", wal.number, pthread_self());
     if (logs_.size() > 1) {
       if (immutable_db_options_.track_and_verify_wals_in_manifest &&
           wal.GetPreSyncSize() > 0) {
