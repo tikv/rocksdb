@@ -1521,6 +1521,10 @@ IOStatus DBImpl::WriteToWAL(const WriteThread::WriteGroup& write_group,
 
     const bool needs_locking = manual_wal_flush_ && !two_write_queues_;
 
+    if (UNLIKELY(needs_locking)) {
+      log_write_mutex_.Lock();
+    }
+
     bool found = false;
     for (auto& log : logs_) {
       io_s = log.writer->file()->Sync(immutable_db_options_.use_fsync);
