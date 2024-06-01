@@ -389,7 +389,8 @@ Status DBImpl::MultiBatchWriteImpl(const WriteOptions& write_options,
     stats->AddDBStats(InternalStats::kIntStatsNumKeysWritten, total_count);
     RecordTick(stats_, NUMBER_KEYS_WRITTEN, total_count);
 
-    while (writer.ConsumeOne());
+    while (writer.ConsumeOne())
+      ;
     MultiBatchWriteCommit(writer.request);
 
     WriteStatusCheck(writer.status);

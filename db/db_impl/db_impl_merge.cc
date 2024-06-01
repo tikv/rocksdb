@@ -57,6 +57,32 @@ Status DBImpl::ValidateForMerge(const MergeInstanceOptions& mopts,
   return Status::OK();
 }
 
+Status DBImpl::CheckInRange(const Slice* begin, const Slice* end) {
+  Status s;
+  if (begin == nullptr && end == nullptr) {
+    return s;
+  }
+  for (auto cfd : *versions_->GetColumnFamilySet()) {
+    assert(cfd != nullptr);
+    auto* comparator = cfd->user_comparator();
+    PinnableSlice smallest, largest;
+    bool found = false;
+    s = cfd->GetUserKeyRange(&smallest, &largest, &found);
+    if (!s.ok()) {
+      return s;
+    }
+    if (!found) {
+      continue;
+    }
+    if (begin != nullptr && comparator->Compare(smallest, *begin) < 0) {
+      return Status::InvalidArgument("Has data smaller than left boundary");
+    } else if (end != nullptr && comparator->Compare(largest, *end) >= 0) {
+      return Status::InvalidArgument("Has data larger than right boundary");
+    }
+  }
+  return s;
+}
+
 Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
                                       const std::vector<DB*>& instances) {
   Status s;
@@ -155,7 +181,8 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
   //
   // - Acquire snapshots of table files (`SuperVersion`).
   //
-  // - Do memtable merge if needed. We do this together with acquiring snapshot
+  // - Do memtable merge if needed. We do this together with acquiring
+  // snapshot
   //   to avoid the case where a memtable is flushed shortly after being
   //   merged, and the resulting L0 data is merged again as a table file.
   assert(s.ok());
@@ -166,8 +193,8 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
   // source data. See [A].
   uint64_t max_seq_number = 0;
   // RocksDB's recovery is heavily dependent on the one-on-one mapping between
-  // memtable and WAL (even when WAL is empty). Each memtable keeps a record of
-  // `next_log_number` to mark its position within a series of WALs. This
+  // memtable and WAL (even when WAL is empty). Each memtable keeps a record
+  // of `next_log_number` to mark its position within a series of WALs. This
   // counter must be monotonic. We work around this issue by setting the
   // counters of all involved memtables to the same maximum value. See [B].
   uint64_t max_log_number = 0;

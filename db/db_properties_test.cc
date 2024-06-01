@@ -1081,7 +1081,6 @@ TEST_F(DBPropertiesTest, EstimateCompressionRatio) {
   ASSERT_GT(CompressionRatioAtLevel(1), 10.0);
 }
 
-
 class CountingUserTblPropCollector : public TablePropertiesCollector {
  public:
   const char* Name() const override { return "CountingUserTblPropCollector"; }
@@ -2171,7 +2170,7 @@ TEST_F(DBPropertiesTest, GetMapPropertyWriteStallStats) {
                           WriteStallCause::kMemtableLimit}) {
     if (test_cause == WriteStallCause::kWriteBufferManagerLimit) {
       options.write_buffer_manager.reset(
-          new WriteBufferManager(100000, nullptr, true));
+          new WriteBufferManager(100000, nullptr, 1.0));
     } else if (test_cause == WriteStallCause::kMemtableLimit) {
       options.max_write_buffer_number = 2;
       options.disable_auto_compactions = true;
@@ -2207,13 +2206,13 @@ TEST_F(DBPropertiesTest, GetMapPropertyWriteStallStats) {
     if (test_cause == WriteStallCause::kWriteBufferManagerLimit) {
       ASSERT_OK(dbfull()->Put(
           WriteOptions(), handles_[1], Key(1),
-          DummyString(options.write_buffer_manager->buffer_size())));
+          DummyString(options.write_buffer_manager->flush_size())));
 
       WriteOptions wo;
       wo.no_slowdown = true;
       Status s = dbfull()->Put(
           wo, handles_[1], Key(2),
-          DummyString(options.write_buffer_manager->buffer_size()));
+          DummyString(options.write_buffer_manager->flush_size()));
       ASSERT_TRUE(s.IsIncomplete());
       ASSERT_TRUE(s.ToString().find("Write stall") != std::string::npos);
     } else if (test_cause == WriteStallCause::kMemtableLimit) {
@@ -2363,7 +2362,6 @@ TEST_F(DBPropertiesTest, TableMetaIndexKeys) {
     EXPECT_EQ("NOT_FOUND", PopMetaIndexKey(meta_iter.get()));
   } while (ChangeOptions());
 }
-
 
 }  // namespace ROCKSDB_NAMESPACE
 

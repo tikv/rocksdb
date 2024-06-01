@@ -1071,6 +1071,8 @@ class DBImpl : public DB {
   Status ValidateForMerge(const MergeInstanceOptions& merge_options,
                           DBImpl* rhs);
 
+  Status CheckInRange(const Slice* begin, const Slice* end) override;
+
   Status MergeDisjointInstances(const MergeInstanceOptions& merge_options,
                                 const std::vector<DB*>& instances) override;
 
