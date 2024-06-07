@@ -30,7 +30,38 @@
 
 #include "util/string_util.h"
 
+#include <execinfo.h>
+
+#include "logging/logging.h"
+
 namespace ROCKSDB_NAMESPACE {
+
+static std::shared_ptr<Logger> global_info_log;
+static std::atomic<unsigned int> global_lock_id(0);
+
+std::string print_backtrace() {
+    // Buffer to store backtrace addresses
+    void* buffer[100];
+
+    // Capture the backtrace
+    int nptrs = backtrace(buffer, 100);
+
+    // Convert addresses to strings
+    char** strings = backtrace_symbols(buffer, nptrs);
+    if (strings == nullptr) {
+        perror("backtrace_symbols");
+        exit(EXIT_FAILURE);
+    }
+
+    std::ostringstream oss;
+    for (int i = 0; i < nptrs; i++) {
+        oss << strings[i] << "\n";
+    }
+    // Free the memory allocated for the strings
+    free(strings);
+
+    return oss.str();
+}
 
 // We want to give users opportunity to default all the mutexes to adaptive if
 // not specified otherwise. This enables a quick way to conduct various
@@ -79,6 +110,13 @@ Mutex::Mutex(bool adaptive) {
 Mutex::~Mutex() { PthreadCall("destroy mutex", pthread_mutex_destroy(&mu_)); }
 
 void Mutex::Lock() {
+  std::string b = print_backtrace();
+  if (global_info_log.get() != nullptr) {
+    ROCKS_LOG_INFO(global_info_log,
+                  "dbg Mutex::Lock %u@%p backtrace %s",
+                  lock_id_, this, b);
+  }
+
   PthreadCall("lock", pthread_mutex_lock(&mu_));
 #ifndef NDEBUG
   locked_ = true;
@@ -90,6 +128,11 @@ void Mutex::Unlock() {
   locked_ = false;
 #endif
   PthreadCall("unlock", pthread_mutex_unlock(&mu_));
+  if (global_info_log.get() != nullptr) {
+    ROCKS_LOG_INFO(global_info_log,
+                  "dbg Mutex::Unlock %u@%p",
+                  lock_id_, this);
+  }
 }
 
 bool Mutex::TryLock() {

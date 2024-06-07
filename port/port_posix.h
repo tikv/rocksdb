@@ -129,6 +129,7 @@ class Mutex {
 #ifndef NDEBUG
   bool locked_ = false;
 #endif
+  unsigned int lock_id_;
 };
 
 class RWMutex {
