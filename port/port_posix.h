@@ -87,6 +87,8 @@
 
 namespace ROCKSDB_NAMESPACE {
 
+static std::shared_ptr<Logger> global_info_log;
+
 extern const bool kDefaultToAdaptiveMutex;
 
 namespace port {
