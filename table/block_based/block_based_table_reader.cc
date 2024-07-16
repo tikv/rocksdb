@@ -76,9 +76,7 @@ extern const uint64_t kBlockBasedTableMagicNumber;
 extern const std::string kHashIndexPrefixesBlock;
 extern const std::string kHashIndexPrefixesMetadataBlock;
 
-BlockBasedTable::~BlockBasedTable() {
-  delete rep_;
-}
+BlockBasedTable::~BlockBasedTable() { delete rep_; }
 
 namespace {
 // Read the block identified by "handle" from "file".
@@ -900,29 +898,27 @@ Status BlockBasedTable::PrefetchIndexAndFilterBlocks(
 
   // Find filter handle and filter type
   if (rep_->filter_policy) {
-    for (auto filter_type :
-         {Rep::FilterType::kFullFilter, Rep::FilterType::kPartitionedFilter,
-          Rep::FilterType::kBlockFilter}) {
-      std::string prefix;
-      switch (filter_type) {
-        case Rep::FilterType::kFullFilter:
-          prefix = kFullFilterBlockPrefix;
-          break;
-        case Rep::FilterType::kPartitionedFilter:
-          prefix = kPartitionedFilterBlockPrefix;
-          break;
-        case Rep::FilterType::kBlockFilter:
-          prefix = kFilterBlockPrefix;
-          break;
-        default:
-          assert(0);
-      }
-      std::string filter_block_key = prefix;
-      filter_block_key.append(rep_->filter_policy->Name());
-      if (FindMetaBlock(meta_iter, filter_block_key, &rep_->filter_handle)
-              .ok()) {
-        rep_->filter_type = filter_type;
-        break;
+    for (const auto& [filter_type, prefix] :
+         {std::make_pair(Rep::FilterType::kFullFilter, kFullFilterBlockPrefix),
+          std::make_pair(Rep::FilterType::kPartitionedFilter,
+                         kPartitionedFilterBlockPrefix),
+          std::make_pair(Rep::FilterType::kBlockFilter, kFilterBlockPrefix)}) {
+      meta_iter->Seek(prefix);
+      if (meta_iter->status().ok() && meta_iter->Valid()) {
+        Slice key = meta_iter->key();
+        if (key.starts_with(prefix)) {
+          key.remove_suffix(prefix.size());
+          Slice filter_policy_name_slice = Slice(rep_->filter_policy->Name());
+          if (key.starts_with("rocksdb.BuiltinBloomFilter") ||
+              key.compare(filter_policy_name_slice) == 0) {
+            Slice v = meta_iter->value();
+            Status s = rep_->filter_handle.DecodeFrom(&v);
+            if (s.ok()) {
+              rep_->filter_type = filter_type;
+              break;
+            }
+          }
+        }
       }
     }
   }
