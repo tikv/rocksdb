@@ -898,21 +898,30 @@ Status BlockBasedTable::PrefetchIndexAndFilterBlocks(
 
   // Find filter handle and filter type
   if (rep_->filter_policy) {
-    for (const auto& [filter_type, prefix] :
+    for (const auto& pair :
          {std::make_pair(Rep::FilterType::kFullFilter, kFullFilterBlockPrefix),
           std::make_pair(Rep::FilterType::kPartitionedFilter,
                          kPartitionedFilterBlockPrefix),
           std::make_pair(Rep::FilterType::kBlockFilter, kFilterBlockPrefix)}) {
+      auto filter_type = pair.first;
+      Slice prefix = pair.second;
       meta_iter->Seek(prefix);
       if (meta_iter->status().ok() && meta_iter->Valid()) {
         Slice key = meta_iter->key();
         if (key.starts_with(prefix)) {
-          key.remove_suffix(prefix.size());
+          key.remove_prefix(prefix.size());
           Slice filter_policy_name_slice = Slice(rep_->filter_policy->Name());
+          // This is a temporary fix to handle the case where the filter
+          // policy name changes after the filter block is written.
+          // It was rocksdb.BuiltinBloomFilter and after TiKV 7.2 it is
+          // rocksdb.BuiltinBloomFilter.XXX where XXX is the built-in filter
+          // policy name, like FullBloom, Ribbon etc. Since TiKV only uses
+          // built-in filter policies, and built-in filter policies can be
+          // used interchangeably, we can just compare the prefix of the filter.
           if (key.starts_with("rocksdb.BuiltinBloomFilter") ||
               key.compare(filter_policy_name_slice) == 0) {
             Slice v = meta_iter->value();
-            Status s = rep_->filter_handle.DecodeFrom(&v);
+            s = rep_->filter_handle.DecodeFrom(&v);
             if (s.ok()) {
               rep_->filter_type = filter_type;
               break;
