@@ -12,6 +12,8 @@
 
 #include "db/dbformat.h"
 #include "rocksdb/db.h"
+#include "util/mutexlock.h"
+#include "port/port.h"
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -36,7 +38,7 @@ class SnapshotImpl : public Snapshot {
   SnapshotImpl* prev_;
   SnapshotImpl* next_;
 
-  SnapshotList* list_;                 // just for sanity checks
+  SnapshotList* list_;  // just for sanity checks
 
   int64_t unix_time_;
 
@@ -49,7 +51,7 @@ class SnapshotList {
   SnapshotList() {
     list_.prev_ = &list_;
     list_.next_ = &list_;
-    list_.number_ = 0xFFFFFFFFL;      // placeholder marker, for debugging
+    list_.number_ = 0xFFFFFFFFL;  // placeholder marker, for debugging
     // Set all the variables to make UBSAN happy.
     list_.list_ = nullptr;
     list_.unix_time_ = 0;
@@ -60,9 +62,22 @@ class SnapshotList {
   // No copy-construct.
   SnapshotList(const SnapshotList&) = delete;
 
-  bool empty() const { return list_.next_ == &list_; }
-  SnapshotImpl* oldest() const { assert(!empty()); return list_.next_; }
-  SnapshotImpl* newest() const { assert(!empty()); return list_.prev_; }
+  bool empty(bool lock = true) const {
+    if (lock) {
+      MutexLock l(&mutex_);
+      return list_.next_ == &list_;
+    } else {
+      return list_.next_ == &list_;
+    }
+  }
+  SnapshotImpl* oldest() const {
+    assert(!empty(false));
+    return list_.next_;
+  }
+  SnapshotImpl* newest() const {
+    assert(!empty(false));
+    return list_.prev_;
+  }
 
   SnapshotImpl* New(SnapshotImpl* s, SequenceNumber seq, uint64_t unix_time,
                     bool is_write_conflict_boundary) {
@@ -70,6 +85,7 @@ class SnapshotList {
     s->unix_time_ = unix_time;
     s->is_write_conflict_boundary_ = is_write_conflict_boundary;
     s->list_ = this;
+    MutexLock l(&mutex_);
     s->next_ = &list_;
     s->prev_ = list_.prev_;
     s->prev_->next_ = s;
@@ -80,6 +96,7 @@ class SnapshotList {
 
   // Do not responsible to free the object.
   void Delete(const SnapshotImpl* s) {
+    MutexLock l(&mutex_);
     assert(s->list_ == this);
     s->prev_->next_ = s->next_;
     s->next_->prev_ = s->prev_;
@@ -99,6 +116,7 @@ class SnapshotList {
   void GetAll(std::vector<SequenceNumber>* snap_vector,
               SequenceNumber* oldest_write_conflict_snapshot = nullptr,
               const SequenceNumber& max_seq = kMaxSequenceNumber) const {
+    MutexLock l(&mutex_);
     std::vector<SequenceNumber>& ret = *snap_vector;
     // So far we have no use case that would pass a non-empty vector
     assert(ret.size() == 0);
@@ -107,7 +125,7 @@ class SnapshotList {
       *oldest_write_conflict_snapshot = kMaxSequenceNumber;
     }
 
-    if (empty()) {
+    if (empty(false)) {
       return;
     }
     const SnapshotImpl* s = &list_;
@@ -135,14 +153,16 @@ class SnapshotList {
 
   // get the sequence number of the most recent snapshot
   SequenceNumber GetNewest() {
-    if (empty()) {
+    MutexLock l(&mutex_);
+    if (empty(false)) {
       return 0;
     }
     return newest()->number_;
   }
 
   int64_t GetOldestSnapshotTime() const {
-    if (empty()) {
+    MutexLock l(&mutex_);
+    if (empty(false)) {
       return 0;
     } else {
       return oldest()->unix_time_;
@@ -150,19 +170,25 @@ class SnapshotList {
   }
 
   int64_t GetOldestSnapshotSequence() const {
-    if (empty()) {
+    MutexLock l(&mutex_);
+    if (empty(false)) {
       return 0;
     } else {
       return oldest()->GetSequenceNumber();
     }
   }
 
-  uint64_t count() const { return count_; }
+  uint64_t count() const {
+    MutexLock l(&mutex_);
+    return count_;
+  }
 
  private:
   // Dummy head of doubly-linked list of snapshots
   SnapshotImpl list_;
   uint64_t count_;
+
+  mutable port::Mutex mutex_;
 };
 
 }  // namespace ROCKSDB_NAMESPACE

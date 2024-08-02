@@ -419,8 +419,7 @@ class DBImpl : public DB {
   virtual Status GetSortedWalFiles(VectorLogPtr& files) override;
   virtual Status GetCurrentWalFile(
       std::unique_ptr<LogFile>* current_log_file) override;
-  virtual Status GetCreationTimeOfOldestFile(
-      uint64_t* creation_time) override;
+  virtual Status GetCreationTimeOfOldestFile(uint64_t* creation_time) override;
 
   virtual Status GetUpdatesSince(
       SequenceNumber seq_number, std::unique_ptr<TransactionLogIterator>* iter,
@@ -755,7 +754,6 @@ class DBImpl : public DB {
   void LoadSnapshots(std::vector<SequenceNumber>* snap_vector,
                      SequenceNumber* oldest_write_conflict_snapshot,
                      const SequenceNumber& max_seq) const {
-    InstrumentedMutexLock l(mutex());
     snapshots().GetAll(snap_vector, oldest_write_conflict_snapshot, max_seq);
   }
 

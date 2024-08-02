@@ -3210,20 +3210,14 @@ const Snapshot* DBImpl::GetSnapshotForWriteConflictBoundary() {
 #endif  // ROCKSDB_LITE
 
 SnapshotImpl* DBImpl::GetSnapshotImpl(bool is_write_conflict_boundary,
-                                      bool lock) {
+                                      bool _lock) {
   int64_t unix_time = 0;
   immutable_db_options_.clock->GetCurrentTime(&unix_time)
       .PermitUncheckedError();  // Ignore error
   SnapshotImpl* s = new SnapshotImpl;
 
-  if (lock) {
-    mutex_.Lock();
-  }
   // returns null if the underlying memtable does not support snapshot.
   if (!is_snapshot_supported_) {
-    if (lock) {
-      mutex_.Unlock();
-    }
     delete s;
     return nullptr;
   }
@@ -3232,23 +3226,8 @@ SnapshotImpl* DBImpl::GetSnapshotImpl(bool is_write_conflict_boundary,
                           : versions_->LastPublishedSequence();
   SnapshotImpl* snapshot =
       snapshots_.New(s, snapshot_seq, unix_time, is_write_conflict_boundary);
-  if (lock) {
-    mutex_.Unlock();
-  }
   return snapshot;
 }
-
-namespace {
-using CfdList = autovector<ColumnFamilyData*, 2>;
-bool CfdListContains(const CfdList& list, ColumnFamilyData* cfd) {
-  for (const ColumnFamilyData* t : list) {
-    if (t == cfd) {
-      return true;
-    }
-  }
-  return false;
-}
-}  //  namespace
 
 void DBImpl::ReleaseSnapshot(const Snapshot* s) {
   if (s == nullptr) {
@@ -3258,50 +3237,7 @@ void DBImpl::ReleaseSnapshot(const Snapshot* s) {
     return;
   }
   const SnapshotImpl* casted_s = reinterpret_cast<const SnapshotImpl*>(s);
-  {
-    InstrumentedMutexLock l(&mutex_);
-    snapshots_.Delete(casted_s);
-    uint64_t oldest_snapshot;
-    if (snapshots_.empty()) {
-      if (last_seq_same_as_publish_seq_) {
-        oldest_snapshot = versions_->LastSequence();
-      } else {
-        oldest_snapshot = versions_->LastPublishedSequence();
-      }
-    } else {
-      oldest_snapshot = snapshots_.oldest()->number_;
-    }
-    // Avoid to go through every column family by checking a global threshold
-    // first.
-    if (oldest_snapshot > bottommost_files_mark_threshold_) {
-      CfdList cf_scheduled;
-      for (auto* cfd : *versions_->GetColumnFamilySet()) {
-        cfd->current()->storage_info()->UpdateOldestSnapshot(oldest_snapshot);
-        if (!cfd->current()
-                 ->storage_info()
-                 ->BottommostFilesMarkedForCompaction()
-                 .empty()) {
-          SchedulePendingCompaction(cfd);
-          MaybeScheduleFlushOrCompaction();
-          cf_scheduled.push_back(cfd);
-        }
-      }
-
-      // Calculate a new threshold, skipping those CFs where compactions are
-      // scheduled. We do not do the same pass as the previous loop because
-      // mutex might be unlocked during the loop, making the result inaccurate.
-      SequenceNumber new_bottommost_files_mark_threshold = kMaxSequenceNumber;
-      for (auto* cfd : *versions_->GetColumnFamilySet()) {
-        if (CfdListContains(cf_scheduled, cfd)) {
-          continue;
-        }
-        new_bottommost_files_mark_threshold = std::min(
-            new_bottommost_files_mark_threshold,
-            cfd->current()->storage_info()->bottommost_files_mark_threshold());
-      }
-      bottommost_files_mark_threshold_ = new_bottommost_files_mark_threshold;
-    }
-  }
+  { snapshots_.Delete(casted_s); }
   delete casted_s;
 }
 
