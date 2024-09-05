@@ -48,6 +48,8 @@ class RateLimiter {
   virtual Status SetSingleBurstBytes(int64_t /* single_burst_bytes */) {
     return Status::NotSupported();
   }
+  // Dynamically change rate limiter's auto_tuned mode.
+  virtual void SetAutoTuned(bool /*auto_tuned*/) {}
 
   // Deprecated. New RateLimiter derived classes should override
   // Request(const int64_t, const Env::IOPriority, Statistics*) or
@@ -120,6 +122,8 @@ class RateLimiter {
 
   virtual int64_t GetBytesPerSecond() const = 0;
 
+  virtual bool GetAutoTuned() const { return false; }
+
   virtual bool IsRateLimited(OpType op_type) {
     if ((mode_ == RateLimiter::Mode::kWritesOnly &&
          op_type == RateLimiter::OpType::kRead) ||
@@ -129,6 +133,8 @@ class RateLimiter {
     }
     return true;
   }
+
+  virtual void PaceUp(bool /*critical*/) {}
 
  protected:
   Mode GetMode() { return mode_; }
@@ -164,5 +170,12 @@ extern RateLimiter* NewGenericRateLimiter(
     int32_t fairness = 10,
     RateLimiter::Mode mode = RateLimiter::Mode::kWritesOnly,
     bool auto_tuned = false);
+
+extern RateLimiter* NewWriteAmpBasedRateLimiter(
+    int64_t rate_bytes_per_sec, int64_t refill_period_us = 100 * 1000,
+    int32_t fairness = 10,
+    RateLimiter::Mode mode = RateLimiter::Mode::kWritesOnly,
+    bool auto_tuned = false, int tune_per_sec = 1,
+    size_t smooth_window_size = 300, size_t recent_window_size = 30);
 
 }  // namespace ROCKSDB_NAMESPACE

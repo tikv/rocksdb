@@ -622,7 +622,8 @@ ColumnFamilyData::ColumnFamilyData(
     }
   }
 
-  RecalculateWriteStallConditions(mutable_cf_options_);
+  RecalculateWriteStallConditions(mutable_cf_options_,
+                                  ioptions_.rate_limiter.get());
 
   if (cf_options.table_factory->IsInstanceOf(
           TableFactory::kBlockBasedTableName()) &&
@@ -935,7 +936,7 @@ ColumnFamilyData::GetWriteStallConditionAndCause(
 }
 
 WriteStallCondition ColumnFamilyData::RecalculateWriteStallConditions(
-    const MutableCFOptions& mutable_cf_options) {
+    const MutableCFOptions& mutable_cf_options, RateLimiter* rate_limiter) {
   auto write_stall_condition = WriteStallCondition::kNormal;
   if (current_ != nullptr) {
     auto* vstorage = current_->storage_info();
@@ -1064,6 +1065,9 @@ WriteStallCondition ColumnFamilyData::RecalculateWriteStallConditions(
         // compaction.
         write_controller_token_ =
             write_controller->GetCompactionPressureToken();
+        if (rate_limiter) {
+          rate_limiter->PaceUp(false /*critical*/);
+        }
       } else if (vstorage->estimated_compaction_needed_bytes() >=
                  GetPendingCompactionBytesForCompactionSpeedup(
                      mutable_cf_options, vstorage)) {
@@ -1091,6 +1095,16 @@ WriteStallCondition ColumnFamilyData::RecalculateWriteStallConditions(
         // pressure.
         write_controller->low_pri_rate_limiter()->SetBytesPerSecond(write_rate /
                                                                     4);
+      }
+    }
+    if (rate_limiter) {
+      // pace up limiter when close to write stall
+      if (write_stall_condition != WriteStallCondition::kNormal ||
+          vstorage->l0_delay_trigger_count() >=
+              0.8 * mutable_cf_options.level0_slowdown_writes_trigger ||
+          vstorage->estimated_compaction_needed_bytes() >=
+              0.5 * mutable_cf_options.soft_pending_compaction_bytes_limit) {
+        rate_limiter->PaceUp(true /*critical*/);
       }
     }
     prev_compaction_needed_bytes_ = compaction_needed_bytes;
@@ -1320,8 +1334,8 @@ void ColumnFamilyData::InstallSuperVersion(
     // Should not recalculate slow down condition if nothing has changed, since
     // currently RecalculateWriteStallConditions() treats it as further slowing
     // down is needed.
-    super_version_->write_stall_condition =
-        RecalculateWriteStallConditions(mutable_cf_options);
+    super_version_->write_stall_condition = RecalculateWriteStallConditions(
+        mutable_cf_options, ioptions_.rate_limiter.get());
   } else {
     super_version_->write_stall_condition =
         old_superversion->write_stall_condition;

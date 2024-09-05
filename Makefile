@@ -1990,6 +1990,9 @@ wide_column_serialization_test: $(OBJ_DIR)/db/wide/wide_column_serialization_tes
 wide_columns_helper_test: $(OBJ_DIR)/db/wide/wide_columns_helper_test.o $(TEST_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 
+write_amp_based_rate_limiter_test: $(OBJ_DIR)/utilities/rate_limiters/write_amp_based_rate_limiter_test.o $(TEST_LIBRARY) $(LIBRARY)
+	$(AM_LINK)
+
 #-------------------------------------------------
 # make install related stuff
 PREFIX ?= /usr/local

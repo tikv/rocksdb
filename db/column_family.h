@@ -478,7 +478,8 @@ class ColumnFamilyData {
   // Recalculate some stall conditions, which are changed only during
   // compaction, adding new memtable and/or recalculation of compaction score.
   WriteStallCondition RecalculateWriteStallConditions(
-      const MutableCFOptions& mutable_cf_options);
+      const MutableCFOptions& mutable_cf_options,
+      RateLimiter* rate_limiter = nullptr);
 
   void set_initialized() { initialized_.store(true); }
 
