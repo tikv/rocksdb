@@ -42,6 +42,7 @@
 #include "db/db_impl/db_impl.h"
 #include "db/malloc_stats.h"
 #include "db/version_set.h"
+#include "encryption/in_memory_key_manager.h"
 #include "monitoring/histogram.h"
 #include "monitoring/statistics_impl.h"
 #include "options/cf_options.h"
@@ -50,6 +51,7 @@
 #include "rocksdb/cache.h"
 #include "rocksdb/convenience.h"
 #include "rocksdb/db.h"
+#include "rocksdb/encryption.h"
 #include "rocksdb/env.h"
 #include "rocksdb/filter_policy.h"
 #include "rocksdb/memtablerep.h"
@@ -243,9 +245,11 @@ DEFINE_string(
     "operation includes a rare but possible retry in case it got "
     "`Status::Incomplete()`. This happens upon encountering more keys than "
     "have ever been seen by the thread (or eight initially)\n"
-    "\tbackup --  Create a backup of the current DB and verify that a new backup is corrected. "
+    "\tbackup --  Create a backup of the current DB and verify that a new "
+    "backup is corrected. "
     "Rate limit can be specified through --backup_rate_limit\n"
-    "\trestore -- Restore the DB from the latest backup available, rate limit can be specified through --restore_rate_limit\n");
+    "\trestore -- Restore the DB from the latest backup available, rate limit "
+    "can be specified through --restore_rate_limit\n");
 
 DEFINE_int64(num, 1000000, "Number of key/values to place in database");
 
@@ -1001,6 +1005,9 @@ DEFINE_uint64(fifo_age_for_warm, 0, "age_for_warm for FIFO compaction.");
 // Stacked BlobDB Options
 DEFINE_bool(use_blob_db, false, "[Stacked BlobDB] Open a BlobDB instance.");
 
+DEFINE_bool(use_multi_thread_write, false,
+            "Open a RocksDB with multi thread write pool");
+
 DEFINE_bool(
     blob_db_enable_gc,
     ROCKSDB_NAMESPACE::blob_db::BlobDBOptions().enable_garbage_collection,
@@ -1048,7 +1055,6 @@ DEFINE_string(
     "[Stacked BlobDB] Algorithm to use to compress blobs in blob files.");
 static enum ROCKSDB_NAMESPACE::CompressionType
     FLAGS_blob_db_compression_type_e = ROCKSDB_NAMESPACE::kSnappyCompression;
-
 
 // Integrated BlobDB options
 DEFINE_bool(
@@ -1120,7 +1126,6 @@ DEFINE_int32(prepopulate_blob_cache, 0,
              "[Integrated BlobDB] Pre-populate hot/warm blobs in blob cache. 0 "
              "to disable and 1 to insert during flush.");
 
-
 // Secondary DB instance Options
 DEFINE_bool(use_secondary_db, false,
             "Open a RocksDB secondary instance. A primary instance can be "
@@ -1134,13 +1139,11 @@ DEFINE_int32(secondary_update_interval, 5,
              "Secondary instance attempts to catch up with the primary every "
              "secondary_update_interval seconds.");
 
-
 DEFINE_bool(report_bg_io_stats, false,
             "Measure times spents on I/Os while in compactions. ");
 
 DEFINE_bool(use_stderr_info_logger, false,
             "Write info logs to stderr instead of to LOG file. ");
-
 
 DEFINE_string(trace_file, "", "Trace workload to a file. ");
 
@@ -1772,6 +1775,10 @@ DEFINE_bool(build_info, false,
 DEFINE_bool(track_and_verify_wals_in_manifest, false,
             "If true, enable WAL tracking in the MANIFEST");
 
+DEFINE_string(
+    encryption_method, "",
+    "If non-empty, enable encryption with the specific encryption method.");
+
 namespace ROCKSDB_NAMESPACE {
 namespace {
 static Status CreateMemTableRepFactory(
@@ -1797,6 +1804,60 @@ static Status CreateMemTableRepFactory(
   }
   return s;
 }
+
+class WriteBatchVec {
+ public:
+  explicit WriteBatchVec(uint32_t max_batch_size)
+      : max_batch_size_(max_batch_size), current_(0) {}
+  ~WriteBatchVec() {
+    for (auto w : batches_) {
+      delete w;
+    }
+  }
+  void Clear() {
+    for (size_t i = 0; i <= current_ && i < batches_.size(); i++) {
+      batches_[i]->Clear();
+    }
+    current_ = 0;
+  }
+
+  Status Put(const Slice& key, const Slice& value) {
+    if (current_ < batches_.size() &&
+        batches_[current_]->Count() < max_batch_size_) {
+      return batches_[current_]->Put(key, value);
+    } else if (current_ + 1 >= batches_.size()) {
+      batches_.push_back(new WriteBatch);
+    }
+    if (current_ + 1 < batches_.size()) {
+      current_ += 1;
+    }
+    return batches_[current_]->Put(key, value);
+  }
+
+  std::vector<WriteBatch*> GetWriteBatch() const {
+    std::vector<WriteBatch*> batches;
+    for (size_t i = 0; i < batches_.size(); i++) {
+      if (i > current_) {
+        break;
+      }
+      batches.push_back(batches_[i]);
+    }
+    return batches;
+  }
+
+  uint32_t Count() const {
+    uint32_t count = 0;
+    for (size_t i = 0; i <= current_ && i < batches_.size(); i++) {
+      count += batches_[i]->Count();
+    }
+    return count;
+  }
+
+ private:
+  uint32_t max_batch_size_;
+  size_t current_;
+  std::vector<WriteBatch*> batches_;
+};
 
 }  // namespace
 
@@ -1962,11 +2023,7 @@ struct DBWithColumnFamilies {
   std::vector<int> cfh_idx_to_prob;  // ith index holds probability of operating
                                      // on cfh[i].
 
-  DBWithColumnFamilies()
-      : db(nullptr)
-        ,
-        opt_txn_db(nullptr)
-  {
+  DBWithColumnFamilies() : db(nullptr), opt_txn_db(nullptr) {
     cfh.clear();
     num_created = 0;
     num_hot = 0;
@@ -1978,8 +2035,7 @@ struct DBWithColumnFamilies {
         opt_txn_db(other.opt_txn_db),
         num_created(other.num_created.load()),
         num_hot(other.num_hot),
-        cfh_idx_to_prob(other.cfh_idx_to_prob) {
-  }
+        cfh_idx_to_prob(other.cfh_idx_to_prob) {}
 
   void DeleteDBs() {
     std::for_each(cfh.begin(), cfh.end(),
@@ -2139,7 +2195,7 @@ enum OperationType : unsigned char {
   kOthers
 };
 
-static std::unordered_map<OperationType, std::string, std::hash<unsigned char>>
+static std::unordered_map<OperationType, std::string, std::hash<unsigned char> >
     OperationTypeString = {{kRead, "read"},         {kWrite, "write"},
                            {kDelete, "delete"},     {kSeek, "seek"},
                            {kMerge, "merge"},       {kUpdate, "update"},
@@ -2163,7 +2219,7 @@ class Stats {
   uint64_t last_op_finish_;
   uint64_t last_report_finish_;
   std::unordered_map<OperationType, std::shared_ptr<HistogramImpl>,
-                     std::hash<unsigned char>>
+                     std::hash<unsigned char> >
       hist_;
   std::string message_;
   bool exclude_from_merge_;
@@ -2734,6 +2790,7 @@ class Benchmark {
   bool use_blob_db_;    // Stacked BlobDB
   bool read_operands_;  // read via GetMergeOperands()
   std::vector<std::string> keys_;
+  bool use_multi_write_;
 
   class ErrorHandlerListener : public EventListener {
    public:
@@ -3206,7 +3263,8 @@ class Benchmark {
         merge_keys_(FLAGS_merge_keys < 0 ? FLAGS_num : FLAGS_merge_keys),
         report_file_operations_(FLAGS_report_file_operations),
         use_blob_db_(FLAGS_use_blob_db),  // Stacked BlobDB
-        read_operands_(false) {
+        read_operands_(false),
+        use_multi_write_(FLAGS_use_multi_thread_write) {
     // use simcache instead of cache
     if (FLAGS_simcache_size >= 0) {
       if (FLAGS_cache_numshardbits >= 1) {
@@ -4845,6 +4903,9 @@ class Benchmark {
               DBWithColumnFamilies* db) {
     uint64_t open_start = FLAGS_report_open_timing ? FLAGS_env->NowNanos() : 0;
     Status s;
+    if (use_multi_write_) {
+      options.enable_multi_batch_write = true;
+    }
     // Open with column families if necessary.
     if (FLAGS_num_column_families > 1) {
       size_t num_hot = FLAGS_num_column_families;
@@ -5082,7 +5143,7 @@ class Benchmark {
     if (db_.db == nullptr) {
       num_key_gens = multi_dbs_.size();
     }
-    std::vector<std::unique_ptr<KeyGenerator>> key_gens(num_key_gens);
+    std::vector<std::unique_ptr<KeyGenerator> > key_gens(num_key_gens);
     int64_t max_ops = num_ops * num_key_gens;
     int64_t ops_per_stage = max_ops;
     if (FLAGS_num_column_families > 1 && FLAGS_num_hot_column_families > 0) {
@@ -5108,6 +5169,7 @@ class Benchmark {
     WriteBatch batch(/*reserved_bytes=*/0, /*max_bytes=*/0,
                      FLAGS_write_batch_protection_bytes_per_key,
                      user_timestamp_size_);
+    WriteBatchVec batches(32);
     Status s;
     int64_t bytes = 0;
 
@@ -5186,11 +5248,11 @@ class Benchmark {
     std::string random_value;
     // Queue that stores scheduled timestamp of disposable entries deletes,
     // along with starting index of disposable entry keys to delete.
-    std::vector<std::queue<std::pair<uint64_t, uint64_t>>> disposable_entries_q(
-        num_key_gens);
+    std::vector<std::queue<std::pair<uint64_t, uint64_t> > >
+        disposable_entries_q(num_key_gens);
     // --- End of variables used in disposable/persistent keys simulation.
 
-    std::vector<std::unique_ptr<const char[]>> expanded_key_guards;
+    std::vector<std::unique_ptr<const char[]> > expanded_key_guards;
     std::vector<Slice> expanded_keys;
     if (FLAGS_expand_range_tombstones) {
       expanded_key_guards.resize(range_tombstone_width_);
@@ -5242,6 +5304,7 @@ class Benchmark {
       DBWithColumnFamilies* db_with_cfh = SelectDBWithCfh(id);
 
       batch.Clear();
+      batches.Clear();
       int64_t batch_bytes = 0;
 
       for (int64_t j = 0; j < entries_per_batch_; j++) {
@@ -5357,7 +5420,9 @@ class Benchmark {
         } else {
           val = gen.Generate();
         }
-        if (use_blob_db_) {
+        if (use_multi_write_) {
+          batches.Put(key, val);
+        } else if (use_blob_db_) {
           // Stacked BlobDB
           blob_db::BlobDB* blobdb =
               static_cast<blob_db::BlobDB*>(db_with_cfh->db);
@@ -5420,6 +5485,7 @@ class Benchmark {
                 batch.Delete(db_with_cfh->GetCfh(rand_num),
                              expanded_keys[offset]);
               }
+              assert(!use_multi_write_);
             }
           } else {
             GenerateKeyFromInt(begin_num, FLAGS_num, &begin_key);
@@ -5436,6 +5502,7 @@ class Benchmark {
               batch.DeleteRange(db_with_cfh->GetCfh(rand_num), begin_key,
                                 end_key);
             }
+            assert(!use_multi_write_);
           }
         }
       }
@@ -5458,7 +5525,10 @@ class Benchmark {
           ErrorExit();
         }
       }
-      if (!use_blob_db_) {
+      if (use_multi_write_) {
+        s = db_with_cfh->db->MultiBatchWrite(write_options_,
+                                             batches.GetWriteBatch(), nullptr);
+      } else if (!use_blob_db_) {
         // Not stacked BlobDB
         s = db_with_cfh->db->Write(write_options_, &batch);
       }
@@ -5540,7 +5610,8 @@ class Benchmark {
     auto num_db = db_list.size();
     size_t num_levels = static_cast<size_t>(open_options_.num_levels);
     size_t output_level = open_options_.num_levels - 1;
-    std::vector<std::vector<std::vector<SstFileMetaData>>> sorted_runs(num_db);
+    std::vector<std::vector<std::vector<SstFileMetaData> > > sorted_runs(
+        num_db);
     std::vector<size_t> num_files_at_level0(num_db, 0);
     if (compaction_style == kCompactionStyleLevel) {
       if (num_levels == 0) {
@@ -6152,7 +6223,7 @@ class Benchmark {
     int64_t found = 0;
     ReadOptions options = read_options_;
     std::vector<Slice> keys;
-    std::vector<std::unique_ptr<const char[]>> key_guards;
+    std::vector<std::unique_ptr<const char[]> > key_guards;
     std::vector<std::string> values(entries_per_batch_);
     PinnableSlice* pin_values = new PinnableSlice[entries_per_batch_];
     std::unique_ptr<PinnableSlice[]> pin_values_guard(pin_values);
@@ -6249,9 +6320,9 @@ class Benchmark {
     const size_t batch_size = entries_per_batch_;
     std::vector<Range> ranges;
     std::vector<Slice> lkeys;
-    std::vector<std::unique_ptr<const char[]>> lkey_guards;
+    std::vector<std::unique_ptr<const char[]> > lkey_guards;
     std::vector<Slice> rkeys;
-    std::vector<std::unique_ptr<const char[]>> rkey_guards;
+    std::vector<std::unique_ptr<const char[]> > rkey_guards;
     std::vector<uint64_t> sizes;
     while (ranges.size() < batch_size) {
       // Ugly without C++17 return from emplace_back
@@ -6961,7 +7032,7 @@ class Benchmark {
     std::unique_ptr<const char[]> end_key_guard;
     Slice end_key = AllocateKey(&end_key_guard);
     uint64_t num_range_deletions = 0;
-    std::vector<std::unique_ptr<const char[]>> expanded_key_guards;
+    std::vector<std::unique_ptr<const char[]> > expanded_key_guards;
     std::vector<Slice> expanded_keys;
     if (FLAGS_expand_range_tombstones) {
       expanded_key_guards.resize(range_tombstone_width_);
@@ -8450,7 +8521,6 @@ class Benchmark {
     }
   }
 
-
   void Replay(ThreadState* thread) {
     if (db_.db != nullptr) {
       Replay(thread, &db_);
@@ -8538,7 +8608,6 @@ class Benchmark {
     assert(s.ok());
     delete backup_engine;
   }
-
 };
 
 int db_bench_tool(int argc, char** argv) {
@@ -8652,6 +8721,31 @@ int db_bench_tool(int argc, char** argv) {
             "settable\n");
     exit(1);
   }
+
+#ifdef OPENSSL
+  if (!FLAGS_encryption_method.empty()) {
+    ROCKSDB_NAMESPACE::encryption::EncryptionMethod method =
+        ROCKSDB_NAMESPACE::encryption::EncryptionMethod::kUnknown;
+    if (!strcasecmp(FLAGS_encryption_method.c_str(), "AES128CTR")) {
+      method = ROCKSDB_NAMESPACE::encryption::EncryptionMethod::kAES128_CTR;
+    } else if (!strcasecmp(FLAGS_encryption_method.c_str(), "AES192CTR")) {
+      method = ROCKSDB_NAMESPACE::encryption::EncryptionMethod::kAES192_CTR;
+    } else if (!strcasecmp(FLAGS_encryption_method.c_str(), "AES256CTR")) {
+      method = ROCKSDB_NAMESPACE::encryption::EncryptionMethod::kAES256_CTR;
+    } else if (!strcasecmp(FLAGS_encryption_method.c_str(), "SM4CTR")) {
+      method = ROCKSDB_NAMESPACE::encryption::EncryptionMethod::kSM4_CTR;
+    }
+    if (method == ROCKSDB_NAMESPACE::encryption::EncryptionMethod::kUnknown) {
+      fprintf(stderr, "Unknown encryption method %s\n",
+              FLAGS_encryption_method.c_str());
+      exit(1);
+    }
+    std::shared_ptr<ROCKSDB_NAMESPACE::encryption::KeyManager> key_manager(
+        new ROCKSDB_NAMESPACE::encryption::InMemoryKeyManager(method));
+    FLAGS_env = ROCKSDB_NAMESPACE::encryption::NewKeyManagedEncryptedEnv(
+        FLAGS_env, key_manager);
+  }
+#endif  // OPENSSL
 
   if (!strcasecmp(FLAGS_compaction_fadvice.c_str(), "NONE")) {
     FLAGS_compaction_fadvice_e = ROCKSDB_NAMESPACE::Options::NONE;

@@ -719,6 +719,41 @@ TEST_P(CompactionIteratorTest, SingleMergeOperand) {
   ASSERT_EQ("cv1cv2", c_iter_->value().ToString());
 }
 
+TEST_P(CompactionIteratorTest, RemoveAllSingleDeletes) {
+  struct Filter : public CompactionFilter {
+    Decision UnsafeFilter(int /*level*/, const Slice& key,
+                          SequenceNumber /*seq*/, ValueType t,
+                          const Slice& /*existing_value*/,
+                          std::string* /*new_value*/,
+                          std::string* skip_until) const override {
+      if (t == ValueType::kDeletion) {
+        *skip_until = key.ToString();
+        skip_until->back() += 1;
+        filtered += 1;
+        return Decision::kRemoveAndSkipUntil;
+      }
+      return Decision::kKeep;
+    }
+
+    const char* Name() const override {
+      return "CompactionIteratorTest.SingleDelete::Filter";
+    }
+    mutable size_t filtered = 0;
+  };
+
+  Filter filter;
+  InitIterators(
+      {test::KeyStr("a", 70, kTypeDeletion), test::KeyStr("a", 50, kTypeValue),
+       test::KeyStr("c", 70, kTypeDeletion),
+       test::KeyStr("c", 50, kTypeDeletion)},
+      {"", "a", "", ""}, {}, {}, kMaxSequenceNumber, kMaxSequenceNumber,
+      nullptr, &filter);
+
+  c_iter_->SeekToFirst();
+  ASSERT_TRUE(!c_iter_->Valid());
+  ASSERT_EQ(filter.filtered, 2);
+}
+
 // In bottommost level, values earlier than earliest snapshot can be output
 // with sequence = 0.
 TEST_P(CompactionIteratorTest, ZeroOutSequenceAtBottomLevel) {

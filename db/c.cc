@@ -28,6 +28,7 @@
 #include "rocksdb/merge_operator.h"
 #include "rocksdb/options.h"
 #include "rocksdb/perf_context.h"
+#include "rocksdb/perf_flag.h"
 #include "rocksdb/rate_limiter.h"
 #include "rocksdb/slice_transform.h"
 #include "rocksdb/statistics.h"
@@ -47,6 +48,7 @@
 #include "rocksdb/write_batch.h"
 #include "rocksdb/write_buffer_manager.h"
 #include "utilities/merge_operators.h"
+#include "utilities/rate_limiters/write_amp_based_rate_limiter.h"
 
 using ROCKSDB_NAMESPACE::BackupEngine;
 using ROCKSDB_NAMESPACE::BackupEngineOptions;
@@ -95,6 +97,7 @@ using ROCKSDB_NAMESPACE::NewCompactOnDeletionCollectorFactory;
 using ROCKSDB_NAMESPACE::NewGenericRateLimiter;
 using ROCKSDB_NAMESPACE::NewLRUCache;
 using ROCKSDB_NAMESPACE::NewRibbonFilterPolicy;
+using ROCKSDB_NAMESPACE::NewWriteAmpBasedRateLimiter;
 using ROCKSDB_NAMESPACE::OptimisticTransactionDB;
 using ROCKSDB_NAMESPACE::OptimisticTransactionOptions;
 using ROCKSDB_NAMESPACE::Options;
@@ -3817,6 +3820,11 @@ size_t rocksdb_options_get_memtable_huge_page_size(rocksdb_options_t* opt) {
   return opt->rep.memtable_huge_page_size;
 }
 
+void rocksdb_options_set_doubly_skip_list_rep(rocksdb_options_t* opt) {
+  rocksdb::MemTableRepFactory* factory = new rocksdb::DoublySkipListFactory();
+  opt->rep.memtable_factory.reset(factory);
+}
+
 void rocksdb_options_set_hash_skip_list_rep(rocksdb_options_t* opt,
                                             size_t bucket_count,
                                             int32_t skiplist_height,
@@ -3994,6 +4002,14 @@ rocksdb_ratelimiter_t* rocksdb_ratelimiter_create_auto_tuned(
                                                 refill_period_us, fairness,
                                                 RateLimiter::Mode::kWritesOnly,
                                                 true));  // auto_tuned
+  return rate_limiter;
+}
+
+rocksdb_ratelimiter_t* rocksdb_writeampbasedratelimiter_create(
+    int64_t rate_bytes_per_sec, int64_t refill_period_us, int32_t fairness) {
+  rocksdb_ratelimiter_t* rate_limiter = new rocksdb_ratelimiter_t;
+  rate_limiter->rep.reset(NewWriteAmpBasedRateLimiter(
+      rate_bytes_per_sec, refill_period_us, fairness));
   return rate_limiter;
 }
 
@@ -4928,11 +4944,6 @@ bool rocksdb_write_buffer_manager_enabled(rocksdb_write_buffer_manager_t* wbm) {
   return wbm->rep->enabled();
 }
 
-bool rocksdb_write_buffer_manager_cost_to_cache(
-    rocksdb_write_buffer_manager_t* wbm) {
-  return wbm->rep->cost_to_cache();
-}
-
 size_t rocksdb_write_buffer_manager_memory_usage(
     rocksdb_write_buffer_manager_t* wbm) {
   return wbm->rep->memory_usage();
@@ -4946,14 +4957,6 @@ size_t rocksdb_write_buffer_manager_mutable_memtable_memory_usage(
 size_t rocksdb_write_buffer_manager_dummy_entries_in_cache_usage(
     rocksdb_write_buffer_manager_t* wbm) {
   return wbm->rep->dummy_entries_in_cache_usage();
-}
-size_t rocksdb_write_buffer_manager_buffer_size(
-    rocksdb_write_buffer_manager_t* wbm) {
-  return wbm->rep->buffer_size();
-}
-void rocksdb_write_buffer_manager_set_buffer_size(
-    rocksdb_write_buffer_manager_t* wbm, size_t new_size) {
-  wbm->rep->SetBufferSize(new_size);
 }
 ROCKSDB_LIBRARY_API void rocksdb_write_buffer_manager_set_allow_stall(
     rocksdb_write_buffer_manager_t* wbm, bool new_allow_stall) {

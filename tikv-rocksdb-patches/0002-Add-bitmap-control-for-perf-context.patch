@@ -1,0 +1,454 @@
+From 1de24fe2ff4c14d30992347bb4a5f2ef11a40868 Mon Sep 17 00:00:00 2001
+From: LemonHX <lemonhx@lemonhx.tech>
+Date: Fri, 13 Aug 2021 16:02:26 +0800
+Subject: [PATCH 2/2] Add bitmap control for perf context
+
+Add bitmap control for perf context (#237)
+
+* `PerfFlag` implementation aside the `PerfLevel`
+design spec in on: https://docs.google.com/document/d/1JYmWMIZwYV0AZW6rNv_oFVZLBCAkxLLYslt39eEZstM/edit?usp=sharing
+
+Signed-off-by: lemonhx <lemonhx@lemonhx.tech>
+Co-authored-by: Xinye Tao <xy.tao@outlook.com>
+Signed-off-by: tabokie <xy.tao@outlook.com>
+
+Set perf flags all at once (#272)
+
+This PR changes some bits of https://github.com/tikv/rocksdb/pull/237.
+
+Considering our use cases in TiKV, _although not really necessary_, we frequently set perf levels around RocksDB operations. So, if we switch to perf flags, it requires us to set perf flags efficiently. And we have quite a few flags to set, setting flags one by one in #237 is not that efficient.
+
+All flags can be saved in two words. So, we **can** achieve similar efficiency by setting all flags all at once. And meanwhile, we can flexibly specify which metrics we care about at runtime.
+
+This PR also changes to use `std::bitset` and a named enum instead of handmade int array and anonymous enum. Hopefully they will make the code cleaner.
+
+See https://github.com/tikv/rust-rocksdb/pull/682 for the companion Rust wrapper
+
+Signed-off-by: Yilin Chen <sticnarf@gmail.com>
+Signed-off-by: tabokie <xy.tao@outlook.com>
+
+Add new metrics to PerfFlag
+
+Signed-off-by: v01dstar <yang.zhang@pingcap.com>
+---
+ CMakeLists.txt                   |   1 +
+ TARGETS                          |   1 +
+ db/c.cc                          |   1 +
+ db/perf_context_test.cc          |  19 ++++
+ include/rocksdb/perf_flag.h      | 145 +++++++++++++++++++++++++++++++
+ monitoring/iostats_context_imp.h |  13 +--
+ monitoring/perf_context_imp.h    |  33 +++----
+ monitoring/perf_flag.cc          |  25 ++++++
+ monitoring/perf_flag_imp.h       |  18 ++++
+ monitoring/perf_step_timer.h     |   6 +-
+ src.mk                           |   1 +
+ 11 files changed, 240 insertions(+), 23 deletions(-)
+ create mode 100644 include/rocksdb/perf_flag.h
+ create mode 100644 monitoring/perf_flag.cc
+ create mode 100644 monitoring/perf_flag_imp.h
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 3a6c9bba6..952dc52d8 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -762,6 +762,7 @@ set(SOURCES
+         monitoring/iostats_context.cc
+         monitoring/perf_context.cc
+         monitoring/perf_level.cc
++        monitoring/perf_flag.cc
+         monitoring/persistent_stats_history.cc
+         monitoring/statistics.cc
+         monitoring/thread_status_impl.cc
+diff --git a/TARGETS b/TARGETS
+index c6799ae98..91c283433 100644
+--- a/TARGETS
++++ b/TARGETS
+@@ -151,6 +151,7 @@ cpp_library_wrapper(name="rocksdb_lib", srcs=[
+         "monitoring/instrumented_mutex.cc",
+         "monitoring/iostats_context.cc",
+         "monitoring/perf_context.cc",
++        "monitoring/perf_flag.cc",
+         "monitoring/perf_level.cc",
+         "monitoring/persistent_stats_history.cc",
+         "monitoring/statistics.cc",
+diff --git a/db/c.cc b/db/c.cc
+index 92095dbc7..740d52c08 100644
+--- a/db/c.cc
++++ b/db/c.cc
+@@ -28,6 +28,7 @@
+ #include "rocksdb/merge_operator.h"
+ #include "rocksdb/options.h"
+ #include "rocksdb/perf_context.h"
++#include "rocksdb/perf_flag.h"
+ #include "rocksdb/rate_limiter.h"
+ #include "rocksdb/slice_transform.h"
+ #include "rocksdb/statistics.h"
+diff --git a/db/perf_context_test.cc b/db/perf_context_test.cc
+index 2666b8733..ccd13688b 100644
+--- a/db/perf_context_test.cc
++++ b/db/perf_context_test.cc
+@@ -1119,6 +1119,25 @@ TEST_F(PerfContextTest, MergeOperandCount) {
+   verify();
+ }
+ 
++TEST_F(PerfContextTest, BitMapControl) {
++  DestroyDB(kDbName, Options());
++  auto db = OpenDb();
++  WriteOptions write_options;
++  SetPerfLevel(PerfLevel::kDisable);
++  SetPerfFlags(NewPerfFlags(
++      {PerfFlag::user_key_comparison_count, PerfFlag::write_wal_time}));
++
++  for (int i = 0; i < FLAGS_total_keys; ++i) {
++    std::string i_str = std::to_string(i);
++    std::string key = "k" + i_str;
++    std::string value = "v" + i_str;
++
++    db->Put(write_options, key, value);
++  }
++  ASSERT_GT(get_perf_context()->user_key_comparison_count, 0);
++  ASSERT_GT(get_perf_context()->write_wal_time, 0);
++}
++
+ }  // namespace ROCKSDB_NAMESPACE
+ 
+ int main(int argc, char** argv) {
+diff --git a/include/rocksdb/perf_flag.h b/include/rocksdb/perf_flag.h
+new file mode 100644
+index 000000000..c9988c634
+--- /dev/null
++++ b/include/rocksdb/perf_flag.h
+@@ -0,0 +1,145 @@
++// complements to perf_level
++#pragma once
++
++#include <bitset>
++#include <cstdint>
++#include <initializer_list>
++
++#include "rocksdb/rocksdb_namespace.h"
++
++namespace ROCKSDB_NAMESPACE {
++
++enum PerfFlag : uint32_t {
++  user_key_comparison_count = 0,
++  block_cache_hit_count,
++  block_read_count,
++  block_read_byte,
++  block_read_time,
++  block_read_cpu_time,
++  block_cache_index_hit_count,
++  block_cache_standalone_handle_count,
++  block_cache_real_handle_count,
++  index_block_read_count,
++  block_cache_filter_hit_count,
++  filter_block_read_count,
++  compression_dict_block_read_count,
++  secondary_cache_hit_count,
++  compressed_sec_cache_insert_real_count,
++  compressed_sec_cache_insert_dummy_count,
++  compressed_sec_cache_uncompressed_bytes,
++  compressed_sec_cache_compressed_bytes,
++  block_checksum_time,
++  block_decompress_time,
++  get_read_bytes,
++  multiget_read_bytes,
++  iter_read_bytes,
++  blob_cache_hit_count,
++  blob_read_count,
++  blob_read_byte,
++  blob_read_time,
++  blob_checksum_time,
++  blob_decompress_time,
++  internal_key_skipped_count,
++  internal_delete_skipped_count,
++  internal_recent_skipped_count,
++  internal_merge_count,
++  internal_merge_point_lookup_count,
++  internal_range_del_reseek_count,
++  get_snapshot_time,
++  get_from_memtable_time,
++  get_from_memtable_count,
++  get_post_process_time,
++  get_from_output_files_time,
++  seek_on_memtable_time,
++  seek_on_memtable_count,
++  next_on_memtable_count,
++  prev_on_memtable_count,
++  seek_child_seek_time,
++  seek_child_seek_count,
++  seek_min_heap_time,
++  seek_max_heap_time,
++  seek_internal_seek_time,
++  find_next_user_entry_time,
++  write_wal_time,
++  write_memtable_time,
++  write_delay_time,
++  write_scheduling_flushes_compactions_time,
++  write_pre_and_post_process_time,
++  write_thread_wait_nanos,
++  db_mutex_lock_nanos,
++  db_condition_wait_nanos,
++  merge_operator_time_nanos,
++  read_index_block_nanos,
++  read_filter_block_nanos,
++  new_table_block_iter_nanos,
++  new_table_iterator_nanos,
++  block_seek_nanos,
++  find_table_nanos,
++  bloom_memtable_hit_count,
++  bloom_memtable_miss_count,
++  bloom_sst_hit_count,
++  bloom_sst_miss_count,
++  key_lock_wait_time,
++  key_lock_wait_count,
++  env_new_sequential_file_nanos,
++  env_new_random_access_file_nanos,
++  env_new_writable_file_nanos,
++  env_reuse_writable_file_nanos,
++  env_new_random_rw_file_nanos,
++  env_new_directory_nanos,
++  env_file_exists_nanos,
++  env_get_children_nanos,
++  env_get_children_file_attributes_nanos,
++  env_delete_file_nanos,
++  env_create_dir_nanos,
++  env_create_dir_if_missing_nanos,
++  env_delete_dir_nanos,
++  env_get_file_size_nanos,
++  env_get_file_modification_time_nanos,
++  env_rename_file_nanos,
++  env_link_file_nanos,
++  env_lock_file_nanos,
++  env_unlock_file_nanos,
++  env_new_logger_nanos,
++  get_cpu_nanos,
++  iter_next_cpu_nanos,
++  iter_prev_cpu_nanos,
++  iter_seek_cpu_nanos,
++  iter_next_count,
++  iter_prev_count,
++  iter_seek_count,
++  encrypt_data_nanos,
++  decrypt_data_nanos,
++  number_async_seek,
++
++  get_from_table_nanos,
++  user_key_return_count,
++  block_cache_miss_count,
++  bloom_filter_full_positive,
++  bloom_filter_useful,
++  bloom_filter_full_true_positive,
++
++  bytes_read,
++  bytes_written,
++  open_nanos,
++  allocate_nanos,
++  write_nanos,
++  read_nanos,
++  range_sync_nanos,
++  prepare_write_nanos,
++  fsync_nanos,
++  logger_nanos,
++  cpu_read_nanos,
++  cpu_write_nanos,
++  // Should always be the last
++  COUNT
++};
++
++using PerfFlags = std::bitset<PerfFlag::COUNT>;
++
++PerfFlags NewPerfFlags(std::initializer_list<PerfFlag> l);
++bool CheckPerfFlag(PerfFlag flag);
++PerfFlags GetPerfFlags();
++void SetPerfFlags(PerfFlags flags);
++
++}  // namespace ROCKSDB_NAMESPACE
+diff --git a/monitoring/iostats_context_imp.h b/monitoring/iostats_context_imp.h
+index a0b4292df..82aae965b 100644
+--- a/monitoring/iostats_context_imp.h
++++ b/monitoring/iostats_context_imp.h
+@@ -32,15 +32,16 @@ extern thread_local IOStatsContext iostats_context;
+ #define IOSTATS(metric) (iostats_context.metric)
+ 
+ // Declare and set start time of the timer
+-#define IOSTATS_TIMER_GUARD(metric)                                     \
+-  PerfStepTimer iostats_step_timer_##metric(&(iostats_context.metric)); \
++#define IOSTATS_TIMER_GUARD(metric)                                           \
++  PerfStepTimer iostats_step_timer_##metric(&(iostats_context.metric),        \
++                                            CheckPerfFlag(PerfFlag::metric)); \
+   iostats_step_timer_##metric.Start();
+ 
+ // Declare and set start time of the timer
+-#define IOSTATS_CPU_TIMER_GUARD(metric, clock)         \
+-  PerfStepTimer iostats_step_timer_##metric(           \
+-      &(iostats_context.metric), clock, true,          \
+-      PerfLevel::kEnableTimeAndCPUTimeExceptForMutex); \
++#define IOSTATS_CPU_TIMER_GUARD(metric, clock)                                 \
++  PerfStepTimer iostats_step_timer_##metric(                                   \
++      &(iostats_context.metric), CheckPerfFlag(PerfFlag::metric), clock, true, \
++      PerfLevel::kEnableTimeAndCPUTimeExceptForMutex);                         \
+   iostats_step_timer_##metric.Start();
+ 
+ #define IOSTATS_SET_DISABLE(disable) (iostats_context.disable_iostats = disable)
+diff --git a/monitoring/perf_context_imp.h b/monitoring/perf_context_imp.h
+index f7c9908cc..e50523ad8 100644
+--- a/monitoring/perf_context_imp.h
++++ b/monitoring/perf_context_imp.h
+@@ -41,27 +41,29 @@ extern thread_local PerfContext perf_context;
+ #define PERF_TIMER_START(metric) perf_step_timer_##metric.Start();
+ 
+ // Declare and set start time of the timer
+-#define PERF_TIMER_GUARD(metric)                                  \
+-  PerfStepTimer perf_step_timer_##metric(&(perf_context.metric)); \
++#define PERF_TIMER_GUARD(metric)                                           \
++  PerfStepTimer perf_step_timer_##metric(&(perf_context.metric),           \
++                                         CheckPerfFlag(PerfFlag::metric)); \
+   perf_step_timer_##metric.Start();
+ 
+ // Declare and set start time of the timer
+-#define PERF_TIMER_GUARD_WITH_CLOCK(metric, clock)                       \
+-  PerfStepTimer perf_step_timer_##metric(&(perf_context.metric), clock); \
++#define PERF_TIMER_GUARD_WITH_CLOCK(metric, clock)                     \
++  PerfStepTimer perf_step_timer_##metric(                              \
++      &(perf_context.metric), CheckPerfFlag(PerfFlag::metric), clock); \
+   perf_step_timer_##metric.Start();
+ 
+ // Declare and set start time of the timer
+-#define PERF_CPU_TIMER_GUARD(metric, clock)            \
+-  PerfStepTimer perf_step_timer_##metric(              \
+-      &(perf_context.metric), clock, true,             \
+-      PerfLevel::kEnableTimeAndCPUTimeExceptForMutex); \
++#define PERF_CPU_TIMER_GUARD(metric, clock)                                 \
++  PerfStepTimer perf_step_timer_##metric(                                   \
++      &(perf_context.metric), CheckPerfFlag(PerfFlag::metric), clock, true, \
++      PerfLevel::kEnableTimeAndCPUTimeExceptForMutex);                      \
+   perf_step_timer_##metric.Start();
+ 
+ #define PERF_CONDITIONAL_TIMER_FOR_MUTEX_GUARD(metric, condition, stats,       \
+                                                ticker_type)                    \
+-  PerfStepTimer perf_step_timer_##metric(&(perf_context.metric), nullptr,      \
+-                                         false, PerfLevel::kEnableTime, stats, \
+-                                         ticker_type);                         \
++  PerfStepTimer perf_step_timer_##metric(                                      \
++      &(perf_context.metric), CheckPerfFlag(PerfFlag::metric), nullptr, false, \
++      PerfLevel::kEnableTime, stats, ticker_type);                             \
+   if (condition) {                                                             \
+     perf_step_timer_##metric.Start();                                          \
+   }
+@@ -72,14 +74,15 @@ extern thread_local PerfContext perf_context;
+ 
+ // Increase metric value
+ #define PERF_COUNTER_ADD(metric, value)        \
+-  if (perf_level >= PerfLevel::kEnableCount) { \
++  if (perf_level >= PerfLevel::kEnableCount || \
++      CheckPerfFlag(PerfFlag::metric)) {       \
+     perf_context.metric += value;              \
+-  }                                            \
+-  static_assert(true, "semicolon required")
++  }
+ 
+ // Increase metric value
+ #define PERF_COUNTER_BY_LEVEL_ADD(metric, value, level)               \
+-  if (perf_level >= PerfLevel::kEnableCount &&                        \
++  if ((perf_level >= PerfLevel::kEnableCount ||                       \
++       CheckPerfFlag(PerfFlag::metric)) &&                            \
+       perf_context.per_level_perf_context_enabled &&                  \
+       perf_context.level_to_perf_context) {                           \
+     if ((*(perf_context.level_to_perf_context)).find(level) !=        \
+diff --git a/monitoring/perf_flag.cc b/monitoring/perf_flag.cc
+new file mode 100644
+index 000000000..e16c85edb
+--- /dev/null
++++ b/monitoring/perf_flag.cc
+@@ -0,0 +1,25 @@
++#include "rocksdb/perf_flag.h"
++
++namespace ROCKSDB_NAMESPACE {
++
++#ifdef ROCKSDB_SUPPORT_THREAD_LOCAL
++__thread PerfFlags perf_flags = {};
++#else
++PerfFlags perf_flags = {};
++#endif
++
++PerfFlags NewPerfFlags(std::initializer_list<PerfFlag> l) {
++  PerfFlags flags;
++  for (const PerfFlag& f : l) {
++    flags.set(f);
++  }
++  return flags;
++}
++
++bool CheckPerfFlag(PerfFlag flag) { return perf_flags.test(flag); }
++
++PerfFlags GetPerfFlags() { return perf_flags; }
++
++void SetPerfFlags(PerfFlags flags) { perf_flags = flags; }
++
++}  // namespace ROCKSDB_NAMESPACE
+diff --git a/monitoring/perf_flag_imp.h b/monitoring/perf_flag_imp.h
+new file mode 100644
+index 000000000..51476bccf
+--- /dev/null
++++ b/monitoring/perf_flag_imp.h
+@@ -0,0 +1,18 @@
++//  Copyright (c) 2011-present, Facebook, Inc.  All rights reserved.
++//  This source code is licensed under both the GPLv2 (found in the
++//  COPYING file in the root directory) and Apache 2.0 License
++//  (found in the LICENSE.Apache file in the root directory).
++//
++#pragma once
++
++#include <cstdint>
++
++#include "rocksdb/perf_flag.h"
++
++namespace ROCKSDB_NAMESPACE {
++#ifdef ROCKSDB_SUPPORT_THREAD_LOCAL
++extern __thread PerfFlags perf_flags;
++#else
++extern PerfFlags perf_flags;
++#endif
++}  // namespace ROCKSDB_NAMESPACE
+diff --git a/monitoring/perf_step_timer.h b/monitoring/perf_step_timer.h
+index f6c45d773..9af461b30 100644
+--- a/monitoring/perf_step_timer.h
++++ b/monitoring/perf_step_timer.h
+@@ -4,6 +4,7 @@
+ //  (found in the LICENSE.Apache file in the root directory).
+ //
+ #pragma once
++#include "monitoring/perf_flag_imp.h"
+ #include "monitoring/perf_level_imp.h"
+ #include "monitoring/statistics_impl.h"
+ #include "rocksdb/system_clock.h"
+@@ -13,10 +14,11 @@ namespace ROCKSDB_NAMESPACE {
+ class PerfStepTimer {
+  public:
+   explicit PerfStepTimer(
+-      uint64_t* metric, SystemClock* clock = nullptr, bool use_cpu_time = false,
++      uint64_t* metric, bool enable_flag = false, SystemClock* clock = nullptr,
++      bool use_cpu_time = false,
+       PerfLevel enable_level = PerfLevel::kEnableTimeExceptForMutex,
+       Statistics* statistics = nullptr, uint32_t ticker_type = 0)
+-      : perf_counter_enabled_(perf_level >= enable_level),
++      : perf_counter_enabled_(perf_level >= enable_level || enable_flag),
+         use_cpu_time_(use_cpu_time),
+         ticker_type_(ticker_type),
+         clock_((perf_counter_enabled_ || statistics != nullptr)
+diff --git a/src.mk b/src.mk
+index 6e750a481..947159736 100644
+--- a/src.mk
++++ b/src.mk
+@@ -145,6 +145,7 @@ LIB_SOURCES =                                                   \
+   monitoring/iostats_context.cc                                 \
+   monitoring/perf_context.cc                                    \
+   monitoring/perf_level.cc                                      \
++  monitoring/perf_flag.cc                                       \
+   monitoring/persistent_stats_history.cc                        \
+   monitoring/statistics.cc                                      \
+   monitoring/thread_status_impl.cc                              \
+-- 
+2.43.2
+

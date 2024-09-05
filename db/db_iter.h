@@ -170,6 +170,11 @@ class DBIter final : public Iterator {
     return wide_columns_;
   }
 
+  bool seqno(SequenceNumber* no) const override {
+    assert(valid_);
+    *no = ikey_.sequence;
+    return true;
+  }
   Status status() const override {
     if (status_.ok()) {
       return iter_.status();

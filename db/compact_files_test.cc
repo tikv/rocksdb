@@ -3,7 +3,6 @@
 //  COPYING file in the root directory) and Apache 2.0 License
 //  (found in the LICENSE.Apache file in the root directory).
 
-
 #include <mutex>
 #include <string>
 #include <thread>
@@ -11,6 +10,7 @@
 
 #include "db/db_impl/db_impl.h"
 #include "port/port.h"
+#include "rocksdb/compaction_filter.h"
 #include "rocksdb/db.h"
 #include "rocksdb/env.h"
 #include "test_util/sync_point.h"
@@ -59,6 +59,81 @@ class FlushedFileCollector : public EventListener {
   std::vector<std::string> flushed_files_;
   std::mutex mutex_;
 };
+
+class TestFilterFactory : public CompactionFilterFactory {
+ public:
+  std::shared_ptr<CompactionFilter::Context> context_;
+  std::shared_ptr<int> compaction_count_;
+  std::string start_key_;
+  std::string end_key_;
+
+  TestFilterFactory(std::shared_ptr<CompactionFilter::Context> context,
+                    std::shared_ptr<int> compaction_count)
+      : context_(context), compaction_count_(compaction_count) {}
+
+  ~TestFilterFactory() {}
+
+  const char* Name() const { return "TestFilterFactory"; }
+
+  std::unique_ptr<CompactionFilter> CreateCompactionFilter(
+      const CompactionFilter::Context& context) {
+    start_key_ = context.start_key.ToString();
+    context_->start_key = Slice(start_key_);
+    end_key_ = context.end_key.ToString();
+    context_->end_key = Slice(end_key_);
+    context_->is_end_key_inclusive = context.is_end_key_inclusive;
+    context_->input_table_properties = context.input_table_properties;
+    *compaction_count_.get() += 1;
+    return nullptr;
+  }
+};
+
+TEST_F(CompactFilesTest, FilterContext) {
+  Options options;
+  // to trigger compaction more easily
+  const int kWriteBufferSize = 10000;
+  const int kLevel0Trigger = 10;
+  options.create_if_missing = true;
+  options.compaction_style = kCompactionStyleLevel;
+  // Small slowdown and stop trigger for experimental purpose.
+  options.level0_slowdown_writes_trigger = 20;
+  options.level0_stop_writes_trigger = 20;
+  options.write_buffer_size = kWriteBufferSize;
+  options.level0_file_num_compaction_trigger = kLevel0Trigger;
+  options.compression = kNoCompression;
+
+  std::shared_ptr<CompactionFilter::Context> expected_context(
+      new CompactionFilter::Context);
+  std::shared_ptr<int> compaction_count(new int(0));
+  CompactionFilterFactory* factory =
+      new TestFilterFactory(expected_context, compaction_count);
+  options.compaction_filter_factory =
+      std::shared_ptr<CompactionFilterFactory>(factory);
+
+  DB* db = nullptr;
+  DestroyDB(db_name_, options);
+  Status s = DB::Open(options, db_name_, &db);
+  assert(s.ok());
+  assert(db);
+
+  // `Flush` is different from `Compaction`.
+  db->Put(WriteOptions(), "1", "");
+  db->Put(WriteOptions(), "51", "");
+  db->Flush(FlushOptions());
+  db->Put(WriteOptions(), "50", "");
+  db->Put(WriteOptions(), "99", "");
+  db->Flush(FlushOptions());
+  ASSERT_EQ(*compaction_count.get(), 0);
+
+  db->CompactRange(CompactRangeOptions(), nullptr, nullptr);
+  ASSERT_OK(static_cast_with_check<DBImpl>(db)->TEST_WaitForCompact());
+  ASSERT_EQ(expected_context->start_key, Slice("1"));
+  ASSERT_EQ(expected_context->is_end_key_inclusive, 1);
+  ASSERT_EQ(expected_context->input_table_properties.size(), 2);
+  ASSERT_EQ(*compaction_count.get(), 1);
+
+  delete (db);
+}
 
 TEST_F(CompactFilesTest, L0ConflictsFiles) {
   Options options;
@@ -485,6 +560,87 @@ TEST_F(CompactFilesTest, GetCompactionJobInfo) {
   delete db;
 }
 
+TEST_F(CompactFilesTest, IsWriteStalled) {
+  class SlowFilter : public CompactionFilter {
+   public:
+    SlowFilter(std::atomic<bool>* would_block) { would_block_ = would_block; }
+
+    bool Filter(int /*level*/, const Slice& /*key*/, const Slice& /*value*/,
+                std::string* /*new_value*/,
+                bool* /*value_changed*/) const override {
+      while (would_block_->load(std::memory_order_relaxed)) {
+        usleep(10000);
+      }
+      return false;
+    }
+
+    const char* Name() const override { return "SlowFilter"; }
+
+   private:
+    std::atomic<bool>* would_block_;
+  };
+
+  Options options;
+  options.create_if_missing = true;
+  options.delayed_write_rate = 1;
+
+  ColumnFamilyOptions cf_options;
+  cf_options.level0_slowdown_writes_trigger = 12;
+  cf_options.level0_stop_writes_trigger = 15;
+  cf_options.write_buffer_size = 1024 * 1024;
+
+  std::atomic<bool> compaction_would_block;
+  compaction_would_block.store(true, std::memory_order_relaxed);
+  cf_options.compaction_filter = new SlowFilter(&compaction_would_block);
+
+  std::vector<ColumnFamilyDescriptor> cfds;
+  cfds.push_back(ColumnFamilyDescriptor("default", cf_options));
+
+  DB* db = nullptr;
+  std::vector<ColumnFamilyHandle*> handles;
+  DestroyDB(db_name_, options);
+
+  Status s = DB::Open(options, db_name_, cfds, &handles, &db);
+  assert(s.ok());
+  assert(db);
+
+  int flushed_l0_files = 0;
+  for (; flushed_l0_files < 100;) {
+    WriteBatch wb;
+    for (int j = 0; j < 100; ++j) {
+      char key[16];
+      bzero(key, 16);
+      snprintf(key, sizeof(key), "foo%.2d", j);
+      ASSERT_OK(wb.Put(handles[0], key, "bar"));
+    }
+
+    WriteOptions wopts;
+    wopts.no_slowdown = true;
+    s = db->Write(wopts, &wb);
+    if (s.ok()) {
+      FlushOptions fopts;
+      fopts.allow_write_stall = true;
+      ASSERT_OK(db->Flush(fopts));
+      ++flushed_l0_files;
+    } else {
+      ASSERT_EQ(s.code(), Status::Code::kIncomplete);
+      break;
+    }
+  }
+
+  // The write loop must be terminated by write stall.
+  ASSERT_EQ(flushed_l0_files, 12);
+  uint64_t stalled = false;
+  db->GetIntProperty(handles[0], "rocksdb.is-write-stalled", &stalled);
+  ASSERT_TRUE(stalled);
+
+  compaction_would_block.store(false, std::memory_order_relaxed);
+  for (size_t i = 0; i < handles.size(); ++i) {
+    delete handles[i];
+  }
+  delete (db);
+}
+
 }  // namespace ROCKSDB_NAMESPACE
 
 int main(int argc, char** argv) {
@@ -492,4 +648,3 @@ int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }
-

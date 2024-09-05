@@ -1,0 +1,402 @@
+From 44b90b5644c94efc7a5c447df0e56693bb1a7ef9 Mon Sep 17 00:00:00 2001
+From: v01dstar <yang.zhang@pingcap.com>
+Date: Fri, 23 Feb 2024 22:12:49 -0800
+Subject: [PATCH 4/4] Make statistics extensible
+
+Signed-off-by: v01dstar <yang.zhang@pingcap.com>
+---
+ db/db_test.cc                 |  7 +---
+ include/rocksdb/statistics.h  |  2 +
+ java/rocksjni/statisticsjni.h |  2 +-
+ monitoring/statistics.cc      | 78 +++++++++++++++++++++++++----------
+ monitoring/statistics_impl.h  | 25 ++++-------
+ options/customizable_test.cc  | 17 +++-----
+ 6 files changed, 73 insertions(+), 58 deletions(-)
+
+diff --git a/db/db_test.cc b/db/db_test.cc
+index 99a03b150..facdb03bd 100644
+--- a/db/db_test.cc
++++ b/db/db_test.cc
+@@ -1161,7 +1161,6 @@ class DelayFilterFactory : public CompactionFilterFactory {
+ };
+ }  // anonymous namespace
+ 
+-
+ static std::string CompressibleString(Random* rnd, int len) {
+   std::string r;
+   test::CompressibleString(rnd, 0.8, len, &r);
+@@ -4339,7 +4338,6 @@ TEST_F(DBTest, ConcurrentMemtableNotSupported) {
+   ASSERT_NOK(db_->CreateColumnFamily(cf_options, "name", &handle));
+ }
+ 
+-
+ TEST_F(DBTest, SanitizeNumThreads) {
+   for (int attempt = 0; attempt < 2; attempt++) {
+     const size_t kTotalTasks = 8;
+@@ -5709,7 +5707,6 @@ TEST_F(DBTest, FileCreationRandomFailure) {
+   }
+ }
+ 
+-
+ TEST_F(DBTest, DynamicMiscOptions) {
+   // Test max_sequential_skip_in_iterations
+   Options options;
+@@ -6089,7 +6086,7 @@ TEST_P(DBTestWithParam, FilterCompactionTimeTest) {
+ // CPUMicros() is not supported. See WinClock::CPUMicros().
+ TEST_P(DBTestWithParam, CompactionTotalTimeTest) {
+   int record_count = 0;
+-  class TestStatistics : public StatisticsImpl {
++  class TestStatistics : public StatisticsImpl<> {
+    public:
+     explicit TestStatistics(int* record_count)
+         : StatisticsImpl(nullptr), record_count_(record_count) {}
+@@ -7166,7 +7163,6 @@ TEST_F(DBTest, ReusePinnableSlice) {
+       1);
+ }
+ 
+-
+ TEST_F(DBTest, DeletingOldWalAfterDrop) {
+   ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->LoadDependency(
+       {{"Test:AllowFlushes", "DBImpl::BGWorkFlush"},
+@@ -7291,7 +7287,6 @@ TEST_F(DBTest, LargeBlockSizeTest) {
+   ASSERT_NOK(TryReopenWithColumnFamilies({"default", "pikachu"}, options));
+ }
+ 
+-
+ TEST_F(DBTest, CreationTimeOfOldestFile) {
+   const int kNumKeysPerFile = 32;
+   const int kNumLevelFiles = 2;
+diff --git a/include/rocksdb/statistics.h b/include/rocksdb/statistics.h
+index 9aab33712..828a66c03 100644
+--- a/include/rocksdb/statistics.h
++++ b/include/rocksdb/statistics.h
+@@ -793,6 +793,8 @@ class Statistics : public Customizable {
+ };
+ 
+ // Create a concrete DBStatistics object
++template <uint32_t TICKER_MAX = TICKER_ENUM_MAX,
++          uint32_t HISTOGRAM_MAX = HISTOGRAM_ENUM_MAX>
+ std::shared_ptr<Statistics> CreateDBStatistics();
+ 
+ }  // namespace ROCKSDB_NAMESPACE
+diff --git a/java/rocksjni/statisticsjni.h b/java/rocksjni/statisticsjni.h
+index 3262b296c..0440497ce 100644
+--- a/java/rocksjni/statisticsjni.h
++++ b/java/rocksjni/statisticsjni.h
+@@ -18,7 +18,7 @@
+ 
+ namespace ROCKSDB_NAMESPACE {
+ 
+-class StatisticsJni : public StatisticsImpl {
++class StatisticsJni : public StatisticsImpl<> {
+  public:
+   StatisticsJni(std::shared_ptr<Statistics> stats);
+   StatisticsJni(std::shared_ptr<Statistics> stats,
+diff --git a/monitoring/statistics.cc b/monitoring/statistics.cc
+index cc679ec0a..ec8cc733b 100644
+--- a/monitoring/statistics.cc
++++ b/monitoring/statistics.cc
+@@ -342,17 +342,22 @@ const std::vector<std::pair<Histograms, std::string>> HistogramsNameMap = {
+      "rocksdb.table.open.prefetch.tail.read.bytes"},
+ };
+ 
++template <uint32_t TICKER_MAX, uint32_t HISTOGRAM_MAX>
+ std::shared_ptr<Statistics> CreateDBStatistics() {
+-  return std::make_shared<StatisticsImpl>(nullptr);
++  return std::make_shared<StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>>(nullptr);
+ }
+ 
++template std::shared_ptr<Statistics>
++CreateDBStatistics<TICKER_ENUM_MAX, HISTOGRAM_ENUM_MAX>();
++
+ static int RegisterBuiltinStatistics(ObjectLibrary& library,
+                                      const std::string& /*arg*/) {
+   library.AddFactory<Statistics>(
+-      StatisticsImpl::kClassName(),
++      StatisticsImpl<TICKER_ENUM_MAX, HISTOGRAM_ENUM_MAX>::kClassName(),
+       [](const std::string& /*uri*/, std::unique_ptr<Statistics>* guard,
+          std::string* /* errmsg */) {
+-        guard->reset(new StatisticsImpl(nullptr));
++        guard->reset(
++            new StatisticsImpl<TICKER_ENUM_MAX, HISTOGRAM_ENUM_MAX>(nullptr));
+         return guard->get();
+       });
+   return 1;
+@@ -366,8 +371,10 @@ Status Statistics::CreateFromString(const ConfigOptions& config_options,
+     RegisterBuiltinStatistics(*(ObjectLibrary::Default().get()), "");
+   });
+   Status s;
+-  if (id == "" || id == StatisticsImpl::kClassName()) {
+-    result->reset(new StatisticsImpl(nullptr));
++  if (id == "" ||
++      id == StatisticsImpl<TICKER_ENUM_MAX, HISTOGRAM_ENUM_MAX>::kClassName()) {
++    result->reset(
++        new StatisticsImpl<TICKER_ENUM_MAX, HISTOGRAM_ENUM_MAX>(nullptr));
+   } else if (id == kNullptrString) {
+     result->reset();
+   } else {
+@@ -382,19 +389,26 @@ static std::unordered_map<std::string, OptionTypeInfo> stats_type_info = {
+                   OptionTypeFlags::kCompareNever)},
+ };
+ 
+-StatisticsImpl::StatisticsImpl(std::shared_ptr<Statistics> stats)
++template <uint32_t TICKER_MAX, uint32_t HISTOGRAM_MAX>
++StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>::StatisticsImpl(
++    std::shared_ptr<Statistics> stats)
+     : stats_(std::move(stats)) {
+   RegisterOptions("StatisticsOptions", &stats_, &stats_type_info);
+ }
+ 
+-StatisticsImpl::~StatisticsImpl() = default;
++template <uint32_t TICKER_MAX, uint32_t HISTOGRAM_MAX>
++StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>::~StatisticsImpl() = default;
+ 
+-uint64_t StatisticsImpl::getTickerCount(uint32_t tickerType) const {
++template <uint32_t TICKER_MAX, uint32_t HISTOGRAM_MAX>
++uint64_t StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>::getTickerCount(
++    uint32_t tickerType) const {
+   MutexLock lock(&aggregate_lock_);
+   return getTickerCountLocked(tickerType);
+ }
+ 
+-uint64_t StatisticsImpl::getTickerCountLocked(uint32_t tickerType) const {
++template <uint32_t TICKER_MAX, uint32_t HISTOGRAM_MAX>
++uint64_t StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>::getTickerCountLocked(
++    uint32_t tickerType) const {
+   assert(tickerType < TICKER_ENUM_MAX);
+   uint64_t res = 0;
+   for (size_t core_idx = 0; core_idx < per_core_stats_.Size(); ++core_idx) {
+@@ -403,13 +417,16 @@ uint64_t StatisticsImpl::getTickerCountLocked(uint32_t tickerType) const {
+   return res;
+ }
+ 
+-void StatisticsImpl::histogramData(uint32_t histogramType,
+-                                   HistogramData* const data) const {
++template <uint32_t TICKER_MAX, uint32_t HISTOGRAM_MAX>
++void StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>::histogramData(
++    uint32_t histogramType, HistogramData* const data) const {
+   MutexLock lock(&aggregate_lock_);
+   getHistogramImplLocked(histogramType)->Data(data);
+ }
+ 
+-std::unique_ptr<HistogramImpl> StatisticsImpl::getHistogramImplLocked(
++template <uint32_t TICKER_MAX, uint32_t HISTOGRAM_MAX>
++std::unique_ptr<HistogramImpl>
++StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>::getHistogramImplLocked(
+     uint32_t histogramType) const {
+   assert(histogramType < HISTOGRAM_ENUM_MAX);
+   std::unique_ptr<HistogramImpl> res_hist(new HistogramImpl());
+@@ -420,12 +437,16 @@ std::unique_ptr<HistogramImpl> StatisticsImpl::getHistogramImplLocked(
+   return res_hist;
+ }
+ 
+-std::string StatisticsImpl::getHistogramString(uint32_t histogramType) const {
++template <uint32_t TICKER_MAX, uint32_t HISTOGRAM_MAX>
++std::string StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>::getHistogramString(
++    uint32_t histogramType) const {
+   MutexLock lock(&aggregate_lock_);
+   return getHistogramImplLocked(histogramType)->ToString();
+ }
+ 
+-void StatisticsImpl::setTickerCount(uint32_t tickerType, uint64_t count) {
++template <uint32_t TICKER_MAX, uint32_t HISTOGRAM_MAX>
++void StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>::setTickerCount(
++    uint32_t tickerType, uint64_t count) {
+   {
+     MutexLock lock(&aggregate_lock_);
+     setTickerCountLocked(tickerType, count);
+@@ -435,7 +456,9 @@ void StatisticsImpl::setTickerCount(uint32_t tickerType, uint64_t count) {
+   }
+ }
+ 
+-void StatisticsImpl::setTickerCountLocked(uint32_t tickerType, uint64_t count) {
++template <uint32_t TICKER_MAX, uint32_t HISTOGRAM_MAX>
++void StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>::setTickerCountLocked(
++    uint32_t tickerType, uint64_t count) {
+   assert(tickerType < TICKER_ENUM_MAX);
+   for (size_t core_idx = 0; core_idx < per_core_stats_.Size(); ++core_idx) {
+     if (core_idx == 0) {
+@@ -446,7 +469,9 @@ void StatisticsImpl::setTickerCountLocked(uint32_t tickerType, uint64_t count) {
+   }
+ }
+ 
+-uint64_t StatisticsImpl::getAndResetTickerCount(uint32_t tickerType) {
++template <uint32_t TICKER_MAX, uint32_t HISTOGRAM_MAX>
++uint64_t StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>::getAndResetTickerCount(
++    uint32_t tickerType) {
+   uint64_t sum = 0;
+   {
+     MutexLock lock(&aggregate_lock_);
+@@ -463,7 +488,9 @@ uint64_t StatisticsImpl::getAndResetTickerCount(uint32_t tickerType) {
+   return sum;
+ }
+ 
+-void StatisticsImpl::recordTick(uint32_t tickerType, uint64_t count) {
++template <uint32_t TICKER_MAX, uint32_t HISTOGRAM_MAX>
++void StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>::recordTick(uint32_t tickerType,
++                                                           uint64_t count) {
+   if (get_stats_level() <= StatsLevel::kExceptTickers) {
+     return;
+   }
+@@ -478,7 +505,9 @@ void StatisticsImpl::recordTick(uint32_t tickerType, uint64_t count) {
+   }
+ }
+ 
+-void StatisticsImpl::recordInHistogram(uint32_t histogramType, uint64_t value) {
++template <uint32_t TICKER_MAX, uint32_t HISTOGRAM_MAX>
++void StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>::recordInHistogram(
++    uint32_t histogramType, uint64_t value) {
+   assert(histogramType < HISTOGRAM_ENUM_MAX);
+   if (get_stats_level() <= StatsLevel::kExceptHistogramOrTimers) {
+     return;
+@@ -489,7 +518,8 @@ void StatisticsImpl::recordInHistogram(uint32_t histogramType, uint64_t value) {
+   }
+ }
+ 
+-Status StatisticsImpl::Reset() {
++template <uint32_t TICKER_MAX, uint32_t HISTOGRAM_MAX>
++Status StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>::Reset() {
+   MutexLock lock(&aggregate_lock_);
+   for (uint32_t i = 0; i < TICKER_ENUM_MAX; ++i) {
+     setTickerCountLocked(i, 0);
+@@ -509,7 +539,8 @@ const int kTmpStrBufferSize = 200;
+ 
+ }  // namespace
+ 
+-std::string StatisticsImpl::ToString() const {
++template <uint32_t TICKER_MAX, uint32_t HISTOGRAM_MAX>
++std::string StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>::ToString() const {
+   MutexLock lock(&aggregate_lock_);
+   std::string res;
+   res.reserve(20000);
+@@ -543,7 +574,8 @@ std::string StatisticsImpl::ToString() const {
+   return res;
+ }
+ 
+-bool StatisticsImpl::getTickerMap(
++template <uint32_t TICKER_MAX, uint32_t HISTOGRAM_MAX>
++bool StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>::getTickerMap(
+     std::map<std::string, uint64_t>* stats_map) const {
+   assert(stats_map);
+   if (!stats_map) {
+@@ -558,7 +590,9 @@ bool StatisticsImpl::getTickerMap(
+   return true;
+ }
+ 
+-bool StatisticsImpl::HistEnabledForType(uint32_t type) const {
++template <uint32_t TICKER_MAX, uint32_t HISTOGRAM_MAX>
++bool StatisticsImpl<TICKER_MAX, HISTOGRAM_MAX>::HistEnabledForType(
++    uint32_t type) const {
+   return type < HISTOGRAM_ENUM_MAX;
+ }
+ 
+diff --git a/monitoring/statistics_impl.h b/monitoring/statistics_impl.h
+index e0dc29d28..cb911e7e9 100644
+--- a/monitoring/statistics_impl.h
++++ b/monitoring/statistics_impl.h
+@@ -29,16 +29,8 @@
+ 
+ namespace ROCKSDB_NAMESPACE {
+ 
+-enum TickersInternal : uint32_t {
+-  INTERNAL_TICKER_ENUM_START = TICKER_ENUM_MAX,
+-  INTERNAL_TICKER_ENUM_MAX
+-};
+-
+-enum HistogramsInternal : uint32_t {
+-  INTERNAL_HISTOGRAM_START = HISTOGRAM_ENUM_MAX,
+-  INTERNAL_HISTOGRAM_ENUM_MAX
+-};
+-
++template <uint32_t TICKER_MAX = TICKER_ENUM_MAX,
++          uint32_t HISTOGRAM_MAX = HISTOGRAM_ENUM_MAX>
+ class StatisticsImpl : public Statistics {
+  public:
+   StatisticsImpl(std::shared_ptr<Statistics> stats);
+@@ -84,14 +76,13 @@ class StatisticsImpl : public Statistics {
+   //
+   // Alignment attributes expand to nothing depending on the platform
+   struct ALIGN_AS(CACHE_LINE_SIZE) StatisticsData {
+-    std::atomic_uint_fast64_t tickers_[INTERNAL_TICKER_ENUM_MAX] = {{0}};
+-    HistogramImpl histograms_[INTERNAL_HISTOGRAM_ENUM_MAX];
++    std::atomic_uint_fast64_t tickers_[TICKER_MAX] = {{0}};
++    HistogramImpl histograms_[HISTOGRAM_MAX];
+ #ifndef HAVE_ALIGNED_NEW
+-    char
+-        padding[(CACHE_LINE_SIZE -
+-                 (INTERNAL_TICKER_ENUM_MAX * sizeof(std::atomic_uint_fast64_t) +
+-                  INTERNAL_HISTOGRAM_ENUM_MAX * sizeof(HistogramImpl)) %
+-                     CACHE_LINE_SIZE)] ROCKSDB_FIELD_UNUSED;
++    char padding[(CACHE_LINE_SIZE -
++                  (TICKER_MAX * sizeof(std::atomic_uint_fast64_t) +
++                   HISTOGRAM_MAX * sizeof(HistogramImpl)) %
++                      CACHE_LINE_SIZE)] ROCKSDB_FIELD_UNUSED;
+ #endif
+     void* operator new(size_t s) { return port::cacheline_aligned_alloc(s); }
+     void* operator new[](size_t s) { return port::cacheline_aligned_alloc(s); }
+diff --git a/options/customizable_test.cc b/options/customizable_test.cc
+index 696f1b25e..ee7c9086a 100644
+--- a/options/customizable_test.cc
++++ b/options/customizable_test.cc
+@@ -78,9 +78,7 @@ class TestCustomizable : public Customizable {
+  public:
+   TestCustomizable(const std::string& name) : name_(name) {}
+   // Method to allow CheckedCast to work for this class
+-  static const char* kClassName() {
+-    return "TestCustomizable";
+-  }
++  static const char* kClassName() { return "TestCustomizable"; }
+ 
+   const char* Name() const override { return name_.c_str(); }
+   static const char* Type() { return "test.custom"; }
+@@ -611,10 +609,9 @@ TEST_F(CustomizableTest, PrepareOptionsTest) {
+ 
+ namespace {
+ static std::unordered_map<std::string, OptionTypeInfo> inner_option_info = {
+-    {"inner",
+-     OptionTypeInfo::AsCustomSharedPtr<TestCustomizable>(
+-         0, OptionVerificationType::kNormal, OptionTypeFlags::kStringNameOnly)}
+-};
++    {"inner", OptionTypeInfo::AsCustomSharedPtr<TestCustomizable>(
++                  0, OptionVerificationType::kNormal,
++                  OptionTypeFlags::kStringNameOnly)}};
+ 
+ struct InnerOptions {
+   static const char* kName() { return "InnerOptions"; }
+@@ -939,7 +936,6 @@ TEST_F(CustomizableTest, NoNameTest) {
+   ASSERT_EQ(copts->cu, nullptr);
+ }
+ 
+-
+ TEST_F(CustomizableTest, IgnoreUnknownObjects) {
+   ConfigOptions ignore = config_options_;
+   std::shared_ptr<TestCustomizable> shared;
+@@ -1223,7 +1219,6 @@ TEST_F(CustomizableTest, CreateManagedObjects) {
+   ASSERT_EQ(mc1, obj);
+ }
+ 
+-
+ namespace {
+ class TestSecondaryCache : public SecondaryCache {
+  public:
+@@ -1257,7 +1252,7 @@ class TestSecondaryCache : public SecondaryCache {
+   std::string GetPrintableOptions() const override { return ""; }
+ };
+ 
+-class TestStatistics : public StatisticsImpl {
++class TestStatistics : public StatisticsImpl<> {
+  public:
+   TestStatistics() : StatisticsImpl(nullptr) {}
+   const char* Name() const override { return kClassName(); }
+@@ -1347,8 +1342,6 @@ class DummyFileSystem : public FileSystemWrapper {
+   const char* Name() const override { return kClassName(); }
+ };
+ 
+-
+-
+ class MockTablePropertiesCollectorFactory
+     : public TablePropertiesCollectorFactory {
+  private:
+-- 
+2.43.2
+

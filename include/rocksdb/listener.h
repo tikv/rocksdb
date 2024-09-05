@@ -487,6 +487,8 @@ struct MemTableInfo {
   // memtable. It can then be assumed that any write with a larger(or equal)
   // sequence number will be present in this memtable or a later memtable.
   SequenceNumber earliest_seqno;
+  // The largest sequence number of writes in this memtable.
+  SequenceNumber largest_seqno;
   // Total number of entries in memtable
   uint64_t num_entries;
   // Total number of deletes in memtable
@@ -504,6 +506,8 @@ struct ExternalFileIngestionInfo {
   SequenceNumber global_seqno;
   // Table properties of the table being flushed
   TableProperties table_properties;
+  // Level inside the DB we picked for the external file.
+  int picked_level;
 };
 
 // Result of auto background error recovery

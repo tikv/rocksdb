@@ -732,6 +732,14 @@ uint32_t WriteBatchInternal::Count(const WriteBatch* b) {
   return DecodeFixed32(b->rep_.data() + 8);
 }
 
+uint32_t WriteBatchInternal::Count(const std::vector<WriteBatch*> b) {
+  uint32_t count = 0;
+  for (auto w : b) {
+    count += DecodeFixed32(w->rep_.data() + 8);
+  }
+  return count;
+}
+
 void WriteBatchInternal::SetCount(WriteBatch* b, uint32_t n) {
   EncodeFixed32(&b->rep_[8], n);
 }
@@ -2946,12 +2954,15 @@ Status WriteBatchInternal::InsertInto(
       inserter.MaybeAdvanceSeq(true);
       continue;
     }
-    SetSequence(w->batch, inserter.sequence());
+    SetSequence(w->multi_batch.batches[0], inserter.sequence());
     inserter.set_log_number_ref(w->log_ref);
-    inserter.set_prot_info(w->batch->prot_info_.get());
-    w->status = w->batch->Iterate(&inserter);
+    inserter.set_prot_info(w->multi_batch.batches[0]->prot_info_.get());
+    w->status = w->multi_batch.batches[0]->Iterate(&inserter);
     if (!w->status.ok()) {
       return w->status;
+    }
+    if (w->post_callback) {
+      w->post_callback->Callback(w->sequence);
     }
     assert(!seq_per_batch || w->batch_cnt != 0);
     assert(!seq_per_batch || inserter.sequence() - w->sequence == w->batch_cnt);
@@ -2976,10 +2987,13 @@ Status WriteBatchInternal::InsertInto(
                             concurrent_memtable_writes, nullptr /* prot_info */,
                             nullptr /*has_valid_writes*/, seq_per_batch,
                             batch_per_txn, hint_per_batch);
-  SetSequence(writer->batch, sequence);
+  SetSequence(writer->multi_batch.batches[0], sequence);
   inserter.set_log_number_ref(writer->log_ref);
-  inserter.set_prot_info(writer->batch->prot_info_.get());
-  Status s = writer->batch->Iterate(&inserter);
+  inserter.set_prot_info(writer->multi_batch.batches[0]->prot_info_.get());
+  Status s = writer->multi_batch.batches[0]->Iterate(&inserter);
+  if (writer->post_callback && s.ok()) {
+    writer->post_callback->Callback(sequence);
+  }
   assert(!seq_per_batch || batch_cnt != 0);
   assert(!seq_per_batch || inserter.sequence() - sequence == batch_cnt);
   if (concurrent_memtable_writes) {
@@ -2992,14 +3006,15 @@ Status WriteBatchInternal::InsertInto(
     const WriteBatch* batch, ColumnFamilyMemTables* memtables,
     FlushScheduler* flush_scheduler,
     TrimHistoryScheduler* trim_history_scheduler,
-    bool ignore_missing_column_families, uint64_t log_number, DB* db,
-    bool concurrent_memtable_writes, SequenceNumber* next_seq,
+    bool ignore_missing_column_families, uint64_t log_number, uint64_t log_ref,
+    DB* db, bool concurrent_memtable_writes, SequenceNumber* next_seq,
     bool* has_valid_writes, bool seq_per_batch, bool batch_per_txn) {
   MemTableInserter inserter(Sequence(batch), memtables, flush_scheduler,
                             trim_history_scheduler,
                             ignore_missing_column_families, log_number, db,
                             concurrent_memtable_writes, batch->prot_info_.get(),
                             has_valid_writes, seq_per_batch, batch_per_txn);
+  inserter.set_log_number_ref(log_ref);
   Status s = batch->Iterate(&inserter);
   if (next_seq != nullptr) {
     *next_seq = inserter.sequence();
@@ -3100,6 +3115,16 @@ Status WriteBatchInternal::SetContents(WriteBatch* b, const Slice& contents) {
   return Status::OK();
 }
 
+Status WriteBatchInternal::AppendContents(WriteBatch* dst,
+                                          const Slice& content) {
+  size_t src_len = content.size() - WriteBatchInternal::kHeader;
+  SetCount(dst, Count(dst) + DecodeFixed32(content.data() + 8));
+  assert(content.size() >= WriteBatchInternal::kHeader);
+  dst->rep_.append(content.data() + WriteBatchInternal::kHeader, src_len);
+  dst->content_flags_.store(ContentFlags::DEFERRED, std::memory_order_relaxed);
+  return Status::OK();
+}
+
 Status WriteBatchInternal::Append(WriteBatch* dst, const WriteBatch* src,
                                   const bool wal_only) {
   assert(dst->Count() == 0 ||
@@ -3189,6 +3214,32 @@ Status WriteBatchInternal::UpdateProtectionInfo(WriteBatch* wb,
   }
   return Status::NotSupported(
       "WriteBatch protection info must be zero or eight bytes/key");
+}
+
+void WriteBatch::Iterator::SeekToFirst() {
+  input_ = rep_;
+  if (input_.size() < WriteBatchInternal::kHeader) {
+    valid_ = false;
+    return;
+  }
+  input_.remove_prefix(WriteBatchInternal::kHeader);
+  valid_ = true;
+  Next();
+}
+
+void WriteBatch::Iterator::Next() {
+  if (input_.empty() || !valid_) {
+    valid_ = false;
+    return;
+  }
+  Slice blob, xid;
+  Status s = ReadRecordFromWriteBatch(&input_, &tag_, &column_family_, &key_,
+                                      &value_, &blob, &xid);
+  valid_ = s.ok();
+}
+
+int WriteBatch::WriteBatchRef::Count() const {
+  return DecodeFixed32(rep_.data() + 8);
 }
 
 }  // namespace ROCKSDB_NAMESPACE

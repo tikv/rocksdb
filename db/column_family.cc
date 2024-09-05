@@ -51,10 +51,21 @@ ColumnFamilyHandleImpl::ColumnFamilyHandleImpl(
   }
 }
 
+ColumnFamilyHandleImpl::ColumnFamilyHandleImpl(
+    const ColumnFamilyHandleImpl& other)
+    : cfd_(other.cfd_), db_(other.db_), mutex_(other.mutex_) {
+  if (cfd_ != nullptr) {
+    cfd_->Ref();
+  }
+}
+
 ColumnFamilyHandleImpl::~ColumnFamilyHandleImpl() {
   if (cfd_ != nullptr) {
     for (auto& listener : cfd_->ioptions()->listeners) {
       listener->OnColumnFamilyHandleDeletionStarted(this);
+    }
+    if (cfd_->write_buffer_mgr()) {
+      cfd_->write_buffer_mgr()->UnregisterColumnFamily(this);
     }
     // Job id == 0 means that this is not our background process, but rather
     // user thread
@@ -622,7 +633,8 @@ ColumnFamilyData::ColumnFamilyData(
     }
   }
 
-  RecalculateWriteStallConditions(mutable_cf_options_);
+  RecalculateWriteStallConditions(mutable_cf_options_,
+                                  ioptions_.rate_limiter.get());
 
   if (cf_options.table_factory->IsInstanceOf(
           TableFactory::kBlockBasedTableName()) &&
@@ -839,7 +851,7 @@ int GetL0FileCountForCompactionSpeedup(int level0_file_num_compaction_trigger,
   assert(level0_file_num_compaction_trigger <= level0_slowdown_writes_trigger);
 
   if (level0_file_num_compaction_trigger < 0) {
-    return std::numeric_limits<int>::max();
+    return std::numeric_limits<int32_t>::max();
   }
 
   const int64_t twice_level0_trigger =
@@ -935,7 +947,7 @@ ColumnFamilyData::GetWriteStallConditionAndCause(
 }
 
 WriteStallCondition ColumnFamilyData::RecalculateWriteStallConditions(
-    const MutableCFOptions& mutable_cf_options) {
+    const MutableCFOptions& mutable_cf_options, RateLimiter* rate_limiter) {
   auto write_stall_condition = WriteStallCondition::kNormal;
   if (current_ != nullptr) {
     auto* vstorage = current_->storage_info();
@@ -954,7 +966,8 @@ WriteStallCondition ColumnFamilyData::RecalculateWriteStallConditions(
     bool needed_delay = write_controller->NeedsDelay();
 
     if (write_stall_condition == WriteStallCondition::kStopped &&
-        write_stall_cause == WriteStallCause::kMemtableLimit) {
+        write_stall_cause == WriteStallCause::kMemtableLimit &&
+        !mutable_cf_options.disable_write_stall) {
       write_controller_token_ = write_controller->GetStopToken();
       internal_stats_->AddCFStats(InternalStats::MEMTABLE_LIMIT_STOPS, 1);
       ROCKS_LOG_WARN(
@@ -964,7 +977,8 @@ WriteStallCondition ColumnFamilyData::RecalculateWriteStallConditions(
           name_.c_str(), imm()->NumNotFlushed(),
           mutable_cf_options.max_write_buffer_number);
     } else if (write_stall_condition == WriteStallCondition::kStopped &&
-               write_stall_cause == WriteStallCause::kL0FileCountLimit) {
+               write_stall_cause == WriteStallCause::kL0FileCountLimit &&
+               !mutable_cf_options.disable_write_stall) {
       write_controller_token_ = write_controller->GetStopToken();
       internal_stats_->AddCFStats(InternalStats::L0_FILE_COUNT_LIMIT_STOPS, 1);
       if (compaction_picker_->IsLevel0CompactionInProgress()) {
@@ -976,7 +990,8 @@ WriteStallCondition ColumnFamilyData::RecalculateWriteStallConditions(
                      "[%s] Stopping writes because we have %d level-0 files",
                      name_.c_str(), vstorage->l0_delay_trigger_count());
     } else if (write_stall_condition == WriteStallCondition::kStopped &&
-               write_stall_cause == WriteStallCause::kPendingCompactionBytes) {
+               write_stall_cause == WriteStallCause::kPendingCompactionBytes &&
+               !mutable_cf_options.disable_write_stall) {
       write_controller_token_ = write_controller->GetStopToken();
       internal_stats_->AddCFStats(
           InternalStats::PENDING_COMPACTION_BYTES_LIMIT_STOPS, 1);
@@ -986,7 +1001,8 @@ WriteStallCondition ColumnFamilyData::RecalculateWriteStallConditions(
           "bytes %" PRIu64,
           name_.c_str(), compaction_needed_bytes);
     } else if (write_stall_condition == WriteStallCondition::kDelayed &&
-               write_stall_cause == WriteStallCause::kMemtableLimit) {
+               write_stall_cause == WriteStallCause::kMemtableLimit &&
+               !mutable_cf_options.disable_write_stall) {
       write_controller_token_ =
           SetupDelay(write_controller, compaction_needed_bytes,
                      prev_compaction_needed_bytes_, was_stopped,
@@ -1001,7 +1017,8 @@ WriteStallCondition ColumnFamilyData::RecalculateWriteStallConditions(
           mutable_cf_options.max_write_buffer_number,
           write_controller->delayed_write_rate());
     } else if (write_stall_condition == WriteStallCondition::kDelayed &&
-               write_stall_cause == WriteStallCause::kL0FileCountLimit) {
+               write_stall_cause == WriteStallCause::kL0FileCountLimit &&
+               !mutable_cf_options.disable_write_stall) {
       // L0 is the last two files from stopping.
       bool near_stop = vstorage->l0_delay_trigger_count() >=
                        mutable_cf_options.level0_stop_writes_trigger - 2;
@@ -1021,7 +1038,8 @@ WriteStallCondition ColumnFamilyData::RecalculateWriteStallConditions(
                      name_.c_str(), vstorage->l0_delay_trigger_count(),
                      write_controller->delayed_write_rate());
     } else if (write_stall_condition == WriteStallCondition::kDelayed &&
-               write_stall_cause == WriteStallCause::kPendingCompactionBytes) {
+               write_stall_cause == WriteStallCause::kPendingCompactionBytes &&
+               !mutable_cf_options.disable_write_stall) {
       // If the distance to hard limit is less than 1/4 of the gap between soft
       // and
       // hard bytes limit, we think it is near stop and speed up the slowdown.
@@ -1047,7 +1065,8 @@ WriteStallCondition ColumnFamilyData::RecalculateWriteStallConditions(
           name_.c_str(), vstorage->estimated_compaction_needed_bytes(),
           write_controller->delayed_write_rate());
     } else {
-      assert(write_stall_condition == WriteStallCondition::kNormal);
+      assert(write_stall_condition == WriteStallCondition::kNormal ||
+             mutable_cf_options.disable_write_stall);
       if (vstorage->l0_delay_trigger_count() >=
           GetL0FileCountForCompactionSpeedup(
               mutable_cf_options.level0_file_num_compaction_trigger,
@@ -1064,6 +1083,9 @@ WriteStallCondition ColumnFamilyData::RecalculateWriteStallConditions(
         // compaction.
         write_controller_token_ =
             write_controller->GetCompactionPressureToken();
+        if (rate_limiter) {
+          rate_limiter->PaceUp(false /*critical*/);
+        }
       } else if (vstorage->estimated_compaction_needed_bytes() >=
                  GetPendingCompactionBytesForCompactionSpeedup(
                      mutable_cf_options, vstorage)) {
@@ -1091,6 +1113,16 @@ WriteStallCondition ColumnFamilyData::RecalculateWriteStallConditions(
         // pressure.
         write_controller->low_pri_rate_limiter()->SetBytesPerSecond(write_rate /
                                                                     4);
+      }
+    }
+    if (rate_limiter) {
+      // pace up limiter when close to write stall
+      if (write_stall_condition != WriteStallCondition::kNormal ||
+          vstorage->l0_delay_trigger_count() >=
+              0.8 * mutable_cf_options.level0_slowdown_writes_trigger ||
+          vstorage->estimated_compaction_needed_bytes() >=
+              0.5 * mutable_cf_options.soft_pending_compaction_bytes_limit) {
+        rate_limiter->PaceUp(true /*critical*/);
       }
     }
     prev_compaction_needed_bytes_ = compaction_needed_bytes;
@@ -1217,6 +1249,105 @@ Status ColumnFamilyData::RangesOverlapWithMemtables(
   return status;
 }
 
+Status ColumnFamilyData::GetMemtablesUserKeyRange(PinnableSlice* smallest,
+                                                  PinnableSlice* largest,
+                                                  bool* found) {
+  assert(smallest && largest && found);
+  Status s;
+  auto* ucmp = user_comparator();
+  Arena arena;
+  ReadOptions read_opts;
+  read_opts.total_order_seek = true;
+  MergeIteratorBuilder merge_iter_builder(&internal_comparator_, &arena);
+  merge_iter_builder.AddIterator(mem_->NewIterator(read_opts, &arena));
+  imm_.current()->AddIterators(read_opts, &merge_iter_builder, false);
+  ScopedArenaIterator mem_iter(merge_iter_builder.Finish());
+  mem_iter->SeekToFirst();
+  if (mem_iter->Valid()) {
+    auto ukey = mem_iter->user_key();
+    if (!(*found) || ucmp->Compare(ukey, *smallest) < 0) {
+      smallest->PinSelf(ukey);
+    }
+    mem_iter->SeekToLast();
+    assert(mem_iter->Valid());
+    ukey = mem_iter->user_key();
+    if (!(*found) || ucmp->Compare(*largest, ukey) < 0) {
+      largest->PinSelf(ukey);
+    }
+    *found = true;
+  }
+
+  if (s.ok()) {
+    autovector<MemTable*> memtables{mem_};
+    imm_.ExportMemtables(&memtables);
+    for (auto* mem : memtables) {
+      auto* iter =
+          mem->NewRangeTombstoneIterator(read_opts, kMaxSequenceNumber, false);
+      if (iter != nullptr) {
+        iter->SeekToFirst();
+        if (iter->Valid()) {
+          // It's already a user key.
+          auto ukey = iter->start_key();
+          if (!(*found) || ucmp->Compare(ukey, *smallest) < 0) {
+            smallest->PinSelf(ukey);
+          }
+          iter->SeekToLast();
+          assert(iter->Valid());
+          // Get the end_key of all tombstones.
+          ukey = iter->end_key();
+          if (!(*found) || ucmp->Compare(*largest, ukey) < 0) {
+            largest->PinSelf(ukey);
+          }
+          *found = true;
+        }
+      }
+    }
+  }
+
+  return s;
+}
+
+Status ColumnFamilyData::GetUserKeyRange(PinnableSlice* smallest,
+                                         PinnableSlice* largest, bool* found) {
+  assert(smallest && largest && found);
+  if (ioptions_.compaction_style != CompactionStyle::kCompactionStyleLevel) {
+    return Status::NotSupported("Unexpected compaction style");
+  }
+  Status s = GetMemtablesUserKeyRange(smallest, largest, found);
+  if (!s.ok()) {
+    return s;
+  }
+
+  VersionStorageInfo& vsi = *current()->storage_info();
+  auto* ucmp = user_comparator();
+  for (const auto& f : vsi.LevelFiles(0)) {
+    Slice start = f->smallest.user_key();
+    Slice end = f->largest.user_key();
+    if (!(*found) || ucmp->Compare(start, *smallest) < 0) {
+      smallest->PinSelf(start);
+    }
+    if (!(*found) || ucmp->Compare(*largest, end) < 0) {
+      largest->PinSelf(end);
+    }
+    *found = true;
+  }
+  for (int level = 1; level < vsi.num_levels(); ++level) {
+    const auto& level_files = vsi.LevelFiles(level);
+    if (level_files.size() > 0) {
+      Slice start = level_files.front()->smallest.user_key();
+      Slice end = level_files.back()->largest.user_key();
+      if (!(*found) || ucmp->Compare(start, *smallest) < 0) {
+        smallest->PinSelf(start);
+      }
+      if (!(*found) || ucmp->Compare(*largest, end) < 0) {
+        largest->PinSelf(end);
+      }
+      *found = true;
+    }
+  }
+  return s;
+}
+
 const int ColumnFamilyData::kCompactAllLevels = -1;
 const int ColumnFamilyData::kCompactToBaseLevel = -2;
 
@@ -1320,8 +1451,8 @@ void ColumnFamilyData::InstallSuperVersion(
     // Should not recalculate slow down condition if nothing has changed, since
     // currently RecalculateWriteStallConditions() treats it as further slowing
     // down is needed.
-    super_version_->write_stall_condition =
-        RecalculateWriteStallConditions(mutable_cf_options);
+    super_version_->write_stall_condition = RecalculateWriteStallConditions(
+        mutable_cf_options, ioptions_.rate_limiter.get());
   } else {
     super_version_->write_stall_condition =
         old_superversion->write_stall_condition;
@@ -1494,6 +1625,13 @@ Status ColumnFamilyData::ValidateOptions(
       }
     }
   }
+
+  if (db_options.enable_multi_batch_write &&
+      cf_options.max_successive_merges > 0) {
+    return Status::NotSupported(
+        "Multi thread write is only supported with no successive merges");
+  }
+
   return s;
 }
 
@@ -1697,8 +1835,11 @@ ColumnFamilyData* ColumnFamilySet::CreateColumnFamily(
     const std::string& name, uint32_t id, Version* dummy_versions,
     const ColumnFamilyOptions& options) {
   assert(column_families_.find(name) == column_families_.end());
+  auto* write_buffer_manager = options.cf_write_buffer_manager != nullptr
+                                   ? options.cf_write_buffer_manager.get()
+                                   : write_buffer_manager_;
   ColumnFamilyData* new_cfd = new ColumnFamilyData(
-      id, name, dummy_versions, table_cache_, write_buffer_manager_, options,
+      id, name, dummy_versions, table_cache_, write_buffer_manager, options,
       *db_options_, &file_options_, this, block_cache_tracer_, io_tracer_,
       db_id_, db_session_id_);
   column_families_.insert({name, id});

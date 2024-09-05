@@ -26,6 +26,7 @@
 #include "table/table_reader.h"
 #include "table/unique_id_impl.h"
 #include "util/autovector.h"
+#include "util/string_util.h"
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -349,6 +350,49 @@ struct FileMetaData {
     usage += smallest.size() + largest.size() + file_checksum.size() +
              file_checksum_func_name.size();
     return usage;
+  }
+  std::string DebugString(bool hex_key) const {
+    std::string r;
+    AppendNumberTo(&r, fd.GetNumber());
+    r.append(" ");
+    AppendNumberTo(&r, fd.GetFileSize());
+    r.append(" ");
+    r.append(smallest.DebugString(hex_key));
+    r.append(" .. ");
+    r.append(largest.DebugString(hex_key));
+    if (oldest_blob_file_number != kInvalidBlobFileNumber) {
+      r.append(" blob_file:");
+      AppendNumberTo(&r, oldest_blob_file_number);
+    }
+    r.append(" oldest_ancester_time:");
+    AppendNumberTo(&r, oldest_ancester_time);
+    r.append(" file_creation_time:");
+    AppendNumberTo(&r, file_creation_time);
+    r.append(" epoch_number:");
+    AppendNumberTo(&r, epoch_number);
+    r.append(" file_checksum:");
+    r.append(Slice(file_checksum).ToString(true));
+    r.append(" file_checksum_func_name: ");
+    r.append(file_checksum_func_name);
+    if (temperature != Temperature::kUnknown) {
+      r.append(" temperature: ");
+      // Maybe change to human readable format whenthe feature becomes
+      // permanent
+      r.append(std::to_string(static_cast<int>(temperature)));
+    }
+    if (unique_id != kNullUniqueId64x2) {
+      r.append(" unique_id(internal): ");
+      UniqueId64x2 id = unique_id;
+      r.append(InternalUniqueIdToHumanString(&id));
+      r.append(" public_unique_id: ");
+      InternalUniqueIdToExternal(&id);
+      r.append(UniqueIdToHumanString(EncodeUniqueIdBytes(&id)));
+    }
+    r.append(" tail size: ");
+    AppendNumberTo(&r, tail_size);
+    r.append(" User-defined timestamps persisted: ");
+    r.append(user_defined_timestamps_persisted ? "true" : "false");
+    return r;
   }
 };
 

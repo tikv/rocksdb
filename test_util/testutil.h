@@ -10,12 +10,17 @@
 #pragma once
 #include <algorithm>
 #include <deque>
+#include <mutex>
+#include <set>
 #include <string>
 #include <vector>
 
 #include "env/composite_env_wrapper.h"
+#include "file/filename.h"
 #include "file/writable_file_writer.h"
 #include "rocksdb/compaction_filter.h"
+#include "rocksdb/db.h"
+#include "rocksdb/encryption.h"
 #include "rocksdb/env.h"
 #include "rocksdb/iterator.h"
 #include "rocksdb/merge_operator.h"
@@ -42,6 +47,66 @@ class SequentialFile;
 class SequentialFileReader;
 
 namespace test {
+
+// TODO(yiwu): Use InMemoryKeyManager instead for tests.
+#ifdef OPENSSL
+class TestKeyManager : public encryption::KeyManager {
+ public:
+  virtual ~TestKeyManager() = default;
+
+  static const std::string default_key;
+  static const std::string default_iv;
+  std::mutex mutex;
+  std::set<std::string> file_set;
+
+  Status GetFile(const std::string& fname,
+                 encryption::FileEncryptionInfo* file_info) override {
+    std::lock_guard<std::mutex> l(mutex);
+    if (file_set.find(fname) == file_set.end()) {
+      file_info->method = encryption::EncryptionMethod::kPlaintext;
+    } else {
+      file_info->method = encryption::EncryptionMethod::kAES192_CTR;
+    }
+    file_info->key = default_key;
+    file_info->iv = default_iv;
+    return Status::OK();
+  }
+
+  Status NewFile(const std::string& fname,
+                 encryption::FileEncryptionInfo* file_info) override {
+    std::lock_guard<std::mutex> l(mutex);
+    file_info->method = encryption::EncryptionMethod::kAES192_CTR;
+    file_info->key = default_key;
+    file_info->iv = default_iv;
+    file_set.insert(fname);
+    return Status::OK();
+  }
+
+  Status DeleteFile(const std::string& fname) override {
+    std::lock_guard<std::mutex> l(mutex);
+    file_set.erase(fname);
+    if (!fname.empty()) {
+      std::string copy = fname;
+      if (copy.back() != '/') {
+        copy.push_back('/');
+      }
+      auto begin = file_set.lower_bound(copy);
+      auto end = begin;
+      while (end != file_set.end() && end->compare(0, copy.size(), copy) == 0) {
+        end++;
+      }
+      file_set.erase(begin, end);
+    }
+    return Status::OK();
+  }
+
+  Status LinkFile(const std::string& /*src*/, const std::string& dst) override {
+    std::lock_guard<std::mutex> l(mutex);
+    file_set.insert(dst);
+    return Status::OK();
+  }
+};
+#endif
 
 extern const uint32_t kDefaultFormatVersion;
 extern const std::set<uint32_t> kFooterFormatVersionsToTest;

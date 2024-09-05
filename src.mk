@@ -55,6 +55,7 @@ LIB_SOURCES =                                                   \
   db/db_impl/db_impl_readonly.cc                                \
   db/db_impl/db_impl_secondary.cc                               \
   db/db_impl/db_impl_write.cc                                   \
+  db/db_impl/db_impl_merge.cc                                   \
   db/db_info_dumper.cc                                          \
   db/db_iter.cc                                                 \
   db/dbformat.cc                                                \
@@ -101,10 +102,12 @@ LIB_SOURCES =                                                   \
   db/write_controller.cc                                        \
   db/write_stall_stats.cc                                       \
   db/write_thread.cc                                            \
+  encryption/encryption.cc                                      \
   env/composite_env.cc                                          \
   env/env.cc                                                    \
   env/env_chroot.cc                                             \
   env/env_encryption.cc                                         \
+  env/env_inspected.cc                                          \
   env/env_posix.cc                                              \
   env/file_system.cc                                            \
   env/fs_posix.cc                                               \
@@ -145,6 +148,7 @@ LIB_SOURCES =                                                   \
   monitoring/iostats_context.cc                                 \
   monitoring/perf_context.cc                                    \
   monitoring/perf_level.cc                                      \
+  monitoring/perf_flag.cc                                       \
   monitoring/persistent_stats_history.cc                        \
   monitoring/statistics.cc                                      \
   monitoring/thread_status_impl.cc                              \
@@ -298,6 +302,7 @@ LIB_SOURCES =                                                   \
   utilities/persistent_cache/block_cache_tier_metadata.cc       \
   utilities/persistent_cache/persistent_cache_tier.cc           \
   utilities/persistent_cache/volatile_tier_impl.cc              \
+  utilities/rate_limiters/write_amp_based_rate_limiter.cc       \
   utilities/simulator_cache/cache_simulator.cc                  \
   utilities/simulator_cache/sim_cache.cc                        \
   utilities/table_properties_collectors/compact_on_deletion_collector.cc \
@@ -484,6 +489,7 @@ TEST_MAIN_SOURCES =                                                     \
   db/db_memtable_test.cc                                                \
   db/db_merge_operator_test.cc                                          \
   db/db_merge_operand_test.cc                                           \
+  db/db_merge_test.cc                                                   \
   db/db_options_test.cc                                                 \
   db/db_properties_test.cc                                              \
   db/db_range_del_test.cc                                               \

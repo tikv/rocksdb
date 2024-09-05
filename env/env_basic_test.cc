@@ -9,11 +9,13 @@
 #include <string>
 #include <vector>
 
+#include "db/db_test_util.h"
 #include "env/mock_env.h"
 #include "file/file_util.h"
 #include "rocksdb/convenience.h"
 #include "rocksdb/env.h"
 #include "rocksdb/env_encryption.h"
+#include "rocksdb/env_inspected.h"
 #include "test_util/testharness.h"
 
 namespace ROCKSDB_NAMESPACE {
@@ -81,6 +83,51 @@ static Env* GetTestFS() {
   return fs_env;
 }
 
+class DummyFileSystemInspector : public FileSystemInspector {
+ public:
+  DummyFileSystemInspector(size_t refill_bytes = 0)
+      : refill_bytes_(refill_bytes) {}
+
+  Status Read(size_t len, size_t* allowed) override {
+    assert(allowed);
+    if (refill_bytes_ == 0) {
+      *allowed = len;
+    } else {
+      *allowed = std::min(refill_bytes_, len);
+    }
+    return Status::OK();
+  }
+
+  Status Write(size_t len, size_t* allowed) override {
+    assert(allowed);
+    if (refill_bytes_ == 0) {
+      *allowed = len;
+    } else {
+      *allowed = std::min(refill_bytes_, len);
+    }
+    return Status::OK();
+  }
+
+ private:
+  size_t refill_bytes_;
+};
+
+static Env* GetInspectedEnv() {
+  static std::unique_ptr<Env> inspected_env(NewFileSystemInspectedEnv(
+      Env::Default(), std::make_shared<DummyFileSystemInspector>(1)));
+  return inspected_env.get();
+}
+
+#ifdef OPENSSL
+static Env* GetKeyManagedEncryptedEnv() {
+  static std::shared_ptr<encryption::KeyManager> key_manager(
+      new test::TestKeyManager);
+  static std::unique_ptr<Env> key_managed_encrypted_env(
+      NewKeyManagedEncryptedEnv(Env::Default(), key_manager));
+  return key_managed_encrypted_env.get();
+}
+#endif  // OPENSSL
+
 }  // namespace
 class EnvBasicTestWithParam
     : public testing::Test,
@@ -118,8 +165,15 @@ INSTANTIATE_TEST_CASE_P(EncryptedEnv, EnvMoreTestWithParam,
 INSTANTIATE_TEST_CASE_P(MemEnv, EnvBasicTestWithParam,
                         ::testing::Values(&GetMemoryEnv));
 
-namespace {
+INSTANTIATE_TEST_CASE_P(InspectedEnv, EnvBasicTestWithParam,
+                        ::testing::Values(&GetInspectedEnv));
 
+#ifdef OPENSSL
+INSTANTIATE_TEST_CASE_P(KeyManagedEncryptedEnv, EnvBasicTestWithParam,
+                        ::testing::Values(&GetKeyManagedEncryptedEnv));
+#endif  // OPENSSL
+
+namespace {
 // Returns a vector of 0 or 1 Env*, depending whether an Env is registered for
 // TEST_ENV_URI.
 //
@@ -145,6 +199,52 @@ INSTANTIATE_TEST_CASE_P(CustomEnv, EnvBasicTestWithParam,
 
 INSTANTIATE_TEST_CASE_P(CustomEnv, EnvMoreTestWithParam,
                         ::testing::ValuesIn(GetCustomEnvs()));
+
+TEST_P(EnvBasicTestWithParam, RenameCurrent) {
+  if (!getenv("ENCRYPTED_ENV")) {
+    return;
+  }
+  Slice result;
+  char scratch[100];
+  std::unique_ptr<SequentialFile> seq_file;
+  std::unique_ptr<WritableFile> writable_file;
+  std::vector<std::string> children;
+
+  // Create an encrypted `CURRENT` file so it shouldn't be skipped .
+  SyncPoint::GetInstance()->SetCallBack(
+      "KeyManagedEncryptedEnv::NewWritableFile", [&](void* arg) {
+        bool* skip = static_cast<bool*>(arg);
+        *skip = false;
+      });
+  SyncPoint::GetInstance()->EnableProcessing();
+  ASSERT_OK(
+      env_->NewWritableFile(test_dir_ + "/CURRENT", &writable_file, soptions_));
+  SyncPoint::GetInstance()->ClearAllCallBacks();
+  SyncPoint::GetInstance()->DisableProcessing();
+  ASSERT_OK(writable_file->Append("MANIFEST-0"));
+  ASSERT_OK(writable_file->Close());
+  writable_file.reset();
+
+  ASSERT_OK(
+      env_->NewSequentialFile(test_dir_ + "/CURRENT", &seq_file, soptions_));
+  ASSERT_OK(seq_file->Read(100, &result, scratch));
+  ASSERT_EQ(0, result.compare("MANIFEST-0"));
+
+  // Create a plaintext `CURRENT` temp file.
+  ASSERT_OK(env_->NewWritableFile(test_dir_ + "/current.dbtmp.plain",
+                                  &writable_file, soptions_));
+  ASSERT_OK(writable_file->Append("MANIFEST-1"));
+  ASSERT_OK(writable_file->Close());
+  writable_file.reset();
+
+  ASSERT_OK(env_->RenameFile(test_dir_ + "/current.dbtmp.plain",
+                             test_dir_ + "/CURRENT"));
+
+  ASSERT_OK(
+      env_->NewSequentialFile(test_dir_ + "/CURRENT", &seq_file, soptions_));
+  ASSERT_OK(seq_file->Read(100, &result, scratch));
+  ASSERT_EQ(0, result.compare("MANIFEST-1"));
+}
 
 TEST_P(EnvBasicTestWithParam, Basics) {
   uint64_t file_size;

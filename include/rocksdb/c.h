@@ -1561,6 +1561,8 @@ extern ROCKSDB_LIBRARY_API void rocksdb_options_set_hash_skip_list_rep(
     rocksdb_options_t*, size_t, int32_t, int32_t);
 extern ROCKSDB_LIBRARY_API void rocksdb_options_set_hash_link_list_rep(
     rocksdb_options_t*, size_t);
+extern ROCKSDB_LIBRARY_API void rocksdb_options_set_doubly_skip_list_rep(
+    rocksdb_options_t* opt);
 extern ROCKSDB_LIBRARY_API void rocksdb_options_set_plain_table_factory(
     rocksdb_options_t*, uint32_t, int, double, size_t, size_t, char,
     unsigned char, unsigned char);
@@ -1681,6 +1683,10 @@ extern ROCKSDB_LIBRARY_API rocksdb_ratelimiter_t*
 rocksdb_ratelimiter_create_auto_tuned(int64_t rate_bytes_per_sec,
                                       int64_t refill_period_us,
                                       int32_t fairness);
+extern ROCKSDB_LIBRARY_API rocksdb_ratelimiter_t*
+rocksdb_writeampbasedratelimiter_create(int64_t rate_bytes_per_sec,
+                                        int64_t refill_period_us,
+                                        int32_t fairness);
 extern ROCKSDB_LIBRARY_API void rocksdb_ratelimiter_destroy(
     rocksdb_ratelimiter_t*);
 
@@ -2093,8 +2099,6 @@ extern ROCKSDB_LIBRARY_API void rocksdb_write_buffer_manager_destroy(
     rocksdb_write_buffer_manager_t* wbm);
 extern ROCKSDB_LIBRARY_API bool rocksdb_write_buffer_manager_enabled(
     rocksdb_write_buffer_manager_t* wbm);
-extern ROCKSDB_LIBRARY_API bool rocksdb_write_buffer_manager_cost_to_cache(
-    rocksdb_write_buffer_manager_t* wbm);
 extern ROCKSDB_LIBRARY_API size_t
 rocksdb_write_buffer_manager_memory_usage(rocksdb_write_buffer_manager_t* wbm);
 extern ROCKSDB_LIBRARY_API size_t
@@ -2103,10 +2107,6 @@ rocksdb_write_buffer_manager_mutable_memtable_memory_usage(
 extern ROCKSDB_LIBRARY_API size_t
 rocksdb_write_buffer_manager_dummy_entries_in_cache_usage(
     rocksdb_write_buffer_manager_t* wbm);
-extern ROCKSDB_LIBRARY_API size_t
-rocksdb_write_buffer_manager_buffer_size(rocksdb_write_buffer_manager_t* wbm);
-extern ROCKSDB_LIBRARY_API void rocksdb_write_buffer_manager_set_buffer_size(
-    rocksdb_write_buffer_manager_t* wbm, size_t new_size);
 extern ROCKSDB_LIBRARY_API void rocksdb_write_buffer_manager_set_allow_stall(
     rocksdb_write_buffer_manager_t* wbm, bool new_allow_stall);
 

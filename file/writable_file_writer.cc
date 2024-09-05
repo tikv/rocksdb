@@ -69,6 +69,10 @@ IOStatus WritableFileWriter::Append(const Slice& data, uint32_t crc32c_checksum,
                                  io_options, nullptr);
   }
 
+  // The buffer initialization code previously in ctor.
+  if (buf_.Capacity() == 0) {
+    buf_.AllocateNewBuffer(std::min((size_t)65536, max_buffer_size_));
+  }
   // See whether we need to enlarge the buffer to avoid the flush
   if (buf_.Capacity() - buf_.CurrentSize() < left) {
     for (size_t cap = buf_.Capacity();
@@ -183,8 +187,8 @@ IOStatus WritableFileWriter::Pad(const size_t pad_bytes,
     return AssertFalseAndGetStatusForPrevError();
   }
   assert(pad_bytes < kDefaultPageSize);
-  size_t left = pad_bytes;
   size_t cap = buf_.Capacity() - buf_.CurrentSize();
+  size_t left = std::min(pad_bytes, cap);
   size_t pad_start = buf_.CurrentSize();
 
   // Assume pad_bytes is small compared to buf_ capacity. So we always

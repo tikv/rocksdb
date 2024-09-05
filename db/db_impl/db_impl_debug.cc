@@ -318,5 +318,19 @@ size_t DBImpl::TEST_EstimateInMemoryStatsHistorySize() const {
   InstrumentedMutexLock l(&const_cast<DBImpl*>(this)->stats_history_mutex_);
   return EstimateInMemoryStatsHistorySize();
 }
+
+void DBImpl::TEST_ClearBackgroundJobs() {
+  // Matching `CloseHelper()`.
+  while (!flush_queue_.empty()) {
+    const FlushRequest& flush_req = PopFirstFromFlushQueue();
+    for (const auto& iter : flush_req.cfd_to_max_mem_id_to_persist) {
+      iter.first->UnrefAndTryDelete();
+    }
+  }
+  while (!compaction_queue_.empty()) {
+    auto cfd = PopFirstFromCompactionQueue();
+    cfd->UnrefAndTryDelete();
+  }
+}
 }  // namespace ROCKSDB_NAMESPACE
 #endif  // NDEBUG

@@ -39,8 +39,25 @@ class DBWriteTestUnparameterized : public DBTestBase {
       : DBTestBase("pipelined_write_test", /*env_do_fsync=*/false) {}
 };
 
+TEST_P(DBWriteTest, WriteEmptyBatch) {
+  Options options = GetOptions();
+  options.write_buffer_size = 65536;
+  Reopen(options);
+  WriteOptions write_options;
+  WriteBatch batch;
+  Random rnd(301);
+  // Trigger a flush so that we will enter `WaitForPendingWrites`.
+  for (auto i = 0; i < 10; i++) {
+    batch.Clear();
+    ASSERT_OK(dbfull()->Write(write_options, &batch));
+    ASSERT_OK(batch.Put(std::to_string(i), rnd.RandomString(10240)));
+    ASSERT_OK(dbfull()->Write(write_options, &batch));
+  }
+}
+
 // It is invalid to do sync write while disabling WAL.
 TEST_P(DBWriteTest, SyncAndDisableWAL) {
+  Reopen(GetOptions());
   WriteOptions write_options;
   write_options.sync = true;
   write_options.disableWAL = true;
@@ -780,10 +797,178 @@ TEST_P(DBWriteTest, ConcurrentlyDisabledWAL) {
   ASSERT_LE(bytes_num, 1024 * 100);
 }
 
+TEST_P(DBWriteTest, MultiThreadWrite) {
+  Options options = GetOptions();
+  std::unique_ptr<FaultInjectionTestEnv> mock_env(
+      new FaultInjectionTestEnv(env_));
+  if (!options.enable_multi_batch_write) {
+    return;
+  }
+  constexpr int kNumThreads = 4;
+  constexpr int kNumWrite = 4;
+  constexpr int kNumBatch = 8;
+  constexpr int kBatchSize = 16;
+  options.env = mock_env.get();
+  options.write_buffer_size = 1024 * 128;
+  Reopen(options);
+  std::vector<port::Thread> threads;
+  for (int t = 0; t < kNumThreads; t++) {
+    threads.push_back(port::Thread(
+        [&](int index) {
+          WriteOptions opt;
+          std::vector<WriteBatch> data(kNumBatch);
+          for (int j = 0; j < kNumWrite; j++) {
+            std::vector<WriteBatch*> batches;
+            for (int i = 0; i < kNumBatch; i++) {
+              WriteBatch* batch = &data[i];
+              batch->Clear();
+              for (int k = 0; k < kBatchSize; k++) {
+                batch->Put("key_" + std::to_string(index) + "_" +
+                               std::to_string(j) + "_" + std::to_string(i) +
+                               "_" + std::to_string(k),
+                           "value" + std::to_string(k));
+              }
+              batches.push_back(batch);
+            }
+            dbfull()->MultiBatchWrite(opt, std::move(batches), nullptr);
+          }
+        },
+        t));
+  }
+  for (int i = 0; i < kNumThreads; i++) {
+    threads[i].join();
+  }
+  ReadOptions opt;
+  for (int t = 0; t < kNumThreads; t++) {
+    std::string value;
+    for (int i = 0; i < kNumWrite; i++) {
+      for (int j = 0; j < kNumBatch; j++) {
+        for (int k = 0; k < kBatchSize; k++) {
+          ASSERT_OK(dbfull()->Get(
+              opt,
+              "key_" + std::to_string(t) + "_" + std::to_string(i) + "_" +
+                  std::to_string(j) + "_" + std::to_string(k),
+              &value));
+          std::string expected_value = "value" + std::to_string(k);
+          ASSERT_EQ(expected_value, value);
+        }
+      }
+    }
+  }
+
+  Close();
+}
+
+class SimpleCallback : public PostWriteCallback {
+  std::function<void(SequenceNumber)> f_;
+
+ public:
+  SimpleCallback(std::function<void(SequenceNumber)>&& f) : f_(f) {}
+
+  void Callback(SequenceNumber seq) override { f_(seq); }
+};
+
+TEST_P(DBWriteTest, PostWriteCallback) {
+  Options options = GetOptions();
+  if (options.two_write_queues) {
+    // Not compatible.
+    return;
+  }
+  Reopen(options);
+
+  std::vector<port::Thread> threads;
+
+  port::Mutex the_first_can_exit_write_mutex;
+  the_first_can_exit_write_mutex.Lock();
+  port::Mutex can_flush_mutex;
+  can_flush_mutex.Lock();
+  port::Mutex the_second_can_enter_write_mutex;
+  the_second_can_enter_write_mutex.Lock();
+  port::Mutex the_second_can_exit_write_mutex;
+  the_second_can_exit_write_mutex.Lock();
+
+  std::atomic<uint64_t> written(0);
+  std::atomic<bool> flushed(false);
+
+  threads.push_back(port::Thread([&] {
+    WriteBatch batch;
+    WriteOptions opts;
+    opts.sync = false;
+    opts.disableWAL = true;
+    SimpleCallback callback([&](SequenceNumber seq) {
+      ASSERT_NE(seq, 0);
+      the_second_can_enter_write_mutex.Unlock();
+      can_flush_mutex.Unlock();
+      the_first_can_exit_write_mutex.Lock();
+      the_second_can_exit_write_mutex.Unlock();
+      written.fetch_add(1, std::memory_order_relaxed);
+    });
+    batch.Put("key", "value");
+    ASSERT_OK(dbfull()->Write(opts, &batch, &callback));
+  }));
+  threads.push_back(port::Thread([&] {
+    WriteBatch batch;
+    WriteOptions opts;
+    opts.sync = false;
+    opts.disableWAL = true;
+    SimpleCallback callback([&](SequenceNumber seq) {
+      ASSERT_NE(seq, 0);
+      the_second_can_exit_write_mutex.Lock();
+      written.fetch_add(1, std::memory_order_relaxed);
+    });
+    batch.Put("key", "value");
+    the_second_can_enter_write_mutex.Lock();
+    ASSERT_OK(dbfull()->Write(opts, &batch, &callback));
+  }));
+  // Flush will enter write thread and wait for pending writes.
+  threads.push_back(port::Thread([&] {
+    FlushOptions opts;
+    opts.wait = false;
+    can_flush_mutex.Lock();
+    ASSERT_OK(dbfull()->Flush(opts));
+    flushed.store(true, std::memory_order_relaxed);
+  }));
+
+  std::this_thread::sleep_for(std::chrono::milliseconds{100});
+  ASSERT_EQ(written.load(std::memory_order_relaxed), 0);
+  ASSERT_EQ(flushed.load(std::memory_order_relaxed), false);
+
+  the_first_can_exit_write_mutex.Unlock();
+  size_t wait = 0;
+  while (!flushed.load(std::memory_order_relaxed)) {
+    std::this_thread::sleep_for(std::chrono::milliseconds{10});
+    wait += 1;
+    ASSERT_LE(wait, 100);
+  }
+  ASSERT_EQ(written.load(std::memory_order_relaxed), 2);
+
+  for (auto& t : threads) {
+    t.join();
+  }
+}
+
+TEST_P(DBWriteTest, PostWriteCallbackEmptyBatch) {
+  Options options = GetOptions();
+  if (options.two_write_queues) {
+    // Not compatible.
+    return;
+  }
+  Reopen(options);
+  WriteBatch batch;
+  WriteOptions opts;
+  opts.sync = false;
+  opts.disableWAL = true;
+  SequenceNumber seq = 0;
+  SimpleCallback callback([&](SequenceNumber s) { seq = s; });
+  ASSERT_OK(dbfull()->Write(opts, &batch, &callback));
+  ASSERT_NE(seq, 0);
+}
+
 INSTANTIATE_TEST_CASE_P(DBWriteTestInstance, DBWriteTest,
                         testing::Values(DBTestBase::kDefault,
                                         DBTestBase::kConcurrentWALWrites,
-                                        DBTestBase::kPipelinedWrite));
+                                        DBTestBase::kPipelinedWrite,
+                                        DBTestBase::kMultiBatchWrite));
 
 }  // namespace ROCKSDB_NAMESPACE
 

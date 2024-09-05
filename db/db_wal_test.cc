@@ -1677,6 +1677,9 @@ INSTANTIATE_TEST_CASE_P(
 // at the end of any of the logs
 // - We do not expect to open the data store for corruption
 TEST_P(DBWALTestWithParams, kTolerateCorruptedTailRecords) {
+  if (getenv("ENCRYPTED_ENV")) {
+    return;
+  }
   bool trunc = std::get<0>(GetParam());  // Corruption style
   // Corruption offset position
   int corrupt_offset = std::get<1>(GetParam());
@@ -1739,6 +1742,9 @@ TEST_P(DBWALTestWithParams, kAbsoluteConsistency) {
 // We don't expect the data store to be opened if there is any inconsistency
 // between WAL and SST files
 TEST_F(DBWALTest, kPointInTimeRecoveryCFConsistency) {
+  if (getenv("ENCRYPTED_ENV")) {
+    return;
+  }
   Options options = CurrentOptions();
   options.avoid_flush_during_recovery = true;
 
@@ -1946,6 +1952,9 @@ TEST_F(DBWALTest, FixSyncWalOnObseletedWalWithNewManifestCausingMissingWAL) {
 // - We expect to open data store under all circumstances
 // - We expect only data upto the point where the first error was encountered
 TEST_P(DBWALTestWithParams, kPointInTimeRecovery) {
+  if (getenv("ENCRYPTED_ENV")) {
+    return;
+  }
   const int maxkeys =
       RecoveryTestHelper::kWALFilesCount * RecoveryTestHelper::kKeysPerWALFile;
 
@@ -2006,6 +2015,9 @@ TEST_P(DBWALTestWithParams, kPointInTimeRecovery) {
 // - We expect to open the data store under all scenarios
 // - We expect to have recovered records past the corruption zone
 TEST_P(DBWALTestWithParams, kSkipAnyCorruptedRecords) {
+  if (getenv("ENCRYPTED_ENV")) {
+    return;
+  }
   bool trunc = std::get<0>(GetParam());  // Corruption style
   // Corruption offset position
   int corrupt_offset = std::get<1>(GetParam());
@@ -2215,6 +2227,9 @@ TEST_F(DBWALTest, RecoverWithoutFlushMultipleCF) {
 //   4. Open again. See if it can correctly handle previous corruption.
 TEST_P(DBWALTestWithParamsVaryingRecoveryMode,
        RecoverFromCorruptedWALWithoutFlush) {
+  if (getenv("ENCRYPTED_ENV")) {
+    return;
+  }
   const int kAppendKeys = 100;
   Options options = CurrentOptions();
   options.avoid_flush_during_recovery = true;

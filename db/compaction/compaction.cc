@@ -9,6 +9,7 @@
 
 #include "db/compaction/compaction.h"
 
+#include <algorithm>
 #include <cinttypes>
 #include <vector>
 
@@ -812,7 +813,8 @@ uint64_t Compaction::OutputFilePreallocationSize() const {
                   preallocation_size + (preallocation_size / 10));
 }
 
-std::unique_ptr<CompactionFilter> Compaction::CreateCompactionFilter() const {
+std::unique_ptr<CompactionFilter> Compaction::CreateCompactionFilter(
+    const std::optional<Slice>& start, const std::optional<Slice>& end) const {
   if (!cfd_->ioptions()->compaction_filter_factory) {
     return nullptr;
   }
@@ -830,6 +832,12 @@ std::unique_ptr<CompactionFilter> Compaction::CreateCompactionFilter() const {
   context.column_family_id = cfd_->GetID();
   context.reason = TableFileCreationReason::kCompaction;
   context.input_table_properties = GetInputTableProperties();
+  context.is_bottommost_level = bottommost_level_;
+  context.start_key =
+      start.has_value() ? ExtractUserKey(*start) : GetSmallestUserKey();
+  context.end_key =
+      end.has_value() ? ExtractUserKey(*end) : GetLargestUserKey();
+  context.is_end_key_inclusive = !end.has_value();
   if (context.input_table_properties.empty()) {
     ROCKS_LOG_WARN(
         immutable_options_.info_log,
@@ -839,6 +847,52 @@ std::unique_ptr<CompactionFilter> Compaction::CreateCompactionFilter() const {
 
   return cfd_->ioptions()->compaction_filter_factory->CreateCompactionFilter(
       context);
+}
+
+std::pair<std::vector<Slice>, std::vector<uint64_t>>
+Compaction::CreateSegmentsForLevel(int level) const {
+  // So... the below files should be adjacently sorted.
+  // For now, this is only for creating the next-of-output level info, so it
+  // makes sense for not supporting L0.
+  assert(level != 0);
+
+  // Some of test cases may not initialize the version...
+  if (input_version_ == nullptr) {
+    return std::make_pair(std::vector<Slice>(), std::vector<uint64_t>());
+  }
+
+  const auto vsi = input_version_->storage_info();
+  if (level >= vsi->num_non_empty_levels()) {
+    // The level shall be empty.
+    return std::make_pair(std::vector<Slice>(), std::vector<uint64_t>());
+  }
+  const auto& files = vsi->LevelFilesBrief(level);
+  // The file metadata hold internal keys, however the compaction is bounded by
+  // user keys.
+  const auto user_cmp = immutable_options()->user_comparator;
+  const auto end = files.files + files.num_files;
+  const auto start = std::lower_bound(
+      files.files, end, smallest_user_key_,
+      [user_cmp](FdWithKeyRange& fd, const Slice& slice) {
+        return user_cmp->Compare(ExtractUserKey(fd.largest_key), slice) < 0;
+      });
+
+  if (start == end) {
+    // There is no overlapping of next level.
+    return std::make_pair(std::vector<Slice>(), std::vector<uint64_t>());
+  }
+  std::vector<Slice> ranges;
+  std::vector<uint64_t> sizes;
+  ranges.push_back(ExtractUserKey(start->smallest_key));
+  for (const FdWithKeyRange* iter = start; iter < end; iter++) {
+    if (user_cmp->Compare(ExtractUserKey(iter->smallest_key),
+                          largest_user_key_) > 0) {
+      break;
+    }
+    ranges.push_back(ExtractUserKey(iter->largest_key));
+    sizes.push_back(iter->fd.GetFileSize());
+  }
+  return std::make_pair(ranges, sizes);
 }
 
 std::unique_ptr<SstPartitioner> Compaction::CreateSstPartitioner() const {
@@ -852,6 +906,9 @@ std::unique_ptr<SstPartitioner> Compaction::CreateSstPartitioner() const {
   context.output_level = output_level_;
   context.smallest_user_key = smallest_user_key_;
   context.largest_user_key = largest_user_key_;
+  std::tie(context.output_next_level_boundaries,
+           context.output_next_level_size) =
+      CreateSegmentsForLevel(output_level_ + 1);
   return immutable_options_.sst_partitioner_factory->CreatePartitioner(context);
 }
 

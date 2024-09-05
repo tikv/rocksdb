@@ -229,17 +229,20 @@ bool CompactionIterator::InvokeFilterIfNeeded(bool* need_skip,
   }
 
   if (ikey_.type != kTypeValue && ikey_.type != kTypeBlobIndex &&
-      ikey_.type != kTypeWideColumnEntity) {
+      ikey_.type != kTypeWideColumnEntity && ikey_.type != kTypeDeletion) {
     return true;
   }
 
   CompactionFilter::Decision decision =
       CompactionFilter::Decision::kUndetermined;
-  CompactionFilter::ValueType value_type =
-      ikey_.type == kTypeValue ? CompactionFilter::ValueType::kValue
-      : ikey_.type == kTypeBlobIndex
-          ? CompactionFilter::ValueType::kBlobIndex
-          : CompactionFilter::ValueType::kWideColumnEntity;
+  CompactionFilter::ValueType value_type = CompactionFilter::ValueType::kValue;
+  if (ikey_.type == kTypeBlobIndex) {
+    value_type = CompactionFilter::ValueType::kBlobIndex;
+  } else if (ikey_.type == kTypeWideColumnEntity) {
+    value_type = CompactionFilter::ValueType::kWideColumnEntity;
+  } else if (ikey_.type == kTypeDeletion) {
+    value_type = CompactionFilter::ValueType::kDeletion;
+  }
 
   // Hack: pass internal key to BlobIndexCompactionFilter since it needs
   // to get sequence number.
@@ -277,7 +280,7 @@ bool CompactionIterator::InvokeFilterIfNeeded(bool* need_skip,
 
         // For integrated BlobDB impl, CompactionIterator reads blob value.
         // For Stacked BlobDB impl, the corresponding CompactionFilter's
-        // FilterV2 method should read the blob value.
+        // FilterV4 method should read the blob value.
         BlobIndex blob_index;
         Status s = blob_index.DecodeFrom(value_);
         if (!s.ok()) {
@@ -337,9 +340,9 @@ bool CompactionIterator::InvokeFilterIfNeeded(bool* need_skip,
         existing_col = &existing_columns;
       }
 
-      decision = compaction_filter_->FilterV3(
-          level_, filter_key, value_type, existing_val, existing_col,
-          &compaction_filter_value_, &new_columns,
+      decision = compaction_filter_->FilterV4(
+          level_, filter_key, ikey_.sequence, value_type, existing_val,
+          existing_col, &compaction_filter_value_, &new_columns,
           compaction_filter_skip_until_.rep());
     }
 
@@ -348,10 +351,10 @@ bool CompactionIterator::InvokeFilterIfNeeded(bool* need_skip,
   }
 
   if (decision == CompactionFilter::Decision::kUndetermined) {
-    // Should not reach here, since FilterV2/FilterV3 should never return
-    // kUndetermined.
+    // Should not reach here, since FilterV2/FilterV3/FilterV4 should never
+    // return kUndetermined.
     status_ = Status::NotSupported(
-        "FilterV2/FilterV3 should never return kUndetermined");
+        "FilterV2/FilterV3/FilterV4 should never return kUndetermined");
     validity_info_.Invalidate();
     return false;
   }
@@ -360,7 +363,7 @@ bool CompactionIterator::InvokeFilterIfNeeded(bool* need_skip,
       cmp_->Compare(*compaction_filter_skip_until_.rep(), ikey_.user_key) <=
           0) {
     // Can't skip to a key smaller than the current one.
-    // Keep the key as per FilterV2/FilterV3 documentation.
+    // Keep the key as per FilterV2/FilterV3/FilterV4 documentation.
     decision = CompactionFilter::Decision::kKeep;
   }
 

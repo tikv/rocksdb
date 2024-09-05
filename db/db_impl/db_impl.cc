@@ -655,6 +655,14 @@ Status DBImpl::CloseHelper() {
     delete txn_entry.second;
   }
 
+  mutex_.Unlock();
+  // We can only access cf_based_write_buffer_manager_ before versions_.reset(),
+  // after which all cf write buffer managers will be freed.
+  for (auto m : cf_based_write_buffer_manager_) {
+    m->UnregisterDB(this);
+  }
+  mutex_.Lock();
+
   // versions need to be destroyed before table_cache since it can hold
   // references to table_cache.
   versions_.reset();
@@ -684,7 +692,10 @@ Status DBImpl::CloseHelper() {
   }
 
   if (write_buffer_manager_ && wbm_stall_) {
-    write_buffer_manager_->RemoveDBFromQueue(wbm_stall_.get());
+    write_buffer_manager_->RemoveFromStallQueue(wbm_stall_.get());
+  }
+  if (write_buffer_manager_) {
+    write_buffer_manager_->UnregisterDB(this);
   }
 
   IOStatus io_s = directories_.Close(IOOptions(), nullptr /* dbg */);
@@ -1317,10 +1328,11 @@ Status DBImpl::SetDBOptions(
                          mutable_db_options_.max_background_compactions,
                          mutable_db_options_.max_background_jobs,
                          /* parallelize_compactions */ true);
-      const BGJobLimits new_bg_job_limits = GetBGJobLimits(
-          new_options.max_background_flushes,
-          new_options.max_background_compactions,
-          new_options.max_background_jobs, /* parallelize_compactions */ true);
+      const BGJobLimits new_bg_job_limits =
+          GetBGJobLimits(new_options.max_background_flushes,
+                         new_options.max_background_compactions,
+                         new_options.max_background_jobs,
+                         /* parallelize_compactions */ true);
 
       const bool max_flushes_increased =
           new_bg_job_limits.max_flushes > current_bg_job_limits.max_flushes;
@@ -3647,6 +3659,22 @@ Status DBImpl::CreateColumnFamilyImpl(const ColumnFamilyOptions& cf_options,
   if (s.ok()) {
     NewThreadStatusCfInfo(
         static_cast_with_check<ColumnFamilyHandleImpl>(*handle)->cfd());
+    if (cf_options.cf_write_buffer_manager != nullptr) {
+      auto* write_buffer_manager = cf_options.cf_write_buffer_manager.get();
+      bool exist = false;
+      for (auto m : cf_based_write_buffer_manager_) {
+        if (m == write_buffer_manager) {
+          exist = true;
+        }
+      }
+      if (!exist) {
+        return Status::NotSupported(
+            "New cf write buffer manager is not supported after Open");
+      }
+      write_buffer_manager->RegisterColumnFamily(this, *handle);
+    } else if (write_buffer_manager_ != nullptr) {
+      write_buffer_manager_->RegisterColumnFamily(this, *handle);
+    }
   }
   return s;
 }
@@ -4633,6 +4661,18 @@ void DBImpl::GetApproximateMemTableStats(ColumnFamilyHandle* column_family,
   *size = memStats.size + immStats.size;
 
   ReturnAndCleanupSuperVersion(cfd, sv);
+}
+
+void DBImpl::GetApproximateActiveMemTableStats(
+    ColumnFamilyHandle* column_family, uint64_t* const memory_bytes,
+    uint64_t* const oldest_key_time) {
+  auto* cf_impl = static_cast<ColumnFamilyHandleImpl*>(column_family);
+  if (memory_bytes) {
+    *memory_bytes = cf_impl->cfd()->mem()->ApproximateMemoryUsageFast();
+  }
+  if (oldest_key_time) {
+    *oldest_key_time = cf_impl->cfd()->mem()->ApproximateOldestKeyTime();
+  }
 }
 
 Status DBImpl::GetApproximateSizes(const SizeApproximationOptions& options,
@@ -6414,6 +6454,7 @@ void DBImpl::NotifyOnExternalFileIngested(
     info.internal_file_path = f.internal_file_path;
     info.global_seqno = f.assigned_seqno;
     info.table_properties = f.table_properties;
+    info.picked_level = f.picked_level;
     for (auto listener : immutable_db_options_.listeners) {
       listener->OnExternalFileIngested(this, info);
     }

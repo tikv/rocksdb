@@ -311,7 +311,8 @@ class Compaction {
   void ResetNextCompactionIndex();
 
   // Create a CompactionFilter from compaction_filter_factory
-  std::unique_ptr<CompactionFilter> CreateCompactionFilter() const;
+  std::unique_ptr<CompactionFilter> CreateCompactionFilter(
+      const std::optional<Slice>& start, const std::optional<Slice>& end) const;
 
   // Create a SstPartitioner from sst_partitioner_factory
   std::unique_ptr<SstPartitioner> CreateSstPartitioner() const;
@@ -474,6 +475,9 @@ class Compaction {
 
   static bool IsFullCompaction(VersionStorageInfo* vstorage,
                                const std::vector<CompactionInputFiles>& inputs);
+
+  std::pair<std::vector<Slice>, std::vector<uint64_t>> CreateSegmentsForLevel(
+      int in_level) const;
 
   VersionStorageInfo* input_vstorage_;
 

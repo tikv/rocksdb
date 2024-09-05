@@ -3,7 +3,6 @@
 //  COPYING file in the root directory) and Apache 2.0 License
 //  (found in the LICENSE.Apache file in the root directory).
 
-
 #include "utilities/transactions/pessimistic_transaction.h"
 
 #include <map>
@@ -710,7 +709,8 @@ Status WriteCommittedTxn::CommitWithoutPrepareInternal() {
                                /*callback*/ nullptr, /*log_used*/ nullptr,
                                /*log_ref*/ 0, /*disable_memtable*/ false,
                                &seq_used, /*batch_cnt=*/0,
-                               /*pre_release_callback=*/nullptr, post_mem_cb);
+                               /*pre_release_callback=*/nullptr,
+                               /*post_write_callback=*/nullptr, post_mem_cb);
   assert(!s.ok() || seq_used != kMaxSequenceNumber);
   if (s.ok()) {
     SetId(seq_used);
@@ -797,7 +797,7 @@ Status WriteCommittedTxn::CommitInternal() {
                           /*log_used*/ nullptr, /*log_ref*/ log_number_,
                           /*disable_memtable*/ false, &seq_used,
                           /*batch_cnt=*/0, /*pre_release_callback=*/nullptr,
-                          post_mem_cb);
+                          /*post_write_callback=*/nullptr, post_mem_cb);
   assert(!s.ok() || seq_used != kMaxSequenceNumber);
   if (s.ok()) {
     SetId(seq_used);

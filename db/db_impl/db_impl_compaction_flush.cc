@@ -306,8 +306,10 @@ Status DBImpl::FlushMemTableToOutputFile(
                      job_context->job_id, s.ToString().c_str());
   }
 
+  SequenceNumber earliest_seqno = 0;
+  SequenceNumber largest_seqno = 0;
   if (s.ok()) {
-    flush_job.PickMemTable();
+    flush_job.PickMemTable(&earliest_seqno, &largest_seqno);
     need_cancel = true;
   }
   TEST_SYNC_POINT_CALLBACK(
@@ -315,7 +317,7 @@ Status DBImpl::FlushMemTableToOutputFile(
 
   // may temporarily unlock and lock the mutex.
   NotifyOnFlushBegin(cfd, &file_meta, mutable_cf_options, job_context->job_id,
-                     flush_reason);
+                     earliest_seqno, largest_seqno, flush_reason);
 
   bool switched_to_mempurge = false;
   // Within flush_job.Run, rocksdb may call event listener to notify
@@ -538,14 +540,6 @@ Status DBImpl::AtomicFlushMemTablesToOutputFiles(
   IOStatus log_io_s = IOStatus::OK();
   assert(num_cfs == static_cast<int>(jobs.size()));
 
-  for (int i = 0; i != num_cfs; ++i) {
-    const MutableCFOptions& mutable_cf_options = all_mutable_cf_options.at(i);
-    // may temporarily unlock and lock the mutex.
-    FlushReason flush_reason = bg_flush_args[i].flush_reason_;
-    NotifyOnFlushBegin(cfds[i], &file_meta[i], mutable_cf_options,
-                       job_context->job_id, flush_reason);
-  }
-
   if (logfile_number_ > 0) {
     // TODO (yanqin) investigate whether we should sync the closed logs for
     // single column family case.
@@ -598,11 +592,21 @@ Status DBImpl::AtomicFlushMemTablesToOutputFiles(
                      job_context->job_id, s.ToString().c_str());
   }
 
+  std::vector<SequenceNumber> earliest_seqnos(num_cfs, 0);
+  std::vector<SequenceNumber> largest_seqnos(num_cfs, 0);
   if (s.ok()) {
     for (int i = 0; i != num_cfs; ++i) {
-      jobs[i]->PickMemTable();
+      jobs[i]->PickMemTable(&earliest_seqnos[i], &largest_seqnos[i]);
       pick_status[i] = true;
     }
+  }
+
+  for (int i = 0; i != num_cfs; ++i) {
+    const MutableCFOptions& mutable_cf_options = all_mutable_cf_options.at(i);
+    // may temporarily unlock and lock the mutex.
+    NotifyOnFlushBegin(cfds[i], &file_meta[i], mutable_cf_options,
+                       job_context->job_id, earliest_seqnos[i],
+                       largest_seqnos[i], bg_flush_args[i].flush_reason_);
   }
 
   if (s.ok()) {
@@ -914,7 +918,9 @@ Status DBImpl::AtomicFlushMemTablesToOutputFiles(
 
 void DBImpl::NotifyOnFlushBegin(ColumnFamilyData* cfd, FileMetaData* file_meta,
                                 const MutableCFOptions& mutable_cf_options,
-                                int job_id, FlushReason flush_reason) {
+                                int job_id, SequenceNumber earliest_seqno,
+                                SequenceNumber largest_seqno,
+                                FlushReason flush_reason) {
   if (immutable_db_options_.listeners.size() == 0U) {
     return;
   }
@@ -944,8 +950,10 @@ void DBImpl::NotifyOnFlushBegin(ColumnFamilyData* cfd, FileMetaData* file_meta,
     info.job_id = job_id;
     info.triggered_writes_slowdown = triggered_writes_slowdown;
     info.triggered_writes_stop = triggered_writes_stop;
-    info.smallest_seqno = file_meta->fd.smallest_seqno;
-    info.largest_seqno = file_meta->fd.largest_seqno;
+    // This sequence number is actually smaller than or equal to the sequence
+    // number of any key that be inserted into the flushed memtable.
+    info.smallest_seqno = earliest_seqno;
+    info.largest_seqno = largest_seqno;
     info.flush_reason = flush_reason;
     for (auto listener : immutable_db_options_.listeners) {
       listener->OnFlushBegin(this, info);
@@ -1951,6 +1959,7 @@ Status DBImpl::Flush(const FlushOptions& flush_options,
   ROCKS_LOG_INFO(immutable_db_options_.info_log, "[%s] Manual flush start.",
                  cfh->GetName().c_str());
   Status s;
+  TEST_SYNC_POINT_CALLBACK("DBImpl::Flush:ScheduleFlushReq", column_family);
   if (immutable_db_options_.atomic_flush) {
     s = AtomicFlushMemTables(flush_options, FlushReason::kManualFlush,
                              {cfh->cfd()});
@@ -2264,12 +2273,28 @@ Status DBImpl::FlushMemTable(ColumnFamilyData* cfd,
     }
   }
 
+  entered_write_thread |= flush_options._write_stopped;
   const bool needs_to_join_write_thread = !entered_write_thread;
+
   autovector<FlushRequest> flush_reqs;
   autovector<uint64_t> memtable_ids_to_wait;
   {
     WriteContext context;
     InstrumentedMutexLock guard_lock(&mutex_);
+    // Need to check inside lock to avoid [flush()] -> [disable] -> [schedule].
+    if (flush_options.check_if_compaction_disabled &&
+        manual_compaction_paused_.load(std::memory_order_acquire) > 0) {
+      return Status::Incomplete(Status::SubCode::kManualCompactionPaused);
+    }
+    if (flush_options.expected_oldest_key_time != 0 &&
+        cfd->mem()->ApproximateOldestKeyTime() !=
+            flush_options.expected_oldest_key_time) {
+      std::ostringstream oss;
+      oss << "Oldest key time doesn't match. expected="
+          << flush_options.expected_oldest_key_time
+          << ", actual=" << cfd->mem()->ApproximateOldestKeyTime();
+      return Status::Incomplete(oss.str());
+    }
 
     WriteThread::Writer w;
     WriteThread::Writer nonmem_w;
@@ -2281,7 +2306,14 @@ Status DBImpl::FlushMemTable(ColumnFamilyData* cfd,
     }
     WaitForPendingWrites();
 
-    if (!cfd->mem()->IsEmpty() || !cached_recoverable_state_empty_.load()) {
+    if ((!cfd->mem()->IsEmpty() || !cached_recoverable_state_empty_.load())) {
+      // Note that, when flush reason is kErrorRecoveryRetryFlush, during the
+      // auto retry resume, we want to avoid creating new small memtables.
+      // Therefore, SwitchMemtable will not be called. Also, since ResumeImpl
+      // will iterate through all the CFs and call FlushMemtable during auto
+      // retry resume, it is possible that in some CFs,
+      // cfd->imm()->NumNotFlushed() = 0. In this case, so no flush request will
+      // be created and scheduled, status::OK() will be returned.
       s = SwitchMemtable(cfd, &context);
     }
     const uint64_t flush_memtable_id = std::numeric_limits<uint64_t>::max();
@@ -2444,6 +2476,11 @@ Status DBImpl::AtomicFlushMemTables(
   {
     WriteContext context;
     InstrumentedMutexLock guard_lock(&mutex_);
+    // Need to check inside lock to avoid [flush()] -> [disable] -> [schedule].
+    if (flush_options.check_if_compaction_disabled &&
+        manual_compaction_paused_.load(std::memory_order_acquire) > 0) {
+      return Status::Incomplete(Status::SubCode::kManualCompactionPaused);
+    }
 
     WriteThread::Writer w;
     WriteThread::Writer nonmem_w;
@@ -3783,8 +3820,7 @@ Status DBImpl::BackgroundCompaction(bool* made_progress,
                                                              moved_bytes);
     {
       event_logger_.LogToBuffer(log_buffer)
-          << "job" << job_context->job_id << "event"
-          << "trivial_move"
+          << "job" << job_context->job_id << "event" << "trivial_move"
           << "destination_level" << c->output_level() << "files" << moved_files
           << "total_files_size" << moved_bytes;
     }

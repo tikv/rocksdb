@@ -1,0 +1,483 @@
+From 325afa452d5e841398481da2dfc06394a62c4792 Mon Sep 17 00:00:00 2001
+From: v01dstar <yang.zhang@pingcap.com>
+Date: Sun, 19 May 2024 00:16:34 -0700
+Subject: [PATCH] Allow tool dump single SST meta in MANIFEST
+
+Signed-off-by: v01dstar <yang.zhang@pingcap.com>
+---
+ db/version_edit.cc         | 40 +-------------------
+ db/version_edit.h          | 44 ++++++++++++++++++++++
+ db/version_edit_handler.cc | 75 ++++++++++++++++++++++++++------------
+ db/version_edit_handler.h  |  4 +-
+ db/version_set.cc          | 23 ++----------
+ db/version_set.h           |  5 ++-
+ table/sst_file_dumper.cc   | 12 ++++++
+ tools/ldb_cmd.cc           | 34 +++++++++++------
+ tools/ldb_cmd_impl.h       |  2 +
+ 9 files changed, 144 insertions(+), 95 deletions(-)
+
+diff --git a/db/version_edit.cc b/db/version_edit.cc
+index 482aa65a7..8e1e83515 100644
+--- a/db/version_edit.cc
++++ b/db/version_edit.cc
+@@ -884,45 +884,7 @@ std::string VersionEdit::DebugString(bool hex_key) const {
+     r.append("\n  AddFile: ");
+     AppendNumberTo(&r, new_files_[i].first);
+     r.append(" ");
+-    AppendNumberTo(&r, f.fd.GetNumber());
+-    r.append(" ");
+-    AppendNumberTo(&r, f.fd.GetFileSize());
+-    r.append(" ");
+-    r.append(f.smallest.DebugString(hex_key));
+-    r.append(" .. ");
+-    r.append(f.largest.DebugString(hex_key));
+-    if (f.oldest_blob_file_number != kInvalidBlobFileNumber) {
+-      r.append(" blob_file:");
+-      AppendNumberTo(&r, f.oldest_blob_file_number);
+-    }
+-    r.append(" oldest_ancester_time:");
+-    AppendNumberTo(&r, f.oldest_ancester_time);
+-    r.append(" file_creation_time:");
+-    AppendNumberTo(&r, f.file_creation_time);
+-    r.append(" epoch_number:");
+-    AppendNumberTo(&r, f.epoch_number);
+-    r.append(" file_checksum:");
+-    r.append(Slice(f.file_checksum).ToString(true));
+-    r.append(" file_checksum_func_name: ");
+-    r.append(f.file_checksum_func_name);
+-    if (f.temperature != Temperature::kUnknown) {
+-      r.append(" temperature: ");
+-      // Maybe change to human readable format whenthe feature becomes
+-      // permanent
+-      r.append(std::to_string(static_cast<int>(f.temperature)));
+-    }
+-    if (f.unique_id != kNullUniqueId64x2) {
+-      r.append(" unique_id(internal): ");
+-      UniqueId64x2 id = f.unique_id;
+-      r.append(InternalUniqueIdToHumanString(&id));
+-      r.append(" public_unique_id: ");
+-      InternalUniqueIdToExternal(&id);
+-      r.append(UniqueIdToHumanString(EncodeUniqueIdBytes(&id)));
+-    }
+-    r.append(" tail size: ");
+-    AppendNumberTo(&r, f.tail_size);
+-    r.append(" User-defined timestamps persisted: ");
+-    r.append(f.user_defined_timestamps_persisted ? "true" : "false");
++    r.append(f.DebugString(hex_key));
+   }
+ 
+   for (const auto& blob_file_addition : blob_file_additions_) {
+diff --git a/db/version_edit.h b/db/version_edit.h
+index 8e14e76da..9844a594b 100644
+--- a/db/version_edit.h
++++ b/db/version_edit.h
+@@ -26,6 +26,7 @@
+ #include "table/table_reader.h"
+ #include "table/unique_id_impl.h"
+ #include "util/autovector.h"
++#include "util/string_util.h"
+ 
+ namespace ROCKSDB_NAMESPACE {
+ 
+@@ -350,6 +351,49 @@ struct FileMetaData {
+              file_checksum_func_name.size();
+     return usage;
+   }
++  std::string DebugString(bool hex_key) const {
++    std::string r;
++    AppendNumberTo(&r, fd.GetNumber());
++    r.append(" ");
++    AppendNumberTo(&r, fd.GetFileSize());
++    r.append(" ");
++    r.append(smallest.DebugString(hex_key));
++    r.append(" .. ");
++    r.append(largest.DebugString(hex_key));
++    if (oldest_blob_file_number != kInvalidBlobFileNumber) {
++      r.append(" blob_file:");
++      AppendNumberTo(&r, oldest_blob_file_number);
++    }
++    r.append(" oldest_ancester_time:");
++    AppendNumberTo(&r, oldest_ancester_time);
++    r.append(" file_creation_time:");
++    AppendNumberTo(&r, file_creation_time);
++    r.append(" epoch_number:");
++    AppendNumberTo(&r, epoch_number);
++    r.append(" file_checksum:");
++    r.append(Slice(file_checksum).ToString(true));
++    r.append(" file_checksum_func_name: ");
++    r.append(file_checksum_func_name);
++    if (temperature != Temperature::kUnknown) {
++      r.append(" temperature: ");
++      // Maybe change to human readable format whenthe feature becomes
++      // permanent
++      r.append(std::to_string(static_cast<int>(temperature)));
++    }
++    if (unique_id != kNullUniqueId64x2) {
++      r.append(" unique_id(internal): ");
++      UniqueId64x2 id = unique_id;
++      r.append(InternalUniqueIdToHumanString(&id));
++      r.append(" public_unique_id: ");
++      InternalUniqueIdToExternal(&id);
++      r.append(UniqueIdToHumanString(EncodeUniqueIdBytes(&id)));
++    }
++    r.append(" tail size: ");
++    AppendNumberTo(&r, tail_size);
++    r.append(" User-defined timestamps persisted: ");
++    r.append(user_defined_timestamps_persisted ? "true" : "false");
++    return r;
++  }
+ };
+ 
+ // A compressed copy of file meta data that just contain minimum data needed
+diff --git a/db/version_edit_handler.cc b/db/version_edit_handler.cc
+index 90afc0938..b58cc2c0d 100644
+--- a/db/version_edit_handler.cc
++++ b/db/version_edit_handler.cc
+@@ -1055,34 +1055,63 @@ void DumpManifestHandler::CheckIterationResult(const log::Reader& reader,
+     return;
+   }
+   assert(cf_to_cmp_names_);
++  bool found = false;
+   for (auto* cfd : *(version_set_->column_family_set_)) {
+-    fprintf(stdout,
+-            "--------------- Column family \"%s\"  (ID %" PRIu32
+-            ") --------------\n",
+-            cfd->GetName().c_str(), cfd->GetID());
+-    fprintf(stdout, "log number: %" PRIu64 "\n", cfd->GetLogNumber());
+-    auto it = cf_to_cmp_names_->find(cfd->GetID());
+-    if (it != cf_to_cmp_names_->end()) {
++    assert(cfd->current());
++    if (sst_file_number_ == 0) {
+       fprintf(stdout,
+-              "comparator: <%s>, but the comparator object is not available.\n",
+-              it->second.c_str());
++              "--------------- Column family \"%s\"  (ID %" PRIu32
++              ") --------------\n",
++              cfd->GetName().c_str(), cfd->GetID());
++      fprintf(stdout, "log number: %" PRIu64 "\n", cfd->GetLogNumber());
++      auto it = cf_to_cmp_names_->find(cfd->GetID());
++      if (it != cf_to_cmp_names_->end()) {
++        fprintf(
++            stdout,
++            "comparator: <%s>, but the comparator object is not available.\n",
++            it->second.c_str());
++      } else {
++        fprintf(stdout, "comparator: %s\n", cfd->user_comparator()->Name());
++      }
++      // Print out DebugStrings. Can include non-terminating null characters.
++      fwrite(cfd->current()->DebugString(hex_).data(), sizeof(char),
++             cfd->current()->DebugString(hex_).size(), stdout);
+     } else {
+-      fprintf(stdout, "comparator: %s\n", cfd->user_comparator()->Name());
++      for (int level = 0; level < cfd->current()->storage_info()->num_levels();
++           level++) {
++        auto& files = cfd->current()->storage_info()->LevelFiles(level);
++        for (auto f : files) {
++          if (f->fd.GetNumber() == sst_file_number_) {
++            found = true;
++            printf("--------------- Column family \"%s\"  (ID %" PRIu32
++                   ") --------------\n",
++                   cfd->GetName().c_str(), cfd->GetID());
++            auto debug_string = f->DebugString(hex_);
++            fwrite(debug_string.data(), sizeof(char), debug_string.size(),
++                   stdout);
++            printf(" at level %d\n", level);
++            break;
++          }
++        }
++        if (found) break;
++      }
++      if (found) break;
+     }
+-    assert(cfd->current());
+-
+-    // Print out DebugStrings. Can include non-terminating null characters.
+-    fwrite(cfd->current()->DebugString(hex_).data(), sizeof(char),
+-           cfd->current()->DebugString(hex_).size(), stdout);
+   }
+-  fprintf(stdout,
+-          "next_file_number %" PRIu64 " last_sequence %" PRIu64
+-          "  prev_log_number %" PRIu64 " max_column_family %" PRIu32
+-          " min_log_number_to_keep %" PRIu64 "\n",
+-          version_set_->current_next_file_number(),
+-          version_set_->LastSequence(), version_set_->prev_log_number(),
+-          version_set_->column_family_set_->GetMaxColumnFamily(),
+-          version_set_->min_log_number_to_keep());
++  if (sst_file_number_ != 0 && !found) {
++    *s = Status::NotFound("sst " + std::to_string(sst_file_number_) +
++                          " is not in the live files set of the manifest");
++  }
++  if (sst_file_number_ == 0) {
++    fprintf(stdout,
++            "next_file_number %" PRIu64 " last_sequence %" PRIu64
++            "  prev_log_number %" PRIu64 " max_column_family %" PRIu32
++            " min_log_number_to_keep %" PRIu64 "\n",
++            version_set_->current_next_file_number(),
++            version_set_->LastSequence(), version_set_->prev_log_number(),
++            version_set_->column_family_set_->GetMaxColumnFamily(),
++            version_set_->min_log_number_to_keep());
++  }
+ }
+ 
+ }  // namespace ROCKSDB_NAMESPACE
+diff --git a/db/version_edit_handler.h b/db/version_edit_handler.h
+index af0817e4a..471a70149 100644
+--- a/db/version_edit_handler.h
++++ b/db/version_edit_handler.h
+@@ -304,7 +304,7 @@ class DumpManifestHandler : public VersionEditHandler {
+                       VersionSet* version_set,
+                       const std::shared_ptr<IOTracer>& io_tracer,
+                       const ReadOptions& read_options, bool verbose, bool hex,
+-                      bool json)
++                      bool json, uint64_t sst_file_number)
+       : VersionEditHandler(
+             /*read_only=*/true, column_families, version_set,
+             /*track_missing_files=*/false,
+@@ -313,6 +313,7 @@ class DumpManifestHandler : public VersionEditHandler {
+         verbose_(verbose),
+         hex_(hex),
+         json_(json),
++        sst_file_number_(sst_file_number),
+         count_(0) {
+     cf_to_cmp_names_.reset(new std::unordered_map<uint32_t, std::string>());
+   }
+@@ -340,6 +341,7 @@ class DumpManifestHandler : public VersionEditHandler {
+   const bool verbose_;
+   const bool hex_;
+   const bool json_;
++  const uint64_t sst_file_number_;
+   int count_;
+ };
+ 
+diff --git a/db/version_set.cc b/db/version_set.cc
+index 335d492bc..c556a684c 100644
+--- a/db/version_set.cc
++++ b/db/version_set.cc
+@@ -4938,23 +4938,7 @@ std::string Version::DebugString(bool hex, bool print_stats) const {
+     const std::vector<FileMetaData*>& files = storage_info_.files_[level];
+     for (size_t i = 0; i < files.size(); i++) {
+       r.push_back(' ');
+-      AppendNumberTo(&r, files[i]->fd.GetNumber());
+-      r.push_back(':');
+-      AppendNumberTo(&r, files[i]->fd.GetFileSize());
+-      r.append("[");
+-      AppendNumberTo(&r, files[i]->fd.smallest_seqno);
+-      r.append(" .. ");
+-      AppendNumberTo(&r, files[i]->fd.largest_seqno);
+-      r.append("]");
+-      r.append("[");
+-      r.append(files[i]->smallest.DebugString(hex));
+-      r.append(" .. ");
+-      r.append(files[i]->largest.DebugString(hex));
+-      r.append("]");
+-      if (files[i]->oldest_blob_file_number != kInvalidBlobFileNumber) {
+-        r.append(" blob_file:");
+-        AppendNumberTo(&r, files[i]->oldest_blob_file_number);
+-      }
++      r.append(files[i]->DebugString(hex));
+       if (print_stats) {
+         r.append("(");
+         r.append(std::to_string(
+@@ -6389,7 +6373,8 @@ Status VersionSet::GetLiveFilesChecksumInfo(FileChecksumList* checksum_list) {
+ 
+ Status VersionSet::DumpManifest(
+     Options& options, std::string& dscname, bool verbose, bool hex, bool json,
+-    const std::vector<ColumnFamilyDescriptor>& cf_descs) {
++    const std::vector<ColumnFamilyDescriptor>& cf_descs,
++    uint64_t sst_file_number) {
+   assert(options.env);
+   // TODO: plumb Env::IOActivity
+   const ReadOptions read_options;
+@@ -6430,7 +6415,7 @@ Status VersionSet::DumpManifest(
+   }
+ 
+   DumpManifestHandler handler(final_cf_descs, this, io_tracer_, read_options,
+-                              verbose, hex, json);
++                              verbose, hex, json, sst_file_number);
+   {
+     VersionSet::LogReporter reporter;
+     reporter.status = &s;
+diff --git a/db/version_set.h b/db/version_set.h
+index 5ccb69771..97085b188 100644
+--- a/db/version_set.h
++++ b/db/version_set.h
+@@ -1294,9 +1294,12 @@ class VersionSet {
+   Status GetLiveFilesChecksumInfo(FileChecksumList* checksum_list);
+ 
+   // printf contents (for debugging)
++  // If sst_file_number is > 0, only prints manifest info for specified SST file
++  // number
+   Status DumpManifest(Options& options, std::string& manifestFileName,
+                       bool verbose, bool hex = false, bool json = false,
+-                      const std::vector<ColumnFamilyDescriptor>& cf_descs = {});
++                      const std::vector<ColumnFamilyDescriptor>& cf_descs = {},
++                      uint64_t sst_file_number = 0);
+ 
+   const std::string& DbSessionId() const { return db_session_id_; }
+ 
+diff --git a/table/sst_file_dumper.cc b/table/sst_file_dumper.cc
+index 821fff5b3..c8b15e83d 100644
+--- a/table/sst_file_dumper.cc
++++ b/table/sst_file_dumper.cc
+@@ -491,6 +491,7 @@ Status SstFileDumper::ReadSequential(bool print_kv, uint64_t read_num,
+   } else {
+     iter->SeekToFirst();
+   }
++  std::string prev_key = "";
+   for (; iter->Valid(); iter->Next()) {
+     Slice key = iter->key();
+     Slice value = iter->value();
+@@ -550,6 +551,17 @@ Status SstFileDumper::ReadSequential(bool print_kv, uint64_t read_num,
+                 blob_index.DebugString(output_hex_).c_str());
+       }
+     }
++
++    if (prev_key.size() != 0 &&
++        internal_comparator_.Compare(key, Slice(prev_key)) <= 0) {
++      InternalKey current, last;
++      current.DecodeFrom(key);
++      last.DecodeFrom(Slice(prev_key));
++      return Status::Corruption("current key " + current.DebugString(true) +
++                                " is not greater than last key " +
++                                last.DebugString(true));
++    }
++    prev_key = key.ToString(false);
+   }
+ 
+   read_num_ += i;
+diff --git a/tools/ldb_cmd.cc b/tools/ldb_cmd.cc
+index 1e7feb712..226c1e5d0 100644
+--- a/tools/ldb_cmd.cc
++++ b/tools/ldb_cmd.cc
+@@ -1349,7 +1349,8 @@ namespace {
+ 
+ void DumpManifestFile(Options options, std::string file, bool verbose, bool hex,
+                       bool json,
+-                      const std::vector<ColumnFamilyDescriptor>& cf_descs) {
++                      const std::vector<ColumnFamilyDescriptor>& cf_descs,
++                      uint64_t sst_file_number = 0) {
+   EnvOptions sopt;
+   std::string dbname("dummy");
+   std::shared_ptr<Cache> tc(NewLRUCache(options.max_open_files - 10,
+@@ -1367,7 +1368,8 @@ void DumpManifestFile(Options options, std::string file, bool verbose, bool hex,
+                       /*db_id=*/"", /*db_session_id=*/"",
+                       options.daily_offpeak_time_utc,
+                       /*error_handler=*/nullptr);
+-  Status s = versions.DumpManifest(options, file, verbose, hex, json, cf_descs);
++  Status s = versions.DumpManifest(options, file, verbose, hex, json, cf_descs,
++                                   sst_file_number);
+   if (!s.ok()) {
+     fprintf(stderr, "Error in processing file %s %s\n", file.c_str(),
+             s.ToString().c_str());
+@@ -1379,6 +1381,7 @@ void DumpManifestFile(Options options, std::string file, bool verbose, bool hex,
+ const std::string ManifestDumpCommand::ARG_VERBOSE = "verbose";
+ const std::string ManifestDumpCommand::ARG_JSON = "json";
+ const std::string ManifestDumpCommand::ARG_PATH = "path";
++const std::string ManifestDumpCommand::ARG_NUMBER = "sst_file_number";
+ 
+ void ManifestDumpCommand::Help(std::string& ret) {
+   ret.append("  ");
+@@ -1386,6 +1389,7 @@ void ManifestDumpCommand::Help(std::string& ret) {
+   ret.append(" [--" + ARG_VERBOSE + "]");
+   ret.append(" [--" + ARG_JSON + "]");
+   ret.append(" [--" + ARG_PATH + "=<path_to_manifest_file>]");
++  ret.append(" [--" + ARG_NUMBER + "=<sst_file_number>]");
+   ret.append("\n");
+ }
+ 
+@@ -1393,11 +1397,12 @@ ManifestDumpCommand::ManifestDumpCommand(
+     const std::vector<std::string>& /*params*/,
+     const std::map<std::string, std::string>& options,
+     const std::vector<std::string>& flags)
+-    : LDBCommand(
+-          options, flags, false,
+-          BuildCmdLineOptions({ARG_VERBOSE, ARG_PATH, ARG_HEX, ARG_JSON})),
++    : LDBCommand(options, flags, false,
++                 BuildCmdLineOptions(
++                     {ARG_VERBOSE, ARG_PATH, ARG_HEX, ARG_JSON, ARG_NUMBER})),
+       verbose_(false),
+-      json_(false) {
++      json_(false),
++      sst_file_number_(0) {
+   verbose_ = IsFlagPresent(flags, ARG_VERBOSE);
+   json_ = IsFlagPresent(flags, ARG_JSON);
+ 
+@@ -1408,6 +1413,11 @@ ManifestDumpCommand::ManifestDumpCommand(
+       exec_state_ = LDBCommandExecuteResult::Failed("--path: missing pathname");
+     }
+   }
++
++  itr = options.find(ARG_NUMBER);
++  if (itr != options.end()) {
++    sst_file_number_ = ParseUint64(itr->second);
++  }
+ }
+ 
+ void ManifestDumpCommand::DoCommand() {
+@@ -1480,7 +1490,7 @@ void ManifestDumpCommand::DoCommand() {
+   }
+ 
+   DumpManifestFile(options_, manifestfile, verbose_, is_key_hex_, json_,
+-                   column_families_);
++                   column_families_, sst_file_number_);
+ 
+   if (verbose_) {
+     fprintf(stdout, "Processing Manifest file %s done\n", manifestfile.c_str());
+@@ -4027,7 +4037,7 @@ void DBLiveFilesMetadataDumperCommand::DoCommand() {
+               NormalizePath(sst_metadata.db_path + "/" + sst_metadata.name);
+           all_files.emplace_back(filename, level, cf);
+         }  // End of for-loop over sst files
+-      }    // End of for-loop over levels
++      }  // End of for-loop over levels
+ 
+       const auto& blob_files = column_metadata.blob_files;
+       for (const auto& blob_metadata : blob_files) {
+@@ -4041,7 +4051,7 @@ void DBLiveFilesMetadataDumperCommand::DoCommand() {
+         // Level for blob files is encoded as -1
+         all_files.emplace_back(filename, -1, cf);
+       }  // End of for-loop over blob files
+-    }    // End of for-loop over column metadata
++    }  // End of for-loop over column metadata
+ 
+     // Sort by filename (i.e. first entry in tuple)
+     std::sort(all_files.begin(), all_files.end());
+@@ -4080,7 +4090,7 @@ void DBLiveFilesMetadataDumperCommand::DoCommand() {
+               NormalizePath(sst_metadata.db_path + "/" + sst_metadata.name);
+           std::cout << filename << std::endl;
+         }  // End of for-loop over sst files
+-      }    // End of for-loop over levels
++      }  // End of for-loop over levels
+ 
+       std::cout << "Live Blob Files:" << std::endl;
+       const auto& blob_files = column_metadata.blob_files;
+@@ -4094,8 +4104,8 @@ void DBLiveFilesMetadataDumperCommand::DoCommand() {
+             blob_metadata.blob_file_path + "/" + blob_metadata.blob_file_name);
+         std::cout << filename << std::endl;
+       }  // End of for-loop over blob files
+-    }    // End of for-loop over column metadata
+-  }      // End of else ("not sort_by_filename")
++    }  // End of for-loop over column metadata
++  }  // End of else ("not sort_by_filename")
+   std::cout << "------------------------------" << std::endl;
+ }
+ 
+diff --git a/tools/ldb_cmd_impl.h b/tools/ldb_cmd_impl.h
+index 2a396754d..e1617dcf7 100644
+--- a/tools/ldb_cmd_impl.h
++++ b/tools/ldb_cmd_impl.h
+@@ -193,10 +193,12 @@ class ManifestDumpCommand : public LDBCommand {
+   bool verbose_;
+   bool json_;
+   std::string path_;
++  uint64_t sst_file_number_;
+ 
+   static const std::string ARG_VERBOSE;
+   static const std::string ARG_JSON;
+   static const std::string ARG_PATH;
++  static const std::string ARG_NUMBER;
+ };
+ 
+ class UpdateManifestCommand : public LDBCommand {
+-- 
+2.45.0
+

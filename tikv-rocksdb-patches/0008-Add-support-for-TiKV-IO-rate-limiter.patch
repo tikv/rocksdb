@@ -1,0 +1,1036 @@
+From e13234e25b01ee6b5094b8b489bd120cd7253e22 Mon Sep 17 00:00:00 2001
+From: v01dstar <yang.zhang@pingcap.com>
+Date: Sun, 19 May 2024 00:12:21 -0700
+Subject: [PATCH] Add support for TiKV IO rate limiter
+
+Signed-off-by: v01dstar <yang.zhang@pingcap.com>
+---
+ CMakeLists.txt                         |   1 +
+ TARGETS                                |   1 +
+ db/column_family.cc                    |  21 +-
+ db/db_impl/db_impl.cc                  |  10 +-
+ db/db_impl/db_impl.h                   |   8 +-
+ db/db_impl/db_impl_compaction_flush.cc |   3 +-
+ db/db_impl/db_impl_open.cc             |   7 +-
+ db/db_options_test.cc                  |  82 ++++-
+ env/env_basic_test.cc                  |  39 +++
+ env/env_inspected.cc                   | 401 +++++++++++++++++++++++++
+ include/rocksdb/env_inspected.h        |  59 ++++
+ include/rocksdb/listener.h             |   2 +
+ include/rocksdb/options.h              |   5 +
+ options/cf_options.cc                  |   6 +
+ options/cf_options.h                   |   3 +
+ options/db_options.cc                  |   8 +-
+ options/options.cc                     |   2 +
+ options/options_helper.cc              |   1 +
+ options/options_settable_test.cc       |   1 +
+ src.mk                                 |   1 +
+ 20 files changed, 632 insertions(+), 29 deletions(-)
+ create mode 100644 env/env_inspected.cc
+ create mode 100644 include/rocksdb/env_inspected.h
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 952dc52d8..6f9debfb5 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -725,6 +725,7 @@ set(SOURCES
+         env/env.cc
+         env/env_chroot.cc
+         env/env_encryption.cc
++        env/env_inspected.cc
+         env/file_system.cc
+         env/file_system_tracer.cc
+         env/fs_remap.cc
+diff --git a/TARGETS b/TARGETS
+index 91c283433..3200813ae 100644
+--- a/TARGETS
++++ b/TARGETS
+@@ -112,6 +112,7 @@ cpp_library_wrapper(name="rocksdb_lib", srcs=[
+         "env/env.cc",
+         "env/env_chroot.cc",
+         "env/env_encryption.cc",
++        "env/env_inspected.cc",
+         "env/env_posix.cc",
+         "env/file_system.cc",
+         "env/file_system_tracer.cc",
+diff --git a/db/column_family.cc b/db/column_family.cc
+index 71c72d71a..be9e1e5d5 100644
+--- a/db/column_family.cc
++++ b/db/column_family.cc
+@@ -955,7 +955,8 @@ WriteStallCondition ColumnFamilyData::RecalculateWriteStallConditions(
+     bool needed_delay = write_controller->NeedsDelay();
+ 
+     if (write_stall_condition == WriteStallCondition::kStopped &&
+-        write_stall_cause == WriteStallCause::kMemtableLimit) {
++        write_stall_cause == WriteStallCause::kMemtableLimit &&
++        !mutable_cf_options.disable_write_stall) {
+       write_controller_token_ = write_controller->GetStopToken();
+       internal_stats_->AddCFStats(InternalStats::MEMTABLE_LIMIT_STOPS, 1);
+       ROCKS_LOG_WARN(
+@@ -965,7 +966,8 @@ WriteStallCondition ColumnFamilyData::RecalculateWriteStallConditions(
+           name_.c_str(), imm()->NumNotFlushed(),
+           mutable_cf_options.max_write_buffer_number);
+     } else if (write_stall_condition == WriteStallCondition::kStopped &&
+-               write_stall_cause == WriteStallCause::kL0FileCountLimit) {
++               write_stall_cause == WriteStallCause::kL0FileCountLimit &&
++               !mutable_cf_options.disable_write_stall) {
+       write_controller_token_ = write_controller->GetStopToken();
+       internal_stats_->AddCFStats(InternalStats::L0_FILE_COUNT_LIMIT_STOPS, 1);
+       if (compaction_picker_->IsLevel0CompactionInProgress()) {
+@@ -977,7 +979,8 @@ WriteStallCondition ColumnFamilyData::RecalculateWriteStallConditions(
+                      "[%s] Stopping writes because we have %d level-0 files",
+                      name_.c_str(), vstorage->l0_delay_trigger_count());
+     } else if (write_stall_condition == WriteStallCondition::kStopped &&
+-               write_stall_cause == WriteStallCause::kPendingCompactionBytes) {
++               write_stall_cause == WriteStallCause::kPendingCompactionBytes &&
++               !mutable_cf_options.disable_write_stall) {
+       write_controller_token_ = write_controller->GetStopToken();
+       internal_stats_->AddCFStats(
+           InternalStats::PENDING_COMPACTION_BYTES_LIMIT_STOPS, 1);
+@@ -987,7 +990,8 @@ WriteStallCondition ColumnFamilyData::RecalculateWriteStallConditions(
+           "bytes %" PRIu64,
+           name_.c_str(), compaction_needed_bytes);
+     } else if (write_stall_condition == WriteStallCondition::kDelayed &&
+-               write_stall_cause == WriteStallCause::kMemtableLimit) {
++               write_stall_cause == WriteStallCause::kMemtableLimit &&
++               !mutable_cf_options.disable_write_stall) {
+       write_controller_token_ =
+           SetupDelay(write_controller, compaction_needed_bytes,
+                      prev_compaction_needed_bytes_, was_stopped,
+@@ -1002,7 +1006,8 @@ WriteStallCondition ColumnFamilyData::RecalculateWriteStallConditions(
+           mutable_cf_options.max_write_buffer_number,
+           write_controller->delayed_write_rate());
+     } else if (write_stall_condition == WriteStallCondition::kDelayed &&
+-               write_stall_cause == WriteStallCause::kL0FileCountLimit) {
++               write_stall_cause == WriteStallCause::kL0FileCountLimit &&
++               !mutable_cf_options.disable_write_stall) {
+       // L0 is the last two files from stopping.
+       bool near_stop = vstorage->l0_delay_trigger_count() >=
+                        mutable_cf_options.level0_stop_writes_trigger - 2;
+@@ -1022,7 +1027,8 @@ WriteStallCondition ColumnFamilyData::RecalculateWriteStallConditions(
+                      name_.c_str(), vstorage->l0_delay_trigger_count(),
+                      write_controller->delayed_write_rate());
+     } else if (write_stall_condition == WriteStallCondition::kDelayed &&
+-               write_stall_cause == WriteStallCause::kPendingCompactionBytes) {
++               write_stall_cause == WriteStallCause::kPendingCompactionBytes &&
++               !mutable_cf_options.disable_write_stall) {
+       // If the distance to hard limit is less than 1/4 of the gap between soft
+       // and
+       // hard bytes limit, we think it is near stop and speed up the slowdown.
+@@ -1048,7 +1054,8 @@ WriteStallCondition ColumnFamilyData::RecalculateWriteStallConditions(
+           name_.c_str(), vstorage->estimated_compaction_needed_bytes(),
+           write_controller->delayed_write_rate());
+     } else {
+-      assert(write_stall_condition == WriteStallCondition::kNormal);
++      assert(write_stall_condition == WriteStallCondition::kNormal ||
++             mutable_cf_options.disable_write_stall);
+       if (vstorage->l0_delay_trigger_count() >=
+           GetL0FileCountForCompactionSpeedup(
+               mutable_cf_options.level0_file_num_compaction_trigger,
+diff --git a/db/db_impl/db_impl.cc b/db/db_impl/db_impl.cc
+index 297c6aceb..b522a41e0 100644
+--- a/db/db_impl/db_impl.cc
++++ b/db/db_impl/db_impl.cc
+@@ -1317,10 +1317,11 @@ Status DBImpl::SetDBOptions(
+                          mutable_db_options_.max_background_compactions,
+                          mutable_db_options_.max_background_jobs,
+                          /* parallelize_compactions */ true);
+-      const BGJobLimits new_bg_job_limits = GetBGJobLimits(
+-          new_options.max_background_flushes,
+-          new_options.max_background_compactions,
+-          new_options.max_background_jobs, /* parallelize_compactions */ true);
++      const BGJobLimits new_bg_job_limits =
++          GetBGJobLimits(new_options.max_background_flushes,
++                         new_options.max_background_compactions,
++                         new_options.max_background_jobs,
++                         /* parallelize_compactions */ true);
+ 
+       const bool max_flushes_increased =
+           new_bg_job_limits.max_flushes > current_bg_job_limits.max_flushes;
+@@ -6414,6 +6415,7 @@ void DBImpl::NotifyOnExternalFileIngested(
+     info.internal_file_path = f.internal_file_path;
+     info.global_seqno = f.assigned_seqno;
+     info.table_properties = f.table_properties;
++    info.picked_level = f.picked_level;
+     for (auto listener : immutable_db_options_.listeners) {
+       listener->OnExternalFileIngested(this, info);
+     }
+diff --git a/db/db_impl/db_impl.h b/db/db_impl/db_impl.h
+index 34a5f3398..43902fc49 100644
+--- a/db/db_impl/db_impl.h
++++ b/db/db_impl/db_impl.h
+@@ -489,8 +489,7 @@ class DBImpl : public DB {
+   virtual Status GetSortedWalFiles(VectorLogPtr& files) override;
+   virtual Status GetCurrentWalFile(
+       std::unique_ptr<LogFile>* current_log_file) override;
+-  virtual Status GetCreationTimeOfOldestFile(
+-      uint64_t* creation_time) override;
++  virtual Status GetCreationTimeOfOldestFile(uint64_t* creation_time) override;
+ 
+   virtual Status GetUpdatesSince(
+       SequenceNumber seq_number, std::unique_ptr<TransactionLogIterator>* iter,
+@@ -612,7 +611,6 @@ class DBImpl : public DB {
+       ColumnFamilyHandle* column_family, const Range* range, std::size_t n,
+       TablePropertiesCollection* props) override;
+ 
+-
+   // ---- End of implementations of the DB interface ----
+   SystemClock* GetSystemClock() const;
+ 
+@@ -1786,8 +1784,8 @@ class DBImpl : public DB {
+     const InternalKey* begin = nullptr;  // nullptr means beginning of key range
+     const InternalKey* end = nullptr;    // nullptr means end of key range
+     InternalKey* manual_end = nullptr;   // how far we are compacting
+-    InternalKey tmp_storage;      // Used to keep track of compaction progress
+-    InternalKey tmp_storage1;     // Used to keep track of compaction progress
++    InternalKey tmp_storage;   // Used to keep track of compaction progress
++    InternalKey tmp_storage1;  // Used to keep track of compaction progress
+ 
+     // When the user provides a canceled pointer in CompactRangeOptions, the
+     // above varaibe is the reference of the user-provided
+diff --git a/db/db_impl/db_impl_compaction_flush.cc b/db/db_impl/db_impl_compaction_flush.cc
+index 71c23de95..50b129e03 100644
+--- a/db/db_impl/db_impl_compaction_flush.cc
++++ b/db/db_impl/db_impl_compaction_flush.cc
+@@ -3783,8 +3783,7 @@ Status DBImpl::BackgroundCompaction(bool* made_progress,
+                                                              moved_bytes);
+     {
+       event_logger_.LogToBuffer(log_buffer)
+-          << "job" << job_context->job_id << "event"
+-          << "trivial_move"
++          << "job" << job_context->job_id << "event" << "trivial_move"
+           << "destination_level" << c->output_level() << "files" << moved_files
+           << "total_files_size" << moved_bytes;
+     }
+diff --git a/db/db_impl/db_impl_open.cc b/db/db_impl/db_impl_open.cc
+index 074fa8621..e2f1aea23 100644
+--- a/db/db_impl/db_impl_open.cc
++++ b/db/db_impl/db_impl_open.cc
+@@ -1101,8 +1101,7 @@ Status DBImpl::RecoverLogFiles(const std::vector<uint64_t>& wal_numbers,
+   int job_id = next_job_id_.fetch_add(1);
+   {
+     auto stream = event_logger_.Log();
+-    stream << "job" << job_id << "event"
+-           << "recovery_started";
++    stream << "job" << job_id << "event" << "recovery_started";
+     stream << "wal_files";
+     stream.StartArray();
+     for (auto wal_number : wal_numbers) {
+@@ -1522,8 +1521,7 @@ Status DBImpl::RecoverLogFiles(const std::vector<uint64_t>& wal_numbers,
+     }
+   }
+ 
+-  event_logger_.Log() << "job" << job_id << "event"
+-                      << "recovery_finished";
++  event_logger_.Log() << "job" << job_id << "event" << "recovery_finished";
+ 
+   return status;
+ }
+@@ -2230,7 +2228,6 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
+                            impl->immutable_db_options_.db_paths[0].path);
+   }
+ 
+-
+   if (s.ok()) {
+     ROCKS_LOG_HEADER(impl->immutable_db_options_.info_log, "DB pointer %p",
+                      impl);
+diff --git a/db/db_options_test.cc b/db/db_options_test.cc
+index 8f60f0051..ba63dc2f8 100644
+--- a/db/db_options_test.cc
++++ b/db/db_options_test.cc
+@@ -582,6 +582,87 @@ TEST_F(DBOptionsTest, EnableAutoCompactionAndTriggerStall) {
+   }
+ }
+ 
++TEST_F(DBOptionsTest, EnableAutoCompactionButDisableStall) {
++  const std::string kValue(1024, 'v');
++  Options options;
++  options.create_if_missing = true;
++  options.disable_auto_compactions = true;
++  options.disable_write_stall = true;
++  options.write_buffer_size = 1024 * 1024 * 10;
++  options.compression = CompressionType::kNoCompression;
++  options.level0_file_num_compaction_trigger = 1;
++  options.level0_stop_writes_trigger = std::numeric_limits<int>::max();
++  options.level0_slowdown_writes_trigger = std::numeric_limits<int>::max();
++  options.hard_pending_compaction_bytes_limit =
++      std::numeric_limits<uint64_t>::max();
++  options.soft_pending_compaction_bytes_limit =
++      std::numeric_limits<uint64_t>::max();
++  options.env = env_;
++
++  DestroyAndReopen(options);
++  int i = 0;
++  for (; i < 1024; i++) {
++    Put(Key(i), kValue);
++  }
++  Flush();
++  for (; i < 1024 * 2; i++) {
++    Put(Key(i), kValue);
++  }
++  Flush();
++  dbfull()->TEST_WaitForFlushMemTable();
++  ASSERT_EQ(2, NumTableFilesAtLevel(0));
++  uint64_t l0_size = SizeAtLevel(0);
++
++  options.hard_pending_compaction_bytes_limit = l0_size;
++  options.soft_pending_compaction_bytes_limit = l0_size;
++
++  Reopen(options);
++  dbfull()->TEST_WaitForCompact();
++  ASSERT_FALSE(dbfull()->TEST_write_controler().IsStopped());
++  ASSERT_FALSE(dbfull()->TEST_write_controler().NeedsDelay());
++
++  SyncPoint::GetInstance()->LoadDependency(
++      {{"DBOptionsTest::EnableAutoCompactionButDisableStall:1",
++        "BackgroundCallCompaction:0"},
++       {"DBImpl::BackgroundCompaction():BeforePickCompaction",
++        "DBOptionsTest::EnableAutoCompactionButDisableStall:2"},
++       {"DBOptionsTest::EnableAutoCompactionButDisableStall:3",
++        "DBImpl::BackgroundCompaction():AfterPickCompaction"}});
++  // Block background compaction.
++  SyncPoint::GetInstance()->EnableProcessing();
++
++  ASSERT_OK(dbfull()->SetOptions({{"disable_auto_compactions", "false"}}));
++  TEST_SYNC_POINT("DBOptionsTest::EnableAutoCompactionButDisableStall:1");
++  // Wait for stall condition recalculate.
++  TEST_SYNC_POINT("DBOptionsTest::EnableAutoCompactionButDisableStall:2");
++
++  ASSERT_FALSE(dbfull()->TEST_write_controler().IsStopped());
++  ASSERT_FALSE(dbfull()->TEST_write_controler().NeedsDelay());
++  ASSERT_TRUE(dbfull()->TEST_write_controler().NeedSpeedupCompaction());
++
++  TEST_SYNC_POINT("DBOptionsTest::EnableAutoCompactionButDisableStall:3");
++
++  // Background compaction executed.
++  dbfull()->TEST_WaitForCompact();
++  ASSERT_FALSE(dbfull()->TEST_write_controler().IsStopped());
++  ASSERT_FALSE(dbfull()->TEST_write_controler().NeedsDelay());
++  ASSERT_FALSE(dbfull()->TEST_write_controler().NeedSpeedupCompaction());
++}
++
++TEST_F(DBOptionsTest, SetOptionsDisableWriteStall) {
++  Options options;
++  options.create_if_missing = true;
++  options.disable_write_stall = false;
++  options.env = env_;
++  Reopen(options);
++  ASSERT_EQ(false, dbfull()->GetOptions().disable_write_stall);
++
++  ASSERT_OK(dbfull()->SetOptions({{"disable_write_stall", "true"}}));
++  ASSERT_EQ(true, dbfull()->GetOptions().disable_write_stall);
++  ASSERT_OK(dbfull()->SetOptions({{"disable_write_stall", "false"}}));
++  ASSERT_EQ(false, dbfull()->GetOptions().disable_write_stall);
++}
++
+ TEST_F(DBOptionsTest, SetOptionsMayTriggerCompaction) {
+   Options options;
+   options.level_compaction_dynamic_level_bytes = false;
+@@ -1430,7 +1511,6 @@ TEST_F(DBOptionsTest, ChangeCompression) {
+   SyncPoint::GetInstance()->DisableProcessing();
+ }
+ 
+-
+ TEST_F(DBOptionsTest, BottommostCompressionOptsWithFallbackType) {
+   // Verify the bottommost compression options still take effect even when the
+   // bottommost compression type is left at its default value. Verify for both
+diff --git a/env/env_basic_test.cc b/env/env_basic_test.cc
+index 6a3b0390a..3a5472203 100644
+--- a/env/env_basic_test.cc
++++ b/env/env_basic_test.cc
+@@ -14,6 +14,7 @@
+ #include "rocksdb/convenience.h"
+ #include "rocksdb/env.h"
+ #include "rocksdb/env_encryption.h"
++#include "rocksdb/env_inspected.h"
+ #include "test_util/testharness.h"
+ 
+ namespace ROCKSDB_NAMESPACE {
+@@ -81,6 +82,41 @@ static Env* GetTestFS() {
+   return fs_env;
+ }
+ 
++class DummyFileSystemInspector : public FileSystemInspector {
++ public:
++  DummyFileSystemInspector(size_t refill_bytes = 0)
++      : refill_bytes_(refill_bytes) {}
++
++  Status Read(size_t len, size_t* allowed) override {
++    assert(allowed);
++    if (refill_bytes_ == 0) {
++      *allowed = len;
++    } else {
++      *allowed = std::min(refill_bytes_, len);
++    }
++    return Status::OK();
++  }
++
++  Status Write(size_t len, size_t* allowed) override {
++    assert(allowed);
++    if (refill_bytes_ == 0) {
++      *allowed = len;
++    } else {
++      *allowed = std::min(refill_bytes_, len);
++    }
++    return Status::OK();
++  }
++
++ private:
++  size_t refill_bytes_;
++};
++
++static Env* GetInspectedEnv() {
++  static std::unique_ptr<Env> inspected_env(NewFileSystemInspectedEnv(
++      Env::Default(), std::make_shared<DummyFileSystemInspector>(1)));
++  return inspected_env.get();
++}
++
+ }  // namespace
+ class EnvBasicTestWithParam
+     : public testing::Test,
+@@ -118,6 +154,9 @@ INSTANTIATE_TEST_CASE_P(EncryptedEnv, EnvMoreTestWithParam,
+ INSTANTIATE_TEST_CASE_P(MemEnv, EnvBasicTestWithParam,
+                         ::testing::Values(&GetMemoryEnv));
+ 
++INSTANTIATE_TEST_CASE_P(InspectedEnv, EnvBasicTestWithParam,
++                        ::testing::Values(&GetInspectedEnv));
++
+ namespace {
+ 
+ // Returns a vector of 0 or 1 Env*, depending whether an Env is registered for
+diff --git a/env/env_inspected.cc b/env/env_inspected.cc
+new file mode 100644
+index 000000000..354af1cfc
+--- /dev/null
++++ b/env/env_inspected.cc
+@@ -0,0 +1,401 @@
++// Copyright 2020 TiKV Project Authors. Licensed under Apache-2.0.
++
++#ifndef ROCKSDB_LITE
++#include "rocksdb/env_inspected.h"
++
++namespace ROCKSDB_NAMESPACE {
++
++class InspectedSequentialFile : public SequentialFileWrapper {
++ public:
++  InspectedSequentialFile(std::unique_ptr<SequentialFile>&& target,
++                          std::shared_ptr<FileSystemInspector> inspector)
++      : SequentialFileWrapper(target.get()),
++        owner_(std::move(target)),
++        inspector_(inspector) {}
++
++  Status Read(size_t n, Slice* result, char* scratch) override {
++    assert(inspector_);
++    Status s;
++    size_t offset = 0;
++    size_t allowed = 0;
++    while (offset < n) {
++      s = inspector_->Read(n - offset, &allowed);
++      if (!s.ok()) {
++        return s;
++      }
++      assert(allowed <= n - offset);
++      if (allowed > 0) {
++        s = SequentialFileWrapper::Read(allowed, result, scratch + offset);
++        if (!s.ok()) {
++          break;
++        }
++        size_t actual_read = result->size();
++        if (result->data() != scratch + offset) {
++          // Only possible when underlying file ignores or misuses user
++          // provided buffer. Reject this case.
++          memmove(scratch + offset, result->data(), actual_read);
++          assert(false);
++        }
++        offset += actual_read;
++        if (actual_read < allowed) {
++          break;
++        }
++      }
++    }
++    *result = Slice(scratch, offset);
++    return s;
++  }
++
++  Status PositionedRead(uint64_t offset, size_t n, Slice* result,
++                        char* scratch) override {
++    assert(inspector_);
++    Status s;
++    size_t roffset = 0;
++    size_t allowed = 0;
++    while (roffset < n) {
++      s = inspector_->Read(n - roffset, &allowed);
++      if (!s.ok()) {
++        return s;
++      }
++      assert(allowed <= n - roffset);
++      if (allowed > 0) {
++        s = SequentialFileWrapper::PositionedRead(offset + roffset, allowed,
++                                                  result, scratch + roffset);
++        if (!s.ok()) {
++          break;
++        }
++        size_t actual_read = result->size();
++        if (result->data() != scratch + roffset) {
++          memmove(scratch + roffset, result->data(), actual_read);
++          assert(false);
++        }
++        roffset += actual_read;
++        if (actual_read < allowed) {
++          break;
++        }
++      }
++    }
++    *result = Slice(scratch, roffset);
++    return s;
++  }
++
++ private:
++  std::unique_ptr<SequentialFile> owner_;
++  std::shared_ptr<FileSystemInspector> inspector_;
++};
++
++class InspectedRandomAccessFile : public RandomAccessFileWrapper {
++ public:
++  InspectedRandomAccessFile(std::unique_ptr<RandomAccessFile>&& target,
++                            std::shared_ptr<FileSystemInspector> inspector)
++      : RandomAccessFileWrapper(target.get()),
++        owner_(std::move(target)),
++        inspector_(inspector) {}
++
++  Status Read(uint64_t offset, size_t n, Slice* result,
++              char* scratch) const override {
++    assert(inspector_);
++    Status s;
++    size_t roffset = 0;
++    size_t allowed = 0;
++    while (roffset < n) {
++      s = inspector_->Read(n - roffset, &allowed);
++      if (!s.ok()) {
++        return s;
++      }
++      assert(allowed <= n - roffset);
++      if (allowed > 0) {
++        s = RandomAccessFileWrapper::Read(offset + roffset, allowed, result,
++                                          scratch + roffset);
++        if (!s.ok()) {
++          break;
++        }
++        size_t actual_read = result->size();
++        if (result->data() != scratch + roffset) {
++          memmove(scratch + roffset, result->data(), actual_read);
++          assert(false);
++        }
++        roffset += actual_read;
++        if (actual_read < allowed) {
++          break;
++        }
++      }
++    }
++    *result = Slice(scratch, roffset);
++    return s;
++  }
++
++  // TODO: support parallel MultiRead
++  Status MultiRead(ReadRequest* reqs, size_t num_reqs) override {
++    assert(reqs != nullptr);
++    for (size_t i = 0; i < num_reqs; ++i) {
++      ReadRequest& req = reqs[i];
++      req.status = Read(req.offset, req.len, &req.result, req.scratch);
++    }
++    return Status::OK();
++  }
++
++ private:
++  std::unique_ptr<RandomAccessFile> owner_;
++  std::shared_ptr<FileSystemInspector> inspector_;
++};
++
++class InspectedWritableFile : public WritableFileWrapper {
++ public:
++  InspectedWritableFile(std::unique_ptr<WritableFile>&& target,
++                        std::shared_ptr<FileSystemInspector> inspector)
++      : WritableFileWrapper(target.get()),
++        owner_(std::move(target)),
++        inspector_(inspector) {}
++
++  Status Append(const Slice& data) override {
++    assert(inspector_);
++    Status s;
++    size_t size = data.size();
++    size_t offset = 0;
++    size_t allowed = 0;
++    while (offset < size) {
++      s = inspector_->Write(size - offset, &allowed);
++      if (!s.ok()) {
++        return s;
++      }
++      assert(allowed <= size - offset);
++      if (allowed > 0) {
++        s = WritableFileWrapper::Append(Slice(data.data() + offset, allowed));
++        if (!s.ok()) {
++          break;
++        }
++      }
++      offset += allowed;
++    }
++    return s;
++  }
++
++  Status Append(const Slice& data,
++                const DataVerificationInfo& verification_info) override {
++    assert(inspector_);
++    Status s;
++    size_t size = data.size();
++    size_t offset = 0;
++    size_t allowed = 0;
++    while (offset < size) {
++      s = inspector_->Write(size - offset, &allowed);
++      if (!s.ok()) {
++        return s;
++      }
++      assert(allowed <= size - offset);
++      if (allowed > 0) {
++        s = WritableFileWrapper::Append(Slice(data.data() + offset, allowed),
++                                        verification_info);
++        if (!s.ok()) {
++          break;
++        }
++      }
++      offset += allowed;
++    }
++    return s;
++  }
++
++  Status PositionedAppend(const Slice& data, uint64_t offset) override {
++    assert(inspector_);
++    Status s;
++    size_t size = data.size();
++    size_t roffset = 0;
++    size_t allowed = 0;
++    while (roffset < size) {
++      s = inspector_->Write(size - roffset, &allowed);
++      if (!s.ok()) {
++        return s;
++      }
++      assert(allowed <= size - roffset);
++      if (allowed > 0) {
++        s = WritableFileWrapper::PositionedAppend(
++            Slice(data.data() + roffset, allowed), offset + roffset);
++        if (!s.ok()) {
++          break;
++        }
++      }
++      roffset += allowed;
++    }
++    return s;
++  }
++
++  Status PositionedAppend(
++      const Slice& data, uint64_t offset,
++      const DataVerificationInfo& verification_info) override {
++    assert(inspector_);
++    Status s;
++    size_t size = data.size();
++    size_t roffset = 0;
++    size_t allowed = 0;
++    while (roffset < size) {
++      s = inspector_->Write(size - roffset, &allowed);
++      if (!s.ok()) {
++        return s;
++      }
++      assert(allowed <= size - roffset);
++      if (allowed > 0) {
++        s = WritableFileWrapper::PositionedAppend(
++            Slice(data.data() + roffset, allowed), offset + roffset,
++            verification_info);
++        if (!s.ok()) {
++          break;
++        }
++      }
++      roffset += allowed;
++    }
++    return s;
++  }
++
++ private:
++  std::unique_ptr<WritableFile> owner_;
++  std::shared_ptr<FileSystemInspector> inspector_;
++};
++
++class InspectedRandomRWFile : public RandomRWFileWrapper {
++ public:
++  InspectedRandomRWFile(std::unique_ptr<RandomRWFile>&& target,
++                        std::shared_ptr<FileSystemInspector> inspector)
++      : RandomRWFileWrapper(target.get()),
++        owner_(std::move(target)),
++        inspector_(inspector) {}
++
++  Status Write(uint64_t offset, const Slice& data) override {
++    assert(inspector_);
++    Status s;
++    size_t size = data.size();
++    size_t roffset = 0;
++    size_t allowed = 0;
++    while (roffset < size) {
++      s = inspector_->Write(size - roffset, &allowed);
++      if (!s.ok()) {
++        return s;
++      }
++      assert(allowed <= size - roffset);
++      if (allowed > 0) {
++        s = RandomRWFileWrapper::Write(offset + roffset,
++                                       Slice(data.data() + roffset, allowed));
++        if (!s.ok()) {
++          break;
++        }
++      }
++      roffset += allowed;
++    }
++    return s;
++  }
++
++  Status Read(uint64_t offset, size_t n, Slice* result,
++              char* scratch) const override {
++    assert(inspector_);
++    Status s;
++    size_t roffset = 0;
++    size_t allowed = 0;
++    while (roffset < n) {
++      s = inspector_->Read(n - roffset, &allowed);
++      if (!s.ok()) {
++        return s;
++      }
++      assert(allowed <= n - roffset);
++      if (allowed > 0) {
++        s = RandomRWFileWrapper::Read(offset + roffset, allowed, result,
++                                      scratch + roffset);
++        if (!s.ok()) {
++          return s;
++        }
++        size_t actual_read = result->size();
++        if (result->data() != scratch + roffset) {
++          memmove(scratch + roffset, result->data(), actual_read);
++          assert(false);
++        }
++        roffset += actual_read;
++        if (actual_read < allowed) {
++          break;
++        }
++      }
++    }
++    *result = Slice(scratch, roffset);
++    return s;
++  }
++
++ private:
++  std::unique_ptr<RandomRWFile> owner_;
++  std::shared_ptr<FileSystemInspector> inspector_;
++};
++
++FileSystemInspectedEnv::FileSystemInspectedEnv(
++    Env* base_env, std::shared_ptr<FileSystemInspector>& inspector)
++    : EnvWrapper(base_env), inspector_(inspector) {}
++
++Status FileSystemInspectedEnv::NewSequentialFile(
++    const std::string& fname, std::unique_ptr<SequentialFile>* result,
++    const EnvOptions& options) {
++  auto s = EnvWrapper::NewSequentialFile(fname, result, options);
++  if (!s.ok()) {
++    return s;
++  }
++  result->reset(new InspectedSequentialFile(std::move(*result), inspector_));
++  return s;
++}
++
++Status FileSystemInspectedEnv::NewRandomAccessFile(
++    const std::string& fname, std::unique_ptr<RandomAccessFile>* result,
++    const EnvOptions& options) {
++  auto s = EnvWrapper::NewRandomAccessFile(fname, result, options);
++  if (!s.ok()) {
++    return s;
++  }
++  result->reset(new InspectedRandomAccessFile(std::move(*result), inspector_));
++  return s;
++}
++
++Status FileSystemInspectedEnv::NewWritableFile(
++    const std::string& fname, std::unique_ptr<WritableFile>* result,
++    const EnvOptions& options) {
++  auto s = EnvWrapper::NewWritableFile(fname, result, options);
++  if (!s.ok()) {
++    return s;
++  }
++  result->reset(new InspectedWritableFile(std::move(*result), inspector_));
++  return s;
++}
++
++Status FileSystemInspectedEnv::ReopenWritableFile(
++    const std::string& fname, std::unique_ptr<WritableFile>* result,
++    const EnvOptions& options) {
++  auto s = EnvWrapper::ReopenWritableFile(fname, result, options);
++  if (!s.ok()) {
++    return s;
++  }
++  result->reset(new InspectedWritableFile(std::move(*result), inspector_));
++  return s;
++}
++
++Status FileSystemInspectedEnv::ReuseWritableFile(
++    const std::string& fname, const std::string& old_fname,
++    std::unique_ptr<WritableFile>* result, const EnvOptions& options) {
++  auto s = EnvWrapper::ReuseWritableFile(fname, old_fname, result, options);
++  if (!s.ok()) {
++    return s;
++  }
++  result->reset(new InspectedWritableFile(std::move(*result), inspector_));
++  return s;
++}
++
++Status FileSystemInspectedEnv::NewRandomRWFile(
++    const std::string& fname, std::unique_ptr<RandomRWFile>* result,
++    const EnvOptions& options) {
++  auto s = EnvWrapper::NewRandomRWFile(fname, result, options);
++  if (!s.ok()) {
++    return s;
++  }
++  result->reset(new InspectedRandomRWFile(std::move(*result), inspector_));
++  return s;
++}
++
++Env* NewFileSystemInspectedEnv(Env* base_env,
++                               std::shared_ptr<FileSystemInspector> inspector) {
++  return new FileSystemInspectedEnv(base_env, inspector);
++}
++
++}  // namespace ROCKSDB_NAMESPACE
++#endif  // !ROCKSDB_LITE
+diff --git a/include/rocksdb/env_inspected.h b/include/rocksdb/env_inspected.h
+new file mode 100644
+index 000000000..f5f2ee0c6
+--- /dev/null
++++ b/include/rocksdb/env_inspected.h
+@@ -0,0 +1,59 @@
++// Copyright 2020 TiKV Project Authors. Licensed under Apache-2.0.
++
++#pragma once
++#ifndef ROCKSDB_LITE
++
++#include <memory>
++#include <string>
++
++#include "rocksdb/env.h"
++
++namespace ROCKSDB_NAMESPACE {
++
++// Interface to inspect storage requests. FileSystemInspectedEnv will consult
++// FileSystemInspector before issuing actual disk IO.
++class FileSystemInspector {
++ public:
++  virtual ~FileSystemInspector() = default;
++
++  virtual Status Read(size_t len, size_t* allowed) = 0;
++  virtual Status Write(size_t len, size_t* allowed) = 0;
++};
++
++// An Env with underlying IO requests being inspected. It holds a reference to
++// an external FileSystemInspector to consult for IO inspection.
++class FileSystemInspectedEnv : public EnvWrapper {
++ public:
++  FileSystemInspectedEnv(Env* base_env,
++                         std::shared_ptr<FileSystemInspector>& inspector);
++
++  Status NewSequentialFile(const std::string& fname,
++                           std::unique_ptr<SequentialFile>* result,
++                           const EnvOptions& options) override;
++  Status NewRandomAccessFile(const std::string& fname,
++                             std::unique_ptr<RandomAccessFile>* result,
++                             const EnvOptions& options) override;
++  Status NewWritableFile(const std::string& fname,
++                         std::unique_ptr<WritableFile>* result,
++                         const EnvOptions& options) override;
++  Status ReopenWritableFile(const std::string& fname,
++                            std::unique_ptr<WritableFile>* result,
++                            const EnvOptions& options) override;
++  Status ReuseWritableFile(const std::string& fname,
++                           const std::string& old_fname,
++                           std::unique_ptr<WritableFile>* result,
++                           const EnvOptions& options) override;
++  Status NewRandomRWFile(const std::string& fname,
++                         std::unique_ptr<RandomRWFile>* result,
++                         const EnvOptions& options) override;
++
++ private:
++  const std::shared_ptr<FileSystemInspector> inspector_;
++};
++
++extern Env* NewFileSystemInspectedEnv(
++    Env* base_env, std::shared_ptr<FileSystemInspector> inspector);
++
++}  // namespace ROCKSDB_NAMESPACE
++
++#endif  // !ROCKSDB_LITE
+diff --git a/include/rocksdb/listener.h b/include/rocksdb/listener.h
+index 2cc30d871..787ed206a 100644
+--- a/include/rocksdb/listener.h
++++ b/include/rocksdb/listener.h
+@@ -504,6 +504,8 @@ struct ExternalFileIngestionInfo {
+   SequenceNumber global_seqno;
+   // Table properties of the table being flushed
+   TableProperties table_properties;
++  // Level inside the DB we picked for the external file.
++  int picked_level;
+ };
+ 
+ // Result of auto background error recovery
+diff --git a/include/rocksdb/options.h b/include/rocksdb/options.h
+index ae5ed2c26..1c2daed9a 100644
+--- a/include/rocksdb/options.h
++++ b/include/rocksdb/options.h
+@@ -296,6 +296,11 @@ struct ColumnFamilyOptions : public AdvancedColumnFamilyOptions {
+   // Dynamically changeable through SetOptions() API
+   bool disable_auto_compactions = false;
+ 
++  // Disable write stall mechanism.
++  //
++  // Dynamically changeable through SetOptions() API
++  bool disable_write_stall = false;
++
+   // This is a factory that provides TableFactory objects.
+   // Default: a block-based table factory that provides a default
+   // implementation of TableBuilder and TableReader with default
+diff --git a/options/cf_options.cc b/options/cf_options.cc
+index 2ca826c98..3a2d9894b 100644
+--- a/options/cf_options.cc
++++ b/options/cf_options.cc
+@@ -262,6 +262,10 @@ static std::unordered_map<std::string, OptionTypeInfo>
+          {offsetof(struct MutableCFOptions, disable_auto_compactions),
+           OptionType::kBoolean, OptionVerificationType::kNormal,
+           OptionTypeFlags::kMutable}},
++        {"disable_write_stall",
++         {offsetof(struct MutableCFOptions, disable_write_stall),
++          OptionType::kBoolean, OptionVerificationType::kNormal,
++          OptionTypeFlags::kMutable}},
+         {"filter_deletes",
+          {0, OptionType::kBoolean, OptionVerificationType::kDeprecated,
+           OptionTypeFlags::kMutable}},
+@@ -1069,6 +1073,8 @@ void MutableCFOptions::Dump(Logger* log) const {
+                      : prefix_extractor->GetId().c_str());
+   ROCKS_LOG_INFO(log, "                 disable_auto_compactions: %d",
+                  disable_auto_compactions);
++  ROCKS_LOG_INFO(log, "                      disable_write_stall: %d",
++                 disable_write_stall);
+   ROCKS_LOG_INFO(log, "      soft_pending_compaction_bytes_limit: %" PRIu64,
+                  soft_pending_compaction_bytes_limit);
+   ROCKS_LOG_INFO(log, "      hard_pending_compaction_bytes_limit: %" PRIu64,
+diff --git a/options/cf_options.h b/options/cf_options.h
+index f42d6b562..6f7f2c857 100644
+--- a/options/cf_options.h
++++ b/options/cf_options.h
+@@ -125,6 +125,7 @@ struct MutableCFOptions {
+         experimental_mempurge_threshold(
+             options.experimental_mempurge_threshold),
+         disable_auto_compactions(options.disable_auto_compactions),
++        disable_write_stall(options.disable_write_stall),
+         soft_pending_compaction_bytes_limit(
+             options.soft_pending_compaction_bytes_limit),
+         hard_pending_compaction_bytes_limit(
+@@ -196,6 +197,7 @@ struct MutableCFOptions {
+         prefix_extractor(nullptr),
+         experimental_mempurge_threshold(0.0),
+         disable_auto_compactions(false),
++        disable_write_stall(false),
+         soft_pending_compaction_bytes_limit(0),
+         hard_pending_compaction_bytes_limit(0),
+         level0_file_num_compaction_trigger(0),
+@@ -280,6 +282,7 @@ struct MutableCFOptions {
+ 
+   // Compaction related options
+   bool disable_auto_compactions;
++  bool disable_write_stall;
+   uint64_t soft_pending_compaction_bytes_limit;
+   uint64_t hard_pending_compaction_bytes_limit;
+   int level0_file_num_compaction_trigger;
+diff --git a/options/db_options.cc b/options/db_options.cc
+index 2d213f13f..9ef4ccac0 100644
+--- a/options/db_options.cc
++++ b/options/db_options.cc
+@@ -915,8 +915,7 @@ void ImmutableDBOptions::Dump(Logger* log) const {
+   ROCKS_LOG_HEADER(log, "            Options.wal_compression: %d",
+                    wal_compression);
+   ROCKS_LOG_HEADER(log, "            Options.atomic_flush: %d", atomic_flush);
+-  ROCKS_LOG_HEADER(log,
+-                   "            Options.avoid_unnecessary_blocking_io: %d",
++  ROCKS_LOG_HEADER(log, "            Options.avoid_unnecessary_blocking_io: %d",
+                    avoid_unnecessary_blocking_io);
+   ROCKS_LOG_HEADER(log, "                Options.persist_stats_to_disk: %u",
+                    persist_stats_to_disk);
+@@ -1053,14 +1052,13 @@ void MutableDBOptions::Dump(Logger* log) const {
+   ROCKS_LOG_HEADER(log,
+                    "                     Options.wal_bytes_per_sync: %" PRIu64,
+                    wal_bytes_per_sync);
+-  ROCKS_LOG_HEADER(log,
+-                   "                  Options.strict_bytes_per_sync: %d",
++  ROCKS_LOG_HEADER(log, "                  Options.strict_bytes_per_sync: %d",
+                    strict_bytes_per_sync);
+   ROCKS_LOG_HEADER(log,
+                    "      Options.compaction_readahead_size: %" ROCKSDB_PRIszt,
+                    compaction_readahead_size);
+   ROCKS_LOG_HEADER(log, "                 Options.max_background_flushes: %d",
+-                          max_background_flushes);
++                   max_background_flushes);
+   ROCKS_LOG_HEADER(log, "Options.daily_offpeak_time_utc: %s",
+                    daily_offpeak_time_utc.c_str());
+ }
+diff --git a/options/options.cc b/options/options.cc
+index d96cf4072..138a1a7bc 100644
+--- a/options/options.cc
++++ b/options/options.cc
+@@ -304,6 +304,8 @@ void ColumnFamilyOptions::Dump(Logger* log) const {
+                      hard_pending_compaction_bytes_limit);
+     ROCKS_LOG_HEADER(log, "               Options.disable_auto_compactions: %d",
+                      disable_auto_compactions);
++    ROCKS_LOG_HEADER(log, "               Options.disable_write_stall: %d",
++                     disable_write_stall);
+ 
+     const auto& it_compaction_style =
+         compaction_style_to_string.find(compaction_style);
+diff --git a/options/options_helper.cc b/options/options_helper.cc
+index fa5d549c1..362af2839 100644
+--- a/options/options_helper.cc
++++ b/options/options_helper.cc
+@@ -219,6 +219,7 @@ void UpdateColumnFamilyOptions(const MutableCFOptions& moptions,
+ 
+   // Compaction related options
+   cf_opts->disable_auto_compactions = moptions.disable_auto_compactions;
++  cf_opts->disable_write_stall = moptions.disable_write_stall;
+   cf_opts->soft_pending_compaction_bytes_limit =
+       moptions.soft_pending_compaction_bytes_limit;
+   cf_opts->hard_pending_compaction_bytes_limit =
+diff --git a/options/options_settable_test.cc b/options/options_settable_test.cc
+index 2f7493f32..decd1c423 100644
+--- a/options/options_settable_test.cc
++++ b/options/options_settable_test.cc
+@@ -538,6 +538,7 @@ TEST_F(OptionsSettableTest, ColumnFamilyOptionsAllFieldsSettable) {
+       "compaction_pri=kMinOverlappingRatio;"
+       "hard_pending_compaction_bytes_limit=0;"
+       "disable_auto_compactions=false;"
++      "disable_write_stall=false;"
+       "report_bg_io_stats=true;"
+       "ttl=60;"
+       "periodic_compaction_seconds=3600;"
+diff --git a/src.mk b/src.mk
+index 947159736..d68733fba 100644
+--- a/src.mk
++++ b/src.mk
+@@ -105,6 +105,7 @@ LIB_SOURCES =                                                   \
+   env/env.cc                                                    \
+   env/env_chroot.cc                                             \
+   env/env_encryption.cc                                         \
++  env/env_inspected.cc                                          \
+   env/env_posix.cc                                              \
+   env/file_system.cc                                            \
+   env/fs_posix.cc                                               \
+-- 
+2.45.0
+

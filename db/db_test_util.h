@@ -29,6 +29,7 @@
 #include "rocksdb/compaction_filter.h"
 #include "rocksdb/convenience.h"
 #include "rocksdb/db.h"
+#include "rocksdb/encryption.h"
 #include "rocksdb/env.h"
 #include "rocksdb/file_system.h"
 #include "rocksdb/filter_policy.h"
@@ -998,6 +999,7 @@ class DBTestBase : public testing::Test {
     kConcurrentSkipList = 27,
     kPipelinedWrite = 28,
     kConcurrentWALWrites = 29,
+    kMultiBatchWrite = 30,
     kDirectIO,
     kLevelSubcompactions,
     kBlockBasedTableWithIndexRestartInterval,
@@ -1115,6 +1117,11 @@ class DBTestBase : public testing::Test {
 
   Status TryReopenWithColumnFamilies(const std::vector<std::string>& cfs,
                                      const Options& options);
+
+  void OpenWithCFWriteBufferManager(
+      const std::vector<std::string>& cfs,
+      const std::vector<std::shared_ptr<WriteBufferManager>> wbms,
+      const Options& options);
 
   void Reopen(const Options& options);
 

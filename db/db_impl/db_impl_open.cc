@@ -151,6 +151,16 @@ DBOptions SanitizeOptions(const std::string& dbname, const DBOptions& src,
     result.avoid_flush_during_recovery = false;
   }
 
+  // multi thread write do not support two-write-que or write in 2PC
+  if (result.two_write_queues || result.allow_2pc) {
+    result.enable_multi_batch_write = false;
+  }
+
+  if (result.enable_multi_batch_write) {
+    result.enable_pipelined_write = false;
+    result.allow_concurrent_memtable_write = true;
+  }
+
   ImmutableDBOptions immutable_db_options(result);
   if (!immutable_db_options.IsWalDirSameAsDBPath()) {
     // Either the WAL dir and db_paths[0]/db_name are not the same, or we
@@ -1101,8 +1111,7 @@ Status DBImpl::RecoverLogFiles(const std::vector<uint64_t>& wal_numbers,
   int job_id = next_job_id_.fetch_add(1);
   {
     auto stream = event_logger_.Log();
-    stream << "job" << job_id << "event"
-           << "recovery_started";
+    stream << "job" << job_id << "event" << "recovery_started";
     stream << "wal_files";
     stream.StartArray();
     for (auto wal_number : wal_numbers) {
@@ -1290,7 +1299,7 @@ Status DBImpl::RecoverLogFiles(const std::vector<uint64_t>& wal_numbers,
       bool has_valid_writes = false;
       status = WriteBatchInternal::InsertInto(
           batch_to_use, column_family_memtables_.get(), &flush_scheduler_,
-          &trim_history_scheduler_, true, wal_number, this,
+          &trim_history_scheduler_, true, wal_number, 0, this,
           false /* concurrent_memtable_writes */, next_sequence,
           &has_valid_writes, seq_per_batch_, batch_per_txn_);
       MaybeIgnoreError(&status);
@@ -1522,8 +1531,7 @@ Status DBImpl::RecoverLogFiles(const std::vector<uint64_t>& wal_numbers,
     }
   }
 
-  event_logger_.Log() << "job" << job_id << "event"
-                      << "recovery_finished";
+  event_logger_.Log() << "job" << job_id << "event" << "recovery_finished";
 
   return status;
 }
@@ -1966,6 +1974,22 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
   } else {
     assert(impl->init_logger_creation_s_.ok());
   }
+  for (auto cf : column_families) {
+    if (cf.options.cf_write_buffer_manager != nullptr) {
+      auto* write_buffer_manager = cf.options.cf_write_buffer_manager.get();
+      bool already_exist = false;
+      for (auto m : impl->cf_based_write_buffer_manager_) {
+        if (m == write_buffer_manager) {
+          already_exist = true;
+          break;
+        }
+      }
+      if (!already_exist) {
+        impl->cf_based_write_buffer_manager_.push_back(write_buffer_manager);
+      }
+    }
+  }
+
   s = impl->env_->CreateDirIfMissing(impl->immutable_db_options_.GetWalDir());
   if (s.ok()) {
     std::vector<std::string> paths;
@@ -2230,7 +2254,6 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
                            impl->immutable_db_options_.db_paths[0].path);
   }
 
-
   if (s.ok()) {
     ROCKS_LOG_HEADER(impl->immutable_db_options_.info_log, "DB pointer %p",
                      impl);
@@ -2256,6 +2279,33 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
   }
   if (s.ok()) {
     s = impl->StartPeriodicTaskScheduler();
+    if (impl->write_buffer_manager_) {
+      impl->write_buffer_manager_->UnregisterDB(impl);
+    }
+    for (auto m : impl->cf_based_write_buffer_manager_) {
+      m->UnregisterDB(impl);
+    }
+
+    for (size_t i = 0; i < (*handles).size(); ++i) {
+      auto cf_opt = column_families[i].options;
+
+      auto* cf = (*handles)[i];
+      std::string cf_name = cf->GetName();
+      auto* write_buffer_manager = cf_opt.cf_write_buffer_manager != nullptr
+                                       ? cf_opt.cf_write_buffer_manager.get()
+                                       : impl->write_buffer_manager_;
+      if (write_buffer_manager) {
+        if (cf->GetName() == kDefaultColumnFamilyName) {
+          write_buffer_manager->RegisterColumnFamily(impl,
+                                                     impl->default_cf_handle_);
+        } else if (cf->GetName() == kPersistentStatsColumnFamilyName) {
+          write_buffer_manager->RegisterColumnFamily(
+              impl, impl->persist_stats_cf_handle_);
+        } else {
+          write_buffer_manager->RegisterColumnFamily(impl, cf);
+        }
+      }
+    }
   }
   if (s.ok()) {
     s = impl->RegisterRecordSeqnoTimeWorker(recovery_ctx.is_new_db_);

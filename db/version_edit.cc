@@ -27,27 +27,28 @@ uint64_t PackFileNumberAndPathId(uint64_t number, uint64_t path_id) {
   return number | (path_id * (kFileNumberMask + 1));
 }
 
-Status FileMetaData::UpdateBoundaries(const Slice& key, const Slice& value,
-                                      SequenceNumber seqno,
-                                      ValueType value_type) {
-  if (value_type == kTypeBlobIndex) {
-    BlobIndex blob_index;
-    const Status s = blob_index.DecodeFrom(value);
-    if (!s.ok()) {
-      return s;
-    }
+Status FileMetaData::UpdateBoundaries(const Slice& key, const Slice&,
+                                      SequenceNumber seqno, ValueType) {
+  // Do not check the validity of the blob value here, since Titan blob index
+  // encoding is different from the RocksDB blob index encoding.
+  // if (value_type == kTypeBlobIndex) {
+  //   BlobIndex blob_index;
+  //   const Status s = blob_index.DecodeFrom(value);
+  //   if (!s.ok()) {
+  //     return s;
+  //   }
 
-    if (!blob_index.IsInlined() && !blob_index.HasTTL()) {
-      if (blob_index.file_number() == kInvalidBlobFileNumber) {
-        return Status::Corruption("Invalid blob file number");
-      }
+  //   if (!blob_index.IsInlined() && !blob_index.HasTTL()) {
+  //     if (blob_index.file_number() == kInvalidBlobFileNumber) {
+  //       return Status::Corruption("Invalid blob file number");
+  //     }
 
-      if (oldest_blob_file_number == kInvalidBlobFileNumber ||
-          oldest_blob_file_number > blob_index.file_number()) {
-        oldest_blob_file_number = blob_index.file_number();
-      }
-    }
-  }
+  //     if (oldest_blob_file_number == kInvalidBlobFileNumber ||
+  //         oldest_blob_file_number > blob_index.file_number()) {
+  //       oldest_blob_file_number = blob_index.file_number();
+  //     }
+  //   }
+  // }
 
   if (smallest.size() == 0) {
     smallest.DecodeFrom(key);
@@ -884,45 +885,7 @@ std::string VersionEdit::DebugString(bool hex_key) const {
     r.append("\n  AddFile: ");
     AppendNumberTo(&r, new_files_[i].first);
     r.append(" ");
-    AppendNumberTo(&r, f.fd.GetNumber());
-    r.append(" ");
-    AppendNumberTo(&r, f.fd.GetFileSize());
-    r.append(" ");
-    r.append(f.smallest.DebugString(hex_key));
-    r.append(" .. ");
-    r.append(f.largest.DebugString(hex_key));
-    if (f.oldest_blob_file_number != kInvalidBlobFileNumber) {
-      r.append(" blob_file:");
-      AppendNumberTo(&r, f.oldest_blob_file_number);
-    }
-    r.append(" oldest_ancester_time:");
-    AppendNumberTo(&r, f.oldest_ancester_time);
-    r.append(" file_creation_time:");
-    AppendNumberTo(&r, f.file_creation_time);
-    r.append(" epoch_number:");
-    AppendNumberTo(&r, f.epoch_number);
-    r.append(" file_checksum:");
-    r.append(Slice(f.file_checksum).ToString(true));
-    r.append(" file_checksum_func_name: ");
-    r.append(f.file_checksum_func_name);
-    if (f.temperature != Temperature::kUnknown) {
-      r.append(" temperature: ");
-      // Maybe change to human readable format whenthe feature becomes
-      // permanent
-      r.append(std::to_string(static_cast<int>(f.temperature)));
-    }
-    if (f.unique_id != kNullUniqueId64x2) {
-      r.append(" unique_id(internal): ");
-      UniqueId64x2 id = f.unique_id;
-      r.append(InternalUniqueIdToHumanString(&id));
-      r.append(" public_unique_id: ");
-      InternalUniqueIdToExternal(&id);
-      r.append(UniqueIdToHumanString(EncodeUniqueIdBytes(&id)));
-    }
-    r.append(" tail size: ");
-    AppendNumberTo(&r, f.tail_size);
-    r.append(" User-defined timestamps persisted: ");
-    r.append(f.user_defined_timestamps_persisted ? "true" : "false");
+    r.append(f.DebugString(hex_key));
   }
 
   for (const auto& blob_file_addition : blob_file_additions_) {

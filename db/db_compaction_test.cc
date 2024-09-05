@@ -225,7 +225,6 @@ class RoundRobinSubcompactionsAgainstPressureToken
   }
   bool grab_pressure_token_;
 };
-
 class RoundRobinSubcompactionsAgainstResources
     : public DBCompactionTest,
       public ::testing::WithParamInterface<std::tuple<int, int>> {
@@ -239,6 +238,35 @@ class RoundRobinSubcompactionsAgainstResources
 };
 
 namespace {
+class SplitAllPartitioner : public SstPartitioner {
+ public:
+  const char* Name() const override { return "SplitAllPartitioner"; }
+
+  PartitionerResult ShouldPartition(
+      const PartitionerRequest& /*request*/) override {
+    return PartitionerResult::kRequired;
+  }
+
+  bool CanDoTrivialMove(const Slice&, const Slice&) override { return true; }
+};
+
+class SplitAllPatitionerFactory : public SstPartitionerFactory {
+ public:
+  std::function<void(const SstPartitioner::Context&)> on_create_;
+
+  SplitAllPatitionerFactory(
+      std::function<void(const SstPartitioner::Context&)> on_create)
+      : on_create_(on_create) {}
+
+  std::unique_ptr<SstPartitioner> CreatePartitioner(
+      const SstPartitioner::Context& context) const override {
+    on_create_(context);
+    return std::unique_ptr<SstPartitioner>(new SplitAllPartitioner());
+  }
+
+  const char* Name() const override { return "SplitAllPartitionerFactory"; }
+};
+
 class FlushedFileCollector : public EventListener {
  public:
   FlushedFileCollector() {}
@@ -1162,6 +1190,81 @@ TEST_F(DBCompactionTest, CompactionSstPartitionerNonTrivial) {
   ASSERT_EQ(2, files.size());
   ASSERT_EQ("A", Get("aaaa1"));
   ASSERT_EQ("B", Get("bbbb1"));
+}
+
+TEST_F(DBCompactionTest, CompactionSstPartitionerNextLevel) {
+  Options options = CurrentOptions();
+  options.compaction_style = kCompactionStyleLevel;
+  options.level0_file_num_compaction_trigger = 1;
+  options.max_bytes_for_level_base = 10;
+  options.max_bytes_for_level_multiplier = 2;
+  options.sst_partitioner_factory = std::unique_ptr<SstPartitionerFactory>(
+      new SplitAllPatitionerFactory([this](const SstPartitioner::Context& cx) {
+        if (!cx.output_next_level_boundaries.empty()) {
+          std::vector<LiveFileMetaData> files;
+          // We are holding the mutex in this context...
+          // Perhaps we'd better make a `TEST_GetVersion` for fetching.
+          dbfull()->TEST_UnlockMutex();
+          dbfull()->GetLiveFilesMetaData(&files);
+          dbfull()->TEST_LockMutex();
+          std::vector<LiveFileMetaData> overlapped_files;
+          std::copy_if(
+              files.begin(), files.end(), std::back_inserter(overlapped_files),
+              [&](const LiveFileMetaData& ld) {
+                return Slice(ld.smallestkey).compare(cx.largest_user_key) < 0 &&
+                       Slice(ld.largestkey).compare(cx.smallest_user_key) > 0 &&
+                       ld.level == cx.output_level + 1;
+              });
+          std::sort(overlapped_files.begin(), overlapped_files.end(),
+                    [](LiveFileMetaData& x, LiveFileMetaData& y) {
+                      return x.largestkey < y.largestkey;
+                    });
+          auto next_level_overlap_files = overlapped_files.size();
+          ASSERT_EQ(next_level_overlap_files + 1,
+                    cx.output_next_level_boundaries.size());
+          ASSERT_EQ(next_level_overlap_files, cx.output_next_level_size.size());
+          ASSERT_EQ(next_level_overlap_files, cx.OutputNextLevelSegmentCount());
+          for (size_t i = 0; i < overlapped_files.size(); i++) {
+            Slice next_level_lower, next_level_upper;
+            size_t next_level_size;
+            cx.OutputNextLevelSegment((int)i, &next_level_lower,
+                                      &next_level_upper, &next_level_size);
+
+            if (i == 0) {
+              ASSERT_EQ(overlapped_files[i].smallestkey, next_level_lower);
+            }
+            ASSERT_EQ(overlapped_files[i].largestkey, next_level_upper);
+            ASSERT_EQ(overlapped_files[i].size, next_level_size);
+          }
+        }
+      }));
+  DestroyAndReopen(options);
+
+  ASSERT_OK(Put("A", "there are more than 10 bytes."));
+  ASSERT_OK(Put("B", "yet another key."));
+  ASSERT_OK(Flush());
+  ASSERT_OK(dbfull()->TEST_WaitForCompact());
+  ASSERT_OK(Put("A1", "the new challenger..."));
+  ASSERT_OK(Put("B1", "and his buddy."));
+  ASSERT_OK(Flush());
+  ASSERT_OK(dbfull()->TEST_WaitForFlushMemTable());
+  ASSERT_OK(dbfull()->TEST_WaitForCompact());
+  ASSERT_OK(Put("A1P", "the new challenger... Changed."));
+  ASSERT_OK(Put("B1P", "and his buddy. Changed too."));
+  ASSERT_OK(Flush());
+  ASSERT_OK(dbfull()->TEST_WaitForFlushMemTable());
+  ASSERT_OK(dbfull()->TEST_WaitForCompact());
+  ASSERT_OK(Put(InternalKey("A", 0, ValueType::kTypeDeletion).Encode(),
+                "And a tricker: he pretends to be A, but not A."));
+  ASSERT_OK(Put(InternalKey("B", 0, ValueType::kTypeDeletion).Encode(),
+                "Yeah, another tricker."));
+  ASSERT_OK(Flush());
+  ASSERT_OK(dbfull()->TEST_WaitForFlushMemTable());
+  ASSERT_OK(dbfull()->TEST_WaitForCompact());
+
+  std::vector<LiveFileMetaData> files;
+  dbfull()->GetLiveFilesMetaData(&files);
+  ASSERT_EQ(8, files.size());
 }
 
 TEST_F(DBCompactionTest, ZeroSeqIdCompaction) {

@@ -82,10 +82,13 @@ class FlushJob {
 
   // Require db_mutex held.
   // Once PickMemTable() is called, either Run() or Cancel() has to be called.
-  void PickMemTable();
+  void PickMemTable(SequenceNumber* earliest_seqno = nullptr,
+                    SequenceNumber* largest_seqno = nullptr);
   // @param skip_since_bg_error If not nullptr and if atomic_flush=false,
   // then it is set to true if flush installation is skipped and memtable
   // is rolled back due to existing background error.
+  // The earliest seqno and largest seqno will be returned through the
+  // parameters.
   Status Run(LogsWithPrepTracker* prep_tracker = nullptr,
              FileMetaData* file_meta = nullptr,
              bool* switched_to_mempurge = nullptr,

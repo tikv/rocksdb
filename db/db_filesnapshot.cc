@@ -4,7 +4,6 @@
 //  (found in the LICENSE.Apache file in the root directory).
 //
 
-
 #include <algorithm>
 #include <cstdint>
 #include <memory>
@@ -29,8 +28,9 @@
 namespace ROCKSDB_NAMESPACE {
 
 Status DBImpl::FlushForGetLiveFiles() {
-  return DBImpl::FlushAllColumnFamilies(FlushOptions(),
-                                        FlushReason::kGetLiveFiles);
+  auto opts = FlushOptions();
+  opts.allow_write_stall = true;
+  return DBImpl::FlushAllColumnFamilies(opts, FlushReason::kGetLiveFiles);
 }
 
 Status DBImpl::GetLiveFiles(std::vector<std::string>& ret,

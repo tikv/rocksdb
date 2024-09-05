@@ -114,6 +114,8 @@ class BlobDBIterator : public Iterator {
     return value_;
   }
 
+  bool seqno(SequenceNumber* no) const override { return iter_->seqno(no); }
+
   // Iterator::Refresh() not supported.
 
  private:

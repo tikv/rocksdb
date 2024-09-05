@@ -3792,14 +3792,6 @@ int main(int argc, char** argv) {
 
     CheckCondition(true ==
                    rocksdb_write_buffer_manager_enabled(write_buffer_manager));
-    CheckCondition(true == rocksdb_write_buffer_manager_cost_to_cache(
-                               write_buffer_manager));
-    CheckCondition(
-        200 == rocksdb_write_buffer_manager_buffer_size(write_buffer_manager));
-
-    rocksdb_write_buffer_manager_set_buffer_size(write_buffer_manager, 300);
-    CheckCondition(
-        300 == rocksdb_write_buffer_manager_buffer_size(write_buffer_manager));
 
     rocksdb_write_buffer_manager_destroy(write_buffer_manager);
     rocksdb_cache_destroy(lru);

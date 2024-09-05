@@ -338,6 +338,7 @@ TEST_F(OptionsSettableTest, DBOptionsAllFieldsSettable) {
                              "advise_random_on_open=true;"
                              "fail_if_options_file_error=false;"
                              "enable_pipelined_write=false;"
+                             "enable_multi_batch_write=false;"
                              "unordered_write=false;"
                              "allow_concurrent_memtable_write=true;"
                              "wal_recovery_mode=kPointInTimeRecovery;"
@@ -437,6 +438,8 @@ TEST_F(OptionsSettableTest, ColumnFamilyOptionsAllFieldsSettable) {
        sizeof(std::shared_ptr<ConcurrentTaskLimiter>)},
       {offsetof(struct ColumnFamilyOptions, sst_partitioner_factory),
        sizeof(std::shared_ptr<SstPartitionerFactory>)},
+      {offsetof(struct ColumnFamilyOptions, cf_write_buffer_manager),
+       sizeof(std::shared_ptr<WriteBufferManager>)},
   };
 
   char* options_ptr = new char[sizeof(ColumnFamilyOptions)];
@@ -538,6 +541,7 @@ TEST_F(OptionsSettableTest, ColumnFamilyOptionsAllFieldsSettable) {
       "compaction_pri=kMinOverlappingRatio;"
       "hard_pending_compaction_bytes_limit=0;"
       "disable_auto_compactions=false;"
+      "disable_write_stall=false;"
       "report_bg_io_stats=true;"
       "ttl=60;"
       "periodic_compaction_seconds=3600;"

@@ -1,0 +1,1909 @@
+From ad7361d0e349926126788e88a4447f1f6f8dd65f Mon Sep 17 00:00:00 2001
+From: yiwu-arbug <yiwu@pingcap.com>
+Date: Mon, 16 Mar 2020 21:59:47 -0700
+Subject: [PATCH] Add KeyManagedEncryptedEnv for per file key management
+
+Add KeyManagedEncryptedEnv and AESBlockCipher (#151)
+
+Summary:
+Introduce `KeyManagedEncryptedEnv` which wraps around `EncryptedEnv` but provides an `KeyManager` API to enable key management per file. Also implements `AESBlockCipher` with OpenSSL.
+
+Test Plan:
+not tested yet. will update.
+
+Signed-off-by: Yi Wu <yiwu@pingcap.com>
+Signed-off-by: tabokie <xy.tao@outlook.com>
+
+Fix build error when build wihtout openssl (#155)
+
+Summary:
+Fix missing check for openssl in db_bench.
+
+Test Plan:
+build without openssl
+
+Signed-off-by: Yi Wu <yiwu@pingcap.com>
+Signed-off-by: tabokie <xy.tao@outlook.com>
+
+encryption: change to use openssl EVP API (#156)
+
+Summary:
+Instead of using openssl's raw `AES_encrypt` and `AES_decrypt` API, which is a low level call to encrypt or decrypt exact one block (16 bytes), we change to use the `EVP_*` API. The former is deprecated, and will use the default C implementation without AES-NI support. Also the EVP API is capable of handing CTR mode on its own.
+
+Test Plan:
+will add tests
+
+Signed-off-by: Yi Wu <yiwu@pingcap.com>
+Signed-off-by: tabokie <xy.tao@outlook.com>
+
+Fix NewRandomRWFile and ReuseWritableFile in KeyManagedEncryptedEnv (#167)
+
+Summary:
+Fix NewRandomRWFile and ReuseWritableFile misuse of `GetFile()` and `NewFile()`. See inline comments.
+
+Test Plan:
+manual test with tikv
+
+Signed-off-by: Yi Wu <yiwu@pingcap.com>
+Signed-off-by: tabokie <xy.tao@outlook.com>
+
+Atomize RenameFile in KeyManagedEncryptedEnv (#222)
+
+* adjust logic in KeyManagedEncryptedEnv::RenameFile to avoid poweroff
+
+Signed-off-by: Xintao <hunterlxt@live.com>
+Signed-off-by: tabokie <xy.tao@outlook.com>
+
+Atomize Rename operation when encryption is enabled (#224)
+
+Signed-off-by: Xintao <hunterlxt@live.com>
+Signed-off-by: tabokie <xy.tao@outlook.com>
+
+Fix the bug that the key manager is not updated during the Rename (#227)
+
+Signed-off-by: Xintao <hunterlxt@live.com>
+Signed-off-by: tabokie <xy.tao@outlook.com>
+
+Add sm4 encryption (#295) (#299)
+
+* Add SM4-CTR encryption algorithm
+
+Signed-off-by: Jarvis Zheng <jiayang@hust.edu.cn>
+
+* Adjust block size for sm4 encryption
+
+Signed-off-by: Jarvis Zheng <jiayang@hust.edu.cn>
+
+* Add UT for SM4 encryption
+
+Signed-off-by: Jarvis Zheng <jiayang@hust.edu.cn>
+
+* Adjust macros indentation for sm4
+
+Signed-off-by: Jarvis Zheng <jiayang@hust.edu.cn>
+
+* Fix format for adding sm4
+
+Signed-off-by: Jarvis Zheng <jiayang@hust.edu.cn>
+
+Check OPENSSL_NO_SM4 before using sm4 encryption (#302)
+
+Signed-off-by: Jarvis Zheng <jiayang@hust.edu.cn>
+Signed-off-by: v01dstar <yang.zhang@pingcap.com>
+---
+ CMakeLists.txt                     |  11 +
+ Makefile                           |   3 +
+ TARGETS                            |   1 +
+ build_tools/build_detect_platform  |  13 +
+ db/db_options_test.cc              |   3 +-
+ db/db_properties_test.cc           |   2 +-
+ db/db_test.cc                      |   4 +
+ db/db_test2.cc                     |   3 +
+ db/db_test_util.cc                 |  17 +-
+ db/db_test_util.h                  |   1 +
+ db/db_wal_test.cc                  |  15 +
+ encryption/encryption.cc           | 553 +++++++++++++++++++++++++++++
+ encryption/encryption.h            | 139 ++++++++
+ encryption/encryption_test.cc      | 181 ++++++++++
+ encryption/in_memory_key_manager.h |  83 +++++
+ env/env_basic_test.cc              |  63 +++-
+ file/filename.cc                   |  32 +-
+ file/filename.h                    |   8 +
+ include/rocksdb/encryption.h       | 111 ++++++
+ src.mk                             |   1 +
+ test_util/testutil.cc              |   9 +-
+ test_util/testutil.h               |  53 +++
+ tools/db_bench_tool.cc             |  54 ++-
+ 23 files changed, 1335 insertions(+), 25 deletions(-)
+ create mode 100644 encryption/encryption.cc
+ create mode 100644 encryption/encryption.h
+ create mode 100644 encryption/encryption_test.cc
+ create mode 100644 encryption/in_memory_key_manager.h
+ create mode 100644 include/rocksdb/encryption.h
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 6f9debfb5..b913d921a 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -70,6 +70,7 @@ option(WITH_SNAPPY "build with SNAPPY" OFF)
+ option(WITH_LZ4 "build with lz4" OFF)
+ option(WITH_ZLIB "build with zlib" OFF)
+ option(WITH_ZSTD "build with zstd" OFF)
++option(WITH_OPENSSL "build with openssl" OFF)
+ option(WITH_WINDOWS_UTF8_FILENAMES "use UTF8 as characterset for opening files, regardles of the system code page" OFF)
+ if (WITH_WINDOWS_UTF8_FILENAMES)
+   add_definitions(-DROCKSDB_WINDOWS_UTF8_FILENAMES)
+@@ -174,6 +175,14 @@ else()
+     include_directories(${ZSTD_INCLUDE_DIR})
+     list(APPEND THIRDPARTY_LIBS zstd::zstd)
+   endif()
++
++  if(WITH_OPENSSL)
++    find_package(OpenSSL REQUIRED)
++    add_definitions(-DOPENSSL)
++    include_directories(${OPENSSL_INCLUDE_DIR})
++    # Only the crypto library is needed.
++    list(APPEND THIRDPARTY_LIBS ${OPENSSL_CRYPTO_LIBRARIES})
++  endif()
+ endif()
+ 
+ option(WITH_MD_LIBRARY "build with MD" ON)
+@@ -721,6 +730,7 @@ set(SOURCES
+         db/write_controller.cc
+         db/write_stall_stats.cc
+         db/write_thread.cc
++        encryption/encryption.cc
+         env/composite_env.cc
+         env/env.cc
+         env/env_chroot.cc
+@@ -1372,6 +1382,7 @@ if(WITH_TESTS)
+         db/write_batch_test.cc
+         db/write_callback_test.cc
+         db/write_controller_test.cc
++        encryption/encryption_test.cc
+         env/env_test.cc
+         env/io_posix_test.cc
+         env/mock_env_test.cc
+diff --git a/Makefile b/Makefile
+index 8829be9d8..6293dcdd4 100644
+--- a/Makefile
++++ b/Makefile
+@@ -703,6 +703,7 @@ TESTS_PLATFORM_DEPENDENT := \
+ 	crc32c_test \
+ 	coding_test \
+ 	inlineskiplist_test \
++	encryption_test \
+ 	env_basic_test \
+ 	env_test \
+ 	env_logger_test \
+@@ -1988,6 +1989,8 @@ wide_column_serialization_test: $(OBJ_DIR)/db/wide/wide_column_serialization_tes
+ 	$(AM_LINK)
+ 
+ wide_columns_helper_test: $(OBJ_DIR)/db/wide/wide_columns_helper_test.o $(TEST_LIBRARY) $(LIBRARY)
++
++encryption_test: encryption/encryption_test.o $(LIBOBJECTS) $(TESTHARNESS)
+ 	$(AM_LINK)
+ 
+ #-------------------------------------------------
+diff --git a/TARGETS b/TARGETS
+index 3200813ae..f6959a9ed 100644
+--- a/TARGETS
++++ b/TARGETS
+@@ -108,6 +108,7 @@ cpp_library_wrapper(name="rocksdb_lib", srcs=[
+         "db/write_controller.cc",
+         "db/write_stall_stats.cc",
+         "db/write_thread.cc",
++        "encryption/encryption.cc",
+         "env/composite_env.cc",
+         "env/env.cc",
+         "env/env_chroot.cc",
+diff --git a/build_tools/build_detect_platform b/build_tools/build_detect_platform
+index a5e2b5aa2..51b60d74c 100755
+--- a/build_tools/build_detect_platform
++++ b/build_tools/build_detect_platform
+@@ -485,6 +485,19 @@ EOF
+         fi
+     fi
+ 
++    if ! test $ROCKSDB_DISABLE_OPENSSL; then
++        # Test whether OpenSSL library is installed
++        $CXX $CFLAGS -x c++ - -o /dev/null 2>/dev/null  <<EOF
++          #include <openssl/crypto.h>
++          int main() {}
++EOF
++        if [ "$?" = 0 ]; then
++            COMMON_FLAGS="$COMMON_FLAGS -DOPENSSL"
++            PLATFORM_LDFLAGS="$PLATFORM_LDFLAGS -lcrypto"
++            JAVA_LDFLAGS="$JAVA_LDFLAGS -lcrypto"
++        fi
++    fi
++
+     if ! test $ROCKSDB_DISABLE_PTHREAD_MUTEX_ADAPTIVE_NP; then
+         # Test whether PTHREAD_MUTEX_ADAPTIVE_NP mutex type is available
+         $CXX $PLATFORM_CXXFLAGS -x c++ - -o test.o 2>/dev/null  <<EOF
+diff --git a/db/db_options_test.cc b/db/db_options_test.cc
+index ba63dc2f8..1791d9ff7 100644
+--- a/db/db_options_test.cc
++++ b/db/db_options_test.cc
+@@ -1393,10 +1393,11 @@ TEST_F(DBOptionsTest, CompactionReadaheadSizeChange) {
+ }
+ 
+ TEST_F(DBOptionsTest, FIFOTtlBackwardCompatible) {
+-  Options options;
++  Options options = CurrentOptions();
+   options.compaction_style = kCompactionStyleFIFO;
+   options.write_buffer_size = 10 << 10;  // 10KB
+   options.create_if_missing = true;
++  options.max_open_files = -1;
+   options.env = CurrentOptions().env;
+   options.num_levels = 1;
+ 
+diff --git a/db/db_properties_test.cc b/db/db_properties_test.cc
+index 337eadb73..f00e00363 100644
+--- a/db/db_properties_test.cc
++++ b/db/db_properties_test.cc
+@@ -1891,7 +1891,7 @@ TEST_F(DBPropertiesTest, BlobCacheProperties) {
+ }
+ 
+ TEST_F(DBPropertiesTest, BlockCacheProperties) {
+-  Options options;
++  Options options = CurrentOptions();
+   uint64_t value;
+ 
+   options.env = CurrentOptions().env;
+diff --git a/db/db_test.cc b/db/db_test.cc
+index facdb03bd..ebcb24c48 100644
+--- a/db/db_test.cc
++++ b/db/db_test.cc
+@@ -2454,6 +2454,10 @@ TEST_F(DBTest, DestroyDBMetaDatabase) {
+ }
+ 
+ TEST_F(DBTest, SnapshotFiles) {
++  if (getenv("ENCRYPTED_ENV")) {
++    // File copy does not carry encryption key.
++    return;
++  }
+   do {
+     Options options = CurrentOptions();
+     options.write_buffer_size = 100000000;  // Large write buffer
+diff --git a/db/db_test2.cc b/db/db_test2.cc
+index e471685b2..026334509 100644
+--- a/db/db_test2.cc
++++ b/db/db_test2.cc
+@@ -2737,6 +2737,9 @@ TEST_F(DBTest2, ReadAmpBitmap) {
+ 
+ #ifndef OS_SOLARIS  // GetUniqueIdFromFile is not implemented
+ TEST_F(DBTest2, ReadAmpBitmapLiveInCacheAfterDBClose) {
++  if (getenv("ENCRYPTED_ENV")) {
++    return;
++  }
+   {
+     const int kIdBufLen = 100;
+     char id_buf[kIdBufLen];
+diff --git a/db/db_test_util.cc b/db/db_test_util.cc
+index d98c45019..28d67527f 100644
+--- a/db/db_test_util.cc
++++ b/db/db_test_util.cc
+@@ -71,15 +71,14 @@ DBTestBase::DBTestBase(const std::string path, bool env_do_fsync)
+     mem_env_ = MockEnv::Create(base_env, base_env->GetSystemClock());
+   }
+   if (getenv("ENCRYPTED_ENV")) {
+-    std::shared_ptr<EncryptionProvider> provider;
+-    std::string provider_id = getenv("ENCRYPTED_ENV");
+-    if (provider_id.find("=") == std::string::npos &&
+-        !EndsWith(provider_id, "://test")) {
+-      provider_id = provider_id + "://test";
+-    }
+-    EXPECT_OK(EncryptionProvider::CreateFromString(ConfigOptions(), provider_id,
+-                                                   &provider));
+-    encrypted_env_ = NewEncryptedEnv(mem_env_ ? mem_env_ : base_env, provider);
++#ifdef OPENSSL
++    std::shared_ptr<encryption::KeyManager> key_manager(
++        new test::TestKeyManager);
++    encrypted_env_ = NewKeyManagedEncryptedEnv(Env::Default(), key_manager);
++#else
++    fprintf(stderr, "EncryptedEnv is not available without OpenSSL.");
++    assert(false);
++#endif
+   }
+   env_ = new SpecialEnv(encrypted_env_ ? encrypted_env_
+                                        : (mem_env_ ? mem_env_ : base_env));
+diff --git a/db/db_test_util.h b/db/db_test_util.h
+index 34ef23b77..dc34352dc 100644
+--- a/db/db_test_util.h
++++ b/db/db_test_util.h
+@@ -29,6 +29,7 @@
+ #include "rocksdb/compaction_filter.h"
+ #include "rocksdb/convenience.h"
+ #include "rocksdb/db.h"
++#include "rocksdb/encryption.h"
+ #include "rocksdb/env.h"
+ #include "rocksdb/file_system.h"
+ #include "rocksdb/filter_policy.h"
+diff --git a/db/db_wal_test.cc b/db/db_wal_test.cc
+index fbc01131e..18ae59b65 100644
+--- a/db/db_wal_test.cc
++++ b/db/db_wal_test.cc
+@@ -1677,6 +1677,9 @@ INSTANTIATE_TEST_CASE_P(
+ // at the end of any of the logs
+ // - We do not expect to open the data store for corruption
+ TEST_P(DBWALTestWithParams, kTolerateCorruptedTailRecords) {
++  if (getenv("ENCRYPTED_ENV")) {
++    return;
++  }
+   bool trunc = std::get<0>(GetParam());  // Corruption style
+   // Corruption offset position
+   int corrupt_offset = std::get<1>(GetParam());
+@@ -1739,6 +1742,9 @@ TEST_P(DBWALTestWithParams, kAbsoluteConsistency) {
+ // We don't expect the data store to be opened if there is any inconsistency
+ // between WAL and SST files
+ TEST_F(DBWALTest, kPointInTimeRecoveryCFConsistency) {
++  if (getenv("ENCRYPTED_ENV")) {
++    return;
++  }
+   Options options = CurrentOptions();
+   options.avoid_flush_during_recovery = true;
+ 
+@@ -1946,6 +1952,9 @@ TEST_F(DBWALTest, FixSyncWalOnObseletedWalWithNewManifestCausingMissingWAL) {
+ // - We expect to open data store under all circumstances
+ // - We expect only data upto the point where the first error was encountered
+ TEST_P(DBWALTestWithParams, kPointInTimeRecovery) {
++  if (getenv("ENCRYPTED_ENV")) {
++    return;
++  }
+   const int maxkeys =
+       RecoveryTestHelper::kWALFilesCount * RecoveryTestHelper::kKeysPerWALFile;
+ 
+@@ -2006,6 +2015,9 @@ TEST_P(DBWALTestWithParams, kPointInTimeRecovery) {
+ // - We expect to open the data store under all scenarios
+ // - We expect to have recovered records past the corruption zone
+ TEST_P(DBWALTestWithParams, kSkipAnyCorruptedRecords) {
++  if (getenv("ENCRYPTED_ENV")) {
++    return;
++  }
+   bool trunc = std::get<0>(GetParam());  // Corruption style
+   // Corruption offset position
+   int corrupt_offset = std::get<1>(GetParam());
+@@ -2215,6 +2227,9 @@ TEST_F(DBWALTest, RecoverWithoutFlushMultipleCF) {
+ //   4. Open again. See if it can correctly handle previous corruption.
+ TEST_P(DBWALTestWithParamsVaryingRecoveryMode,
+        RecoverFromCorruptedWALWithoutFlush) {
++  if (getenv("ENCRYPTED_ENV")) {
++    return;
++  }
+   const int kAppendKeys = 100;
+   Options options = CurrentOptions();
+   options.avoid_flush_during_recovery = true;
+diff --git a/encryption/encryption.cc b/encryption/encryption.cc
+new file mode 100644
+index 000000000..02f7f1bdc
+--- /dev/null
++++ b/encryption/encryption.cc
+@@ -0,0 +1,553 @@
++// Copyright 2020 TiKV Project Authors. Licensed under Apache-2.0.
++
++#ifdef OPENSSL
++
++#include "encryption/encryption.h"
++
++#include <openssl/opensslv.h>
++
++#include <algorithm>
++#include <limits>
++
++#include "file/filename.h"
++#include "port/port.h"
++#include "test_util/sync_point.h"
++
++namespace ROCKSDB_NAMESPACE {
++namespace encryption {
++
++namespace {
++uint64_t GetBigEndian64(const unsigned char* buf) {
++  if (port::kLittleEndian) {
++    return (static_cast<uint64_t>(buf[0]) << 56) +
++           (static_cast<uint64_t>(buf[1]) << 48) +
++           (static_cast<uint64_t>(buf[2]) << 40) +
++           (static_cast<uint64_t>(buf[3]) << 32) +
++           (static_cast<uint64_t>(buf[4]) << 24) +
++           (static_cast<uint64_t>(buf[5]) << 16) +
++           (static_cast<uint64_t>(buf[6]) << 8) +
++           (static_cast<uint64_t>(buf[7]));
++  } else {
++    return *(reinterpret_cast<const uint64_t*>(buf));
++  }
++}
++
++void PutBigEndian64(uint64_t value, unsigned char* buf) {
++  if (port::kLittleEndian) {
++    buf[0] = static_cast<unsigned char>((value >> 56) & 0xff);
++    buf[1] = static_cast<unsigned char>((value >> 48) & 0xff);
++    buf[2] = static_cast<unsigned char>((value >> 40) & 0xff);
++    buf[3] = static_cast<unsigned char>((value >> 32) & 0xff);
++    buf[4] = static_cast<unsigned char>((value >> 24) & 0xff);
++    buf[5] = static_cast<unsigned char>((value >> 16) & 0xff);
++    buf[6] = static_cast<unsigned char>((value >> 8) & 0xff);
++    buf[7] = static_cast<unsigned char>(value & 0xff);
++  } else {
++    *(reinterpret_cast<uint64_t*>(buf)) = value;
++  }
++}
++}  // anonymous namespace
++
++// AESCTRCipherStream use OpenSSL EVP API with CTR mode to encrypt and decrypt
++// data, instead of using the CTR implementation provided by
++// BlockAccessCipherStream. Benefits:
++//
++// 1. The EVP API automatically figure out if AES-NI can be enabled.
++// 2. Keep the data format consistent with OpenSSL (e.g. how IV is interpreted
++// as block counter).
++//
++// References for the openssl EVP API:
++// * man page: https://www.openssl.org/docs/man1.1.1/man3/EVP_EncryptUpdate.html
++// * SO answer for random access: https://stackoverflow.com/a/57147140/11014942
++// *
++// https://medium.com/@amit.kulkarni/encrypting-decrypting-a-file-using-openssl-evp-b26e0e4d28d4
++Status AESCTRCipherStream::Cipher(uint64_t file_offset, char* data,
++                                  size_t data_size, bool is_encrypt) {
++#if OPENSSL_VERSION_NUMBER < 0x01000200f
++  (void)file_offset;
++  (void)data;
++  (void)data_size;
++  (void)is_encrypt;
++  return Status::NotSupported("OpenSSL version < 1.0.2");
++#else
++  int ret = 1;
++  EVP_CIPHER_CTX* ctx = nullptr;
++  InitCipherContext(ctx);
++  if (ctx == nullptr) {
++    return Status::IOError("Failed to create cipher context.");
++  }
++
++  const size_t block_size = BlockSize();
++
++  uint64_t block_index = file_offset / block_size;
++  uint64_t block_offset = file_offset % block_size;
++
++  // In CTR mode, OpenSSL EVP API treat the IV as a 128-bit big-endien, and
++  // increase it by 1 for each block.
++  //
++  // In case of unsigned integer overflow in c++, the result is moduloed by
++  // range, means only the lowest bits of the result will be kept.
++  // http://www.cplusplus.com/articles/DE18T05o/
++  uint64_t iv_high = initial_iv_high_;
++  uint64_t iv_low = initial_iv_low_ + block_index;
++  if (std::numeric_limits<uint64_t>::max() - block_index < initial_iv_low_) {
++    iv_high++;
++  }
++  unsigned char iv[block_size];
++  PutBigEndian64(iv_high, iv);
++  PutBigEndian64(iv_low, iv + sizeof(uint64_t));
++
++  ret = EVP_CipherInit(ctx, cipher_,
++                       reinterpret_cast<const unsigned char*>(key_.data()), iv,
++                       (is_encrypt ? 1 : 0));
++  if (ret != 1) {
++    return Status::IOError("Failed to init cipher.");
++  }
++
++  // Disable padding. After disabling padding, data size should always be
++  // multiply of block size.
++  ret = EVP_CIPHER_CTX_set_padding(ctx, 0);
++  if (ret != 1) {
++    FreeCipherContext(ctx);
++    return Status::IOError("Failed to disable padding for cipher context.");
++  }
++
++  uint64_t data_offset = 0;
++  size_t remaining_data_size = data_size;
++  int output_size = 0;
++  unsigned char partial_block[block_size];
++
++  // In the following we assume EVP_CipherUpdate allow in and out buffer are
++  // the same, to save one memcpy. This is not specified in official man page.
++
++  // Handle partial block at the beginning. The parital block is copied to
++  // buffer to fake a full block.
++  if (block_offset > 0) {
++    size_t partial_block_size =
++        std::min<size_t>(block_size - block_offset, remaining_data_size);
++    memcpy(partial_block + block_offset, data, partial_block_size);
++    ret = EVP_CipherUpdate(ctx, partial_block, &output_size, partial_block,
++                           static_cast<int>(block_size));
++    if (ret != 1) {
++      FreeCipherContext(ctx);
++      return Status::IOError("Crypter failed for first block, offset " +
++                             std::to_string(file_offset));
++    }
++    if (output_size != static_cast<int>(block_size)) {
++      FreeCipherContext(ctx);
++      return Status::IOError(
++          "Unexpected crypter output size for first block, expected " +
++          std::to_string(block_size) + " vs actual " +
++          std::to_string(output_size));
++    }
++    memcpy(data, partial_block + block_offset, partial_block_size);
++    data_offset += partial_block_size;
++    remaining_data_size -= partial_block_size;
++  }
++
++  // Handle full blocks in the middle.
++  if (remaining_data_size >= block_size) {
++    size_t actual_data_size =
++        remaining_data_size - remaining_data_size % block_size;
++    unsigned char* full_blocks =
++        reinterpret_cast<unsigned char*>(data) + data_offset;
++    ret = EVP_CipherUpdate(ctx, full_blocks, &output_size, full_blocks,
++                           static_cast<int>(actual_data_size));
++    if (ret != 1) {
++      FreeCipherContext(ctx);
++      return Status::IOError("Crypter failed at offset " +
++                             std::to_string(file_offset + data_offset));
++    }
++    if (output_size != static_cast<int>(actual_data_size)) {
++      FreeCipherContext(ctx);
++      return Status::IOError("Unexpected crypter output size, expected " +
++                             std::to_string(actual_data_size) + " vs actual " +
++                             std::to_string(output_size));
++    }
++    data_offset += actual_data_size;
++    remaining_data_size -= actual_data_size;
++  }
++
++  // Handle partial block at the end. The parital block is copied to buffer to
++  // fake a full block.
++  if (remaining_data_size > 0) {
++    assert(remaining_data_size < block_size);
++    memcpy(partial_block, data + data_offset, remaining_data_size);
++    ret = EVP_CipherUpdate(ctx, partial_block, &output_size, partial_block,
++                           static_cast<int>(block_size));
++    if (ret != 1) {
++      FreeCipherContext(ctx);
++      return Status::IOError("Crypter failed for last block, offset " +
++                             std::to_string(file_offset + data_offset));
++    }
++    if (output_size != static_cast<int>(block_size)) {
++      FreeCipherContext(ctx);
++      return Status::IOError(
++          "Unexpected crypter output size for last block, expected " +
++          std::to_string(block_size) + " vs actual " +
++          std::to_string(output_size));
++    }
++    memcpy(data + data_offset, partial_block, remaining_data_size);
++  }
++
++  // Since padding is disabled, and the cipher flow always passes a multiply
++  // of block size data while each EVP_CipherUpdate, there is no need to call
++  // EVP_CipherFinal_ex to finish the last block cipher.
++  // Reference to the implement of EVP_CipherFinal_ex:
++  // https://github.com/openssl/openssl/blob/OpenSSL_1_1_1-stable/crypto/evp/evp_enc.c#L219
++  FreeCipherContext(ctx);
++  return Status::OK();
++#endif
++}
++
++Status NewAESCTRCipherStream(EncryptionMethod method, const std::string& key,
++                             const std::string& iv,
++                             std::unique_ptr<AESCTRCipherStream>* result) {
++  assert(result != nullptr);
++  const EVP_CIPHER* cipher = nullptr;
++  switch (method) {
++    case EncryptionMethod::kAES128_CTR:
++      cipher = EVP_aes_128_ctr();
++      break;
++    case EncryptionMethod::kAES192_CTR:
++      cipher = EVP_aes_192_ctr();
++      break;
++    case EncryptionMethod::kAES256_CTR:
++      cipher = EVP_aes_256_ctr();
++      break;
++    case EncryptionMethod::kSM4_CTR:
++#if OPENSSL_VERSION_NUMBER < 0x1010100fL || defined(OPENSSL_NO_SM4)
++      return Status::InvalidArgument(
++          "Unsupport SM4 encryption method under OpenSSL version: " +
++          std::string(OPENSSL_VERSION_TEXT));
++#else
++      // Openssl support SM4 after 1.1.1 release version.
++      cipher = EVP_sm4_ctr();
++      break;
++#endif
++    default:
++      return Status::InvalidArgument("Unsupported encryption method: " +
++                                     std::to_string(static_cast<int>(method)));
++  }
++  if (key.size() != KeySize(method)) {
++    return Status::InvalidArgument(
++        "Encryption key size mismatch. " + std::to_string(key.size()) +
++        "(actual) vs. " + std::to_string(KeySize(method)) + "(expected).");
++  }
++  if (iv.size() != AES_BLOCK_SIZE) {
++    return Status::InvalidArgument(
++        "iv size not equal to block cipher block size: " +
++        std::to_string(iv.size()) + "(actual) vs. " +
++        std::to_string(AES_BLOCK_SIZE) + "(expected).");
++  }
++  Slice iv_slice(iv);
++  uint64_t iv_high =
++      GetBigEndian64(reinterpret_cast<const unsigned char*>(iv.data()));
++  uint64_t iv_low = GetBigEndian64(
++      reinterpret_cast<const unsigned char*>(iv.data() + sizeof(uint64_t)));
++  result->reset(new AESCTRCipherStream(cipher, key, iv_high, iv_low));
++  return Status::OK();
++}
++
++Status AESEncryptionProvider::CreateCipherStream(
++    const std::string& fname, const EnvOptions& /*options*/, Slice& /*prefix*/,
++    std::unique_ptr<BlockAccessCipherStream>* result) {
++  assert(result != nullptr);
++  FileEncryptionInfo file_info;
++  Status s = key_manager_->GetFile(fname, &file_info);
++  if (!s.ok()) {
++    return s;
++  }
++  std::unique_ptr<AESCTRCipherStream> cipher_stream;
++  s = NewAESCTRCipherStream(file_info.method, file_info.key, file_info.iv,
++                            &cipher_stream);
++  if (!s.ok()) {
++    return s;
++  }
++  *result = std::move(cipher_stream);
++  return Status::OK();
++}
++
++KeyManagedEncryptedEnv::KeyManagedEncryptedEnv(
++    Env* base_env, std::shared_ptr<KeyManager>& key_manager,
++    std::shared_ptr<AESEncryptionProvider>& provider,
++    std::unique_ptr<Env>&& encrypted_env)
++    : EnvWrapper(base_env),
++      key_manager_(key_manager),
++      provider_(provider),
++      encrypted_env_(std::move(encrypted_env)) {}
++
++KeyManagedEncryptedEnv::~KeyManagedEncryptedEnv() = default;
++
++Status KeyManagedEncryptedEnv::NewSequentialFile(
++    const std::string& fname, std::unique_ptr<SequentialFile>* result,
++    const EnvOptions& options) {
++  FileEncryptionInfo file_info;
++  Status s = key_manager_->GetFile(fname, &file_info);
++  if (!s.ok()) {
++    return s;
++  }
++  switch (file_info.method) {
++    case EncryptionMethod::kPlaintext:
++      s = target()->NewSequentialFile(fname, result, options);
++      break;
++    case EncryptionMethod::kAES128_CTR:
++    case EncryptionMethod::kAES192_CTR:
++    case EncryptionMethod::kAES256_CTR:
++    case EncryptionMethod::kSM4_CTR:
++      s = encrypted_env_->NewSequentialFile(fname, result, options);
++      // Hack: when upgrading from TiKV <= v5.0.0-rc, the old current
++      // file is encrypted but it could be replaced with a plaintext
++      // current file. The operation below guarantee that the current
++      // file is read correctly.
++      if (s.ok() && IsCurrentFile(fname)) {
++        if (!IsValidCurrentFile(std::move(*result))) {
++          s = target()->NewSequentialFile(fname, result, options);
++        } else {
++          s = encrypted_env_->NewSequentialFile(fname, result, options);
++        }
++      }
++      break;
++    default:
++      s = Status::InvalidArgument(
++          "Unsupported encryption method: " +
++          std::to_string(static_cast<int>(file_info.method)));
++  }
++  return s;
++}
++
++Status KeyManagedEncryptedEnv::NewRandomAccessFile(
++    const std::string& fname, std::unique_ptr<RandomAccessFile>* result,
++    const EnvOptions& options) {
++  FileEncryptionInfo file_info;
++  Status s = key_manager_->GetFile(fname, &file_info);
++  if (!s.ok()) {
++    return s;
++  }
++  switch (file_info.method) {
++    case EncryptionMethod::kPlaintext:
++      s = target()->NewRandomAccessFile(fname, result, options);
++      break;
++    case EncryptionMethod::kAES128_CTR:
++    case EncryptionMethod::kAES192_CTR:
++    case EncryptionMethod::kAES256_CTR:
++    case EncryptionMethod::kSM4_CTR:
++      s = encrypted_env_->NewRandomAccessFile(fname, result, options);
++      break;
++    default:
++      s = Status::InvalidArgument(
++          "Unsupported encryption method: " +
++          std::to_string(static_cast<int>(file_info.method)));
++  }
++  return s;
++}
++
++Status KeyManagedEncryptedEnv::NewWritableFile(
++    const std::string& fname, std::unique_ptr<WritableFile>* result,
++    const EnvOptions& options) {
++  FileEncryptionInfo file_info;
++  Status s;
++  bool skipped = IsCurrentFile(fname);
++  TEST_SYNC_POINT_CALLBACK("KeyManagedEncryptedEnv::NewWritableFile", &skipped);
++  if (!skipped) {
++    s = key_manager_->NewFile(fname, &file_info);
++    if (!s.ok()) {
++      return s;
++    }
++  } else {
++    file_info.method = EncryptionMethod::kPlaintext;
++  }
++
++  switch (file_info.method) {
++    case EncryptionMethod::kPlaintext:
++      s = target()->NewWritableFile(fname, result, options);
++      break;
++    case EncryptionMethod::kAES128_CTR:
++    case EncryptionMethod::kAES192_CTR:
++    case EncryptionMethod::kAES256_CTR:
++    case EncryptionMethod::kSM4_CTR:
++      s = encrypted_env_->NewWritableFile(fname, result, options);
++      break;
++    default:
++      s = Status::InvalidArgument(
++          "Unsupported encryption method: " +
++          std::to_string(static_cast<int>(file_info.method)));
++  }
++  if (!s.ok() && !skipped) {
++    // Ignore error
++    key_manager_->DeleteFile(fname);
++  }
++  return s;
++}
++
++Status KeyManagedEncryptedEnv::ReopenWritableFile(
++    const std::string& fname, std::unique_ptr<WritableFile>* result,
++    const EnvOptions& options) {
++  FileEncryptionInfo file_info;
++  Status s = key_manager_->GetFile(fname, &file_info);
++  if (!s.ok()) {
++    return s;
++  }
++  switch (file_info.method) {
++    case EncryptionMethod::kPlaintext:
++      s = target()->ReopenWritableFile(fname, result, options);
++      break;
++    case EncryptionMethod::kAES128_CTR:
++    case EncryptionMethod::kAES192_CTR:
++    case EncryptionMethod::kAES256_CTR:
++    case EncryptionMethod::kSM4_CTR:
++      s = encrypted_env_->ReopenWritableFile(fname, result, options);
++      break;
++    default:
++      s = Status::InvalidArgument(
++          "Unsupported encryption method: " +
++          std::to_string(static_cast<int>(file_info.method)));
++  }
++  return s;
++}
++
++Status KeyManagedEncryptedEnv::ReuseWritableFile(
++    const std::string& fname, const std::string& old_fname,
++    std::unique_ptr<WritableFile>* result, const EnvOptions& options) {
++  FileEncryptionInfo file_info;
++  // ReuseWritableFile is only used in the context of rotating WAL file and
++  // reuse them. Old content is discardable and new WAL records are to
++  // overwrite the file. So NewFile() should be called.
++  Status s = key_manager_->NewFile(fname, &file_info);
++  if (!s.ok()) {
++    return s;
++  }
++  switch (file_info.method) {
++    case EncryptionMethod::kPlaintext:
++      s = target()->ReuseWritableFile(fname, old_fname, result, options);
++      break;
++    case EncryptionMethod::kAES128_CTR:
++    case EncryptionMethod::kAES192_CTR:
++    case EncryptionMethod::kAES256_CTR:
++    case EncryptionMethod::kSM4_CTR:
++      s = encrypted_env_->ReuseWritableFile(fname, old_fname, result, options);
++      break;
++    default:
++      s = Status::InvalidArgument(
++          "Unsupported encryption method: " +
++          std::to_string(static_cast<int>(file_info.method)));
++  }
++  if (!s.ok()) {
++    return s;
++  }
++  s = key_manager_->LinkFile(old_fname, fname);
++  if (!s.ok()) {
++    return s;
++  }
++  s = key_manager_->DeleteFile(old_fname);
++  return s;
++}
++
++Status KeyManagedEncryptedEnv::NewRandomRWFile(
++    const std::string& fname, std::unique_ptr<RandomRWFile>* result,
++    const EnvOptions& options) {
++  FileEncryptionInfo file_info;
++  // NewRandomRWFile is only used in the context of external file ingestion,
++  // for rewriting global seqno. So it should call GetFile() instead of
++  // NewFile().
++  Status s = key_manager_->GetFile(fname, &file_info);
++  if (!s.ok()) {
++    return s;
++  }
++  switch (file_info.method) {
++    case EncryptionMethod::kPlaintext:
++      s = target()->NewRandomRWFile(fname, result, options);
++      break;
++    case EncryptionMethod::kAES128_CTR:
++    case EncryptionMethod::kAES192_CTR:
++    case EncryptionMethod::kAES256_CTR:
++    case EncryptionMethod::kSM4_CTR:
++      s = encrypted_env_->NewRandomRWFile(fname, result, options);
++      break;
++    default:
++      s = Status::InvalidArgument(
++          "Unsupported encryption method: " +
++          std::to_string(static_cast<int>(file_info.method)));
++  }
++  if (!s.ok()) {
++    // Ignore error
++    key_manager_->DeleteFile(fname);
++  }
++  return s;
++}
++
++Status KeyManagedEncryptedEnv::DeleteFile(const std::string& fname) {
++  // Try deleting the file from file system before updating key_manager.
++  Status s = target()->DeleteFile(fname);
++  if (!s.ok()) {
++    return s;
++  }
++  return key_manager_->DeleteFile(fname);
++}
++
++Status KeyManagedEncryptedEnv::LinkFile(const std::string& src_fname,
++                                        const std::string& dst_fname) {
++  if (IsCurrentFile(dst_fname)) {
++    assert(IsCurrentFile(src_fname));
++    Status s = target()->LinkFile(src_fname, dst_fname);
++    return s;
++  } else {
++    assert(!IsCurrentFile(src_fname));
++  }
++  Status s = key_manager_->LinkFile(src_fname, dst_fname);
++  if (!s.ok()) {
++    return s;
++  }
++  s = target()->LinkFile(src_fname, dst_fname);
++  if (!s.ok()) {
++    Status delete_status __attribute__((__unused__)) =
++        key_manager_->DeleteFile(dst_fname);
++    assert(delete_status.ok());
++  }
++  return s;
++}
++
++Status KeyManagedEncryptedEnv::RenameFile(const std::string& src_fname,
++                                          const std::string& dst_fname) {
++  if (IsCurrentFile(dst_fname)) {
++    assert(IsCurrentFile(src_fname));
++    Status s = target()->RenameFile(src_fname, dst_fname);
++    // Replacing with plaintext requires deleting the info in the key manager.
++    // The stale current file info exists when upgrading from TiKV <= v5.0.0-rc.
++    Status delete_status __attribute__((__unused__)) =
++        key_manager_->DeleteFile(dst_fname);
++    assert(delete_status.ok());
++    return s;
++  } else {
++    assert(!IsCurrentFile(src_fname));
++  }
++  // Link(copy)File instead of RenameFile to avoid losing src_fname info when
++  // failed to rename the src_fname in the file system.
++  Status s = key_manager_->LinkFile(src_fname, dst_fname);
++  if (!s.ok()) {
++    return s;
++  }
++  s = target()->RenameFile(src_fname, dst_fname);
++  if (s.ok()) {
++    s = key_manager_->DeleteFile(src_fname);
++  } else {
++    Status delete_status __attribute__((__unused__)) =
++        key_manager_->DeleteFile(dst_fname);
++    assert(delete_status.ok());
++  }
++  return s;
++}
++
++Env* NewKeyManagedEncryptedEnv(Env* base_env,
++                               std::shared_ptr<KeyManager>& key_manager) {
++  std::shared_ptr<AESEncryptionProvider> provider(
++      new AESEncryptionProvider(key_manager.get()));
++  std::unique_ptr<Env> encrypted_env(NewEncryptedEnv(base_env, provider));
++  return new KeyManagedEncryptedEnv(base_env, key_manager, provider,
++                                    std::move(encrypted_env));
++}
++
++}  // namespace encryption
++}  // namespace ROCKSDB_NAMESPACE
++
++#endif  // OPENSSL
+diff --git a/encryption/encryption.h b/encryption/encryption.h
+new file mode 100644
+index 000000000..b62c75fc3
+--- /dev/null
++++ b/encryption/encryption.h
+@@ -0,0 +1,139 @@
++// Copyright 2020 TiKV Project Authors. Licensed under Apache-2.0.
++
++#pragma once
++#ifdef OPENSSL
++#include <openssl/aes.h>
++#include <openssl/evp.h>
++
++#include <string>
++
++#include "rocksdb/encryption.h"
++#include "rocksdb/env_encryption.h"
++#include "util/string_util.h"
++
++namespace ROCKSDB_NAMESPACE {
++namespace encryption {
++
++#if OPENSSL_VERSION_NUMBER < 0x01010000f
++
++#define InitCipherContext(ctx) \
++  EVP_CIPHER_CTX ctx##_var;    \
++  ctx = &ctx##_var;            \
++  EVP_CIPHER_CTX_init(ctx);
++
++// do nothing
++#define FreeCipherContext(ctx)
++
++#else
++
++#define InitCipherContext(ctx)            \
++  ctx = EVP_CIPHER_CTX_new();             \
++  if (ctx != nullptr) {                   \
++    if (EVP_CIPHER_CTX_reset(ctx) != 1) { \
++      ctx = nullptr;                      \
++    }                                     \
++  }
++
++#define FreeCipherContext(ctx) EVP_CIPHER_CTX_free(ctx);
++
++#endif
++
++// TODO: OpenSSL Lib does not export SM4_BLOCK_SIZE by now.
++// Need to remove SM4_BLOCK_Size once Openssl lib support the definition.
++// SM4 uses 128-bit block size as AES.
++// Ref:
++// https://github.com/openssl/openssl/blob/OpenSSL_1_1_1-stable/include/crypto/sm4.h#L24
++#define SM4_BLOCK_SIZE 16
++
++class AESCTRCipherStream : public BlockAccessCipherStream {
++ public:
++  AESCTRCipherStream(const EVP_CIPHER* cipher, const std::string& key,
++                     uint64_t iv_high, uint64_t iv_low)
++      : cipher_(cipher),
++        key_(key),
++        initial_iv_high_(iv_high),
++        initial_iv_low_(iv_low) {}
++
++  ~AESCTRCipherStream() = default;
++
++  size_t BlockSize() override {
++    // Openssl support SM4 after 1.1.1 release version.
++#if OPENSSL_VERSION_NUMBER >= 0x1010100fL && !defined(OPENSSL_NO_SM4)
++    if (EVP_CIPHER_nid(cipher_) == NID_sm4_ctr) {
++      return SM4_BLOCK_SIZE;
++    }
++#endif
++    return AES_BLOCK_SIZE;  // 16
++  }
++
++  Status Encrypt(uint64_t file_offset, char* data, size_t data_size) override {
++    return Cipher(file_offset, data, data_size, true /*is_encrypt*/);
++  }
++
++  Status Decrypt(uint64_t file_offset, char* data, size_t data_size) override {
++    return Cipher(file_offset, data, data_size, false /*is_encrypt*/);
++  }
++
++ protected:
++  // Following methods required by BlockAccessCipherStream is unused.
++
++  void AllocateScratch(std::string& /*scratch*/) override {
++    // should not be called.
++    assert(false);
++  }
++
++  Status EncryptBlock(uint64_t /*block_index*/, char* /*data*/,
++                      char* /*scratch*/) override {
++    return Status::NotSupported("EncryptBlock should not be called.");
++  }
++
++  Status DecryptBlock(uint64_t /*block_index*/, char* /*data*/,
++                      char* /*scratch*/) override {
++    return Status::NotSupported("DecryptBlock should not be called.");
++  }
++
++ private:
++  Status Cipher(uint64_t file_offset, char* data, size_t data_size,
++                bool is_encrypt);
++
++  const EVP_CIPHER* cipher_;
++  const std::string key_;
++  const uint64_t initial_iv_high_;
++  const uint64_t initial_iv_low_;
++};
++
++extern Status NewAESCTRCipherStream(
++    EncryptionMethod method, const std::string& key, const std::string& iv,
++    std::unique_ptr<AESCTRCipherStream>* result);
++
++class AESEncryptionProvider : public EncryptionProvider {
++ public:
++  AESEncryptionProvider(KeyManager* key_manager) : key_manager_(key_manager) {}
++  virtual ~AESEncryptionProvider() = default;
++
++  const char* Name() const override { return "AESEncryptionProvider"; }
++
++  size_t GetPrefixLength() const override { return 0; }
++
++  Status CreateNewPrefix(const std::string& /*fname*/, char* /*prefix*/,
++                         size_t /*prefix_length*/) const override {
++    return Status::OK();
++  }
++
++  Status AddCipher(const std::string& /*descriptor*/, const char* /*cipher*/,
++                   size_t /*len*/, bool /*for_write*/) override {
++    return Status::NotSupported();
++  }
++
++  Status CreateCipherStream(
++      const std::string& fname, const EnvOptions& options, Slice& prefix,
++      std::unique_ptr<BlockAccessCipherStream>* result) override;
++
++ private:
++  KeyManager* key_manager_;
++};
++
++}  // namespace encryption
++}  // namespace ROCKSDB_NAMESPACE
++
++#endif  // OPENSSL
+diff --git a/encryption/encryption_test.cc b/encryption/encryption_test.cc
+new file mode 100644
+index 000000000..4902fa065
+--- /dev/null
++++ b/encryption/encryption_test.cc
+@@ -0,0 +1,181 @@
++// Copyright 2020 TiKV Project Authors. Licensed under Apache-2.0.
++
++#include "encryption/encryption.h"
++
++#include "port/stack_trace.h"
++#include "test_util/testharness.h"
++#include "test_util/testutil.h"
++
++#ifdef OPENSSL
++
++namespace ROCKSDB_NAMESPACE {
++namespace encryption {
++
++const unsigned char KEY[33] =
++    "\xe4\x3e\x8e\xca\x2a\x83\xe1\x88\xfb\xd8\x02\xdc\xf3\x62\x65\x3e"
++    "\x00\xee\x31\x39\xe7\xfd\x1d\x92\x20\xb1\x62\xae\xb2\xaf\x0f\x1a";
++const unsigned char IV_RANDOM[17] =
++    "\x77\x9b\x82\x72\x26\xb5\x76\x50\xf7\x05\xd2\xd6\xb8\xaa\xa9\x2c";
++const unsigned char IV_OVERFLOW_LOW[17] =
++    "\x77\x9b\x82\x72\x26\xb5\x76\x50\xff\xff\xff\xff\xff\xff\xff\xff";
++const unsigned char IV_OVERFLOW_FULL[17] =
++    "\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff";
++
++constexpr size_t MAX_SIZE = 16 * 10;
++
++// Test to make sure output of AESCTRCipherStream is the same as output from
++// OpenSSL EVP API.
++class EncryptionTest
++    : public testing::TestWithParam<std::tuple<bool, EncryptionMethod>> {
++ public:
++  unsigned char plaintext[MAX_SIZE];
++  // Reserve a bit more room to make sure OpenSSL have enough buffer.
++  unsigned char ciphertext[MAX_SIZE + 16 * 2];
++
++  void GenerateCiphertext(const unsigned char* iv) {
++    Random rnd(666);
++    std::string random_string =
++        rnd.HumanReadableString(static_cast<int>(MAX_SIZE));
++    memcpy(plaintext, random_string.data(), MAX_SIZE);
++
++    int ret = 1;
++    EVP_CIPHER_CTX* ctx;
++    InitCipherContext(ctx);
++    assert(ctx != nullptr);
++
++    const EVP_CIPHER* cipher = nullptr;
++    EncryptionMethod method = std::get<1>(GetParam());
++    switch (method) {
++      case EncryptionMethod::kAES128_CTR:
++        cipher = EVP_aes_128_ctr();
++        break;
++      case EncryptionMethod::kAES192_CTR:
++        cipher = EVP_aes_192_ctr();
++        break;
++      case EncryptionMethod::kAES256_CTR:
++        cipher = EVP_aes_256_ctr();
++        break;
++#if OPENSSL_VERSION_NUMBER >= 0x1010100fL && !defined(OPENSSL_NO_SM4)
++      // Openssl support SM4 after 1.1.1 release version.
++      case EncryptionMethod::kSM4_CTR:
++        cipher = EVP_sm4_ctr();
++        break;
++#endif
++      default:
++        assert(false);
++    }
++    assert(cipher != nullptr);
++
++    ret = EVP_EncryptInit(ctx, cipher, KEY, iv);
++    assert(ret == 1);
++    int output_size = 0;
++    ret = EVP_EncryptUpdate(ctx, ciphertext, &output_size, plaintext,
++                            static_cast<int>(MAX_SIZE));
++    assert(ret == 1);
++    int final_output_size = 0;
++    ret = EVP_EncryptFinal(ctx, ciphertext + output_size, &final_output_size);
++    assert(ret == 1);
++    assert(output_size + final_output_size == MAX_SIZE);
++    FreeCipherContext(ctx);
++  }
++
++  void TestEncryptionImpl(size_t start, size_t end, const unsigned char* iv,
++                          bool* success) {
++    assert(start < end && end <= MAX_SIZE);
++    GenerateCiphertext(iv);
++
++    EncryptionMethod method = std::get<1>(GetParam());
++    std::string key_str(reinterpret_cast<const char*>(KEY), KeySize(method));
++    std::string iv_str(reinterpret_cast<const char*>(iv), 16);
++    std::unique_ptr<AESCTRCipherStream> cipher_stream;
++    ASSERT_OK(NewAESCTRCipherStream(method, key_str, iv_str, &cipher_stream));
++
++    size_t data_size = end - start;
++    // Allocate exact size. AESCTRCipherStream should make sure there will be
++    // no memory corruption.
++    std::unique_ptr<char[]> data(new char[data_size]);
++
++    if (std::get<0>(GetParam())) {
++      // Encrypt
++      memcpy(data.get(), plaintext + start, data_size);
++      ASSERT_OK(cipher_stream->Encrypt(start, data.get(), data_size));
++      ASSERT_EQ(0, memcmp(ciphertext + start, data.get(), data_size));
++    } else {
++      // Decrypt
++      memcpy(data.get(), ciphertext + start, data_size);
++      ASSERT_OK(cipher_stream->Decrypt(start, data.get(), data_size));
++      ASSERT_EQ(0, memcmp(plaintext + start, data.get(), data_size));
++    }
++
++    *success = true;
++  }
++
++  bool TestEncryption(size_t start, size_t end,
++                      const unsigned char* iv = IV_RANDOM) {
++    // Workaround failure of ASSERT_* result in return immediately.
++    bool success = false;
++    TestEncryptionImpl(start, end, iv, &success);
++    return success;
++  }
++};
++
++TEST_P(EncryptionTest, EncryptionTest) {
++  // One full block.
++  EXPECT_TRUE(TestEncryption(0, 16));
++  // One block in the middle.
++  EXPECT_TRUE(TestEncryption(16 * 5, 16 * 6));
++  // Multiple aligned blocks.
++  EXPECT_TRUE(TestEncryption(16 * 5, 16 * 8));
++
++  // Random byte at the beginning of a block.
++  EXPECT_TRUE(TestEncryption(16 * 5, 16 * 5 + 1));
++  // Random byte in the middle of a block.
++  EXPECT_TRUE(TestEncryption(16 * 5 + 4, 16 * 5 + 5));
++  // Random byte at the end of a block.
++  EXPECT_TRUE(TestEncryption(16 * 5 + 15, 16 * 6));
++
++  // Partial block aligned at the beginning.
++  EXPECT_TRUE(TestEncryption(16 * 5, 16 * 5 + 15));
++  // Partial block aligned at the end.
++  EXPECT_TRUE(TestEncryption(16 * 5 + 1, 16 * 6));
++  // Multiple blocks with a partial block at the end.
++  EXPECT_TRUE(TestEncryption(16 * 5, 16 * 8 + 15));
++  // Multiple blocks with a partial block at the beginning.
++  EXPECT_TRUE(TestEncryption(16 * 5 + 1, 16 * 8));
++  // Partial block at both ends.
++  EXPECT_TRUE(TestEncryption(16 * 5 + 1, 16 * 8 + 15));
++
++  // Lower bits of IV overflow.
++  EXPECT_TRUE(TestEncryption(16, 16 * 2, IV_OVERFLOW_LOW));
++  // Full IV overflow.
++  EXPECT_TRUE(TestEncryption(16, 16 * 2, IV_OVERFLOW_FULL));
++}
++
++// Openssl support SM4 after 1.1.1 release version.
++#if OPENSSL_VERSION_NUMBER < 0x1010100fL || defined(OPENSSL_NO_SM4)
++INSTANTIATE_TEST_CASE_P(
++    EncryptionTestInstance, EncryptionTest,
++    testing::Combine(testing::Bool(),
++                     testing::Values(EncryptionMethod::kAES128_CTR,
++                                     EncryptionMethod::kAES192_CTR,
++                                     EncryptionMethod::kAES256_CTR)));
++#else
++INSTANTIATE_TEST_CASE_P(
++    EncryptionTestInstance, EncryptionTest,
++    testing::Combine(testing::Bool(),
++                     testing::Values(EncryptionMethod::kAES128_CTR,
++                                     EncryptionMethod::kAES192_CTR,
++                                     EncryptionMethod::kAES256_CTR,
++                                     EncryptionMethod::kSM4_CTR)));
++#endif
++
++}  // namespace encryption
++}  // namespace ROCKSDB_NAMESPACE
++
++#endif  // OPENSSL
++
++int main(int argc, char** argv) {
++  rocksdb::port::InstallStackTraceHandler();
++  ::testing::InitGoogleTest(&argc, argv);
++  return RUN_ALL_TESTS();
++}
+diff --git a/encryption/in_memory_key_manager.h b/encryption/in_memory_key_manager.h
+new file mode 100644
+index 000000000..dc216b6db
+--- /dev/null
++++ b/encryption/in_memory_key_manager.h
+@@ -0,0 +1,83 @@
++#pragma once
++#ifdef OPENSSL
++#include <openssl/aes.h>
++
++#include <string>
++#include <unordered_map>
++
++#include "encryption/encryption.h"
++#include "port/port.h"
++#include "test_util/testutil.h"
++#include "util/mutexlock.h"
++
++namespace ROCKSDB_NAMESPACE {
++namespace encryption {
++
++// KeyManager store metadata in memory. It is used in tests and db_bench only.
++class InMemoryKeyManager final : public KeyManager {
++ public:
++  InMemoryKeyManager(EncryptionMethod method)
++      : rnd_(42),
++        method_(method),
++        key_(rnd_.HumanReadableString(static_cast<int>(KeySize(method)))) {
++    assert(method != EncryptionMethod::kUnknown);
++  }
++
++  virtual ~InMemoryKeyManager() = default;
++
++  Status GetFile(const std::string& fname,
++                 FileEncryptionInfo* file_info) override {
++    assert(file_info != nullptr);
++    MutexLock l(&mu_);
++    if (files_.count(fname) == 0) {
++      return Status::Corruption("File not found: " + fname);
++    }
++    file_info->method = method_;
++    file_info->key = key_;
++    file_info->iv = files_[fname];
++    return Status::OK();
++  }
++
++  Status NewFile(const std::string& fname,
++                 FileEncryptionInfo* file_info) override {
++    assert(file_info != nullptr);
++    MutexLock l(&mu_);
++    std::string iv = rnd_.HumanReadableString(AES_BLOCK_SIZE);
++    files_[fname] = iv;
++    file_info->method = method_;
++    file_info->key = key_;
++    file_info->iv = iv;
++    return Status::OK();
++  }
++
++  Status DeleteFile(const std::string& fname) override {
++    MutexLock l(&mu_);
++    if (files_.count(fname) == 0) {
++      return Status::Corruption("File not found: " + fname);
++    }
++    files_.erase(fname);
++    return Status::OK();
++  }
++
++  Status LinkFile(const std::string& src_fname,
++                  const std::string& dst_fname) override {
++    MutexLock l(&mu_);
++    if (files_.count(src_fname) == 0) {
++      return Status::Corruption("File not found: " + src_fname);
++    }
++    files_[dst_fname] = files_[src_fname];
++    return Status::OK();
++  }
++
++ private:
++  mutable port::Mutex mu_;
++  Random rnd_;
++  const EncryptionMethod method_;
++  const std::string key_;
++  std::unordered_map<std::string, std::string> files_;
++};
++
++}  // namespace encryption
++}  // namespace ROCKSDB_NAMESPACE
++
++#endif  // OPENSSL
+diff --git a/env/env_basic_test.cc b/env/env_basic_test.cc
+index 3a5472203..6211f2193 100644
+--- a/env/env_basic_test.cc
++++ b/env/env_basic_test.cc
+@@ -9,6 +9,7 @@
+ #include <string>
+ #include <vector>
+ 
++#include "db/db_test_util.h"
+ #include "env/mock_env.h"
+ #include "file/file_util.h"
+ #include "rocksdb/convenience.h"
+@@ -117,6 +118,16 @@ static Env* GetInspectedEnv() {
+   return inspected_env.get();
+ }
+ 
++#ifdef OPENSSL
++static Env* GetKeyManagedEncryptedEnv() {
++  static std::shared_ptr<encryption::KeyManager> key_manager(
++      new test::TestKeyManager);
++  static std::unique_ptr<Env> key_managed_encrypted_env(
++      NewKeyManagedEncryptedEnv(Env::Default(), key_manager));
++  return key_managed_encrypted_env.get();
++}
++#endif  // OPENSSL
++
+ }  // namespace
+ class EnvBasicTestWithParam
+     : public testing::Test,
+@@ -157,8 +168,12 @@ INSTANTIATE_TEST_CASE_P(MemEnv, EnvBasicTestWithParam,
+ INSTANTIATE_TEST_CASE_P(InspectedEnv, EnvBasicTestWithParam,
+                         ::testing::Values(&GetInspectedEnv));
+ 
+-namespace {
++#ifdef OPENSSL
++INSTANTIATE_TEST_CASE_P(KeyManagedEncryptedEnv, EnvBasicTestWithParam,
++                        ::testing::Values(&GetKeyManagedEncryptedEnv));
++#endif  // OPENSSL
+ 
++namespace {
+ // Returns a vector of 0 or 1 Env*, depending whether an Env is registered for
+ // TEST_ENV_URI.
+ //
+@@ -185,6 +200,52 @@ INSTANTIATE_TEST_CASE_P(CustomEnv, EnvBasicTestWithParam,
+ INSTANTIATE_TEST_CASE_P(CustomEnv, EnvMoreTestWithParam,
+                         ::testing::ValuesIn(GetCustomEnvs()));
+ 
++TEST_P(EnvBasicTestWithParam, RenameCurrent) {
++  if (!getenv("ENCRYPTED_ENV")) {
++    return;
++  }
++  Slice result;
++  char scratch[100];
++  std::unique_ptr<SequentialFile> seq_file;
++  std::unique_ptr<WritableFile> writable_file;
++  std::vector<std::string> children;
++
++  // Create an encrypted `CURRENT` file so it shouldn't be skipped .
++  SyncPoint::GetInstance()->SetCallBack(
++      "KeyManagedEncryptedEnv::NewWritableFile", [&](void* arg) {
++        bool* skip = static_cast<bool*>(arg);
++        *skip = false;
++      });
++  SyncPoint::GetInstance()->EnableProcessing();
++  ASSERT_OK(
++      env_->NewWritableFile(test_dir_ + "/CURRENT", &writable_file, soptions_));
++  SyncPoint::GetInstance()->ClearAllCallBacks();
++  SyncPoint::GetInstance()->DisableProcessing();
++  ASSERT_OK(writable_file->Append("MANIFEST-0"));
++  ASSERT_OK(writable_file->Close());
++  writable_file.reset();
++
++  ASSERT_OK(
++      env_->NewSequentialFile(test_dir_ + "/CURRENT", &seq_file, soptions_));
++  ASSERT_OK(seq_file->Read(100, &result, scratch));
++  ASSERT_EQ(0, result.compare("MANIFEST-0"));
++
++  // Create a plaintext `CURRENT` temp file.
++  ASSERT_OK(env_->NewWritableFile(test_dir_ + "/current.dbtmp.plain",
++                                  &writable_file, soptions_));
++  ASSERT_OK(writable_file->Append("MANIFEST-1"));
++  ASSERT_OK(writable_file->Close());
++  writable_file.reset();
++
++  ASSERT_OK(env_->RenameFile(test_dir_ + "/current.dbtmp.plain",
++                             test_dir_ + "/CURRENT"));
++
++  ASSERT_OK(
++      env_->NewSequentialFile(test_dir_ + "/CURRENT", &seq_file, soptions_));
++  ASSERT_OK(seq_file->Read(100, &result, scratch));
++  ASSERT_EQ(0, result.compare("MANIFEST-1"));
++}
++
+ TEST_P(EnvBasicTestWithParam, Basics) {
+   uint64_t file_size;
+   std::unique_ptr<WritableFile> writable_file;
+diff --git a/file/filename.cc b/file/filename.cc
+index fb7d25472..35059622d 100644
+--- a/file/filename.cc
++++ b/file/filename.cc
+@@ -29,6 +29,32 @@ static const std::string kRocksDbTFileExt = "sst";
+ static const std::string kLevelDbTFileExt = "ldb";
+ static const std::string kRocksDBBlobFileExt = "blob";
+ static const std::string kArchivalDirName = "archive";
++static const std::string kUnencryptedTempFileNameSuffix = "dbtmp.plain";
++
++bool IsCurrentFile(const std::string& fname) {
++  // skip CURRENT file.
++  size_t current_length = strlen("CURRENT");
++  if (fname.length() >= current_length &&
++      !fname.compare(fname.length() - current_length, current_length,
++                     "CURRENT")) {
++    return true;
++  }
++  // skip temporary file for CURRENT file.
++  size_t temp_length = kUnencryptedTempFileNameSuffix.length();
++  if (fname.length() >= temp_length &&
++      !fname.compare(fname.length() - temp_length, temp_length,
++                     kUnencryptedTempFileNameSuffix)) {
++    return true;
++  }
++  return false;
++}
++
++bool IsValidCurrentFile(std::unique_ptr<rocksdb::SequentialFile> seq_file) {
++  Slice result;
++  char scratch[64];
++  seq_file->Read(8, &result, scratch);
++  return result.compare("MANIFEST") == 0;
++}
+ 
+ // Given a path, flatten the path name by replacing all chars not in
+ // {[0-9,a-z,A-Z,-,_,.]} with _. And append '_LOG\0' at the end.
+@@ -182,6 +208,10 @@ std::string TempFileName(const std::string& dbname, uint64_t number) {
+   return MakeFileName(dbname, number, kTempFileNameSuffix.c_str());
+ }
+ 
++std::string TempPlainFileName(const std::string& dbname, uint64_t number) {
++  return MakeFileName(dbname, number, kUnencryptedTempFileNameSuffix.c_str());
++}
++
+ InfoLogPrefix::InfoLogPrefix(bool has_log_dir,
+                              const std::string& db_absolute_path) {
+   if (!has_log_dir) {
+@@ -392,7 +422,7 @@ IOStatus SetCurrentFile(FileSystem* fs, const std::string& dbname,
+   Slice contents = manifest;
+   assert(contents.starts_with(dbname + "/"));
+   contents.remove_prefix(dbname.size() + 1);
+-  std::string tmp = TempFileName(dbname, descriptor_number);
++  std::string tmp = TempPlainFileName(dbname, descriptor_number);
+   IOStatus s = WriteStringToFile(fs, contents.ToString() + "\n", tmp, true);
+   TEST_SYNC_POINT_CALLBACK("SetCurrentFile:BeforeRename", &s);
+   if (s.ok()) {
+diff --git a/file/filename.h b/file/filename.h
+index 2eb125b6a..44501128a 100644
+--- a/file/filename.h
++++ b/file/filename.h
+@@ -37,6 +37,14 @@ constexpr char kFilePathSeparator = '\\';
+ constexpr char kFilePathSeparator = '/';
+ #endif
+ 
++// Some non-sensitive files are not encrypted to preserve atomicity of file
++// operations.
++extern bool IsCurrentFile(const std::string& fname);
++
++// Determine if the content is read from the valid current file.
++extern bool IsValidCurrentFile(
++    std::unique_ptr<rocksdb::SequentialFile> seq_file);
++
+ // Return the name of the log file with the specified number
+ // in the db named by "dbname".  The result will be prefixed with
+ // "dbname".
+diff --git a/include/rocksdb/encryption.h b/include/rocksdb/encryption.h
+new file mode 100644
+index 000000000..b8f5e91e9
+--- /dev/null
++++ b/include/rocksdb/encryption.h
+@@ -0,0 +1,111 @@
++// Copyright 2020 TiKV Project Authors. Licensed under Apache-2.0.
++
++#pragma once
++#ifdef OPENSSL
++
++#include <memory>
++#include <string>
++
++#include "rocksdb/env.h"
++
++namespace ROCKSDB_NAMESPACE {
++namespace encryption {
++
++class AESEncryptionProvider;
++
++enum class EncryptionMethod : int {
++  kUnknown = 0,
++  kPlaintext = 1,
++  kAES128_CTR = 2,
++  kAES192_CTR = 3,
++  kAES256_CTR = 4,
++  kSM4_CTR = 5,
++};
++
++inline size_t KeySize(EncryptionMethod method) {
++  switch (method) {
++    case EncryptionMethod::kAES128_CTR:
++      return 16;
++    case EncryptionMethod::kAES192_CTR:
++      return 24;
++    case EncryptionMethod::kAES256_CTR:
++      return 32;
++    case EncryptionMethod::kSM4_CTR:
++      return 16;
++    default:
++      return 0;
++  };
++}
++
++struct FileEncryptionInfo {
++  EncryptionMethod method = EncryptionMethod::kUnknown;
++  std::string key;
++  std::string iv;
++};
++
++// Interface to manage encryption keys for files. KeyManagedEncryptedEnv
++// will query KeyManager for the key being used for each file, and update
++// KeyManager when it creates a new file or moving files around.
++class KeyManager {
++ public:
++  virtual ~KeyManager() = default;
++
++  virtual Status GetFile(const std::string& fname,
++                         FileEncryptionInfo* file_info) = 0;
++  virtual Status NewFile(const std::string& fname,
++                         FileEncryptionInfo* file_info) = 0;
++  virtual Status DeleteFile(const std::string& fname) = 0;
++  virtual Status LinkFile(const std::string& src_fname,
++                          const std::string& dst_fname) = 0;
++};
++
++// An Env with underlying files being encrypted. It holds a reference to an
++// external KeyManager for encryption key management.
++class KeyManagedEncryptedEnv : public EnvWrapper {
++ public:
++  KeyManagedEncryptedEnv(Env* base_env,
++                         std::shared_ptr<KeyManager>& key_manager,
++                         std::shared_ptr<AESEncryptionProvider>& provider,
++                         std::unique_ptr<Env>&& encrypted_env);
++
++  virtual ~KeyManagedEncryptedEnv();
++
++  Status NewSequentialFile(const std::string& fname,
++                           std::unique_ptr<SequentialFile>* result,
++                           const EnvOptions& options) override;
++  Status NewRandomAccessFile(const std::string& fname,
++                             std::unique_ptr<RandomAccessFile>* result,
++                             const EnvOptions& options) override;
++  Status NewWritableFile(const std::string& fname,
++                         std::unique_ptr<WritableFile>* result,
++                         const EnvOptions& options) override;
++  Status ReopenWritableFile(const std::string& fname,
++                            std::unique_ptr<WritableFile>* result,
++                            const EnvOptions& options) override;
++  Status ReuseWritableFile(const std::string& fname,
++                           const std::string& old_fname,
++                           std::unique_ptr<WritableFile>* result,
++                           const EnvOptions& options) override;
++  Status NewRandomRWFile(const std::string& fname,
++                         std::unique_ptr<RandomRWFile>* result,
++                         const EnvOptions& options) override;
++
++  Status DeleteFile(const std::string& fname) override;
++  Status LinkFile(const std::string& src_fname,
++                  const std::string& dst_fname) override;
++  Status RenameFile(const std::string& src_fname,
++                    const std::string& dst_fname) override;
++
++ private:
++  const std::shared_ptr<KeyManager> key_manager_;
++  const std::shared_ptr<AESEncryptionProvider> provider_;
++  const std::unique_ptr<Env> encrypted_env_;
++};
++
++extern Env* NewKeyManagedEncryptedEnv(Env* base_env,
++                                      std::shared_ptr<KeyManager>& key_manager);
++
++}  // namespace encryption
++}  // namespace ROCKSDB_NAMESPACE
++
++#endif  // OPENSSL
+diff --git a/src.mk b/src.mk
+index d68733fba..a870f4447 100644
+--- a/src.mk
++++ b/src.mk
+@@ -101,6 +101,7 @@ LIB_SOURCES =                                                   \
+   db/write_controller.cc                                        \
+   db/write_stall_stats.cc                                       \
+   db/write_thread.cc                                            \
++  encryption/encryption.cc                                      \
+   env/composite_env.cc                                          \
+   env/env.cc                                                    \
+   env/env_chroot.cc                                             \
+diff --git a/test_util/testutil.cc b/test_util/testutil.cc
+index ce221e79b..334bfe6f6 100644
+--- a/test_util/testutil.cc
++++ b/test_util/testutil.cc
+@@ -37,6 +37,14 @@ void RegisterCustomObjects(int /*argc*/, char** /*argv*/) {}
+ namespace ROCKSDB_NAMESPACE {
+ namespace test {
+ 
++#ifdef OPENSSL
++const std::string TestKeyManager::default_key =
++    "\x12\x34\x56\x78\x12\x34\x56\x78\x12\x34\x56\x78\x12\x34\x56\x78\x12\x34"
++    "\x56\x78\x12\x34\x56\x78";
++const std::string TestKeyManager::default_iv =
++    "\xaa\xbb\xcc\xdd\xaa\xbb\xcc\xdd\xaa\xbb\xcc\xdd\xaa\xbb\xcc\xdd";
++#endif
++
+ const uint32_t kDefaultFormatVersion = BlockBasedTableOptions().format_version;
+ const std::set<uint32_t> kFooterFormatVersionsToTest{
+     // Non-legacy, before big footer changes
+@@ -739,7 +747,6 @@ int RegisterTestObjects(ObjectLibrary& library, const std::string& arg) {
+   return static_cast<int>(library.GetFactoryCount(&num_types));
+ }
+ 
+-
+ void RegisterTestLibrary(const std::string& arg) {
+   static bool registered = false;
+   if (!registered) {
+diff --git a/test_util/testutil.h b/test_util/testutil.h
+index eca1ff794..5a173ca40 100644
+--- a/test_util/testutil.h
++++ b/test_util/testutil.h
+@@ -10,12 +10,17 @@
+ #pragma once
+ #include <algorithm>
+ #include <deque>
++#include <mutex>
++#include <set>
+ #include <string>
+ #include <vector>
+ 
+ #include "env/composite_env_wrapper.h"
++#include "file/filename.h"
+ #include "file/writable_file_writer.h"
+ #include "rocksdb/compaction_filter.h"
++#include "rocksdb/db.h"
++#include "rocksdb/encryption.h"
+ #include "rocksdb/env.h"
+ #include "rocksdb/iterator.h"
+ #include "rocksdb/merge_operator.h"
+@@ -43,6 +48,54 @@ class SequentialFileReader;
+ 
+ namespace test {
+ 
++// TODO(yiwu): Use InMemoryKeyManager instead for tests.
++#ifdef OPENSSL
++class TestKeyManager : public encryption::KeyManager {
++ public:
++  virtual ~TestKeyManager() = default;
++
++  static const std::string default_key;
++  static const std::string default_iv;
++  std::mutex mutex;
++  std::set<std::string> file_set;
++
++  Status GetFile(const std::string& fname,
++                 encryption::FileEncryptionInfo* file_info) override {
++    std::lock_guard<std::mutex> l(mutex);
++    if (file_set.find(fname) == file_set.end()) {
++      file_info->method = encryption::EncryptionMethod::kPlaintext;
++    } else {
++      file_info->method = encryption::EncryptionMethod::kAES192_CTR;
++    }
++    file_info->key = default_key;
++    file_info->iv = default_iv;
++    return Status::OK();
++  }
++
++  Status NewFile(const std::string& fname,
++                 encryption::FileEncryptionInfo* file_info) override {
++    std::lock_guard<std::mutex> l(mutex);
++    file_info->method = encryption::EncryptionMethod::kAES192_CTR;
++    file_info->key = default_key;
++    file_info->iv = default_iv;
++    file_set.insert(fname);
++    return Status::OK();
++  }
++
++  Status DeleteFile(const std::string& fname) override {
++    std::lock_guard<std::mutex> l(mutex);
++    file_set.erase(fname);
++    return Status::OK();
++  }
++
++  Status LinkFile(const std::string& /*src*/, const std::string& dst) override {
++    std::lock_guard<std::mutex> l(mutex);
++    file_set.insert(dst);
++    return Status::OK();
++  }
++};
++#endif
++
+ extern const uint32_t kDefaultFormatVersion;
+ extern const std::set<uint32_t> kFooterFormatVersionsToTest;
+ 
+diff --git a/tools/db_bench_tool.cc b/tools/db_bench_tool.cc
+index 40132e69c..53c56fc5e 100644
+--- a/tools/db_bench_tool.cc
++++ b/tools/db_bench_tool.cc
+@@ -42,6 +42,7 @@
+ #include "db/db_impl/db_impl.h"
+ #include "db/malloc_stats.h"
+ #include "db/version_set.h"
++#include "encryption/in_memory_key_manager.h"
+ #include "monitoring/histogram.h"
+ #include "monitoring/statistics_impl.h"
+ #include "options/cf_options.h"
+@@ -50,6 +51,7 @@
+ #include "rocksdb/cache.h"
+ #include "rocksdb/convenience.h"
+ #include "rocksdb/db.h"
++#include "rocksdb/encryption.h"
+ #include "rocksdb/env.h"
+ #include "rocksdb/filter_policy.h"
+ #include "rocksdb/memtablerep.h"
+@@ -1773,6 +1775,10 @@ DEFINE_bool(build_info, false,
+ DEFINE_bool(track_and_verify_wals_in_manifest, false,
+             "If true, enable WAL tracking in the MANIFEST");
+ 
++DEFINE_string(
++    encryption_method, "",
++    "If non-empty, enable encryption with the specific encryption method.");
++
+ namespace ROCKSDB_NAMESPACE {
+ namespace {
+ static Status CreateMemTableRepFactory(
+@@ -2189,7 +2195,7 @@ enum OperationType : unsigned char {
+   kOthers
+ };
+ 
+-static std::unordered_map<OperationType, std::string, std::hash<unsigned char>>
++static std::unordered_map<OperationType, std::string, std::hash<unsigned char> >
+     OperationTypeString = {{kRead, "read"},         {kWrite, "write"},
+                            {kDelete, "delete"},     {kSeek, "seek"},
+                            {kMerge, "merge"},       {kUpdate, "update"},
+@@ -2213,7 +2219,7 @@ class Stats {
+   uint64_t last_op_finish_;
+   uint64_t last_report_finish_;
+   std::unordered_map<OperationType, std::shared_ptr<HistogramImpl>,
+-                     std::hash<unsigned char>>
++                     std::hash<unsigned char> >
+       hist_;
+   std::string message_;
+   bool exclude_from_merge_;
+@@ -5137,7 +5143,7 @@ class Benchmark {
+     if (db_.db == nullptr) {
+       num_key_gens = multi_dbs_.size();
+     }
+-    std::vector<std::unique_ptr<KeyGenerator>> key_gens(num_key_gens);
++    std::vector<std::unique_ptr<KeyGenerator> > key_gens(num_key_gens);
+     int64_t max_ops = num_ops * num_key_gens;
+     int64_t ops_per_stage = max_ops;
+     if (FLAGS_num_column_families > 1 && FLAGS_num_hot_column_families > 0) {
+@@ -5242,11 +5248,11 @@ class Benchmark {
+     std::string random_value;
+     // Queue that stores scheduled timestamp of disposable entries deletes,
+     // along with starting index of disposable entry keys to delete.
+-    std::vector<std::queue<std::pair<uint64_t, uint64_t>>> disposable_entries_q(
+-        num_key_gens);
++    std::vector<std::queue<std::pair<uint64_t, uint64_t> > >
++        disposable_entries_q(num_key_gens);
+     // --- End of variables used in disposable/persistent keys simulation.
+ 
+-    std::vector<std::unique_ptr<const char[]>> expanded_key_guards;
++    std::vector<std::unique_ptr<const char[]> > expanded_key_guards;
+     std::vector<Slice> expanded_keys;
+     if (FLAGS_expand_range_tombstones) {
+       expanded_key_guards.resize(range_tombstone_width_);
+@@ -5604,7 +5610,8 @@ class Benchmark {
+     auto num_db = db_list.size();
+     size_t num_levels = static_cast<size_t>(open_options_.num_levels);
+     size_t output_level = open_options_.num_levels - 1;
+-    std::vector<std::vector<std::vector<SstFileMetaData>>> sorted_runs(num_db);
++    std::vector<std::vector<std::vector<SstFileMetaData> > > sorted_runs(
++        num_db);
+     std::vector<size_t> num_files_at_level0(num_db, 0);
+     if (compaction_style == kCompactionStyleLevel) {
+       if (num_levels == 0) {
+@@ -6216,7 +6223,7 @@ class Benchmark {
+     int64_t found = 0;
+     ReadOptions options = read_options_;
+     std::vector<Slice> keys;
+-    std::vector<std::unique_ptr<const char[]>> key_guards;
++    std::vector<std::unique_ptr<const char[]> > key_guards;
+     std::vector<std::string> values(entries_per_batch_);
+     PinnableSlice* pin_values = new PinnableSlice[entries_per_batch_];
+     std::unique_ptr<PinnableSlice[]> pin_values_guard(pin_values);
+@@ -6313,9 +6320,9 @@ class Benchmark {
+     const size_t batch_size = entries_per_batch_;
+     std::vector<Range> ranges;
+     std::vector<Slice> lkeys;
+-    std::vector<std::unique_ptr<const char[]>> lkey_guards;
++    std::vector<std::unique_ptr<const char[]> > lkey_guards;
+     std::vector<Slice> rkeys;
+-    std::vector<std::unique_ptr<const char[]>> rkey_guards;
++    std::vector<std::unique_ptr<const char[]> > rkey_guards;
+     std::vector<uint64_t> sizes;
+     while (ranges.size() < batch_size) {
+       // Ugly without C++17 return from emplace_back
+@@ -7025,7 +7032,7 @@ class Benchmark {
+     std::unique_ptr<const char[]> end_key_guard;
+     Slice end_key = AllocateKey(&end_key_guard);
+     uint64_t num_range_deletions = 0;
+-    std::vector<std::unique_ptr<const char[]>> expanded_key_guards;
++    std::vector<std::unique_ptr<const char[]> > expanded_key_guards;
+     std::vector<Slice> expanded_keys;
+     if (FLAGS_expand_range_tombstones) {
+       expanded_key_guards.resize(range_tombstone_width_);
+@@ -8715,6 +8722,31 @@ int db_bench_tool(int argc, char** argv) {
+     exit(1);
+   }
+ 
++#ifdef OPENSSL
++  if (!FLAGS_encryption_method.empty()) {
++    ROCKSDB_NAMESPACE::encryption::EncryptionMethod method =
++        ROCKSDB_NAMESPACE::encryption::EncryptionMethod::kUnknown;
++    if (!strcasecmp(FLAGS_encryption_method.c_str(), "AES128CTR")) {
++      method = ROCKSDB_NAMESPACE::encryption::EncryptionMethod::kAES128_CTR;
++    } else if (!strcasecmp(FLAGS_encryption_method.c_str(), "AES192CTR")) {
++      method = ROCKSDB_NAMESPACE::encryption::EncryptionMethod::kAES192_CTR;
++    } else if (!strcasecmp(FLAGS_encryption_method.c_str(), "AES256CTR")) {
++      method = ROCKSDB_NAMESPACE::encryption::EncryptionMethod::kAES256_CTR;
++    } else if (!strcasecmp(FLAGS_encryption_method.c_str(), "SM4CTR")) {
++      method = ROCKSDB_NAMESPACE::encryption::EncryptionMethod::kSM4_CTR;
++    }
++    if (method == ROCKSDB_NAMESPACE::encryption::EncryptionMethod::kUnknown) {
++      fprintf(stderr, "Unknown encryption method %s\n",
++              FLAGS_encryption_method.c_str());
++      exit(1);
++    }
++    std::shared_ptr<ROCKSDB_NAMESPACE::encryption::KeyManager> key_manager(
++        new ROCKSDB_NAMESPACE::encryption::InMemoryKeyManager(method));
++    FLAGS_env = ROCKSDB_NAMESPACE::encryption::NewKeyManagedEncryptedEnv(
++        FLAGS_env, key_manager);
++  }
++#endif  // OPENSSL
++
+   if (!strcasecmp(FLAGS_compaction_fadvice.c_str(), "NONE")) {
+     FLAGS_compaction_fadvice_e = ROCKSDB_NAMESPACE::Options::NONE;
+   } else if (!strcasecmp(FLAGS_compaction_fadvice.c_str(), "NORMAL")) {
+-- 
+2.45.0
+

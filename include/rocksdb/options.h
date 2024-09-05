@@ -296,6 +296,11 @@ struct ColumnFamilyOptions : public AdvancedColumnFamilyOptions {
   // Dynamically changeable through SetOptions() API
   bool disable_auto_compactions = false;
 
+  // Disable write stall mechanism.
+  //
+  // Dynamically changeable through SetOptions() API
+  bool disable_write_stall = false;
+
   // This is a factory that provides TableFactory objects.
   // Default: a block-based table factory that provides a default
   // implementation of TableBuilder and TableReader with default
@@ -332,6 +337,13 @@ struct ColumnFamilyOptions : public AdvancedColumnFamilyOptions {
   //
   // Default: nullptr
   std::shared_ptr<SstPartitionerFactory> sst_partitioner_factory = nullptr;
+
+  // Column family based write buffer manager, if this is set, this column
+  // facmily will not report memtable memory usage to the write buffer manager
+  // in DBImpl.
+  //
+  // Default: null
+  std::shared_ptr<WriteBufferManager> cf_write_buffer_manager = nullptr;
 
   // RocksDB will try to flush the current memtable after the number of range
   // deletions is >= this limit. For workloads with many range
@@ -1124,6 +1136,22 @@ struct DBOptions {
   //
   // Default: false
   bool unordered_write = false;
+  // By default, a single write thread queue is maintained. The thread gets
+  // to the head of the queue becomes write batch group leader and responsible
+  // for writing to WAL.
+  //
+  // If enable_multi_batch_write is true, RocksDB will apply WriteBatch to
+  // memtable out of order but commit them in order. (We borrow the idea from
+  // https://github.com/cockroachdb/pebble/blob/master/docs/rocksdb.md#commit-pipeline.
+  // On this basis, we split the WriteBatch into smaller-grained WriteBatch
+  // vector,
+  // and when the WriteBatch sizes of multiple writers are not balanced, writers
+  // that finish first need to help the front writer finish writing the
+  // remaining
+  // WriteBatch to increase cpu usage and reduce overall latency).
+  //
+  // Default: false
+  bool enable_multi_batch_write = false;
 
   // If true, allow multi-writers to update mem tables in parallel.
   // Only some memtable_factory-s support concurrent writes; currently it
@@ -1864,7 +1892,23 @@ struct FlushOptions {
   // is performed by someone else (foreground call or background thread).
   // Default: false
   bool allow_write_stall;
-  FlushOptions() : wait(true), allow_write_stall(false) {}
+  // Only flush memtable if it has the expected oldest key time.
+  // This option is ignored for atomic flush. Zero means disabling the check.
+  // Default: 0
+  uint64_t expected_oldest_key_time;
+  // Abort flush if compaction is disabled via `DisableManualCompaction`.
+  // Default: false
+  bool check_if_compaction_disabled;
+  // Used by RocksDB internally.
+  // Default: false
+  bool _write_stopped;
+
+  FlushOptions()
+      : wait(true),
+        allow_write_stall(false),
+        expected_oldest_key_time(0),
+        check_if_compaction_disabled(false),
+        _write_stopped(false) {}
 };
 
 // Create a Logger from provided DBOptions
@@ -2185,6 +2229,17 @@ struct WaitForCompactOptions {
   // when timeout == 0, WaitForCompact() will wait as long as there's background
   // work to finish.
   std::chrono::microseconds timeout = std::chrono::microseconds::zero();
+};
+
+struct MergeInstanceOptions {
+  // Whether to merge memtable. WAL must be empty to perform a memtable merge.
+  // Either write with disableWAL=true, or flush memtables before merge.
+  bool merge_memtable = false;
+  // Whether or not writes to source DBs are still allowed after the merge.
+  // Some optimizations are possible only with this flag set to false.
+  bool allow_source_write = true;
+  // No limit if negative.
+  int max_preload_files = 16;
 };
 
 }  // namespace ROCKSDB_NAMESPACE

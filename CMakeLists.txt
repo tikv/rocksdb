@@ -70,6 +70,7 @@ option(WITH_SNAPPY "build with SNAPPY" OFF)
 option(WITH_LZ4 "build with lz4" OFF)
 option(WITH_ZLIB "build with zlib" OFF)
 option(WITH_ZSTD "build with zstd" OFF)
+option(WITH_OPENSSL "build with openssl" OFF)
 option(WITH_WINDOWS_UTF8_FILENAMES "use UTF8 as characterset for opening files, regardles of the system code page" OFF)
 if (WITH_WINDOWS_UTF8_FILENAMES)
   add_definitions(-DROCKSDB_WINDOWS_UTF8_FILENAMES)
@@ -173,6 +174,14 @@ else()
     add_definitions(-DZSTD)
     include_directories(${ZSTD_INCLUDE_DIR})
     list(APPEND THIRDPARTY_LIBS zstd::zstd)
+  endif()
+
+  if(WITH_OPENSSL)
+    find_package(OpenSSL REQUIRED)
+    add_definitions(-DOPENSSL)
+    include_directories(${OPENSSL_INCLUDE_DIR})
+    # Only the crypto library is needed.
+    list(APPEND THIRDPARTY_LIBS ${OPENSSL_CRYPTO_LIBRARIES})
   endif()
 endif()
 
@@ -675,6 +684,7 @@ set(SOURCES
         db/db_impl/db_impl_experimental.cc
         db/db_impl/db_impl_readonly.cc
         db/db_impl/db_impl_secondary.cc
+        db/db_impl/db_impl_merge.cc
         db/db_info_dumper.cc
         db/db_iter.cc
         db/dbformat.cc
@@ -721,10 +731,12 @@ set(SOURCES
         db/write_controller.cc
         db/write_stall_stats.cc
         db/write_thread.cc
+        encryption/encryption.cc
         env/composite_env.cc
         env/env.cc
         env/env_chroot.cc
         env/env_encryption.cc
+        env/env_inspected.cc
         env/file_system.cc
         env/file_system_tracer.cc
         env/fs_remap.cc
@@ -762,6 +774,7 @@ set(SOURCES
         monitoring/iostats_context.cc
         monitoring/perf_context.cc
         monitoring/perf_level.cc
+        monitoring/perf_flag.cc
         monitoring/persistent_stats_history.cc
         monitoring/statistics.cc
         monitoring/thread_status_impl.cc
@@ -912,6 +925,7 @@ set(SOURCES
         utilities/persistent_cache/block_cache_tier_metadata.cc
         utilities/persistent_cache/persistent_cache_tier.cc
         utilities/persistent_cache/volatile_tier_impl.cc
+        utilities/rate_limiters/write_amp_based_rate_limiter.cc
         utilities/simulator_cache/cache_simulator.cc
         utilities/simulator_cache/sim_cache.cc
         utilities/table_properties_collectors/compact_on_deletion_collector.cc
@@ -1314,6 +1328,7 @@ if(WITH_TESTS)
         db/db_memtable_test.cc
         db/db_merge_operator_test.cc
         db/db_merge_operand_test.cc
+        db/db_merge_test.cc
         db/db_options_test.cc
         db/db_properties_test.cc
         db/db_range_del_test.cc
@@ -1369,6 +1384,7 @@ if(WITH_TESTS)
         db/write_batch_test.cc
         db/write_callback_test.cc
         db/write_controller_test.cc
+        encryption/encryption_test.cc
         env/env_test.cc
         env/io_posix_test.cc
         env/mock_env_test.cc
@@ -1450,6 +1466,7 @@ if(WITH_TESTS)
         utilities/options/options_util_test.cc
         utilities/persistent_cache/hash_table_test.cc
         utilities/persistent_cache/persistent_cache_test.cc
+        utilities/rate_limiters/write_amp_based_rate_limiter_test.cc
         utilities/simulator_cache/cache_simulator_test.cc
         utilities/simulator_cache/sim_cache_test.cc
         utilities/table_properties_collectors/compact_on_deletion_collector_test.cc

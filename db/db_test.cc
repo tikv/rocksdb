@@ -1161,7 +1161,6 @@ class DelayFilterFactory : public CompactionFilterFactory {
 };
 }  // anonymous namespace
 
-
 static std::string CompressibleString(Random* rnd, int len) {
   std::string r;
   test::CompressibleString(rnd, 0.8, len, &r);
@@ -2455,6 +2454,10 @@ TEST_F(DBTest, DestroyDBMetaDatabase) {
 }
 
 TEST_F(DBTest, SnapshotFiles) {
+  if (getenv("ENCRYPTED_ENV")) {
+    // File copy does not carry encryption key.
+    return;
+  }
   do {
     Options options = CurrentOptions();
     options.write_buffer_size = 100000000;  // Large write buffer
@@ -3207,7 +3210,9 @@ class ModelDB : public DB {
     delete reinterpret_cast<const ModelSnapshot*>(snapshot);
   }
 
-  Status Write(const WriteOptions& /*options*/, WriteBatch* batch) override {
+  using DB::Write;
+  Status Write(const WriteOptions& /*options*/, WriteBatch* batch,
+               PostWriteCallback* /*callback*/) override {
     class Handler : public WriteBatch::Handler {
      public:
       KVMap* map_;
@@ -4338,7 +4343,6 @@ TEST_F(DBTest, ConcurrentMemtableNotSupported) {
   ColumnFamilyHandle* handle;
   ASSERT_NOK(db_->CreateColumnFamily(cf_options, "name", &handle));
 }
-
 
 TEST_F(DBTest, SanitizeNumThreads) {
   for (int attempt = 0; attempt < 2; attempt++) {
@@ -5709,7 +5713,6 @@ TEST_F(DBTest, FileCreationRandomFailure) {
   }
 }
 
-
 TEST_F(DBTest, DynamicMiscOptions) {
   // Test max_sequential_skip_in_iterations
   Options options;
@@ -6089,7 +6092,7 @@ TEST_P(DBTestWithParam, FilterCompactionTimeTest) {
 // CPUMicros() is not supported. See WinClock::CPUMicros().
 TEST_P(DBTestWithParam, CompactionTotalTimeTest) {
   int record_count = 0;
-  class TestStatistics : public StatisticsImpl {
+  class TestStatistics : public StatisticsImpl<> {
    public:
     explicit TestStatistics(int* record_count)
         : StatisticsImpl(nullptr), record_count_(record_count) {}
@@ -7166,7 +7169,6 @@ TEST_F(DBTest, ReusePinnableSlice) {
       1);
 }
 
-
 TEST_F(DBTest, DeletingOldWalAfterDrop) {
   ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->LoadDependency(
       {{"Test:AllowFlushes", "DBImpl::BGWorkFlush"},
@@ -7290,7 +7292,6 @@ TEST_F(DBTest, LargeBlockSizeTest) {
   options.table_factory.reset(NewBlockBasedTableFactory(table_options));
   ASSERT_NOK(TryReopenWithColumnFamilies({"default", "pikachu"}, options));
 }
-
 
 TEST_F(DBTest, CreationTimeOfOldestFile) {
   const int kNumKeysPerFile = 32;

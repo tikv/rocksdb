@@ -416,11 +416,11 @@ class VersionBuilder::Rep {
 
               if (range_overlapped) {
                 std::ostringstream oss;
-                oss << "L0 files of same epoch number but overlapping range #"
+                oss << "L0 files of same epoch number but overlapping range#"
                     << lhs->fd.GetNumber()
                     << " , smallest key: " << lhs->smallest.DebugString(true)
                     << " , largest key: " << lhs->largest.DebugString(true)
-                    << " , epoch number: " << lhs->epoch_number << " vs. file #"
+                    << " , epoch number: " << lhs->epoch_number << " vs. file#"
                     << rhs->fd.GetNumber()
                     << " , smallest key: " << rhs->smallest.DebugString(true)
                     << " , largest key: " << rhs->largest.DebugString(true)
@@ -533,6 +533,7 @@ class VersionBuilder::Rep {
     }
 #endif
     Status s = CheckConsistencyDetails(vstorage);
+
     if (s.IsCorruption() && s.getState()) {
       // Make it clear the error is due to force_consistency_checks = 1 or
       // debug build

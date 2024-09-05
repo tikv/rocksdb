@@ -71,15 +71,14 @@ DBTestBase::DBTestBase(const std::string path, bool env_do_fsync)
     mem_env_ = MockEnv::Create(base_env, base_env->GetSystemClock());
   }
   if (getenv("ENCRYPTED_ENV")) {
-    std::shared_ptr<EncryptionProvider> provider;
-    std::string provider_id = getenv("ENCRYPTED_ENV");
-    if (provider_id.find("=") == std::string::npos &&
-        !EndsWith(provider_id, "://test")) {
-      provider_id = provider_id + "://test";
-    }
-    EXPECT_OK(EncryptionProvider::CreateFromString(ConfigOptions(), provider_id,
-                                                   &provider));
-    encrypted_env_ = NewEncryptedEnv(mem_env_ ? mem_env_ : base_env, provider);
+#ifdef OPENSSL
+    std::shared_ptr<encryption::KeyManager> key_manager(
+        new test::TestKeyManager);
+    encrypted_env_ = NewKeyManagedEncryptedEnv(Env::Default(), key_manager);
+#else
+    fprintf(stderr, "EncryptedEnv is not available without OpenSSL.");
+    assert(false);
+#endif
   }
   env_ = new SpecialEnv(encrypted_env_ ? encrypted_env_
                                        : (mem_env_ ? mem_env_ : base_env));
@@ -551,6 +550,12 @@ Options DBTestBase::GetOptions(
       options.enable_pipelined_write = true;
       break;
     }
+    case kMultiBatchWrite: {
+      options.enable_multi_batch_write = true;
+      options.enable_pipelined_write = false;
+      options.two_write_queues = false;
+      break;
+    }
     case kConcurrentWALWrites: {
       // This options optimize 2PC commit path
       options.two_write_queues = true;
@@ -610,6 +615,22 @@ void DBTestBase::ReopenWithColumnFamilies(const std::vector<std::string>& cfs,
 void DBTestBase::ReopenWithColumnFamilies(const std::vector<std::string>& cfs,
                                           const Options& options) {
   ASSERT_OK(TryReopenWithColumnFamilies(cfs, options));
+}
+
+void DBTestBase::OpenWithCFWriteBufferManager(
+    const std::vector<std::string>& cfs,
+    const std::vector<std::shared_ptr<WriteBufferManager>> wbms,
+    const Options& options) {
+  CreateColumnFamilies(cfs, options);
+  std::vector<std::string> cfs_plus_default = cfs;
+  cfs_plus_default.insert(cfs_plus_default.begin(), kDefaultColumnFamilyName);
+  std::vector<Options> cf_options;
+  for (size_t i = 0; i < wbms.size(); ++i) {
+    auto o = options;
+    o.cf_write_buffer_manager = wbms[i];
+    cf_options.push_back(o);
+  }
+  ReopenWithColumnFamilies(cfs_plus_default, cf_options);
 }
 
 void DBTestBase::SetTimeElapseOnlySleepOnReopen(DBOptions* options) {
