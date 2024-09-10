@@ -1583,6 +1583,13 @@ ROCKS_TESTS = [
         [],
     ],
     [
+        "encryption_test",
+        "encryption/encryption_test.cc",
+        "parallel",
+        [],
+        [],
+    ],
+    [
         "env_basic_test",
         "env/env_basic_test.cc",
         "parallel",

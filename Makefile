@@ -1987,7 +1987,7 @@ db_basic_bench: $(OBJ_DIR)/microbench/db_basic_bench.o $(LIBRARY)
 cache_reservation_manager_test: $(OBJ_DIR)/cache/cache_reservation_manager_test.o $(TEST_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 
-encryption_test: encryption/encryption_test.o $(LIBOBJECTS) $(TESTHARNESS)
+encryption_test: $(OBJ_DIR)/encryption/encryption_test.o $(TEST_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 
 #-------------------------------------------------

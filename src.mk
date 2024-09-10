@@ -497,6 +497,7 @@ TEST_MAIN_SOURCES =                                                     \
   db/write_batch_test.cc                                                \
   db/write_callback_test.cc                                             \
   db/write_controller_test.cc                                           \
+  encryption/encryption_test.cc                                         \
   env/env_basic_test.cc                                                 \
   env/env_test.cc                                                       \
   env/io_posix_test.cc                                                  \
