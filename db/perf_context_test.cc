@@ -1119,6 +1119,25 @@ TEST_F(PerfContextTest, MergeOperandCount) {
   verify();
 }
 
+TEST_F(PerfContextTest, BitMapControl) {
+  DestroyDB(kDbName, Options());
+  auto db = OpenDb();
+  WriteOptions write_options;
+  SetPerfLevel(PerfLevel::kDisable);
+  SetPerfFlags(NewPerfFlags(
+      {PerfFlag::user_key_comparison_count, PerfFlag::write_wal_time}));
+
+  for (int i = 0; i < FLAGS_total_keys; ++i) {
+    std::string i_str = std::to_string(i);
+    std::string key = "k" + i_str;
+    std::string value = "v" + i_str;
+
+    db->Put(write_options, key, value);
+  }
+  ASSERT_GT(get_perf_context()->user_key_comparison_count, 0);
+  ASSERT_GT(get_perf_context()->write_wal_time, 0);
+}
+
 }  // namespace ROCKSDB_NAMESPACE
 
 int main(int argc, char** argv) {

@@ -32,15 +32,16 @@ extern thread_local IOStatsContext iostats_context;
 #define IOSTATS(metric) (iostats_context.metric)
 
 // Declare and set start time of the timer
-#define IOSTATS_TIMER_GUARD(metric)                                     \
-  PerfStepTimer iostats_step_timer_##metric(&(iostats_context.metric)); \
+#define IOSTATS_TIMER_GUARD(metric)                                           \
+  PerfStepTimer iostats_step_timer_##metric(&(iostats_context.metric),        \
+                                            CheckPerfFlag(PerfFlag::metric)); \
   iostats_step_timer_##metric.Start();
 
 // Declare and set start time of the timer
-#define IOSTATS_CPU_TIMER_GUARD(metric, clock)         \
-  PerfStepTimer iostats_step_timer_##metric(           \
-      &(iostats_context.metric), clock, true,          \
-      PerfLevel::kEnableTimeAndCPUTimeExceptForMutex); \
+#define IOSTATS_CPU_TIMER_GUARD(metric, clock)                                 \
+  PerfStepTimer iostats_step_timer_##metric(                                   \
+      &(iostats_context.metric), CheckPerfFlag(PerfFlag::metric), clock, true, \
+      PerfLevel::kEnableTimeAndCPUTimeExceptForMutex);                         \
   iostats_step_timer_##metric.Start();
 
 #define IOSTATS_SET_DISABLE(disable) (iostats_context.disable_iostats = disable)
