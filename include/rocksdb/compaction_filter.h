@@ -164,6 +164,8 @@ class CompactionFilter : public Customizable {
     // The lowest level among all the input files (if any) used in table
     // creation
     int input_start_level = kUnknownStartLevel;
+    // Whether output files are in bottommost level or not.
+    bool is_bottommost_level;
     // The column family that will contain the created table file.
     uint32_t column_family_id;
     // Reason this table file is being created.
