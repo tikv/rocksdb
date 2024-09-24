@@ -134,6 +134,7 @@ void WriteAmpBasedRateLimiter::Request(int64_t bytes, const Env::IOPriority pri,
   TEST_SYNC_POINT("WriteAmpBasedRateLimiter::Request");
   TEST_SYNC_POINT_CALLBACK("WriteAmpBasedRateLimiter::Request:1",
                            &rate_bytes_per_sec_);
+  MutexLock g(&request_mutex_);
   if (auto_tuned_.load(std::memory_order_acquire) && pri == Env::IO_HIGH &&
       duration_highpri_bytes_through_ + duration_bytes_through_ + bytes <=
           max_bytes_per_sec_.load(std::memory_order_relaxed) * secs_per_tune_) {
@@ -145,7 +146,6 @@ void WriteAmpBasedRateLimiter::Request(int64_t bytes, const Env::IOPriority pri,
     return;
   }
   assert(bytes <= refill_bytes_per_period_.load(std::memory_order_relaxed));
-  MutexLock g(&request_mutex_);
 
   if (auto_tuned_.load(std::memory_order_acquire)) {
     std::chrono::microseconds now(NowMicrosMonotonic(env_));
