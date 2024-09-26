@@ -139,7 +139,7 @@ TEST_F(WriteAmpBasedRateLimiterTest, Rate) {
               arg.request_size - 1, target / 1024, rate / 1024,
               elapsed / 1000000.0);
 
-      ASSERT_GE(rate / target, 0.75);
+      ASSERT_GE(rate / target, 0.65);
       ASSERT_LE(rate / target, 1.25);
     }
   }

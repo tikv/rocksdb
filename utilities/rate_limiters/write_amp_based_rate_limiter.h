@@ -119,7 +119,6 @@ class WriteAmpBasedRateLimiter : public RateLimiter {
   int32_t fairness_;
   Random rnd_;
 
-  struct Req;
   Req* leader_;
   std::deque<Req*> queue_[Env::IO_TOTAL];
 
