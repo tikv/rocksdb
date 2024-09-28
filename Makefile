@@ -703,6 +703,7 @@ TESTS_PLATFORM_DEPENDENT := \
 	crc32c_test \
 	coding_test \
 	inlineskiplist_test \
+	encryption_test \
 	env_basic_test \
 	env_test \
 	env_logger_test \
@@ -1991,6 +1992,9 @@ wide_columns_helper_test: $(OBJ_DIR)/db/wide/wide_columns_helper_test.o $(TEST_L
 	$(AM_LINK)
 
 write_amp_based_rate_limiter_test: $(OBJ_DIR)/utilities/rate_limiters/write_amp_based_rate_limiter_test.o $(TEST_LIBRARY) $(LIBRARY)
+	$(AM_LINK)
+
+encryption_test: $(OBJ_DIR)/encryption/encryption_test.o $(TEST_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 
 #-------------------------------------------------

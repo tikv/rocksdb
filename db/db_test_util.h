@@ -29,6 +29,7 @@
 #include "rocksdb/compaction_filter.h"
 #include "rocksdb/convenience.h"
 #include "rocksdb/db.h"
+#include "rocksdb/encryption.h"
 #include "rocksdb/env.h"
 #include "rocksdb/file_system.h"
 #include "rocksdb/filter_policy.h"

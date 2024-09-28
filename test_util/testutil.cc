@@ -37,6 +37,14 @@ void RegisterCustomObjects(int /*argc*/, char** /*argv*/) {}
 namespace ROCKSDB_NAMESPACE {
 namespace test {
 
+#ifdef OPENSSL
+const std::string TestKeyManager::default_key =
+    "\x12\x34\x56\x78\x12\x34\x56\x78\x12\x34\x56\x78\x12\x34\x56\x78\x12\x34"
+    "\x56\x78\x12\x34\x56\x78";
+const std::string TestKeyManager::default_iv =
+    "\xaa\xbb\xcc\xdd\xaa\xbb\xcc\xdd\xaa\xbb\xcc\xdd\xaa\xbb\xcc\xdd";
+#endif
+
 const uint32_t kDefaultFormatVersion = BlockBasedTableOptions().format_version;
 const std::set<uint32_t> kFooterFormatVersionsToTest{
     // Non-legacy, before big footer changes
@@ -738,7 +746,6 @@ int RegisterTestObjects(ObjectLibrary& library, const std::string& arg) {
       });
   return static_cast<int>(library.GetFactoryCount(&num_types));
 }
-
 
 void RegisterTestLibrary(const std::string& arg) {
   static bool registered = false;

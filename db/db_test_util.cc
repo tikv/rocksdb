@@ -71,15 +71,14 @@ DBTestBase::DBTestBase(const std::string path, bool env_do_fsync)
     mem_env_ = MockEnv::Create(base_env, base_env->GetSystemClock());
   }
   if (getenv("ENCRYPTED_ENV")) {
-    std::shared_ptr<EncryptionProvider> provider;
-    std::string provider_id = getenv("ENCRYPTED_ENV");
-    if (provider_id.find("=") == std::string::npos &&
-        !EndsWith(provider_id, "://test")) {
-      provider_id = provider_id + "://test";
-    }
-    EXPECT_OK(EncryptionProvider::CreateFromString(ConfigOptions(), provider_id,
-                                                   &provider));
-    encrypted_env_ = NewEncryptedEnv(mem_env_ ? mem_env_ : base_env, provider);
+#ifdef OPENSSL
+    std::shared_ptr<encryption::KeyManager> key_manager(
+        new test::TestKeyManager);
+    encrypted_env_ = NewKeyManagedEncryptedEnv(Env::Default(), key_manager);
+#else
+    fprintf(stderr, "EncryptedEnv is not available without OpenSSL.");
+    assert(false);
+#endif
   }
   env_ = new SpecialEnv(encrypted_env_ ? encrypted_env_
                                        : (mem_env_ ? mem_env_ : base_env));

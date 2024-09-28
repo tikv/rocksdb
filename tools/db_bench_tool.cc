@@ -42,6 +42,7 @@
 #include "db/db_impl/db_impl.h"
 #include "db/malloc_stats.h"
 #include "db/version_set.h"
+#include "encryption/in_memory_key_manager.h"
 #include "monitoring/histogram.h"
 #include "monitoring/statistics_impl.h"
 #include "options/cf_options.h"
@@ -50,6 +51,7 @@
 #include "rocksdb/cache.h"
 #include "rocksdb/convenience.h"
 #include "rocksdb/db.h"
+#include "rocksdb/encryption.h"
 #include "rocksdb/env.h"
 #include "rocksdb/filter_policy.h"
 #include "rocksdb/memtablerep.h"
@@ -243,9 +245,11 @@ DEFINE_string(
     "operation includes a rare but possible retry in case it got "
     "`Status::Incomplete()`. This happens upon encountering more keys than "
     "have ever been seen by the thread (or eight initially)\n"
-    "\tbackup --  Create a backup of the current DB and verify that a new backup is corrected. "
+    "\tbackup --  Create a backup of the current DB and verify that a new "
+    "backup is corrected. "
     "Rate limit can be specified through --backup_rate_limit\n"
-    "\trestore -- Restore the DB from the latest backup available, rate limit can be specified through --restore_rate_limit\n");
+    "\trestore -- Restore the DB from the latest backup available, rate limit "
+    "can be specified through --restore_rate_limit\n");
 
 DEFINE_int64(num, 1000000, "Number of key/values to place in database");
 
@@ -1049,7 +1053,6 @@ DEFINE_string(
 static enum ROCKSDB_NAMESPACE::CompressionType
     FLAGS_blob_db_compression_type_e = ROCKSDB_NAMESPACE::kSnappyCompression;
 
-
 // Integrated BlobDB options
 DEFINE_bool(
     enable_blob_files,
@@ -1120,7 +1123,6 @@ DEFINE_int32(prepopulate_blob_cache, 0,
              "[Integrated BlobDB] Pre-populate hot/warm blobs in blob cache. 0 "
              "to disable and 1 to insert during flush.");
 
-
 // Secondary DB instance Options
 DEFINE_bool(use_secondary_db, false,
             "Open a RocksDB secondary instance. A primary instance can be "
@@ -1134,13 +1136,11 @@ DEFINE_int32(secondary_update_interval, 5,
              "Secondary instance attempts to catch up with the primary every "
              "secondary_update_interval seconds.");
 
-
 DEFINE_bool(report_bg_io_stats, false,
             "Measure times spents on I/Os while in compactions. ");
 
 DEFINE_bool(use_stderr_info_logger, false,
             "Write info logs to stderr instead of to LOG file. ");
-
 
 DEFINE_string(trace_file, "", "Trace workload to a file. ");
 
@@ -1772,6 +1772,10 @@ DEFINE_bool(build_info, false,
 DEFINE_bool(track_and_verify_wals_in_manifest, false,
             "If true, enable WAL tracking in the MANIFEST");
 
+DEFINE_string(
+    encryption_method, "",
+    "If non-empty, enable encryption with the specific encryption method.");
+
 namespace ROCKSDB_NAMESPACE {
 namespace {
 static Status CreateMemTableRepFactory(
@@ -1962,11 +1966,7 @@ struct DBWithColumnFamilies {
   std::vector<int> cfh_idx_to_prob;  // ith index holds probability of operating
                                      // on cfh[i].
 
-  DBWithColumnFamilies()
-      : db(nullptr)
-        ,
-        opt_txn_db(nullptr)
-  {
+  DBWithColumnFamilies() : db(nullptr), opt_txn_db(nullptr) {
     cfh.clear();
     num_created = 0;
     num_hot = 0;
@@ -1978,8 +1978,7 @@ struct DBWithColumnFamilies {
         opt_txn_db(other.opt_txn_db),
         num_created(other.num_created.load()),
         num_hot(other.num_hot),
-        cfh_idx_to_prob(other.cfh_idx_to_prob) {
-  }
+        cfh_idx_to_prob(other.cfh_idx_to_prob) {}
 
   void DeleteDBs() {
     std::for_each(cfh.begin(), cfh.end(),
@@ -8450,7 +8449,6 @@ class Benchmark {
     }
   }
 
-
   void Replay(ThreadState* thread) {
     if (db_.db != nullptr) {
       Replay(thread, &db_);
@@ -8538,7 +8536,6 @@ class Benchmark {
     assert(s.ok());
     delete backup_engine;
   }
-
 };
 
 int db_bench_tool(int argc, char** argv) {
@@ -8652,6 +8649,31 @@ int db_bench_tool(int argc, char** argv) {
             "settable\n");
     exit(1);
   }
+
+#ifdef OPENSSL
+  if (!FLAGS_encryption_method.empty()) {
+    ROCKSDB_NAMESPACE::encryption::EncryptionMethod method =
+        ROCKSDB_NAMESPACE::encryption::EncryptionMethod::kUnknown;
+    if (!strcasecmp(FLAGS_encryption_method.c_str(), "AES128CTR")) {
+      method = ROCKSDB_NAMESPACE::encryption::EncryptionMethod::kAES128_CTR;
+    } else if (!strcasecmp(FLAGS_encryption_method.c_str(), "AES192CTR")) {
+      method = ROCKSDB_NAMESPACE::encryption::EncryptionMethod::kAES192_CTR;
+    } else if (!strcasecmp(FLAGS_encryption_method.c_str(), "AES256CTR")) {
+      method = ROCKSDB_NAMESPACE::encryption::EncryptionMethod::kAES256_CTR;
+    } else if (!strcasecmp(FLAGS_encryption_method.c_str(), "SM4CTR")) {
+      method = ROCKSDB_NAMESPACE::encryption::EncryptionMethod::kSM4_CTR;
+    }
+    if (method == ROCKSDB_NAMESPACE::encryption::EncryptionMethod::kUnknown) {
+      fprintf(stderr, "Unknown encryption method %s\n",
+              FLAGS_encryption_method.c_str());
+      exit(1);
+    }
+    std::shared_ptr<ROCKSDB_NAMESPACE::encryption::KeyManager> key_manager(
+        new ROCKSDB_NAMESPACE::encryption::InMemoryKeyManager(method));
+    FLAGS_env = ROCKSDB_NAMESPACE::encryption::NewKeyManagedEncryptedEnv(
+        FLAGS_env, key_manager);
+  }
+#endif  // OPENSSL
 
   if (!strcasecmp(FLAGS_compaction_fadvice.c_str(), "NONE")) {
     FLAGS_compaction_fadvice_e = ROCKSDB_NAMESPACE::Options::NONE;
