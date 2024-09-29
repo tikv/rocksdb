@@ -39,8 +39,25 @@ class DBWriteTestUnparameterized : public DBTestBase {
       : DBTestBase("pipelined_write_test", /*env_do_fsync=*/false) {}
 };
 
+TEST_P(DBWriteTest, WriteEmptyBatch) {
+  Options options = GetOptions();
+  options.write_buffer_size = 65536;
+  Reopen(options);
+  WriteOptions write_options;
+  WriteBatch batch;
+  Random rnd(301);
+  // Trigger a flush so that we will enter `WaitForPendingWrites`.
+  for (auto i = 0; i < 10; i++) {
+    batch.Clear();
+    ASSERT_OK(dbfull()->Write(write_options, &batch));
+    ASSERT_OK(batch.Put(std::to_string(i), rnd.RandomString(10240)));
+    ASSERT_OK(dbfull()->Write(write_options, &batch));
+  }
+}
+
 // It is invalid to do sync write while disabling WAL.
 TEST_P(DBWriteTest, SyncAndDisableWAL) {
+  Reopen(GetOptions());
   WriteOptions write_options;
   write_options.sync = true;
   write_options.disableWAL = true;
@@ -780,10 +797,73 @@ TEST_P(DBWriteTest, ConcurrentlyDisabledWAL) {
   ASSERT_LE(bytes_num, 1024 * 100);
 }
 
+TEST_P(DBWriteTest, MultiThreadWrite) {
+  Options options = GetOptions();
+  std::unique_ptr<FaultInjectionTestEnv> mock_env(
+      new FaultInjectionTestEnv(env_));
+  if (!options.enable_multi_batch_write) {
+    return;
+  }
+  constexpr int kNumThreads = 4;
+  constexpr int kNumWrite = 4;
+  constexpr int kNumBatch = 8;
+  constexpr int kBatchSize = 16;
+  options.env = mock_env.get();
+  options.write_buffer_size = 1024 * 128;
+  Reopen(options);
+  std::vector<port::Thread> threads;
+  for (int t = 0; t < kNumThreads; t++) {
+    threads.push_back(port::Thread(
+        [&](int index) {
+          WriteOptions opt;
+          std::vector<WriteBatch> data(kNumBatch);
+          for (int j = 0; j < kNumWrite; j++) {
+            std::vector<WriteBatch*> batches;
+            for (int i = 0; i < kNumBatch; i++) {
+              WriteBatch* batch = &data[i];
+              batch->Clear();
+              for (int k = 0; k < kBatchSize; k++) {
+                batch->Put("key_" + std::to_string(index) + "_" +
+                               std::to_string(j) + "_" + std::to_string(i) +
+                               "_" + std::to_string(k),
+                           "value" + std::to_string(k));
+              }
+              batches.push_back(batch);
+            }
+            dbfull()->MultiBatchWrite(opt, std::move(batches));
+          }
+        },
+        t));
+  }
+  for (int i = 0; i < kNumThreads; i++) {
+    threads[i].join();
+  }
+  ReadOptions opt;
+  for (int t = 0; t < kNumThreads; t++) {
+    std::string value;
+    for (int i = 0; i < kNumWrite; i++) {
+      for (int j = 0; j < kNumBatch; j++) {
+        for (int k = 0; k < kBatchSize; k++) {
+          ASSERT_OK(dbfull()->Get(
+              opt,
+              "key_" + std::to_string(t) + "_" + std::to_string(i) + "_" +
+                  std::to_string(j) + "_" + std::to_string(k),
+              &value));
+          std::string expected_value = "value" + std::to_string(k);
+          ASSERT_EQ(expected_value, value);
+        }
+      }
+    }
+  }
+
+  Close();
+}
+
 INSTANTIATE_TEST_CASE_P(DBWriteTestInstance, DBWriteTest,
                         testing::Values(DBTestBase::kDefault,
                                         DBTestBase::kConcurrentWALWrites,
-                                        DBTestBase::kPipelinedWrite));
+                                        DBTestBase::kPipelinedWrite,
+                                        DBTestBase::kMultiBatchWrite));
 
 }  // namespace ROCKSDB_NAMESPACE
 

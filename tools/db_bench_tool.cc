@@ -1005,6 +1005,9 @@ DEFINE_uint64(fifo_age_for_warm, 0, "age_for_warm for FIFO compaction.");
 // Stacked BlobDB Options
 DEFINE_bool(use_blob_db, false, "[Stacked BlobDB] Open a BlobDB instance.");
 
+DEFINE_bool(use_multi_thread_write, false,
+            "Open a RocksDB with multi thread write pool");
+
 DEFINE_bool(
     blob_db_enable_gc,
     ROCKSDB_NAMESPACE::blob_db::BlobDBOptions().enable_garbage_collection,
@@ -1801,6 +1804,60 @@ static Status CreateMemTableRepFactory(
   }
   return s;
 }
+
+class WriteBatchVec {
+ public:
+  explicit WriteBatchVec(uint32_t max_batch_size)
+      : max_batch_size_(max_batch_size), current_(0) {}
+  ~WriteBatchVec() {
+    for (auto w : batches_) {
+      delete w;
+    }
+  }
+  void Clear() {
+    for (size_t i = 0; i <= current_ && i < batches_.size(); i++) {
+      batches_[i]->Clear();
+    }
+    current_ = 0;
+  }
+
+  Status Put(const Slice& key, const Slice& value) {
+    if (current_ < batches_.size() &&
+        batches_[current_]->Count() < max_batch_size_) {
+      return batches_[current_]->Put(key, value);
+    } else if (current_ + 1 >= batches_.size()) {
+      batches_.push_back(new WriteBatch);
+    }
+    if (current_ + 1 < batches_.size()) {
+      current_ += 1;
+    }
+    return batches_[current_]->Put(key, value);
+  }
+
+  std::vector<WriteBatch*> GetWriteBatch() const {
+    std::vector<WriteBatch*> batches;
+    for (size_t i = 0; i < batches_.size(); i++) {
+      if (i > current_) {
+        break;
+      }
+      batches.push_back(batches_[i]);
+    }
+    return batches;
+  }
+
+  uint32_t Count() const {
+    uint32_t count = 0;
+    for (size_t i = 0; i <= current_ && i < batches_.size(); i++) {
+      count += batches_[i]->Count();
+    }
+    return count;
+  }
+
+ private:
+  uint32_t max_batch_size_;
+  size_t current_;
+  std::vector<WriteBatch*> batches_;
+};
 
 }  // namespace
 
@@ -2733,6 +2790,7 @@ class Benchmark {
   bool use_blob_db_;    // Stacked BlobDB
   bool read_operands_;  // read via GetMergeOperands()
   std::vector<std::string> keys_;
+  bool use_multi_write_;
 
   class ErrorHandlerListener : public EventListener {
    public:
@@ -3205,7 +3263,8 @@ class Benchmark {
         merge_keys_(FLAGS_merge_keys < 0 ? FLAGS_num : FLAGS_merge_keys),
         report_file_operations_(FLAGS_report_file_operations),
         use_blob_db_(FLAGS_use_blob_db),  // Stacked BlobDB
-        read_operands_(false) {
+        read_operands_(false),
+        use_multi_write_(FLAGS_use_multi_thread_write) {
     // use simcache instead of cache
     if (FLAGS_simcache_size >= 0) {
       if (FLAGS_cache_numshardbits >= 1) {
@@ -4844,6 +4903,9 @@ class Benchmark {
               DBWithColumnFamilies* db) {
     uint64_t open_start = FLAGS_report_open_timing ? FLAGS_env->NowNanos() : 0;
     Status s;
+    if (use_multi_write_) {
+      options.enable_multi_batch_write = true;
+    }
     // Open with column families if necessary.
     if (FLAGS_num_column_families > 1) {
       size_t num_hot = FLAGS_num_column_families;
@@ -5107,6 +5169,7 @@ class Benchmark {
     WriteBatch batch(/*reserved_bytes=*/0, /*max_bytes=*/0,
                      FLAGS_write_batch_protection_bytes_per_key,
                      user_timestamp_size_);
+    WriteBatchVec batches(32);
     Status s;
     int64_t bytes = 0;
 
@@ -5241,6 +5304,7 @@ class Benchmark {
       DBWithColumnFamilies* db_with_cfh = SelectDBWithCfh(id);
 
       batch.Clear();
+      batches.Clear();
       int64_t batch_bytes = 0;
 
       for (int64_t j = 0; j < entries_per_batch_; j++) {
@@ -5356,7 +5420,9 @@ class Benchmark {
         } else {
           val = gen.Generate();
         }
-        if (use_blob_db_) {
+        if (use_multi_write_) {
+          batches.Put(key, val);
+        } else if (use_blob_db_) {
           // Stacked BlobDB
           blob_db::BlobDB* blobdb =
               static_cast<blob_db::BlobDB*>(db_with_cfh->db);
@@ -5419,6 +5485,7 @@ class Benchmark {
                 batch.Delete(db_with_cfh->GetCfh(rand_num),
                              expanded_keys[offset]);
               }
+              assert(!use_multi_write_);
             }
           } else {
             GenerateKeyFromInt(begin_num, FLAGS_num, &begin_key);
@@ -5435,6 +5502,7 @@ class Benchmark {
               batch.DeleteRange(db_with_cfh->GetCfh(rand_num), begin_key,
                                 end_key);
             }
+            assert(!use_multi_write_);
           }
         }
       }
@@ -5457,7 +5525,10 @@ class Benchmark {
           ErrorExit();
         }
       }
-      if (!use_blob_db_) {
+      if (use_multi_write_) {
+        s = db_with_cfh->db->MultiBatchWrite(write_options_,
+                                             batches.GetWriteBatch());
+      } else if (!use_blob_db_) {
         // Not stacked BlobDB
         s = db_with_cfh->db->Write(write_options_, &batch);
       }

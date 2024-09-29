@@ -151,6 +151,16 @@ DBOptions SanitizeOptions(const std::string& dbname, const DBOptions& src,
     result.avoid_flush_during_recovery = false;
   }
 
+  // multi thread write do not support two-write-que or write in 2PC
+  if (result.two_write_queues || result.allow_2pc) {
+    result.enable_multi_batch_write = false;
+  }
+
+  if (result.enable_multi_batch_write) {
+    result.enable_pipelined_write = false;
+    result.allow_concurrent_memtable_write = true;
+  }
+
   ImmutableDBOptions immutable_db_options(result);
   if (!immutable_db_options.IsWalDirSameAsDBPath()) {
     // Either the WAL dir and db_paths[0]/db_name are not the same, or we
@@ -1290,7 +1300,7 @@ Status DBImpl::RecoverLogFiles(const std::vector<uint64_t>& wal_numbers,
       bool has_valid_writes = false;
       status = WriteBatchInternal::InsertInto(
           batch_to_use, column_family_memtables_.get(), &flush_scheduler_,
-          &trim_history_scheduler_, true, wal_number, this,
+          &trim_history_scheduler_, true, wal_number, 0, this,
           false /* concurrent_memtable_writes */, next_sequence,
           &has_valid_writes, seq_per_batch_, batch_per_txn_);
       MaybeIgnoreError(&status);
@@ -2229,7 +2239,6 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
     sfm->ReserveDiskBuffer(max_write_buffer_size,
                            impl->immutable_db_options_.db_paths[0].path);
   }
-
 
   if (s.ok()) {
     ROCKS_LOG_HEADER(impl->immutable_db_options_.info_log, "DB pointer %p",

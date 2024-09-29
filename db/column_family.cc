@@ -1515,6 +1515,13 @@ Status ColumnFamilyData::ValidateOptions(
       }
     }
   }
+
+  if (db_options.enable_multi_batch_write &&
+      cf_options.max_successive_merges > 0) {
+    return Status::NotSupported(
+        "Multi thread write is only supported with no successive merges");
+  }
+
   return s;
 }
 
