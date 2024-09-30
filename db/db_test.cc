@@ -36,6 +36,7 @@
 #include "db/write_batch_internal.h"
 #include "env/mock_env.h"
 #include "file/filename.h"
+#include "monitoring/statistics_impl.h"
 #include "monitoring/thread_status_util.h"
 #include "port/port.h"
 #include "port/stack_trace.h"
@@ -1160,7 +1161,6 @@ class DelayFilterFactory : public CompactionFilterFactory {
   DBTestBase* db_test;
 };
 }  // anonymous namespace
-
 
 static std::string CompressibleString(Random* rnd, int len) {
   std::string r;
@@ -4351,7 +4351,6 @@ TEST_F(DBTest, ConcurrentMemtableNotSupported) {
   ASSERT_NOK(db_->CreateColumnFamily(cf_options, "name", &handle));
 }
 
-
 TEST_F(DBTest, SanitizeNumThreads) {
   for (int attempt = 0; attempt < 2; attempt++) {
     const size_t kTotalTasks = 8;
@@ -5721,7 +5720,6 @@ TEST_F(DBTest, FileCreationRandomFailure) {
   }
 }
 
-
 TEST_F(DBTest, DynamicMiscOptions) {
   // Test max_sequential_skip_in_iterations
   Options options;
@@ -6101,7 +6099,7 @@ TEST_P(DBTestWithParam, FilterCompactionTimeTest) {
 // CPUMicros() is not supported. See WinClock::CPUMicros().
 TEST_P(DBTestWithParam, CompactionTotalTimeTest) {
   int record_count = 0;
-  class TestStatistics : public StatisticsImpl {
+  class TestStatistics : public StatisticsImpl<> {
    public:
     explicit TestStatistics(int* record_count)
         : StatisticsImpl(nullptr), record_count_(record_count) {}
@@ -7178,7 +7176,6 @@ TEST_F(DBTest, ReusePinnableSlice) {
       1);
 }
 
-
 TEST_F(DBTest, DeletingOldWalAfterDrop) {
   ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->LoadDependency(
       {{"Test:AllowFlushes", "DBImpl::BGWorkFlush"},
@@ -7302,7 +7299,6 @@ TEST_F(DBTest, LargeBlockSizeTest) {
   options.table_factory.reset(NewBlockBasedTableFactory(table_options));
   ASSERT_NOK(TryReopenWithColumnFamilies({"default", "pikachu"}, options));
 }
-
 
 TEST_F(DBTest, CreationTimeOfOldestFile) {
   const int kNumKeysPerFile = 32;

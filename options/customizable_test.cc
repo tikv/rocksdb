@@ -18,6 +18,7 @@
 #include "db/db_test_util.h"
 #include "memory/jemalloc_nodump_allocator.h"
 #include "memory/memkind_kmem_allocator.h"
+#include "monitoring/statistics_impl.h"
 #include "options/options_helper.h"
 #include "options/options_parser.h"
 #include "port/stack_trace.h"
@@ -78,9 +79,7 @@ class TestCustomizable : public Customizable {
  public:
   TestCustomizable(const std::string& name) : name_(name) {}
   // Method to allow CheckedCast to work for this class
-  static const char* kClassName() {
-    return "TestCustomizable";
-  }
+  static const char* kClassName() { return "TestCustomizable"; }
 
   const char* Name() const override { return name_.c_str(); }
   static const char* Type() { return "test.custom"; }
@@ -611,10 +610,9 @@ TEST_F(CustomizableTest, PrepareOptionsTest) {
 
 namespace {
 static std::unordered_map<std::string, OptionTypeInfo> inner_option_info = {
-    {"inner",
-     OptionTypeInfo::AsCustomSharedPtr<TestCustomizable>(
-         0, OptionVerificationType::kNormal, OptionTypeFlags::kStringNameOnly)}
-};
+    {"inner", OptionTypeInfo::AsCustomSharedPtr<TestCustomizable>(
+                  0, OptionVerificationType::kNormal,
+                  OptionTypeFlags::kStringNameOnly)}};
 
 struct InnerOptions {
   static const char* kName() { return "InnerOptions"; }
@@ -939,7 +937,6 @@ TEST_F(CustomizableTest, NoNameTest) {
   ASSERT_EQ(copts->cu, nullptr);
 }
 
-
 TEST_F(CustomizableTest, IgnoreUnknownObjects) {
   ConfigOptions ignore = config_options_;
   std::shared_ptr<TestCustomizable> shared;
@@ -1223,7 +1220,6 @@ TEST_F(CustomizableTest, CreateManagedObjects) {
   ASSERT_EQ(mc1, obj);
 }
 
-
 namespace {
 class TestSecondaryCache : public SecondaryCache {
  public:
@@ -1257,7 +1253,7 @@ class TestSecondaryCache : public SecondaryCache {
   std::string GetPrintableOptions() const override { return ""; }
 };
 
-class TestStatistics : public StatisticsImpl {
+class TestStatistics : public StatisticsImpl<> {
  public:
   TestStatistics() : StatisticsImpl(nullptr) {}
   const char* Name() const override { return kClassName(); }
@@ -1346,8 +1342,6 @@ class DummyFileSystem : public FileSystemWrapper {
   static const char* kClassName() { return "DummyFileSystem"; }
   const char* Name() const override { return kClassName(); }
 };
-
-
 
 class MockTablePropertiesCollectorFactory
     : public TablePropertiesCollectorFactory {
