@@ -51,6 +51,14 @@ ColumnFamilyHandleImpl::ColumnFamilyHandleImpl(
   }
 }
 
+ColumnFamilyHandleImpl::ColumnFamilyHandleImpl(
+    const ColumnFamilyHandleImpl& other)
+    : cfd_(other.cfd_), db_(other.db_), mutex_(other.mutex_) {
+  if (cfd_ != nullptr) {
+    cfd_->Ref();
+  }
+}
+
 ColumnFamilyHandleImpl::~ColumnFamilyHandleImpl() {
   if (cfd_ != nullptr) {
     for (auto& listener : cfd_->ioptions()->listeners) {
