@@ -4959,6 +4959,11 @@ size_t rocksdb_write_buffer_manager_dummy_entries_in_cache_usage(
   return wbm->rep->dummy_entries_in_cache_usage();
 }
 
+size_t rocksdb_write_buffer_manager_flush_size(
+    rocksdb_write_buffer_manager_t* wbm) {
+  return wbm->rep->flush_size();
+}
+
 rocksdb_dbpath_t* rocksdb_dbpath_create(const char* path,
                                         uint64_t target_size) {
   rocksdb_dbpath_t* result = new rocksdb_dbpath_t;

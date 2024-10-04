@@ -2099,8 +2099,6 @@ extern ROCKSDB_LIBRARY_API void rocksdb_write_buffer_manager_destroy(
     rocksdb_write_buffer_manager_t* wbm);
 extern ROCKSDB_LIBRARY_API bool rocksdb_write_buffer_manager_enabled(
     rocksdb_write_buffer_manager_t* wbm);
-extern ROCKSDB_LIBRARY_API bool rocksdb_write_buffer_manager_cost_to_cache(
-    rocksdb_write_buffer_manager_t* wbm);
 extern ROCKSDB_LIBRARY_API size_t
 rocksdb_write_buffer_manager_memory_usage(rocksdb_write_buffer_manager_t* wbm);
 extern ROCKSDB_LIBRARY_API size_t
@@ -2110,11 +2108,7 @@ extern ROCKSDB_LIBRARY_API size_t
 rocksdb_write_buffer_manager_dummy_entries_in_cache_usage(
     rocksdb_write_buffer_manager_t* wbm);
 extern ROCKSDB_LIBRARY_API size_t
-rocksdb_write_buffer_manager_buffer_size(rocksdb_write_buffer_manager_t* wbm);
-extern ROCKSDB_LIBRARY_API void rocksdb_write_buffer_manager_set_buffer_size(
-    rocksdb_write_buffer_manager_t* wbm, size_t new_size);
-extern ROCKSDB_LIBRARY_API void rocksdb_write_buffer_manager_set_allow_stall(
-    rocksdb_write_buffer_manager_t* wbm, bool new_allow_stall);
+rocksdb_write_buffer_manager_flush_size(rocksdb_write_buffer_manager_t* wbm);
 
 /* HyperClockCache */
 

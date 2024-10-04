@@ -202,8 +202,7 @@ class WritableFileWriter {
     TEST_SYNC_POINT_CALLBACK("WritableFileWriter::WritableFileWriter:0",
                              reinterpret_cast<void*>(max_buffer_size_));
     buf_.Alignment(writable_file_->GetRequiredBufferAlignment());
-    // Moved to `Append` to reduce memory usage of unused writer.
-    // buf_.AllocateNewBuffer(std::min((size_t)65536, max_buffer_size_));
+    buf_.AllocateNewBuffer(std::min((size_t)65536, max_buffer_size_));
     std::for_each(listeners.begin(), listeners.end(),
                   [this](const std::shared_ptr<EventListener>& e) {
                     if (e->ShouldBeNotifiedOnFileIO()) {

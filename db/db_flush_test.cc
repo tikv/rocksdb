@@ -740,9 +740,11 @@ class TestFlushListener : public EventListener {
   DBFlushTest* test_;
 };
 
+// Disabled, because of
+// https://github.com/tikv/rocksdb/pull/389/commits/cc433939ed937a82d0a0ccad1280d5907b048654
 TEST_F(
     DBFlushTest,
-    FixUnrecoverableWriteDuringAtomicFlushWaitUntilFlushWouldNotStallWrites) {
+    DISABLED_FixUnrecoverableWriteDuringAtomicFlushWaitUntilFlushWouldNotStallWrites) {
   Options options = CurrentOptions();
   options.atomic_flush = true;
 
