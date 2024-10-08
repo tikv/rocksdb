@@ -41,7 +41,6 @@ get_rocksdb_version(rocksdb_VERSION)
 project(rocksdb
   VERSION ${rocksdb_VERSION}
   DESCRIPTION "An embeddable persistent key-value store for fast storage"
-  HOMEPAGE_URL https://rocksdb.org/
   LANGUAGES CXX C ASM)
 
 if(POLICY CMP0042)
@@ -296,10 +295,45 @@ else()
   endif()
 endif()
 
+option(FORCE_SSE42 "force building with SSE4.2, even when PORTABLE=ON" OFF)
+if(PORTABLE)
+  # MSVC does not need a separate compiler flag to enable SSE4.2; if nmmintrin.h
+  # is available, it is available by default.
+  if(FORCE_SSE42 AND NOT MSVC)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -msse4.2 -mpclmul")
+  endif()
+else()
+  if(MSVC)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /arch:AVX2")
+  else()
+    if(NOT HAVE_POWER8 AND NOT HAS_ARMV8_CRC)
+      set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=native")
+    endif()
+  endif()
+endif()
+
 include(CheckCXXSourceCompiles)
 set(OLD_CMAKE_REQUIRED_FLAGS ${CMAKE_REQUIRED_FLAGS})
 if(NOT MSVC)
   set(CMAKE_REQUIRED_FLAGS "-msse4.2 -mpclmul")
+endif()
+CHECK_CXX_SOURCE_COMPILES("
+#include <cstdint>
+#include <nmmintrin.h>
+#include <wmmintrin.h>
+int main() {
+  volatile uint32_t x = _mm_crc32_u32(0, 0);
+  const auto a = _mm_set_epi64x(0, 0);
+  const auto b = _mm_set_epi64x(0, 0);
+  const auto c = _mm_clmulepi64_si128(a, b, 0x00);
+  auto d = _mm_cvtsi128_si64(c);
+}
+" HAVE_SSE42)
+if(HAVE_SSE42)
+  add_definitions(-DHAVE_SSE42)
+  add_definitions(-DHAVE_PCLMUL)
+elseif(FORCE_SSE42)
+  message(FATAL_ERROR "FORCE_SSE42=ON but unable to compile with SSE4.2 enabled")
 endif()
 
 # Check if -latomic is required or not
