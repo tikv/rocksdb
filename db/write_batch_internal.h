@@ -11,6 +11,7 @@
 #include <array>
 #include <vector>
 
+#include "db/dbformat.h"
 #include "db/flush_scheduler.h"
 #include "db/kv_checksum.h"
 #include "db/trim_history_scheduler.h"
@@ -117,6 +118,9 @@ class WriteBatchInternal {
 
   static Status PutBlobIndex(WriteBatch* batch, uint32_t column_family_id,
                              const Slice& key, const Slice& value);
+
+  static Status PutTitanBlobIndex(WriteBatch* batch, uint32_t column_family_id,
+                                  const Slice& key, const Slice& value);
 
   static Status MarkEndPrepare(WriteBatch* batch, const Slice& xid,
                                const bool write_after_commit = true,

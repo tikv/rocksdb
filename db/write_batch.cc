@@ -131,6 +131,11 @@ struct BatchContentClassifier : public WriteBatch::Handler {
     return Status::OK();
   }
 
+  Status PutTitanBlobIndexCF(uint32_t, const Slice&, const Slice&) override {
+    content_flags |= ContentFlags::HAS_BLOB_INDEX;
+    return Status::OK();
+  }
+
   Status MarkBeginPrepare(bool unprepare) override {
     content_flags |= ContentFlags::HAS_BEGIN_PREPARE;
     if (unprepare) {
@@ -413,11 +418,13 @@ Status ReadRecordFromWriteBatch(Slice* input, char* tag,
       }
       break;
     case kTypeColumnFamilyBlobIndex:
+    case kTypeTitanColumnFamilyBlobIndex:
       if (!GetVarint32(input, column_family)) {
         return Status::Corruption("bad WriteBatch BlobIndex");
       }
       FALLTHROUGH_INTENDED;
     case kTypeBlobIndex:
+    case kTypeTitanBlobIndex:
       if (!GetLengthPrefixedSlice(input, key) ||
           !GetLengthPrefixedSlice(input, value)) {
         return Status::Corruption("bad WriteBatch BlobIndex");
@@ -591,6 +598,15 @@ Status WriteBatchInternal::Iterate(const WriteBatch* wb,
         assert(wb->content_flags_.load(std::memory_order_relaxed) &
                (ContentFlags::DEFERRED | ContentFlags::HAS_BLOB_INDEX));
         s = handler->PutBlobIndexCF(column_family, key, value);
+        if (LIKELY(s.ok())) {
+          found++;
+        }
+        break;
+      case kTypeTitanColumnFamilyBlobIndex:
+      case kTypeTitanBlobIndex:
+        assert(wb->content_flags_.load(std::memory_order_relaxed) &
+               (ContentFlags::DEFERRED | ContentFlags::HAS_BLOB_INDEX));
+        s = handler->PutTitanBlobIndexCF(column_family, key, value);
         if (LIKELY(s.ok())) {
           found++;
         }
@@ -1616,6 +1632,34 @@ Status WriteBatchInternal::PutBlobIndex(WriteBatch* b,
   return save.commit();
 }
 
+Status WriteBatchInternal::PutTitanBlobIndex(WriteBatch* b,
+                                             uint32_t column_family_id,
+                                             const Slice& key,
+                                             const Slice& value) {
+  LocalSavePoint save(b);
+  WriteBatchInternal::SetCount(b, WriteBatchInternal::Count(b) + 1);
+  if (column_family_id == 0) {
+    b->rep_.push_back(static_cast<char>(kTypeTitanBlobIndex));
+  } else {
+    b->rep_.push_back(static_cast<char>(kTypeTitanColumnFamilyBlobIndex));
+    PutVarint32(&b->rep_, column_family_id);
+  }
+  PutLengthPrefixedSlice(&b->rep_, key);
+  PutLengthPrefixedSlice(&b->rep_, value);
+  b->content_flags_.store(b->content_flags_.load(std::memory_order_relaxed) |
+                              ContentFlags::HAS_BLOB_INDEX,
+                          std::memory_order_relaxed);
+  if (b->prot_info_ != nullptr) {
+    // See comment in first `WriteBatchInternal::Put()` overload concerning the
+    // `ValueType` argument passed to `ProtectKVO()`.
+    b->prot_info_->entries_.emplace_back(
+        ProtectionInfo64()
+            .ProtectKVO(key, value, kTypeTitanBlobIndex)
+            .ProtectC(column_family_id));
+  }
+  return save.commit();
+}
+
 Status WriteBatch::PutLogData(const Slice& blob) {
   LocalSavePoint save(this);
   rep_.push_back(static_cast<char>(kTypeLogData));
@@ -1735,6 +1779,10 @@ Status WriteBatch::VerifyChecksum() const {
       case kTypeColumnFamilyBlobIndex:
       case kTypeBlobIndex:
         tag = kTypeBlobIndex;
+        break;
+      case kTypeTitanColumnFamilyBlobIndex:
+      case kTypeTitanBlobIndex:
+        tag = kTypeTitanBlobIndex;
         break;
       case kTypeLogData:
       case kTypeBeginPrepareXID:
@@ -2654,6 +2702,27 @@ class MemTableInserter : public WriteBatch::Handler {
     return ret_status;
   }
 
+  Status PutTitanBlobIndexCF(uint32_t column_family_id, const Slice& key,
+                             const Slice& value) override {
+    const auto* kv_prot_info = NextProtectionInfo();
+    Status ret_status;
+    if (kv_prot_info != nullptr) {
+      // Memtable needs seqno, doesn't need CF ID
+      auto mem_kv_prot_info =
+          kv_prot_info->StripC(column_family_id).ProtectS(sequence_);
+      // Same as PutCF except for value type.
+      ret_status = PutCFImpl(column_family_id, key, value, kTypeTitanBlobIndex,
+                             &mem_kv_prot_info);
+    } else {
+      ret_status = PutCFImpl(column_family_id, key, value, kTypeTitanBlobIndex,
+                             nullptr /* kv_prot_info */);
+    }
+    if (UNLIKELY(ret_status.IsTryAgain())) {
+      DecrementProtectionInfoIdxForTryAgain();
+    }
+    return ret_status;
+  }
+
   void CheckMemtableFull() {
     if (flush_scheduler_ != nullptr) {
       auto* cfd = cf_mems_->current();
@@ -3064,6 +3133,11 @@ class ProtectionInfoUpdater : public WriteBatch::Handler {
   Status PutBlobIndexCF(uint32_t cf, const Slice& key,
                         const Slice& val) override {
     return UpdateProtInfo(cf, key, val, kTypeBlobIndex);
+  }
+
+  Status PutTitanBlobIndexCF(uint32_t cf, const Slice& key,
+                             const Slice& val) override {
+    return UpdateProtInfo(cf, key, val, kTypeTitanBlobIndex);
   }
 
   Status MarkBeginPrepare(bool /* unprepare */) override {

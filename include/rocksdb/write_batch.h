@@ -318,6 +318,12 @@ class WriteBatch : public WriteBatchBase {
       return Status::InvalidArgument("PutBlobIndexCF not implemented");
     }
 
+    virtual Status PutTitanBlobIndexCF(uint32_t /*column_family_id*/,
+                                       const Slice& /*key*/,
+                                       const Slice& /*value*/) {
+      return Status::InvalidArgument("PutTitanBlobIndexCF not implemented");
+    }
+
     // The default implementation of LogData does nothing.
     virtual void LogData(const Slice& blob);
 

@@ -278,8 +278,9 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
     auto type = parsed_key.type;
     // Key matches. Process it
     if ((type == kTypeValue || type == kTypeMerge || type == kTypeBlobIndex ||
-         type == kTypeWideColumnEntity || type == kTypeDeletion ||
-         type == kTypeDeletionWithTimestamp || type == kTypeSingleDeletion) &&
+         type == kTypeTitanBlobIndex || type == kTypeWideColumnEntity ||
+         type == kTypeDeletion || type == kTypeDeletionWithTimestamp ||
+         type == kTypeSingleDeletion) &&
         max_covering_tombstone_seq_ != nullptr &&
         *max_covering_tombstone_seq_ > parsed_key.sequence) {
       // Note that deletion types are also considered, this is for the case
@@ -290,9 +291,10 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
     switch (type) {
       case kTypeValue:
       case kTypeBlobIndex:
+      case kTypeTitanBlobIndex:
       case kTypeWideColumnEntity:
         assert(state_ == kNotFound || state_ == kMerge);
-        if (type == kTypeBlobIndex) {
+        if (type == kTypeBlobIndex || type == kTypeTitanBlobIndex) {
           if (is_blob_index_ == nullptr) {
             // Blob value not supported. Stop.
             state_ = kUnexpectedBlobIndex;
@@ -301,7 +303,8 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
         }
 
         if (is_blob_index_ != nullptr) {
-          *is_blob_index_ = (type == kTypeBlobIndex);
+          *is_blob_index_ =
+              (type == kTypeBlobIndex || type == kTypeTitanBlobIndex);
         }
 
         if (kNotFound == state_) {
@@ -367,7 +370,7 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
 
               push_operand(value_of_default, value_pinner);
             } else {
-              assert(type == kTypeValue);
+              assert(type == kTypeValue || type == kTypeTitanBlobIndex);
               push_operand(value, value_pinner);
             }
           }
@@ -410,7 +413,7 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
               push_operand(value_of_default, value_pinner);
             }
           } else {
-            assert(type == kTypeValue);
+            assert(type == kTypeValue || type == kTypeTitanBlobIndex);
 
             state_ = kFound;
             if (do_merge_) {

@@ -452,7 +452,8 @@ bool DataBlockIter::SeekForGetImpl(const Slice& target) {
       value_type != ValueType::kTypeMerge &&
       value_type != ValueType::kTypeSingleDeletion &&
       value_type != ValueType::kTypeBlobIndex &&
-      value_type != ValueType::kTypeWideColumnEntity) {
+      value_type != ValueType::kTypeWideColumnEntity &&
+      value_type != ValueType::kTypeTitanBlobIndex) {
     SeekImpl(target);
   }
 

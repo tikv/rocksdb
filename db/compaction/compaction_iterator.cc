@@ -229,14 +229,15 @@ bool CompactionIterator::InvokeFilterIfNeeded(bool* need_skip,
   }
 
   if (ikey_.type != kTypeValue && ikey_.type != kTypeBlobIndex &&
-      ikey_.type != kTypeWideColumnEntity && ikey_.type != kTypeDeletion) {
+      ikey_.type != kTypeWideColumnEntity && ikey_.type != kTypeDeletion &&
+      ikey_.type != kTypeTitanBlobIndex) {
     return true;
   }
 
   CompactionFilter::Decision decision =
       CompactionFilter::Decision::kUndetermined;
   CompactionFilter::ValueType value_type = CompactionFilter::ValueType::kValue;
-  if (ikey_.type == kTypeBlobIndex) {
+  if (ikey_.type == kTypeBlobIndex || ikey_.type == kTypeTitanBlobIndex) {
     value_type = CompactionFilter::ValueType::kBlobIndex;
   } else if (ikey_.type == kTypeWideColumnEntity) {
     value_type = CompactionFilter::ValueType::kWideColumnEntity;
@@ -248,7 +249,7 @@ bool CompactionIterator::InvokeFilterIfNeeded(bool* need_skip,
   // to get sequence number.
   assert(compaction_filter_);
   const Slice& filter_key =
-      (ikey_.type != kTypeBlobIndex ||
+      ((ikey_.type != kTypeBlobIndex && ikey_.type != kTypeTitanBlobIndex) ||
        !compaction_filter_->IsStackedBlobDbInternalCompactionFilter())
           ? ikey_.user_key
           : key_;
@@ -621,7 +622,8 @@ void CompactionIterator::NextFromInput() {
       // not compact out.  We will keep this Put, but can drop it's data.
       // (See Optimization 3, below.)
       if (ikey_.type != kTypeValue && ikey_.type != kTypeBlobIndex &&
-          ikey_.type != kTypeWideColumnEntity) {
+          ikey_.type != kTypeWideColumnEntity &&
+          ikey_.type != kTypeTitanBlobIndex) {
         ROCKS_LOG_FATAL(info_log_, "Unexpected key %s for compaction output",
                         ikey_.DebugString(allow_data_in_errors_, true).c_str());
         assert(false);
@@ -635,7 +637,8 @@ void CompactionIterator::NextFromInput() {
         assert(false);
       }
 
-      if (ikey_.type == kTypeBlobIndex || ikey_.type == kTypeWideColumnEntity) {
+      if (ikey_.type == kTypeBlobIndex || ikey_.type == kTypeWideColumnEntity ||
+          ikey_.type == kTypeTitanBlobIndex) {
         ikey_.type = kTypeValue;
         current_key_.UpdateInternalKey(ikey_.sequence, ikey_.type);
       }
@@ -801,7 +804,8 @@ void CompactionIterator::NextFromInput() {
             // happened
             if (next_ikey.type != kTypeValue &&
                 next_ikey.type != kTypeBlobIndex &&
-                next_ikey.type != kTypeWideColumnEntity) {
+                next_ikey.type != kTypeWideColumnEntity &&
+                next_ikey.type != kTypeTitanBlobIndex) {
               ++iter_stats_.num_single_del_mismatch;
             }
 

@@ -39,6 +39,8 @@ static std::unordered_map<std::string, ValueType> value_type_string_map = {
     {"TypeColumnFamilyWideColumnEntity",
      ValueType::kTypeColumnFamilyWideColumnEntity},
     {"TypeTitanBlobIndex", ValueType::kTypeTitanBlobIndex},
+    {"TypeTitanColumnFamilyBlobIndex",
+     ValueType::kTypeTitanColumnFamilyBlobIndex},
 };
 
 std::string KeyVersion::GetTypeName() const {

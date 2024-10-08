@@ -394,6 +394,7 @@ bool DBIter::FindNextUserEntryInternal(bool skipping_saved_key,
           case kTypeValue:
           case kTypeBlobIndex:
           case kTypeWideColumnEntity:
+          case kTypeTitanBlobIndex:
             if (!PrepareValue()) {
               return false;
             }
@@ -405,7 +406,8 @@ bool DBIter::FindNextUserEntryInternal(bool skipping_saved_key,
                                       !iter_.iter()->IsKeyPinned() /* copy */);
             }
 
-            if (ikey_.type == kTypeBlobIndex) {
+            if (ikey_.type == kTypeBlobIndex ||
+                ikey_.type == kTypeTitanBlobIndex) {
               if (!SetBlobValueIfNeeded(ikey_.user_key, iter_.value())) {
                 return false;
               }
@@ -593,7 +595,8 @@ bool DBIter::MergeValuesNewToOld() {
       merge_context_.PushOperand(
           iter_.value(), iter_.iter()->IsValuePinned() /* operand_pinned */);
       PERF_COUNTER_ADD(internal_merge_count, 1);
-    } else if (kTypeBlobIndex == ikey.type) {
+    } else if (kTypeBlobIndex == ikey.type ||
+               kTypeTitanBlobIndex == ikey.type) {
       if (expose_blob_index_) {
         status_ =
             Status::NotSupported("BlobDB does not support merge operator.");
@@ -919,6 +922,7 @@ bool DBIter::FindValueForCurrentKey() {
       case kTypeValue:
       case kTypeBlobIndex:
       case kTypeWideColumnEntity:
+      case kTypeTitanBlobIndex:
         if (iter_.iter()->IsValuePinned()) {
           pinned_value_ = iter_.value();
         } else {
@@ -1004,7 +1008,8 @@ bool DBIter::FindValueForCurrentKey() {
           return false;
         }
         return true;
-      } else if (last_not_merge_type == kTypeBlobIndex) {
+      } else if (last_not_merge_type == kTypeBlobIndex ||
+                 last_not_merge_type == kTypeTitanBlobIndex) {
         if (expose_blob_index_) {
           status_ =
               Status::NotSupported("BlobDB does not support merge operator.");
@@ -1041,6 +1046,7 @@ bool DBIter::FindValueForCurrentKey() {
       SetValueAndColumnsFromPlain(pinned_value_);
 
       break;
+    case kTypeTitanBlobIndex:
     case kTypeBlobIndex:
       if (!SetBlobValueIfNeeded(saved_key_.GetUserKey(), pinned_value_)) {
         return false;
@@ -1143,10 +1149,10 @@ bool DBIter::FindValueForCurrentKeyUsingSeek() {
     saved_timestamp_.assign(ts.data(), ts.size());
   }
   if (ikey.type == kTypeValue || ikey.type == kTypeBlobIndex ||
-      ikey.type == kTypeWideColumnEntity) {
+      ikey.type == kTypeWideColumnEntity || ikey.type == kTypeTitanBlobIndex) {
     assert(iter_.iter()->IsValuePinned());
     pinned_value_ = iter_.value();
-    if (ikey.type == kTypeBlobIndex) {
+    if (ikey.type == kTypeBlobIndex || ikey.type == kTypeTitanBlobIndex) {
       if (!SetBlobValueIfNeeded(ikey.user_key, pinned_value_)) {
         return false;
       }
@@ -1213,7 +1219,8 @@ bool DBIter::FindValueForCurrentKeyUsingSeek() {
       merge_context_.PushOperand(
           iter_.value(), iter_.iter()->IsValuePinned() /* operand_pinned */);
       PERF_COUNTER_ADD(internal_merge_count, 1);
-    } else if (ikey.type == kTypeBlobIndex) {
+    } else if (ikey.type == kTypeBlobIndex ||
+               ikey.type == kTypeTitanBlobIndex) {
       if (expose_blob_index_) {
         status_ =
             Status::NotSupported("BlobDB does not support merge operator.");

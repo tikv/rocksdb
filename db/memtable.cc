@@ -987,12 +987,14 @@ static bool SaveValue(void* arg, const char* entry) {
     }
 
     if ((type == kTypeValue || type == kTypeMerge || type == kTypeBlobIndex ||
-         type == kTypeWideColumnEntity || type == kTypeDeletion ||
-         type == kTypeSingleDeletion || type == kTypeDeletionWithTimestamp) &&
+         type == kTypeTitanBlobIndex || type == kTypeWideColumnEntity ||
+         type == kTypeDeletion || type == kTypeSingleDeletion ||
+         type == kTypeDeletionWithTimestamp) &&
         max_covering_tombstone_seq > seq) {
       type = kTypeRangeDeletion;
     }
     switch (type) {
+      case kTypeTitanBlobIndex:
       case kTypeBlobIndex: {
         if (!s->do_merge) {
           *(s->status) = Status::NotSupported(
