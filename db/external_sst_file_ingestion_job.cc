@@ -3,7 +3,6 @@
 //  COPYING file in the root directory) and Apache 2.0 License
 //  (found in the LICENSE.Apache file in the root directory).
 
-
 #include "db/external_sst_file_ingestion_job.h"
 
 #include <algorithm>
@@ -912,16 +911,7 @@ Status ExternalSstFileIngestionJob::AssignLevelAndSeqnoForIngestedFile(
     if (lvl > 0 && lvl < vstorage->base_level()) {
       continue;
     }
-    if (cfd_->RangeOverlapWithCompaction(
-            file_to_ingest->smallest_internal_key.user_key(),
-            file_to_ingest->largest_internal_key.user_key(), lvl)) {
-      // We must use L0 or any level higher than `lvl` to be able to overwrite
-      // the compaction output keys that we overlap with in this level, We also
-      // need to assign this file a seqno to overwrite the compaction output
-      // keys in level `lvl`
-      overlap_with_db = true;
-      break;
-    } else if (vstorage->NumLevelFiles(lvl) > 0) {
+    if (vstorage->NumLevelFiles(lvl) > 0) {
       bool overlap_with_level = false;
       status = sv->current->OverlapWithLevelIterator(
           ro, env_options_, file_to_ingest->smallest_internal_key.user_key(),
@@ -1120,6 +1110,13 @@ bool ExternalSstFileIngestionJob::IngestedFileFitInLevel(
                                &file_largest_user_key)) {
     // File overlap with another files in this level, we cannot
     // add it to this level
+    return false;
+  }
+
+  if (cfd_->RangeOverlapWithCompaction(file_smallest_user_key,
+                                       file_largest_user_key, level)) {
+    // File overlap with a running compaction output that will be stored
+    // in this level, we cannot add this file to this level
     return false;
   }
 
