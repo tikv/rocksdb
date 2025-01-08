@@ -363,6 +363,13 @@ Status WriteAmpBasedRateLimiter::Tune() {
   std::chrono::microseconds prev_tuned_time = tuned_time_;
   tuned_time_ = std::chrono::microseconds(NowMicrosMonotonic(env_));
   auto duration = tuned_time_ - prev_tuned_time;
+  // To avoid the duration is affected by clock-skew problems, set a compatible
+  // limitation to it.
+  auto duration_limit = std::chrono::microseconds(1000 * 1000 * secs_per_tune_);
+  if (duration < std::chrono::microseconds::zero() ||
+      duration > duration_limit) {
+    duration = duration_limit;
+  }
   auto duration_ms =
       std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
 
