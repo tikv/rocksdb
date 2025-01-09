@@ -369,7 +369,7 @@ Status WriteAmpBasedRateLimiter::Tune() {
   if (duration < std::chrono::microseconds::zero()) {
     duration = duration_limit;
   } else if (duration > duration_limit) {
-    duration = duration_limit * 5;
+    duration = duration_limit * 3;  // max_limitation == 3 * base
   }
   auto duration_ms =
       std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
