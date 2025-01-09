@@ -366,10 +366,12 @@ Status WriteAmpBasedRateLimiter::Tune() {
   // To avoid the duration is affected by clock-skew problems, set a compatible
   // limitation to it.
   auto duration_limit = std::chrono::microseconds(1000 * 1000 * secs_per_tune_);
+  auto max_duration_limit = std::chrono::microseconds(
+      1000 * 1500 * secs_per_tune_);  // max_limitation == 1.5 * base
   if (duration < std::chrono::microseconds::zero()) {
     duration = duration_limit;
-  } else if (duration > duration_limit) {
-    duration = duration_limit * 3;  // max_limitation == 3 * base
+  } else if (duration > max_duration_limit) {
+    duration = max_duration_limit;
   }
   auto duration_ms =
       std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
