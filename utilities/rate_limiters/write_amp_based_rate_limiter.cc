@@ -121,7 +121,7 @@ void WriteAmpBasedRateLimiter::SetAutoTuned(bool auto_tuned) {
 
 void WriteAmpBasedRateLimiter::SetActualBytesPerSecond(
     int64_t bytes_per_second) {
-  rate_bytes_per_sec_ = bytes_per_second;
+  rate_bytes_per_sec_ = bytes_per_second; /* Init: 10GiB*/
   refill_bytes_per_period_.store(
       CalculateRefillBytesPerPeriod(bytes_per_second),
       std::memory_order_relaxed);
@@ -334,13 +334,16 @@ void WriteAmpBasedRateLimiter::Refill() {
 
 int64_t WriteAmpBasedRateLimiter::CalculateRefillBytesPerPeriod(
     int64_t rate_bytes_per_sec) {
+  // Max limit: 9223372036854775807 / 100_000 = 922337203685477.6
   if (std::numeric_limits<int64_t>::max() / rate_bytes_per_sec <
       refill_period_us_) {
     // Avoid unexpected result in the overflow case. The result now is still
     // inaccurate but is a number that is large enough.
-    return std::numeric_limits<int64_t>::max() / 1000000;
+    return std::numeric_limits<int64_t>::max() /
+           1000000; /* == 9223372036854LL*/
   } else {
-    return std::max(kMinRefillBytesPerPeriod,
+    // Init: 10 GiB/s / 10 = 1GiB
+    return std::max(kMinRefillBytesPerPeriod * 1000 * 1000 /* 100 MiB */,
                     rate_bytes_per_sec * refill_period_us_ / 1000000);
   }
 }
@@ -451,8 +454,8 @@ void WriteAmpBasedRateLimiter::PaceUp(bool critical) {
 }
 
 RateLimiter* NewWriteAmpBasedRateLimiter(
-    int64_t rate_bytes_per_sec, int64_t refill_period_us /* = 100 * 1000 */,
-    int32_t fairness /* = 10 */,
+    int64_t rate_bytes_per_sec /* 10GiB */,
+    int64_t refill_period_us /* = 100 * 1000 */, int32_t fairness /* = 10 */,
     RateLimiter::Mode mode /* = RateLimiter::Mode::kWritesOnly */,
     bool auto_tuned /* = false */, int tune_per_sec /* = 1 */,
     size_t smooth_window_size /* = 300 */,
