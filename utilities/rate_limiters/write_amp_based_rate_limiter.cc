@@ -430,7 +430,7 @@ Status WriteAmpBasedRateLimiter::Tune() {
   }
   new_bytes_per_sec += padding + new_bytes_per_sec * percent_delta_ / 100;
   new_bytes_per_sec =
-      std::max(kMinBytesPerSec,
+      std::max(kMinBytesPerSec * 10, /* 100 MiB/s */
                std::min(new_bytes_per_sec,
                         max_bytes_per_sec_.load(std::memory_order_relaxed) -
                             highpri_bytes_sampler_.GetRecentValue()));
