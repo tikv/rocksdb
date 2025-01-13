@@ -195,7 +195,7 @@ void WriteAmpBasedRateLimiter::Request(int64_t bytes, const Env::IOPriority pri,
     if (leader_ == nullptr && IsFrontOfOneQueue(&r)) {
       leader_ = &r;
       int64_t delta = next_refill_us_ - NowMicrosMonotonic(env_);
-      delta = delta > 0 ? delta : 0;
+      delta = delta > 0 ? std::min(delta, refill_period_us_) : 0;
       if (delta == 0) {
         timedout = true;
       } else {
@@ -368,6 +368,7 @@ Status WriteAmpBasedRateLimiter::Tune() {
   auto duration = tuned_time_ - prev_tuned_time;
   // To avoid the duration is affected by clock-skew problems, set a compatible
   // limitation to it.
+  // TODO: if the duration is too long, skip the tune tick.
   auto duration_limit = std::chrono::microseconds(1000 * 1000 * secs_per_tune_);
   auto max_duration_limit = std::chrono::microseconds(
       1000 * 1500 * secs_per_tune_);  // max_limitation == 1.5 * base
