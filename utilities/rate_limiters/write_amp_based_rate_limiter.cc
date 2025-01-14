@@ -369,21 +369,22 @@ Status WriteAmpBasedRateLimiter::Tune() {
       std::chrono::microseconds(secs_per_tune_ * 1000 * 1000) * 7 /
       4;  // 1.75x multiplier
 
+  int64_t prev_bytes_per_sec = GetBytesPerSecond();
+
   std::chrono::microseconds prev_tuned_time = tuned_time_;
   tuned_time_ = std::chrono::microseconds(NowMicrosMonotonic(env_));
   auto duration = tuned_time_ - prev_tuned_time;
-  // Skip tuning if duration is invalid or exceeds max limit:
+  // Use previous rate limiter if duration is invalid or exceeds max limit:
   // (1) negative durations indicate clock skew
   // (2) durations > max_tune_tick_duration_limit are likely due to system
   //     issues or clock skew issues.
   if (duration < std::chrono::microseconds::zero() ||
       duration > max_tune_tick_duration_limit) {
+    SetActualBytesPerSecond(prev_bytes_per_sec);
     return Status::Aborted();
   }
   auto duration_ms =
       std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
-
-  int64_t prev_bytes_per_sec = GetBytesPerSecond();
 
   // This function can be called less frequent than we anticipate when
   // compaction rate is low. Loop through the actual time slice to correct
