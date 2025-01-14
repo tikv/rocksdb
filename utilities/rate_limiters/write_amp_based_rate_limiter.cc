@@ -121,7 +121,7 @@ void WriteAmpBasedRateLimiter::SetAutoTuned(bool auto_tuned) {
 
 void WriteAmpBasedRateLimiter::SetActualBytesPerSecond(
     int64_t bytes_per_second) {
-  rate_bytes_per_sec_ = bytes_per_second; /* Init: 10GiB*/
+  rate_bytes_per_sec_ = bytes_per_second;
   refill_bytes_per_period_.store(
       CalculateRefillBytesPerPeriod(bytes_per_second),
       std::memory_order_relaxed);
@@ -195,6 +195,10 @@ void WriteAmpBasedRateLimiter::Request(int64_t bytes, const Env::IOPriority pri,
     if (leader_ == nullptr && IsFrontOfOneQueue(&r)) {
       leader_ = &r;
       int64_t delta = next_refill_us_ - NowMicrosMonotonic(env_);
+      // Clamp delta between 0 and refill_period_us_:
+      // (1) set negative values to 0
+      // (2) cap maximum wait time to refill_period_us_ to prevent excessive
+      //     delays that could occur due to clock skew.
       delta = delta > 0 ? std::min(delta, refill_period_us_) : 0;
       if (delta == 0) {
         timedout = true;
@@ -334,16 +338,13 @@ void WriteAmpBasedRateLimiter::Refill() {
 
 int64_t WriteAmpBasedRateLimiter::CalculateRefillBytesPerPeriod(
     int64_t rate_bytes_per_sec) {
-  // Max limit: 9223372036854775807 / 100_000 = 922337203685477.6
   if (std::numeric_limits<int64_t>::max() / rate_bytes_per_sec <
       refill_period_us_) {
     // Avoid unexpected result in the overflow case. The result now is still
     // inaccurate but is a number that is large enough.
-    return std::numeric_limits<int64_t>::max() /
-           1000000; /* == 9223372036854LL*/
+    return std::numeric_limits<int64_t>::max() / 1000000;
   } else {
-    // Init: 10 GiB/s / 10 = 1GiB
-    return std::max(kMinRefillBytesPerPeriod * 1000 * 1000 /* 100 MiB */,
+    return std::max(kMinRefillBytesPerPeriod,
                     rate_bytes_per_sec * refill_period_us_ / 1000000);
   }
 }
@@ -362,20 +363,22 @@ Status WriteAmpBasedRateLimiter::Tune() {
   // lower bound for write amplification estimation
   const int kRatioLower = 10;
   const int kPercentDeltaMax = 6;
+  const auto millis_per_tune = 1000 * secs_per_tune_;
+  // Define the max limit of tick duration limits to handle clock skew.
+  const auto max_tune_tick_duration_limit =
+      std::chrono::microseconds(secs_per_tune_ * 1000 * 1000) * 7 /
+      4;  // 1.75x multiplier
 
   std::chrono::microseconds prev_tuned_time = tuned_time_;
   tuned_time_ = std::chrono::microseconds(NowMicrosMonotonic(env_));
   auto duration = tuned_time_ - prev_tuned_time;
-  // To avoid the duration is affected by clock-skew problems, set a compatible
-  // limitation to it.
-  // TODO: if the duration is too long, skip the tune tick.
-  auto duration_limit = std::chrono::microseconds(1000 * 1000 * secs_per_tune_);
-  auto max_duration_limit = std::chrono::microseconds(
-      1000 * 1500 * secs_per_tune_);  // max_limitation == 1.5 * base
-  if (duration < std::chrono::microseconds::zero()) {
-    duration = duration_limit;
-  } else if (duration > max_duration_limit) {
-    duration = max_duration_limit;
+  // Skip tuning if duration is invalid or exceeds max limit:
+  // (1) negative durations indicate clock skew
+  // (2) durations > max_tune_tick_duration_limit are likely due to system
+  //     issues or clock skew issues.
+  if (duration < std::chrono::microseconds::zero() ||
+      duration > max_tune_tick_duration_limit) {
+    return Status::Aborted();
   }
   auto duration_ms =
       std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
@@ -385,8 +388,8 @@ Status WriteAmpBasedRateLimiter::Tune() {
   // This function can be called less frequent than we anticipate when
   // compaction rate is low. Loop through the actual time slice to correct
   // the estimation.
-  auto millis_per_tune = 1000 * secs_per_tune_;
-  for (uint32_t i = 0; i < duration_ms / millis_per_tune; i++) {
+  auto sampling_count = duration_ms / millis_per_tune;
+  for (uint32_t i = 0; i < sampling_count; i++) {
     bytes_sampler_.AddSample(duration_bytes_through_ * 1000 / duration_ms);
     highpri_bytes_sampler_.AddSample(duration_highpri_bytes_through_ * 1000 /
                                      duration_ms);
@@ -431,7 +434,7 @@ Status WriteAmpBasedRateLimiter::Tune() {
   }
   new_bytes_per_sec += padding + new_bytes_per_sec * percent_delta_ / 100;
   new_bytes_per_sec =
-      std::max(kMinBytesPerSec * 10, /* 100 MiB/s */
+      std::max(kMinBytesPerSec,
                std::min(new_bytes_per_sec,
                         max_bytes_per_sec_.load(std::memory_order_relaxed) -
                             highpri_bytes_sampler_.GetRecentValue()));
@@ -455,7 +458,7 @@ void WriteAmpBasedRateLimiter::PaceUp(bool critical) {
 }
 
 RateLimiter* NewWriteAmpBasedRateLimiter(
-    int64_t rate_bytes_per_sec /* 10GiB */,
+    int64_t rate_bytes_per_sec /* = 10GiB */,
     int64_t refill_period_us /* = 100 * 1000 */, int32_t fairness /* = 10 */,
     RateLimiter::Mode mode /* = RateLimiter::Mode::kWritesOnly */,
     bool auto_tuned /* = false */, int tune_per_sec /* = 1 */,

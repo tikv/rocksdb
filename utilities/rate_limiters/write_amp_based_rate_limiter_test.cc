@@ -79,6 +79,12 @@ TEST_F(WriteAmpBasedRateLimiterTest, AutoTune) {
   limiter.Request(1000 /* bytes */, Env::IO_LOW, nullptr /* stats */,
                   RateLimiter::OpType::kWrite);
   ASSERT_EQ(10485760, limiter.GetBytesPerSecond());
+  // If there exists clock skew issues, the next Tune()
+  // should be skpped.
+  thread_env->SleepForMicroseconds(2000 * 1000);
+  limiter.Request(1000 /* bytes */, Env::IO_LOW, nullptr /* stats */,
+                  RateLimiter::OpType::kWrite);
+  ASSERT_EQ(10485760, limiter.GetBytesPerSecond());
   // TODO: add more logic for auto-tune
 }
 
