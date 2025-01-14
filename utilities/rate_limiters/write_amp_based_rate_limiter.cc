@@ -374,13 +374,13 @@ Status WriteAmpBasedRateLimiter::Tune() {
   std::chrono::microseconds prev_tuned_time = tuned_time_;
   tuned_time_ = std::chrono::microseconds(NowMicrosMonotonic(env_));
   auto duration = tuned_time_ - prev_tuned_time;
-  // Use previous rate limiter if duration is invalid or exceeds max limit:
+  // Use max rate limiter if duration is invalid or exceeds max limit:
   // (1) negative durations indicate clock skew
   // (2) durations > max_tune_tick_duration_limit are likely due to system
   //     issues or clock skew issues.
   if (duration < std::chrono::microseconds::zero() ||
       duration > max_tune_tick_duration_limit) {
-    SetActualBytesPerSecond(prev_bytes_per_sec);
+    SetActualBytesPerSecond(max_bytes_per_sec_.load(std::memory_order_relaxed));
     return Status::Aborted();
   }
   auto duration_ms =
