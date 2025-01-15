@@ -369,8 +369,6 @@ Status WriteAmpBasedRateLimiter::Tune() {
       std::chrono::microseconds(secs_per_tune_ * 1000 * 1000) * 7 /
       4;  // 1.75x multiplier
 
-  int64_t prev_bytes_per_sec = GetBytesPerSecond();
-
   std::chrono::microseconds prev_tuned_time = tuned_time_;
   tuned_time_ = std::chrono::microseconds(NowMicrosMonotonic(env_));
   auto duration = tuned_time_ - prev_tuned_time;
@@ -386,6 +384,7 @@ Status WriteAmpBasedRateLimiter::Tune() {
   auto duration_ms =
       std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
 
+  int64_t prev_bytes_per_sec = GetBytesPerSecond();
   // This function can be called less frequent than we anticipate when
   // compaction rate is low. Loop through the actual time slice to correct
   // the estimation.
