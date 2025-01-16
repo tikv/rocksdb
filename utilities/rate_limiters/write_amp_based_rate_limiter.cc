@@ -369,20 +369,22 @@ Status WriteAmpBasedRateLimiter::Tune() {
       std::chrono::microseconds(secs_per_tune_ * 1000 * 1000) * 7 /
       4;  // 1.75x multiplier
 
-  std::chrono::microseconds prev_tuned_time = tuned_time_;
+  const std::chrono::microseconds prev_tuned_time = tuned_time_;
   tuned_time_ = std::chrono::microseconds(NowMicrosMonotonic(env_));
-  auto duration = tuned_time_ - prev_tuned_time;
-  // Use max rate limiter if duration is invalid or exceeds max limit:
-  // (1) negative durations indicate clock skew
-  // (2) durations > max_tune_tick_duration_limit are likely due to system
-  //     issues or clock skew issues.
-  if (duration < std::chrono::microseconds::zero() ||
-      duration > max_tune_tick_duration_limit) {
+  // Validate tuning interval to detect system anomalies:
+  // (1) tuned_time_ < prev_tuned_time: Clock moved backwards (clock skew)
+  // (2) Interval > max_tune_tick_duration_limit: System stall or severe clock
+  // skew
+  if (tuned_time_ <= prev_tuned_time ||
+      tuned_time_ >= prev_tuned_time + max_tune_tick_duration_limit) {
+    // Fall back to max rate limiter for safety if duration is invalid or
+    // exceeds max limit.
     SetActualBytesPerSecond(max_bytes_per_sec_.load(std::memory_order_relaxed));
     return Status::Aborted();
   }
-  auto duration_ms =
-      std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+  auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                         tuned_time_ - prev_tuned_time)
+                         .count();
 
   int64_t prev_bytes_per_sec = GetBytesPerSecond();
   // This function can be called less frequent than we anticipate when
