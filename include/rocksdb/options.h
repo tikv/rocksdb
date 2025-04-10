@@ -2095,6 +2095,9 @@ struct IngestExternalFileOptions {
   //
   // ingest_behind takes precedence over fail_if_not_bottommost_level.
   bool fail_if_not_bottommost_level = false;
+  // Set to TRUE if user wants to allow writes to the DB during ingestion.
+  // User must ensure no writes overlap with the ingested data.
+  bool allow_write = false;
 };
 
 enum TraceFilterType : uint64_t {
