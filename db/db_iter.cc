@@ -406,8 +406,7 @@ bool DBIter::FindNextUserEntryInternal(bool skipping_saved_key,
                                       !iter_.iter()->IsKeyPinned() /* copy */);
             }
 
-            if (ikey_.type == kTypeBlobIndex ||
-                ikey_.type == kTypeTitanBlobIndex) {
+            if (ikey_.type == kTypeBlobIndex) {
               if (!SetBlobValueIfNeeded(ikey_.user_key, iter_.value())) {
                 return false;
               }
@@ -419,7 +418,8 @@ bool DBIter::FindNextUserEntryInternal(bool skipping_saved_key,
                 return false;
               }
             } else {
-              assert(ikey_.type == kTypeValue);
+              assert(ikey_.type == kTypeValue ||
+                     ikey_.type == kTypeTitanBlobIndex);
               SetValueAndColumnsFromPlain(iter_.value());
             }
 
