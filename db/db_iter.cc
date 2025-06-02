@@ -422,7 +422,7 @@ bool DBIter::FindNextUserEntryInternal(bool skipping_saved_key,
               // should not go through SetBlobValueIfNeeded().
               // Even though Titan bypasses the real blob index evaluation
               // by propagating expose_blob_index_.option. This is to prevent
-              // TiKV, that directly uses RocksDB, from trying to evluate the
+              // TiKV, that directly uses RocksDB, from trying to evaluate the
               // orphaned blob indices after Titan is disabled.
               assert(ikey_.type == kTypeValue ||
                      ikey_.type == kTypeTitanBlobIndex);
