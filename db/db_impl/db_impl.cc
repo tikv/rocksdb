@@ -3237,7 +3237,7 @@ void DBImpl::ReleaseSnapshot(const Snapshot* s) {
     return;
   }
   const SnapshotImpl* casted_s = reinterpret_cast<const SnapshotImpl*>(s);
-  { snapshots_.Delete(casted_s); }
+  snapshots_.Delete(casted_s);
   delete casted_s;
 }
 
