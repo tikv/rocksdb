@@ -1823,7 +1823,7 @@ bool BlobDBImpl::VisibleToActiveSnapshot(
   {
     auto& snapshots = db_impl_->snapshots();
     if (!snapshots.empty()) {
-      oldest_snapshot = snapshots.oldest()->GetSequenceNumber();
+      oldest_snapshot = snapshots.GetOldest();
     }
   }
   bool visible = oldest_snapshot < obsolete_sequence;

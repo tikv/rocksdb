@@ -1638,6 +1638,54 @@ void DBImpl::BackgroundCallPurge() {
 }
 
 namespace {
+using CfdList = autovector<ColumnFamilyData*, 2>;
+bool CfdListContains(const CfdList& list, ColumnFamilyData* cfd) {
+  for (const ColumnFamilyData* t : list) {
+    if (t == cfd) {
+      return true;
+    }
+  }
+  return false;
+}
+}  //  namespace
+
+void DBImpl::BackgroundCallBottommostFilesUpdate(uint64_t oldest_snapshot) {
+  if (oldest_snapshot <= bottommost_files_mark_threshold_.load(std::memory_order_acquire)) {
+    // No need to update bottommost files if the oldest snapshot is not older
+    // than the threshold.
+    return;
+  }
+  
+  InstrumentedMutexLock l(&mutex_);
+  CfdList cf_scheduled;
+  for (auto* cfd : *versions_->GetColumnFamilySet()) {
+    cfd->current()->storage_info()->UpdateOldestSnapshot(oldest_snapshot);
+    if (!cfd->current()
+             ->storage_info()
+             ->BottommostFilesMarkedForCompaction()
+             .empty()) {
+      SchedulePendingCompaction(cfd);
+      MaybeScheduleFlushOrCompaction();
+      cf_scheduled.push_back(cfd);
+    }
+  }
+
+  // Calculate a new threshold, skipping those CFs where compactions are
+  // scheduled. We do not do the same pass as the previous loop because
+  // mutex might be unlocked during the loop, making the result inaccurate.
+  SequenceNumber new_bottommost_files_mark_threshold = kMaxSequenceNumber;
+  for (auto* cfd : *versions_->GetColumnFamilySet()) {
+    if (CfdListContains(cf_scheduled, cfd)) {
+      continue;
+    }
+    new_bottommost_files_mark_threshold = std::min(
+        new_bottommost_files_mark_threshold,
+        cfd->current()->storage_info()->bottommost_files_mark_threshold());
+  }
+  bottommost_files_mark_threshold_.store(new_bottommost_files_mark_threshold, std::memory_order_release);
+}
+
+namespace {
 struct IterState {
   IterState(DBImpl* _db, InstrumentedMutex* _mu, SuperVersion* _super_version,
             bool _background_purge)
@@ -3211,6 +3259,7 @@ const Snapshot* DBImpl::GetSnapshotForWriteConflictBoundary() {
 
 SnapshotImpl* DBImpl::GetSnapshotImpl(bool is_write_conflict_boundary,
                                       bool _lock) {
+  (void)_lock;  // Suppress unused parameter warning
   int64_t unix_time = 0;
   immutable_db_options_.clock->GetCurrentTime(&unix_time)
       .PermitUncheckedError();  // Ignore error
@@ -3229,6 +3278,10 @@ SnapshotImpl* DBImpl::GetSnapshotImpl(bool is_write_conflict_boundary,
   return snapshot;
 }
 
+namespace {
+using CfdList = autovector<ColumnFamilyData*, 2>;
+}  //  namespace
+
 void DBImpl::ReleaseSnapshot(const Snapshot* s) {
   if (s == nullptr) {
     // DBImpl::GetSnapshot() can return nullptr when snapshot
@@ -3237,7 +3290,27 @@ void DBImpl::ReleaseSnapshot(const Snapshot* s) {
     return;
   }
   const SnapshotImpl* casted_s = reinterpret_cast<const SnapshotImpl*>(s);
-  snapshots_.Delete(casted_s);
+  {
+    snapshots_.Delete(casted_s);
+    uint64_t oldest_snapshot;
+    if (snapshots_.empty()) {
+      if (last_seq_same_as_publish_seq_) {
+        oldest_snapshot = versions_->LastSequence();
+      } else {
+        oldest_snapshot = versions_->LastPublishedSequence();
+      }
+    } else {
+      oldest_snapshot = snapshots_.GetOldest();
+    }
+    // Avoid to go through every column family by checking a global threshold
+    // first.
+    if (oldest_snapshot > bottommost_files_mark_threshold_.load(std::memory_order_acquire)) {
+      // Schedule the bottommost files update work to run in background
+      BottommostFilesUpdateArg* arg = new BottommostFilesUpdateArg{this, oldest_snapshot};
+      env_->Schedule(&DBImpl::BGWorkBottommostFilesUpdate, arg, 
+                     Env::Priority::LOW, nullptr);
+    }
+  }
   delete casted_s;
 }
 

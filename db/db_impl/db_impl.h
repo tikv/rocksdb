@@ -1642,6 +1642,12 @@ class DBImpl : public DB {
     Env::Priority compaction_pri_;
   };
 
+  struct BottommostFilesUpdateArg {
+    // caller retains ownership of `db`.
+    DBImpl* db;
+    uint64_t oldest_snapshot;
+  };
+
   // Initialize the built-in column family for persistent stats. Depending on
   // whether on-disk persistent stats have been enabled before, it may either
   // create a new column family and column family handle or just a column family
@@ -1916,12 +1922,14 @@ class DBImpl : public DB {
   static void BGWorkBottomCompaction(void* arg);
   static void BGWorkFlush(void* arg);
   static void BGWorkPurge(void* arg);
+  static void BGWorkBottommostFilesUpdate(void* arg);
   static void UnscheduleCompactionCallback(void* arg);
   static void UnscheduleFlushCallback(void* arg);
   void BackgroundCallCompaction(PrepickedCompaction* prepicked_compaction,
                                 Env::Priority thread_pri);
   void BackgroundCallFlush(Env::Priority thread_pri);
   void BackgroundCallPurge();
+  void BackgroundCallBottommostFilesUpdate(uint64_t oldest_snapshot);
   Status BackgroundCompaction(bool* madeProgress, JobContext* job_context,
                               LogBuffer* log_buffer,
                               PrepickedCompaction* prepicked_compaction,
@@ -2454,7 +2462,7 @@ class DBImpl : public DB {
 
   // The min threshold to triggere bottommost compaction for removing
   // garbages, among all column families.
-  SequenceNumber bottommost_files_mark_threshold_ = kMaxSequenceNumber;
+  std::atomic<SequenceNumber> bottommost_files_mark_threshold_{kMaxSequenceNumber};
 
   LogsWithPrepTracker logs_with_prep_tracker_;
 

@@ -2755,6 +2755,14 @@ void DBImpl::BGWorkBottomCompaction(void* arg) {
   delete prepicked_compaction;
 }
 
+void DBImpl::BGWorkBottommostFilesUpdate(void* arg) {
+  BottommostFilesUpdateArg bfua = *(reinterpret_cast<BottommostFilesUpdateArg*>(arg));
+  delete reinterpret_cast<BottommostFilesUpdateArg*>(arg);
+  IOSTATS_SET_THREAD_POOL_ID(Env::Priority::LOW);
+  static_cast_with_check<DBImpl>(bfua.db)->BackgroundCallBottommostFilesUpdate(
+      bfua.oldest_snapshot);
+}
+
 void DBImpl::BGWorkPurge(void* db) {
   IOSTATS_SET_THREAD_POOL_ID(Env::Priority::HIGH);
   TEST_SYNC_POINT("DBImpl::BGWorkPurge:start");
@@ -3794,12 +3802,13 @@ void DBImpl::InstallSuperVersionAndScheduleWork(
   // compaction may already be released here. But assuming there will always be
   // newer snapshot created and released frequently, the compaction will be
   // triggered soon anyway.
-  bottommost_files_mark_threshold_ = kMaxSequenceNumber;
+  SequenceNumber new_threshold = kMaxSequenceNumber;
   for (auto* my_cfd : *versions_->GetColumnFamilySet()) {
-    bottommost_files_mark_threshold_ = std::min(
-        bottommost_files_mark_threshold_,
+    new_threshold = std::min(
+        new_threshold,
         my_cfd->current()->storage_info()->bottommost_files_mark_threshold());
   }
+  bottommost_files_mark_threshold_.store(new_threshold, std::memory_order_relaxed);
 
   // Whenever we install new SuperVersion, we might need to issue new flushes or
   // compactions.

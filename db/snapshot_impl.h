@@ -47,7 +47,16 @@ class SnapshotImpl : public Snapshot {
 };
 
 class SnapshotList {
- public:
+  private:
+    SnapshotImpl* oldest() const {
+      assert(!empty(false));
+      return list_.next_;
+    }
+    SnapshotImpl* newest() const {
+      assert(!empty(false));
+      return list_.prev_;
+    }
+  public:
   SnapshotList() {
     list_.prev_ = &list_;
     list_.next_ = &list_;
@@ -69,14 +78,6 @@ class SnapshotList {
     } else {
       return list_.next_ == &list_;
     }
-  }
-  SnapshotImpl* oldest() const {
-    assert(!empty(false));
-    return list_.next_;
-  }
-  SnapshotImpl* newest() const {
-    assert(!empty(false));
-    return list_.prev_;
   }
 
   SnapshotImpl* New(SnapshotImpl* s, SequenceNumber seq, uint64_t unix_time,
@@ -152,12 +153,20 @@ class SnapshotList {
   }
 
   // get the sequence number of the most recent snapshot
-  SequenceNumber GetNewest() {
+  SequenceNumber GetNewest() const {
     MutexLock l(&mutex_);
     if (empty(false)) {
       return 0;
     }
     return newest()->number_;
+  }
+
+  SequenceNumber GetOldest() const {
+    MutexLock l(&mutex_);
+    if (empty(false)) {
+      return 0;
+    }
+    return oldest()->number_;
   }
 
   int64_t GetOldestSnapshotTime() const {
