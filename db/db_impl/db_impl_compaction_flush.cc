@@ -2756,7 +2756,8 @@ void DBImpl::BGWorkBottomCompaction(void* arg) {
 }
 
 void DBImpl::BGWorkBottommostFilesUpdate(void* arg) {
-  BottommostFilesUpdateArg bfua = *(reinterpret_cast<BottommostFilesUpdateArg*>(arg));
+  BottommostFilesUpdateArg bfua =
+      *(reinterpret_cast<BottommostFilesUpdateArg*>(arg));
   delete reinterpret_cast<BottommostFilesUpdateArg*>(arg);
   IOSTATS_SET_THREAD_POOL_ID(Env::Priority::LOW);
   static_cast_with_check<DBImpl>(bfua.db)->BackgroundCallBottommostFilesUpdate(
@@ -3808,7 +3809,8 @@ void DBImpl::InstallSuperVersionAndScheduleWork(
         new_threshold,
         my_cfd->current()->storage_info()->bottommost_files_mark_threshold());
   }
-  bottommost_files_mark_threshold_.store(new_threshold, std::memory_order_relaxed);
+  bottommost_files_mark_threshold_.store(new_threshold,
+                                         std::memory_order_relaxed);
 
   // Whenever we install new SuperVersion, we might need to issue new flushes or
   // compactions.

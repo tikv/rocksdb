@@ -11,9 +11,9 @@
 #include <vector>
 
 #include "db/dbformat.h"
+#include "port/port.h"
 #include "rocksdb/db.h"
 #include "util/mutexlock.h"
-#include "port/port.h"
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -47,16 +47,17 @@ class SnapshotImpl : public Snapshot {
 };
 
 class SnapshotList {
-  private:
-    SnapshotImpl* oldest() const {
-      assert(!empty(false));
-      return list_.next_;
-    }
-    SnapshotImpl* newest() const {
-      assert(!empty(false));
-      return list_.prev_;
-    }
-  public:
+ private:
+  SnapshotImpl* oldest() const {
+    assert(!empty(false));
+    return list_.next_;
+  }
+  SnapshotImpl* newest() const {
+    assert(!empty(false));
+    return list_.prev_;
+  }
+
+ public:
   SnapshotList() {
     list_.prev_ = &list_;
     list_.next_ = &list_;

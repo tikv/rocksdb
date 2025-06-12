@@ -2462,7 +2462,8 @@ class DBImpl : public DB {
 
   // The min threshold to triggere bottommost compaction for removing
   // garbages, among all column families.
-  std::atomic<SequenceNumber> bottommost_files_mark_threshold_{kMaxSequenceNumber};
+  std::atomic<SequenceNumber> bottommost_files_mark_threshold_{
+      kMaxSequenceNumber};
 
   LogsWithPrepTracker logs_with_prep_tracker_;
 

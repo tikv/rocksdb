@@ -1650,12 +1650,13 @@ bool CfdListContains(const CfdList& list, ColumnFamilyData* cfd) {
 }  //  namespace
 
 void DBImpl::BackgroundCallBottommostFilesUpdate(uint64_t oldest_snapshot) {
-  if (oldest_snapshot <= bottommost_files_mark_threshold_.load(std::memory_order_acquire)) {
+  if (oldest_snapshot <=
+      bottommost_files_mark_threshold_.load(std::memory_order_acquire)) {
     // No need to update bottommost files if the oldest snapshot is not older
     // than the threshold.
     return;
   }
-  
+
   InstrumentedMutexLock l(&mutex_);
   CfdList cf_scheduled;
   for (auto* cfd : *versions_->GetColumnFamilySet()) {
@@ -1682,7 +1683,8 @@ void DBImpl::BackgroundCallBottommostFilesUpdate(uint64_t oldest_snapshot) {
         new_bottommost_files_mark_threshold,
         cfd->current()->storage_info()->bottommost_files_mark_threshold());
   }
-  bottommost_files_mark_threshold_.store(new_bottommost_files_mark_threshold, std::memory_order_release);
+  bottommost_files_mark_threshold_.store(new_bottommost_files_mark_threshold,
+                                         std::memory_order_release);
 }
 
 namespace {
@@ -3304,10 +3306,12 @@ void DBImpl::ReleaseSnapshot(const Snapshot* s) {
     }
     // Avoid to go through every column family by checking a global threshold
     // first.
-    if (oldest_snapshot > bottommost_files_mark_threshold_.load(std::memory_order_acquire)) {
+    if (oldest_snapshot >
+        bottommost_files_mark_threshold_.load(std::memory_order_acquire)) {
       // Schedule the bottommost files update work to run in background
-      BottommostFilesUpdateArg* arg = new BottommostFilesUpdateArg{this, oldest_snapshot};
-      env_->Schedule(&DBImpl::BGWorkBottommostFilesUpdate, arg, 
+      BottommostFilesUpdateArg* arg =
+          new BottommostFilesUpdateArg{this, oldest_snapshot};
+      env_->Schedule(&DBImpl::BGWorkBottommostFilesUpdate, arg,
                      Env::Priority::LOW, nullptr);
     }
   }
