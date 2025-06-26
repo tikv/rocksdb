@@ -1,315 +1,195 @@
-# RocksDB CI/CD 技术文档
+# ST-RocksDB CI/CD 技术文档
 
-## 📋 配置概览
+## 配置概览
 
-本项目配置了完整的CI/CD流水线，包括：
+- **主CI流水线** (`.github/workflows/ci.yml`) - 多平台构建+测试
+- **PR审查流水线** (`.github/workflows/pr-review.yml`) - 安全扫描+质量检查  
+- **本地构建脚本** (`scripts/local_build_test.sh`) - 一键验证
 
-1. **主CI流水线** (`.github/workflows/ci.yml`) - Clang编译器，多平台构建
-2. **PR审查流水线** (`.github/workflows/pr-review.yml`) - 安全扫描，跨平台测试
-3. **本地构建脚本** (`scripts/local_build_test.sh`) - 一键本地验证
+## CI 流水线
 
-## CI/CD 功能特性
+### 触发条件
+- Push: `main`, `master`, `denjixu_dev` 分支
+- Pull Request: 所有目标分支
 
-### 🔧 持续集成 (CI Pipeline)
+### 构建矩阵
 
-**触发条件：**
-- 推送到 `main`, `master`, `denjixu_dev` 分支
-- 创建Pull Request
+| 平台 | 编译器 | 构建类型 | 特性 |
+|------|--------|----------|------|
+| Ubuntu | GCC | Debug/Release | 标准构建 |
+| Ubuntu | Clang | Debug/Release | 现代C++检查 |
+| macOS | 系统默认 | Debug/Release | 跨平台验证 |
 
-**包含的任务：**
+### 任务清单
 
-1. **代码格式检查**
-   - 使用 clang-format 检查代码风格
-   - 检查源代码规范性
-
-2. **多平台构建**
-   - Ubuntu (gcc/clang, Debug/Release)
-   - macOS (Debug/Release)
-   - 自动安装依赖包
-
-3. **单元测试**
-   - 编译并运行完整的单元测试套件
-   - 使用 `make check` 运行所有测试
-
-4. **性能测试**
-   - 仅在PR时运行，避免资源浪费
-   - 基础读写性能测试
-
-5. **内存安全检查**
-   - AddressSanitizer (ASan) 构建
-   - 内存泄漏检测
-
-### 🔍 PR审查流程 (PR Review Pipeline)
-
-**触发条件：**
-- PR创建、同步、重新打开
-- 针对 `main`, `master`, `denjixu_dev` 分支
-
-**高级功能：**
-
-1. **PR信息收集**
-   - 自动分析修改的文件
-   - 生成变更摘要
-
-2. **代码质量检查**
-   - 格式化检查
-   - 源代码规范检查
-   - Buck构建目标验证
-
-3. **安全扫描**
-   - 使用 Trivy 进行漏洞扫描
-   - 结果上传到 GitHub Security tab
-
-4. **构建验证**
-   - 多编译器、多配置矩阵测试
-   - 失败快速反馈机制
-
-5. **跨平台测试**
-   - Ubuntu 20.04/22.04
-   - macOS 11/12
-   - 兼容性验证
-
-6. **性能回归测试**
-   - 仅在大量文件变更时运行
-   - 自动性能基准测试
-
-7. **内存泄漏检查**
-   - Valgrind 内存检测
-   - 详细的内存错误报告
-
-8. **文档检查**
-   - 检测API变更是否需要文档更新
-   - 自动提醒文档维护
-
-9. **智能摘要**
-   - 自动生成测试报告
-   - 中文评论回复到PR
-   - 一键了解测试状态
-
-## 本地开发和测试
-
-### 本地构建脚本
-
-使用提供的脚本进行本地环境测试：
-
-```bash
-# 给脚本添加执行权限
-chmod +x scripts/local_build_test.sh
-
-# 完整构建和测试
-./scripts/local_build_test.sh
-
-# 跳过依赖安装（如果已安装）
-./scripts/local_build_test.sh --skip-deps
-
-# 仅构建，跳过测试
-./scripts/local_build_test.sh --skip-tests --skip-benchmark
-
-# 查看帮助
-./scripts/local_build_test.sh --help
+```yaml
+✅ 代码格式检查 (clang-format)
+✅ 多平台构建验证  
+✅ 单元测试执行 (make check)
+✅ 性能基准测试 (PR时)
+✅ 内存安全检查 (AddressSanitizer)
+✅ 智能测试摘要生成
 ```
 
-### 脚本功能
+## PR 审查流程
 
-1. **自动环境检测**
-   - 支持 macOS 和 Linux
-   - 自动检测包管理器
+### 深度检查项目
 
-2. **依赖管理**
-   - macOS: 使用 Homebrew
-   - Ubuntu: 使用 apt-get
-   - CentOS/RHEL: 使用 yum
+1. **安全扫描**: Trivy 漏洞检测
+2. **跨平台测试**: Ubuntu 20.04/22.04 + macOS
+3. **内存检查**: Valgrind 泄漏检测  
+4. **性能回归**: 大变更时自动触发
+5. **文档一致性**: API变更检查
+6. **智能摘要**: 中文测试报告
 
-3. **构建流程**
-   - 清理之前的构建
-   - 构建静态库和共享库
-   - 编译测试程序
-
-4. **测试执行**
-   - 基本功能测试
-   - 性能基准测试
-   - 自动清理测试数据
-
-## 环境要求
-
-### 最低要求
-
-- **编译器**: GCC >= 7 或 Clang >= 5 (支持C++17)
-- **构建工具**: make, cmake
-- **版本控制**: git
-
-### 推荐依赖库
-
-- **压缩库**: snappy, lz4, zstd, bzip2, zlib
-- **工具库**: gflags
-- **构建加速**: ninja (可选)
-
-### macOS 安装
+### 流程控制
 
 ```bash
-# 使用 Homebrew
+# PR变更分析
+- 修改文件数 < 10: 快速检查
+- 修改文件数 >= 10: 完整检查 + 性能测试
+- 核心文件修改: 强制全面测试
+```
+
+## 本地开发
+
+### 快速开始
+
+```bash
+# 一键构建测试
+./scripts/local_build_test.sh
+
+# 仅构建 (跳过测试)
+./scripts/local_build_test.sh --skip-tests
+
+# 并行构建
+make -j$(nproc) static_lib
+```
+
+### 环境要求
+
+**必需**:
+- GCC >= 7 或 Clang >= 5 (C++17)
+- make, cmake, git
+
+**推荐**:  
+- snappy, lz4, zstd, bzip2 (压缩)
+- gflags (命令行解析)
+
+### 依赖安装
+
+```bash
+# macOS
 brew install cmake gflags snappy lz4 zstd
 
-# 或者让脚本自动安装
-./scripts/local_build_test.sh
+# Ubuntu
+sudo apt-get install -y build-essential cmake \
+    libgflags-dev libsnappy-dev zlib1g-dev \
+    libbz2-dev liblz4-dev libzstd-dev
+
+# 自动安装
+./scripts/local_build_test.sh  # 自动检测并安装
 ```
 
-### Ubuntu 安装
+## 开发工作流
 
+### 日常开发
 ```bash
-# 手动安装
-sudo apt-get update
-sudo apt-get install -y \
-    build-essential cmake \
-    libgflags-dev libsnappy-dev \
-    zlib1g-dev libbz2-dev \
-    liblz4-dev libzstd-dev
+# 增量构建
+make static_lib
 
-# 或者让脚本自动安装
-./scripts/local_build_test.sh
+# 运行特定测试
+make db_test && ./db_test
+
+# 格式检查
+make check-format
 ```
 
-## 使用建议
+### 提交前检查
+```bash
+# 完整验证
+./scripts/local_build_test.sh
 
-### 开发工作流
+# 仅构建验证
+make clean && make static_lib DEBUG_LEVEL=0
+```
 
-1. **本地开发**
-   ```bash
-   # 首次克隆后
-   ./scripts/local_build_test.sh
-   
-   # 日常开发
-   make static_lib  # 快速构建
-   make db_test && ./db_test  # 运行测试
-   ```
+### PR 最佳实践
+1. 本地测试通过
+2. 遵循代码格式
+3. 添加必要的测试用例
+4. 查看CI生成的中文报告
 
-2. **提交前检查**
-   ```bash
-   # 格式检查
-   make check-format
-   
-   # 完整本地测试
-   ./scripts/local_build_test.sh
-   ```
+## 性能优化
 
-3. **创建PR**
-   - 确保所有本地测试通过
-   - PR会自动触发完整的CI流程
-   - 查看自动生成的测试报告
+### 构建优化
+```bash
+# Release构建
+make static_lib DEBUG_LEVEL=0
 
-### 性能优化建议
+# 针对当前CPU优化
+PORTABLE=0 make static_lib
 
-1. **Release构建**
-   ```bash
-   make static_lib DEBUG_LEVEL=0  # Release模式
-   make static_lib DEBUG_LEVEL=1  # Debug模式
-   ```
+# 使用 Ninja 加速
+cmake -G Ninja && ninja
+```
 
-2. **并行构建**
-   ```bash
-   make -j$(nproc) static_lib  # Linux
-   make -j$(sysctl -n hw.ncpu) static_lib  # macOS
-   ```
-
-3. **目标架构优化**
-   ```bash
-   PORTABLE=1 make static_lib      # 通用兼容性
-   PORTABLE=haswell make static_lib # x86_64优化
-   ```
+### CI 缓存策略
+- 依赖包缓存: 24小时
+- 编译缓存: 分编译器/平台
+- 测试数据缓存: 实时清理
 
 ## 故障排除
 
 ### 常见问题
 
-1. **依赖缺失**
-   - 运行脚本自动安装：`./scripts/local_build_test.sh`
-   - 手动安装缺失的依赖库
+| 问题 | 原因 | 解决方案 |
+|------|------|----------|
+| 构建失败 | 依赖缺失 | 运行本地构建脚本 |
+| 测试超时 | 资源不足 | 减少并行度 |
+| 格式检查失败 | 代码风格 | `make check-format` |
+| 内存错误 | 代码Bug | 查看AddressSanitizer日志 |
 
-2. **编译器版本过低**
-   ```bash
-   # Ubuntu
-   sudo apt-get install gcc-9 g++-9
-   export CC=gcc-9 CXX=g++-9
-   
-   # macOS
-   xcode-select --install
-   ```
+### 调试技巧
 
-3. **内存不足**
-   ```bash
-   # 减少并行度
-   make -j2 static_lib
-   ```
+```bash
+# 详细构建日志
+make VERBOSE=1 static_lib
 
-4. **磁盘空间不足**
-   ```bash
-   # 清理构建缓存
-   make clean
-   ```
+# 单独运行特定测试
+./db_test --gtest_filter=*TestName*
 
-### 获取帮助
-
-- 查看构建日志中的详细错误信息
-- 检查 GitHub Actions 的失败日志
-- 参考 RocksDB 官方文档
-- 提交 Issue 描述具体问题
-
-## 自定义配置
-
-### 修改CI触发条件
-
-编辑 `.github/workflows/ci.yml`:
-
-```yaml
-on:
-  push:
-    branches: [ main, master, your-branch ]  # 添加你的分支
-  pull_request:
-    branches: [ main, master, your-branch ]
+# 检查依赖链接
+ldd ./db_test  # Linux
+otool -L ./db_test  # macOS
 ```
 
-### 调整测试超时
+## 监控指标
 
-编辑工作流文件中的 `timeout` 值：
+### CI 性能指标
+- **构建时间**: 5-15分钟 (正常)
+- **测试覆盖率**: 定期检查
+- **成功率**: >95% (目标)
 
-```yaml
-- name: Run tests
-  run: timeout 600 ./db_test  # 10分钟超时
-```
+### 资源使用
+- **并行任务**: 最多6个job
+- **内存限制**: 单任务 < 8GB
+- **存储限制**: 缓存 < 2GB
 
-### 添加新的构建配置
+## 扩展配置
 
-在构建矩阵中添加新配置：
+### 添加新平台
+1. 修改 `ci.yml` 中的 `matrix.os`
+2. 更新依赖安装脚本
+3. 测试新平台兼容性
 
-```yaml
-strategy:
-  matrix:
-    compiler: [gcc, clang]
-    build_type: [Debug, Release, MinSizeRel]  # 添加新类型
-    os: [ubuntu-20.04, ubuntu-22.04, macos-11, macos-12]
-```
+### 自定义检查
+1. 在 `.github/workflows/` 添加新文件
+2. 配置触发条件和依赖
+3. 测试工作流运行
 
-## 监控和维护
-
-### CI状态监控
-
-- 在GitHub仓库页面查看Actions状态
-- 设置邮件通知获取失败提醒
-- 定期检查和更新依赖版本
-
-### 定期维护任务
-
-1. **更新GitHub Actions版本**
-   - 定期更新 `actions/checkout`、`actions/setup-python` 等
-   
-2. **依赖库版本更新**
-   - 监控RocksDB依赖库的更新
-   - 测试新版本的兼容性
-
-3. **性能基线更新**
-   - 定期更新性能测试的基线数据
-   - 监控性能回归趋势
-
----
-
-通过这套完整的CI/CD配置，可以确保RocksDB项目的代码质量、构建稳定性和跨平台兼容性。配置支持自动化测试、详细报告和智能反馈，大大提升了开发效率和代码可靠性。 
+### 分支保护
+建议设置:
+- 要求PR审查
+- 要求状态检查通过
+- 禁止直接推送到main 

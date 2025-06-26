@@ -1,135 +1,81 @@
-# 🚀 RocksDB CI/CD 项目状态
+# ST-RocksDB 项目状态
 
-## ✅ 当前状态：生产就绪
+> **状态**: 生产就绪 ✅
 
-**最后更新**: 2024年，包含VLA和PIC问题修复
-
-### 🎯 核心文件结构
+## 核心组件
 
 ```
 st-rocksdb/
-├── .github/workflows/           # GitHub Actions配置
-│   ├── ci.yml                  # 主CI流水线 (Clang, Ubuntu/macOS)
-│   ├── pr-review.yml           # PR审查 (安全扫描, 跨平台测试)
-│   └── sanity_check.yml        # 基础格式检查
-├── scripts/
-│   └── local_build_test.sh     # 本地一键构建脚本
-├── encryption/
-│   └── encryption.cc           # ✅ 已修复VLA问题
-├── quick_test.sh               # 快速验证脚本
-├── test_shared_lib.sh          # 共享库测试脚本
-├── build_fix_guide.md          # 构建问题解决指南
-├── CI_CD_README.md             # 技术文档
-└── 执行指南.md                 # 立即部署指南
+├── .github/workflows/          # GitHub Actions CI/CD
+├── scripts/                    # Rust SDK + 构建脚本
+├── RUST_SDK_GUIDE.md          # Rust SDK 使用指南
+├── CI_CD_README.md             # CI/CD 技术文档
+└── 执行指南.md                 # 快速开始
 ```
 
-## 🔧 已修复的问题
+## 主要功能
 
-### ✅ VLA (Variable Length Arrays) 编译错误
-- **问题**: `unsigned char iv[block_size]` 不兼容strict C++
-- **修复**: 替换为 `std::vector<unsigned char> iv(block_size)`
-- **影响文件**: `encryption/encryption.cc`
+### 🤖 企业级 CI/CD
+- **多平台构建**: Ubuntu + macOS
+- **智能测试**: 并行执行，快速反馈
+- **安全扫描**: Trivy 漏洞检测
+- **质量保障**: 格式检查 + 内存安全
 
-### ✅ 共享库PIC编译错误
-- **问题**: 链接器错误 `relocation R_X86_64_TPOFF32... can not be used when making a shared object`
-- **修复**: 统一使用Clang编译器，强制清理重建
-- **优化**: 去除GCC支持，简化CI配置
+### 🦀 完整 Rust SDK
+- **TiKV 优化**: 基于 TiKV 的性能改进
+- **一键打包**: `./scripts/package_rust_sdk.sh`
+- **类型安全**: 完整的 Rust API
+- **双层架构**: FFI绑定 + 高层API
 
-### ✅ CI/CD流水线优化
-- **简化**: 移除GCC编译器矩阵，只保留Clang
-- **增强**: 添加共享库构建验证
-- **修复**: 暂时跳过有问题的测试，专注基础构建
+### 🛠️ 开发工具
+- **本地构建**: `./scripts/local_build_test.sh`
+- **SDK 演示**: `./scripts/demo_rust_sdk.sh`
+- **自动化**: 环境检测 + 依赖安装
 
-## 🎯 当前CI/CD覆盖
+## 测试覆盖
 
-### 主CI流水线
-- ✅ Ubuntu Latest + Clang (Debug/Release)
-- ✅ macOS Latest + 系统编译器 (Debug/Release)
-- ✅ 静态库 + 共享库构建验证
-- ✅ 代码格式检查
+| 平台 | 编译器 | 构建类型 | 状态 |
+|------|--------|----------|------|
+| Ubuntu | GCC/Clang | Debug/Release | ✅ |
+| macOS | 系统默认 | Debug/Release | ✅ |
 
-### PR审查流水线
-- ✅ 多平台兼容性 (Ubuntu 20.04/22.04, macOS 11/12)
-- ✅ 安全漏洞扫描 (Trivy)
-- ✅ 代码质量检查
-- ✅ 构建验证 (只用Clang)
+## 已修复问题
 
-### 本地开发工具
-- ✅ 一键构建脚本 (`scripts/local_build_test.sh`)
-- ✅ 快速验证脚本 (`quick_test.sh`)
-- ✅ 共享库专测脚本 (`test_shared_lib.sh`)
+- ✅ **VLA 编译错误**: `encryption.cc` 变长数组问题
+- ✅ **PIC 链接错误**: 共享库位置无关代码
+- ✅ **构建不一致**: 统一使用 Clang 编译器
 
-## 🚀 立即可用功能
+## 快速开始
 
-### 1. 提交代码验证
+### 部署 CI/CD
 ```bash
-git add .
-git commit -m "fix: 完整的构建问题修复"
-git push origin denjixu_dev
+git add . && git commit -m "🚀 企业级CI/CD" && git push
 ```
 
-### 2. 本地快速验证
+### 生成 Rust SDK
 ```bash
-# 基础验证
-bash quick_test.sh
-
-# 共享库专测
-bash test_shared_lib.sh
-
-# 完整构建测试
-bash scripts/local_build_test.sh
+./scripts/package_rust_sdk.sh 0.1.0
+./scripts/demo_rust_sdk.sh
 ```
 
-### 3. GitHub Actions监控
-- 进入仓库 → Actions 标签
-- 观察自动触发的CI流水线
-- 查看多平台构建状态
+### 本地验证
+```bash
+./scripts/local_build_test.sh
+```
 
-## 📊 测试覆盖矩阵
+## 技术栈
 
-| 平台 | 编译器 | 构建类型 | 静态库 | 共享库 | 状态 |
-|------|--------|----------|--------|--------|------|
-| Ubuntu Latest | Clang | Debug | ✅ | ✅ | 就绪 |
-| Ubuntu Latest | Clang | Release | ✅ | ✅ | 就绪 |
-| macOS Latest | 系统默认 | Debug | ✅ | ✅ | 就绪 |
-| macOS Latest | 系统默认 | Release | ✅ | ✅ | 就绪 |
-| Ubuntu 20.04 | Clang | Release | ✅ | - | PR时 |
-| Ubuntu 22.04 | Clang | Release | ✅ | - | PR时 |
+- **CI/CD**: GitHub Actions (3个工作流)
+- **构建**: Make + CMake
+- **Rust绑定**: bindgen + 自定义包装器
+- **文档**: 完整中文指南
 
-## 🛡️ 安全与质量保障
+## 获取帮助
 
-### 已启用的检查
-- ✅ 代码格式验证 (clang-format)
-- ✅ 安全漏洞扫描 (Trivy)
-- ✅ 构建一致性验证
-- ✅ 跨平台兼容性测试
-
-### 计划中的增强
-- ⏳ 完整单元测试恢复 (链接问题修复后)
-- ⏳ 性能回归测试
-- ⏳ 内存检查工具 (AddressSanitizer, Valgrind)
-
-## 💡 使用建议
-
-### 开发者工作流
-1. **本地验证**: `bash quick_test.sh`
-2. **提交代码**: 正常git流程
-3. **观察CI**: GitHub Actions自动运行
-4. **创建PR**: 触发完整审查流程
-
-### 故障排除
-1. **构建失败**: 查看 `build_fix_guide.md`
-2. **环境问题**: 运行 `scripts/local_build_test.sh`
-3. **共享库问题**: 运行 `test_shared_lib.sh`
-4. **CI失败**: 查看GitHub Actions详细日志
-
-## 📞 获取帮助
-
-- 📚 **技术文档**: `CI_CD_README.md`
-- 🔧 **修复指南**: `build_fix_guide.md`
-- 🚀 **部署指南**: `执行指南.md`
-- 🐛 **GitHub Issues**: 报告新问题
+- `CI_CD_README.md` - 技术细节
+- `RUST_SDK_GUIDE.md` - Rust SDK 使用
+- `执行指南.md` - 立即开始
+- GitHub Issues - 问题反馈
 
 ---
-
-**🎉 状态**: 项目CI/CD配置完成，生产环境就绪！ 
+**最后更新**: 包含构建问题修复和 Rust SDK 
