@@ -553,6 +553,9 @@ class VersionStorageInfo {
   // Per-level max bytes
   std::vector<uint64_t> level_max_bytes_;
 
+  // Environment pointer for background operations
+  Env* env_;
+
   // A short brief metadata of files per level
   autovector<ROCKSDB_NAMESPACE::LevelFilesBrief> level_files_brief_;
   FileIndexer file_indexer_;
@@ -865,7 +868,7 @@ class Version {
       std::shared_ptr<const TableProperties>* tp, int level = -1);
 
   uint64_t GetEstimatedActiveKeys() {
-    return storage_info_.GetEstimatedActiveKeys();
+    return storage_info_->GetEstimatedActiveKeys();
   }
 
   size_t GetMemoryUsageByTableReaders();
@@ -877,8 +880,8 @@ class Version {
 
   int TEST_refs() const { return refs_; }
 
-  VersionStorageInfo* storage_info() { return &storage_info_; }
-  const VersionStorageInfo* storage_info() const { return &storage_info_; }
+  VersionStorageInfo* storage_info() { return storage_info_; }
+  const VersionStorageInfo* storage_info() const { return storage_info_; }
 
   VersionSet* version_set() { return vset_; }
 
@@ -902,10 +905,10 @@ class Version {
   friend class VersionEditHandlerPointInTime;
 
   const InternalKeyComparator* internal_comparator() const {
-    return storage_info_.internal_comparator_;
+    return storage_info_->internal_comparator_;
   }
   const Comparator* user_comparator() const {
-    return storage_info_.user_comparator_;
+    return storage_info_->user_comparator_;
   }
 
   // Returns true if the filter blocks in the specified level will not be
@@ -930,7 +933,7 @@ class Version {
   BlobFileCache* blob_file_cache_;
   const MergeOperator* merge_operator_;
 
-  VersionStorageInfo storage_info_;
+  VersionStorageInfo* storage_info_;
   VersionSet* vset_;            // VersionSet to which this Version belongs
   Version* next_;               // Next version in linked list
   Version* prev_;               // Previous version in linked list
