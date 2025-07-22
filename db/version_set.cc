@@ -758,13 +758,12 @@ Version::~Version() {
   }
 
   // Schedule background deletion of VersionStorageInfo (which includes Arena)
-  VersionStorageInfo* storage_to_delete = storage_info_;
   env_->Schedule(
       [](void* arg) {
         auto* storage_to_delete = static_cast<VersionStorageInfo*>(arg);
         delete storage_to_delete;
       },
-      storage_to_delete, Env::Priority::LOW);
+      storage_info_, Env::Priority::LOW);
 }
 
 int FindFile(const InternalKeyComparator& icmp,
