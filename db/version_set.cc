@@ -759,10 +759,12 @@ Version::~Version() {
 
   // Schedule background deletion of VersionStorageInfo (which includes Arena)
   VersionStorageInfo* storage_to_delete = storage_info_;
-  env_->Schedule([](void* arg) {
-    auto* storage_to_delete = static_cast<VersionStorageInfo*>(arg);
-    delete storage_to_delete;
-  }, storage_to_delete, Env::Priority::LOW);
+  env_->Schedule(
+      [](void* arg) {
+        auto* storage_to_delete = static_cast<VersionStorageInfo*>(arg);
+        delete storage_to_delete;
+      },
+      storage_to_delete, Env::Priority::LOW);
 }
 
 int FindFile(const InternalKeyComparator& icmp,
@@ -1394,7 +1396,7 @@ Status Version::GetPropertiesOfTablesInRange(
       InternalKey k2(range[i].limit, kMaxSequenceNumber, kValueTypeForSeek);
       std::vector<FileMetaData*> files;
       storage_info_->GetOverlappingInputs(level, &k1, &k2, &files, -1, nullptr,
-                                         false);
+                                          false);
       for (const auto& file_meta : files) {
         auto fname =
             TableFileName(cfd_->ioptions()->cf_paths,
@@ -1791,7 +1793,8 @@ Version::Version(ColumnFamilyData* column_family_data, VersionSet* vset,
           (cfd_ == nullptr || cfd_->current() == nullptr)
               ? nullptr
               : cfd_->current()->storage_info(),
-          cfd_ == nullptr ? false : cfd_->ioptions()->force_consistency_checks)),
+          cfd_ == nullptr ? false
+                          : cfd_->ioptions()->force_consistency_checks)),
       vset_(vset),
       next_(this),
       prev_(this),
@@ -2188,10 +2191,10 @@ void Version::MultiGet(const ReadOptions& read_options, MultiGetRange* range,
   }
 
   MultiGetRange file_picker_range(*range, range->begin(), range->end());
-  FilePickerMultiGet fp(
-      &file_picker_range,
-      &storage_info_->level_files_brief_, storage_info_->num_non_empty_levels_,
-      &storage_info_->file_indexer_, user_comparator(), internal_comparator());
+  FilePickerMultiGet fp(&file_picker_range, &storage_info_->level_files_brief_,
+                        storage_info_->num_non_empty_levels_,
+                        &storage_info_->file_indexer_, user_comparator(),
+                        internal_comparator());
   FdWithKeyRange* f = fp.GetNextFile();
   Status s;
   uint64_t num_index_read = 0;
@@ -2441,7 +2444,7 @@ void Version::PrepareApply(
   storage_info_->UpdateNumNonEmptyLevels();
   storage_info_->CalculateBaseBytes(*cfd_->ioptions(), mutable_cf_options);
   storage_info_->UpdateFilesByCompactionPri(*cfd_->ioptions(),
-                                           mutable_cf_options);
+                                            mutable_cf_options);
   storage_info_->GenerateFileIndexer();
   storage_info_->GenerateLevelFilesBrief();
   storage_info_->GenerateLevel0NonOverlapping();
@@ -2545,7 +2548,8 @@ void Version::UpdateAccumulatedStats(bool update_stats) {
       for (int i = static_cast<int>(storage_info_->files_[level].size()) - 1;
            storage_info_->accumulated_raw_value_size_ == 0 && i >= 0; --i) {
         if (MaybeInitializeFileMetaData(storage_info_->files_[level][i])) {
-          storage_info_->UpdateAccumulatedStats(storage_info_->files_[level][i]);
+          storage_info_->UpdateAccumulatedStats(
+              storage_info_->files_[level][i]);
         }
       }
     }
@@ -4298,7 +4302,6 @@ Status VersionSet::ProcessManifestWrites(
         batch_edits.push_back(e);
       }
     }
-  
   }
 
 #ifndef NDEBUG
@@ -4396,7 +4399,7 @@ Status VersionSet::ProcessManifestWrites(
             delete v;
           }
           return s;
-        }        
+        }
 
         ColumnFamilyData* cfd = versions[i]->cfd_;
         s = builder->LoadTableHandlers(
