@@ -553,9 +553,6 @@ class VersionStorageInfo {
   // Per-level max bytes
   std::vector<uint64_t> level_max_bytes_;
 
-  // Environment pointer for background operations
-  Env* env_;
-
   // A short brief metadata of files per level
   autovector<ROCKSDB_NAMESPACE::LevelFilesBrief> level_files_brief_;
   FileIndexer file_indexer_;
