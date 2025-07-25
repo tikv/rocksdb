@@ -647,7 +647,7 @@ TEST_F(DBCompactionTest, CompactRangeBottomPri) {
   SyncPoint::GetInstance()->EnableProcessing();
   env_->SetBackgroundThreads(1, Env::Priority::BOTTOM);
   ASSERT_OK(dbfull()->CompactRange(CompactRangeOptions(), nullptr, nullptr));
-  ASSERT_EQ(3, low_pri_count); // include background free jobs
+  ASSERT_EQ(3, low_pri_count);  // include background free jobs
   ASSERT_EQ(1, bottom_pri_count);
   ASSERT_EQ("0,0,2", FilesPerLevel(0));
 

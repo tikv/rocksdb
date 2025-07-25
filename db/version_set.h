@@ -1467,6 +1467,24 @@ class VersionSet {
 
   std::string db_session_id_;
 
+  // Background deletion tracking
+  mutable port::Mutex bg_delete_mutex_;
+  port::CondVar bg_delete_cv_;
+  std::atomic<int> bg_free_scheduled_{0};
+
+ public:
+  // Increment background deletion counter
+  void IncrementBackgroundDeletion() { bg_free_scheduled_.fetch_add(1); }
+
+  // Decrement background deletion counter and notify waiters if needed
+  void DecrementBackgroundDeletion() {
+    int remaining = bg_free_scheduled_.fetch_sub(1) - 1;
+    if (remaining == 0) {
+      MutexLock l(&bg_delete_mutex_);
+      bg_delete_cv_.SignalAll();
+    }
+  }
+
  private:
   // REQUIRES db mutex at beginning. may release and re-acquire db mutex
   Status ProcessManifestWrites(std::deque<ManifestWriter>& writers,

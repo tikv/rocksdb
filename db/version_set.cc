@@ -757,13 +757,27 @@ Version::~Version() {
     }
   }
 
+  vset_->IncrementBackgroundDeletion();
   // Schedule background deletion of VersionStorageInfo (which includes Arena)
+  struct DeletionContext {
+    VersionStorageInfo* storage_info;
+    VersionSet* vset;
+  };
+  DeletionContext* ctx = new DeletionContext{storage_info_, vset_};
   env_->Schedule(
       [](void* arg) {
-        auto* storage_to_delete = static_cast<VersionStorageInfo*>(arg);
-        delete storage_to_delete;
+        auto* ctx = static_cast<DeletionContext*>(arg);
+        delete ctx->storage_info;
+        ctx->vset->DecrementBackgroundDeletion();
+        delete ctx;
       },
-      storage_info_, Env::Priority::LOW);
+      ctx, Env::Priority::LOW, nullptr,
+      [](void* arg) {
+        // Unschedule callback: clean up if task is cancelled before execution
+        auto* ctx = static_cast<DeletionContext*>(arg);
+        ctx->vset->DecrementBackgroundDeletion();
+        delete ctx;
+      });
 }
 
 int FindFile(const InternalKeyComparator& icmp,
@@ -4103,7 +4117,9 @@ VersionSet::VersionSet(const std::string& dbname,
       file_options_(storage_options),
       block_cache_tracer_(block_cache_tracer),
       io_tracer_(io_tracer),
-      db_session_id_(db_session_id) {}
+      db_session_id_(db_session_id),
+      bg_delete_mutex_(),
+      bg_delete_cv_(&bg_delete_mutex_) {}
 
 VersionSet::~VersionSet() {
   // we need to delete column_family_set_ because its destructor depends on
@@ -4118,6 +4134,14 @@ VersionSet::~VersionSet() {
   }
   obsolete_files_.clear();
   io_status_.PermitUncheckedError();
+  // Wait for all background deletion tasks to complete before destroying
+  // This prevents access to destroyed mutex from background threads
+  {
+    MutexLock l(&bg_delete_mutex_);
+    while (bg_free_scheduled_.load() > 0) {
+      bg_delete_cv_.Wait();
+    }
+  }
 }
 
 void VersionSet::Reset() {
