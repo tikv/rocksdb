@@ -763,7 +763,7 @@ Version::~Version() {
     VersionStorageInfo* storage_info;
     VersionSet* vset;
   };
-  DeletionContext* ctx = new DeletionContext{storage_info_, vset_};
+  DeletionContext* deletion_ctx = new DeletionContext{storage_info_, vset_};
   env_->Schedule(
       [](void* arg) {
         auto* ctx = static_cast<DeletionContext*>(arg);
@@ -771,7 +771,7 @@ Version::~Version() {
         ctx->vset->DecrementBackgroundDeletion();
         delete ctx;
       },
-      ctx, Env::Priority::LOW, nullptr,
+      deletion_ctx, Env::Priority::LOW, nullptr,
       [](void* arg) {
         // Unschedule callback: clean up if task is cancelled before execution
         auto* ctx = static_cast<DeletionContext*>(arg);
