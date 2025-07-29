@@ -4417,6 +4417,7 @@ Status VersionSet::ProcessManifestWrites(
         auto* builder = builder_guards[i]->version_builder();
         s = builder->SaveTo(versions[i]->storage_info());
         if (!s.ok()) {
+          mu->Lock();
           // free up the allocated memory
           for (auto v : versions) {
             delete v;
