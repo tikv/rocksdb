@@ -4135,7 +4135,8 @@ VersionSet::VersionSet(const std::string& dbname,
       io_tracer_(io_tracer),
       db_session_id_(db_session_id),
       bg_delete_mutex_(),
-      bg_delete_cv_(&bg_delete_mutex_) {}
+      bg_delete_cv_(&bg_delete_mutex_),
+      bg_delete_scheduled_(0) {}
 
 VersionSet::~VersionSet() {
   // we need to delete column_family_set_ because its destructor depends on
@@ -4152,12 +4153,7 @@ VersionSet::~VersionSet() {
   io_status_.PermitUncheckedError();
   // Wait for all background deletion tasks to complete before destroying
   // This prevents access to destroyed mutex from background threads
-  {
-    MutexLock l(&bg_delete_mutex_);
-    while (bg_free_scheduled_.load() > 0) {
-      bg_delete_cv_.Wait();
-    }
-  }
+  WaitForBackgroundDeletion();
 }
 
 void VersionSet::Reset() {

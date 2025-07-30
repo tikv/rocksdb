@@ -1474,18 +1474,29 @@ class VersionSet {
   // Background deletion tracking
   mutable port::Mutex bg_delete_mutex_;
   port::CondVar bg_delete_cv_;
-  std::atomic<int> bg_free_scheduled_{0};
+  uint64_t bg_delete_scheduled_;
 
  public:
   // Increment background deletion counter
-  void IncrementBackgroundDeletion() { bg_free_scheduled_.fetch_add(1); }
+  void IncrementBackgroundDeletion() {
+    MutexLock l(&bg_delete_mutex_);
+    bg_delete_scheduled_++;
+  }
 
   // Decrement background deletion counter and notify waiters if needed
   void DecrementBackgroundDeletion() {
-    int remaining = bg_free_scheduled_.fetch_sub(1) - 1;
-    if (remaining == 0) {
-      MutexLock l(&bg_delete_mutex_);
+    MutexLock l(&bg_delete_mutex_);
+    int remaining = --bg_delete_scheduled_;
+    if (remaining <= 0) {
       bg_delete_cv_.SignalAll();
+    }
+  }
+
+  // Wait for background deletion to finish
+  void WaitForBackgroundDeletion() {
+    MutexLock l(&bg_delete_mutex_);
+    while (bg_delete_scheduled_ > 0) {
+      bg_delete_cv_.Wait();
     }
   }
 
