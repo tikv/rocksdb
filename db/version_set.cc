@@ -4491,11 +4491,9 @@ Status VersionSet::ProcessManifestWrites(
 
     if (s.ok()) {
       if (!first_writer.edit_list.front()->IsColumnFamilyManipulation()) {
-        TEST_SYNC_POINT("VersionSet::ProcessManifestWrites:PrepareApplyStart");
         for (int i = 0; i < static_cast<int>(versions.size()); ++i) {
           versions[i]->PrepareApply(*mutable_cf_options_ptrs[i], true);
         }
-        TEST_SYNC_POINT("VersionSet::ProcessManifestWrites:PrepareApplyEnd");
       }
 
       // Write new records to MANIFEST log
