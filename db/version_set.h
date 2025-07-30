@@ -194,6 +194,10 @@ class VersionStorageInfo {
 
   // Generate level_files_brief_ from files_
   void GenerateLevelFilesBrief();
+
+  // Generate file_locations_ mapping for fast file location lookup
+  void GenerateFileLocations();
+
   // Sort all files for this version based on their file size and
   // record results in files_by_compaction_pri_. The largest files are listed
   // first.

@@ -2447,6 +2447,24 @@ void VersionStorageInfo::GenerateLevelFilesBrief() {
   }
 }
 
+void VersionStorageInfo::GenerateFileLocations() {
+  // Pre-allocate space for file_locations_ based on total files
+  size_t total_files = 0;
+  for (int level = 0; level < num_levels_; level++) {
+    total_files += files_[level].size();
+  }
+  file_locations_.reserve(total_files);
+
+  for (int level = 0; level < num_levels_; level++) {
+    const auto& level_files = files_[level];
+    for (size_t i = 0; i < level_files.size(); i++) {
+      const uint64_t file_number = level_files[i]->fd.GetNumber();
+      assert(file_locations_.find(file_number) == file_locations_.end());
+      file_locations_.emplace(file_number, FileLocation(level, i));
+    }
+  }
+}
+
 void Version::PrepareApply(
     const MutableCFOptions& mutable_cf_options,
     bool update_stats) {
@@ -2454,6 +2472,7 @@ void Version::PrepareApply(
       "Version::PrepareApply:forced_check",
       reinterpret_cast<void*>(&storage_info_->force_consistency_checks_));
   UpdateAccumulatedStats(update_stats);
+  storage_info_->GenerateFileLocations();
   storage_info_->UpdateNumNonEmptyLevels();
   storage_info_->CalculateBaseBytes(*cfd_->ioptions(), mutable_cf_options);
   storage_info_->UpdateFilesByCompactionPri(*cfd_->ioptions(),
@@ -3089,11 +3108,7 @@ void VersionStorageInfo::AddFile(int level, FileMetaData* f) {
 
   f->refs++;
 
-  const uint64_t file_number = f->fd.GetNumber();
-
-  assert(file_locations_.find(file_number) == file_locations_.end());
-  file_locations_.emplace(file_number,
-                          FileLocation(level, level_files.size() - 1));
+  // file_locations_ will be built later in PrepareApply()
 }
 
 void VersionStorageInfo::AddBlobFile(
@@ -3108,15 +3123,16 @@ void VersionStorageInfo::AddBlobFile(
   blob_files_.emplace_hint(it, blob_file_number, std::move(blob_file_meta));
 }
 
-// Version::PrepareApply() need to be called before calling the function, or
-// following functions called:
-// 1. UpdateNumNonEmptyLevels();
-// 2. CalculateBaseBytes();
-// 3. UpdateFilesByCompactionPri();
-// 4. GenerateFileIndexer();
-// 5. GenerateLevelFilesBrief();
-// 6. GenerateLevel0NonOverlapping();
-// 7. GenerateBottommostFiles();
+// Version::PrepareApply() must be called before calling this function.
+// PrepareApply() will call the following functions to prepare the version:
+// 1. GenerateFileLocations();
+// 2. UpdateNumNonEmptyLevels();
+// 3. CalculateBaseBytes();
+// 4. UpdateFilesByCompactionPri();
+// 5. GenerateFileIndexer();
+// 6. GenerateLevelFilesBrief();
+// 7. GenerateLevel0NonOverlapping();
+// 8. GenerateBottommostFiles();
 void VersionStorageInfo::SetFinalized() {
   finalized_ = true;
 #ifndef NDEBUG
@@ -4325,6 +4341,19 @@ Status VersionSet::ProcessManifestWrites(
         batch_edits.push_back(e);
       }
     }
+    for (int i = 0; i < static_cast<int>(versions.size()); ++i) {
+      assert(!builder_guards.empty() &&
+             builder_guards.size() == versions.size());
+      auto* builder = builder_guards[i]->version_builder();
+      Status s = builder->SaveTo(versions[i]->storage_info());
+      if (!s.ok()) {
+        // free up the allocated memory
+        for (auto v : versions) {
+          delete v;
+        }
+        return s;
+      }
+    }
   }
 
 #ifndef NDEBUG
@@ -4414,19 +4443,8 @@ Status VersionSet::ProcessManifestWrites(
                builder_guards.size() == versions.size());
         assert(!mutable_cf_options_ptrs.empty() &&
                builder_guards.size() == versions.size());
-        auto* builder = builder_guards[i]->version_builder();
-        s = builder->SaveTo(versions[i]->storage_info());
-        if (!s.ok()) {
-          mu->Lock();
-          // free up the allocated memory
-          for (auto v : versions) {
-            delete v;
-          }
-          return s;
-        }
-
         ColumnFamilyData* cfd = versions[i]->cfd_;
-        s = builder->LoadTableHandlers(
+        s = builder_guards[i]->version_builder()->LoadTableHandlers(
             cfd->internal_stats(), 1 /* max_threads */,
             true /* prefetch_index_and_filter_in_cache */,
             false /* is_initial_load */,
