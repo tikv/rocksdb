@@ -43,6 +43,7 @@
 #include "db/table_cache.h"
 #include "db/version_builder.h"
 #include "db/version_edit.h"
+#include "db/version_set_deletion_scheduler.h"
 #include "db/write_controller.h"
 #include "env/file_system_tracer.h"
 #include "monitoring/instrumented_mutex.h"
@@ -1471,34 +1472,8 @@ class VersionSet {
 
   std::string db_session_id_;
 
-  // Background deletion tracking
-  mutable port::Mutex bg_delete_mutex_;
-  port::CondVar bg_delete_cv_;
-  uint64_t bg_delete_scheduled_;
-
- public:
-  // Increment background deletion counter
-  void IncrementBackgroundDeletion() {
-    MutexLock l(&bg_delete_mutex_);
-    bg_delete_scheduled_++;
-  }
-
-  // Decrement background deletion counter and notify waiters if needed
-  void DecrementBackgroundDeletion() {
-    MutexLock l(&bg_delete_mutex_);
-    int remaining = --bg_delete_scheduled_;
-    if (remaining <= 0) {
-      bg_delete_cv_.SignalAll();
-    }
-  }
-
-  // Wait for background deletion to finish
-  void WaitForBackgroundDeletion() {
-    MutexLock l(&bg_delete_mutex_);
-    while (bg_delete_scheduled_ > 0) {
-      bg_delete_cv_.Wait();
-    }
-  }
+  // Dedicated background thread scheduler for storage deletion operations
+  std::unique_ptr<VersionSetDeletionScheduler> deletion_scheduler_;
 
  private:
   // REQUIRES db mutex at beginning. may release and re-acquire db mutex

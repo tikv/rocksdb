@@ -757,27 +757,8 @@ Version::~Version() {
     }
   }
 
-  vset_->IncrementBackgroundDeletion();
-  // Schedule background deletion of VersionStorageInfo (which includes Arena)
-  struct DeletionContext {
-    VersionStorageInfo* storage_info;
-    VersionSet* vset;
-  };
-  DeletionContext* deletion_ctx = new DeletionContext{storage_info_, vset_};
-  env_->Schedule(
-      [](void* arg) {
-        auto* ctx = static_cast<DeletionContext*>(arg);
-        delete ctx->storage_info;
-        ctx->vset->DecrementBackgroundDeletion();
-        delete ctx;
-      },
-      deletion_ctx, Env::Priority::LOW, nullptr,
-      [](void* arg) {
-        // Unschedule callback: clean up if task is cancelled before execution
-        auto* ctx = static_cast<DeletionContext*>(arg);
-        ctx->vset->DecrementBackgroundDeletion();
-        delete ctx;
-      });
+  // Use dedicated background deletion scheduler for VersionStorageInfo deletion
+  vset_->deletion_scheduler_->ScheduleDeletion(storage_info_);
 }
 
 int FindFile(const InternalKeyComparator& icmp,
@@ -4134,9 +4115,11 @@ VersionSet::VersionSet(const std::string& dbname,
       block_cache_tracer_(block_cache_tracer),
       io_tracer_(io_tracer),
       db_session_id_(db_session_id),
-      bg_delete_mutex_(),
-      bg_delete_cv_(&bg_delete_mutex_),
-      bg_delete_scheduled_(0) {}
+      deletion_scheduler_(nullptr) {
+  // Initialize the dedicated background deletion scheduler
+  deletion_scheduler_.reset(
+      new VersionSetDeletionScheduler(db_options_->info_log.get()));
+}
 
 VersionSet::~VersionSet() {
   // we need to delete column_family_set_ because its destructor depends on
@@ -4151,9 +4134,10 @@ VersionSet::~VersionSet() {
   }
   obsolete_files_.clear();
   io_status_.PermitUncheckedError();
-  // Wait for all background deletion tasks to complete before destroying
-  // This prevents access to destroyed mutex from background threads
-  WaitForBackgroundDeletion();
+  // Shutdown the dedicated background deletion scheduler first
+  if (deletion_scheduler_) {
+    deletion_scheduler_->Shutdown();
+  }
 }
 
 void VersionSet::Reset() {
