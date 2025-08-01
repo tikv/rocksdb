@@ -81,6 +81,7 @@ class VersionBuilderTest : public testing::Test {
       f->init_stats_from_file = true;
       vstorage_.UpdateAccumulatedStats(f);
     }
+    vstorage_.GenerateFileLocations();
   }
 
   void AddBlob(uint64_t blob_file_number, uint64_t total_blob_count,
@@ -153,6 +154,7 @@ class VersionBuilderTest : public testing::Test {
   }
 
   void UpdateVersionStorageInfo() {
+    vstorage_.GenerateFileLocations();
     vstorage_.UpdateFilesByCompactionPri(ioptions_, mutable_cf_options_);
     vstorage_.UpdateNumNonEmptyLevels();
     vstorage_.GenerateFileIndexer();
@@ -531,6 +533,7 @@ TEST_F(VersionBuilderTest, ApplyFileDeletionAndAddition) {
                                   force_consistency_checks);
 
   ASSERT_OK(builder.SaveTo(&new_vstorage));
+  new_vstorage.GenerateFileLocations();
   ASSERT_EQ(new_vstorage.GetFileLocation(file_number).GetLevel(), level);
 
   UnrefFilesInVersion(&new_vstorage);
@@ -1068,6 +1071,7 @@ TEST_F(VersionBuilderTest, SaveBlobFilesTo) {
                                   force_consistency_checks);
 
   ASSERT_OK(builder.SaveTo(&new_vstorage));
+  new_vstorage.GenerateFileLocations();
 
   const auto& new_blob_files = new_vstorage.GetBlobFiles();
   ASSERT_EQ(new_blob_files.size(), 3);

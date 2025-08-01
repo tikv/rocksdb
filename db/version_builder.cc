@@ -600,13 +600,16 @@ class VersionBuilder::Rep {
     // Note: we use C++11 for now but in C++14, this could be done in a more
     // elegant way using generalized lambda capture.
     VersionSet* const vs = version_set_;
-    std::string const path = ioptions_->cf_paths.front().path;
+    const ImmutableCFOptions* const ioptions = ioptions_;
 
-    auto deleter = [vs, path](SharedBlobFileMetaData* shared_meta) {
+    auto deleter = [vs, ioptions](SharedBlobFileMetaData* shared_meta) {
       if (vs) {
+        assert(ioptions);
+        assert(!ioptions->cf_paths.empty());
         assert(shared_meta);
 
-        vs->AddObsoleteBlobFile(shared_meta->GetBlobFileNumber(), path);
+        vs->AddObsoleteBlobFile(shared_meta->GetBlobFileNumber(),
+                                ioptions->cf_paths.front().path);
       }
 
       delete shared_meta;

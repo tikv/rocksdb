@@ -734,6 +734,7 @@ class FilePickerMultiGet {
 
 VersionStorageInfo::~VersionStorageInfo() { delete[] files_; }
 
+// Required: DB mutex held
 Version::~Version() {
   assert(refs_ == 0);
 
@@ -757,8 +758,17 @@ Version::~Version() {
     }
   }
 
-  // Use dedicated background deletion scheduler for VersionStorageInfo deletion
-  vset_->deletion_scheduler_->ScheduleDeletion(storage_info_);
+  if (vset_->deletion_scheduler_) {
+    // Clear the blob files before scheduling deletion to avoid data race
+    // as ShardedBlobFileMetaData deleter will update vset_ without mutex locked
+    // See deleter definition in `ApplyBlobFileAddition`
+    storage_info_->blob_files_.clear();
+    // Use dedicated background deletion scheduler for VersionStorageInfo
+    // deletion
+    vset_->deletion_scheduler_->ScheduleDeletion(storage_info_);
+  } else {
+    delete storage_info_;
+  }
 }
 
 int FindFile(const InternalKeyComparator& icmp,
@@ -2434,6 +2444,7 @@ void VersionStorageInfo::GenerateFileLocations() {
   for (int level = 0; level < num_levels_; level++) {
     total_files += files_[level].size();
   }
+  file_locations_.clear();
   file_locations_.reserve(total_files);
 
   for (int level = 0; level < num_levels_; level++) {
@@ -2452,8 +2463,8 @@ void Version::PrepareApply(
   TEST_SYNC_POINT_CALLBACK(
       "Version::PrepareApply:forced_check",
       reinterpret_cast<void*>(&storage_info_->force_consistency_checks_));
-  UpdateAccumulatedStats(update_stats);
   storage_info_->GenerateFileLocations();
+  UpdateAccumulatedStats(update_stats);
   storage_info_->UpdateNumNonEmptyLevels();
   storage_info_->CalculateBaseBytes(*cfd_->ioptions(), mutable_cf_options);
   storage_info_->UpdateFilesByCompactionPri(*cfd_->ioptions(),
