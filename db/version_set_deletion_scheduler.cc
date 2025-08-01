@@ -16,8 +16,8 @@
 namespace ROCKSDB_NAMESPACE {
 
 VersionSetDeletionScheduler::VersionSetDeletionScheduler(Logger* info_log)
-    : mutex_(),
-      cv_(&mutex_),
+    : version_delete_mutex_(),
+      cv_(&version_delete_mutex_),
       deletion_queue_(),
       bg_thread_(nullptr),
       shutting_down_(false),
@@ -36,7 +36,7 @@ VersionSetDeletionScheduler::~VersionSetDeletionScheduler() { Shutdown(); }
 
 void VersionSetDeletionScheduler::ScheduleDeletion(
     VersionStorageInfo* storage_info) {
-  MutexLock lock(&mutex_);
+  MutexLock lock(&version_delete_mutex_);
 
   if (shutting_down_) {
     return;
@@ -51,7 +51,7 @@ void VersionSetDeletionScheduler::ScheduleDeletion(
 
 void VersionSetDeletionScheduler::Shutdown() {
   {
-    MutexLock lock(&mutex_);
+    MutexLock lock(&version_delete_mutex_);
     if (shutting_down_) {
       return;  // Already shutting down
     }
@@ -67,7 +67,7 @@ void VersionSetDeletionScheduler::Shutdown() {
 }
 
 void VersionSetDeletionScheduler::BackgroundDeletionThread() {
-  mutex_.Lock();
+  version_delete_mutex_.Lock();
 
   while (!shutting_down_) {
     // Wait for work or shutdown signal
@@ -82,15 +82,15 @@ void VersionSetDeletionScheduler::BackgroundDeletionThread() {
       pending_deletion_count_--;
 
       // Unlock mutex while executing the deletion operation
-      mutex_.Unlock();
+      version_delete_mutex_.Unlock();
       delete storage_info;
 
       // Re-acquire the mutex for the next iteration
-      mutex_.Lock();
+      version_delete_mutex_.Lock();
     }
   }
 
-  mutex_.Unlock();
+  version_delete_mutex_.Unlock();
 }
 
 }  // namespace ROCKSDB_NAMESPACE

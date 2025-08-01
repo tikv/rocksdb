@@ -44,7 +44,7 @@ class VersionSetDeletionScheduler {
   void BackgroundDeletionThread();
 
   // Mutex to protect internal state
-  mutable port::Mutex mutex_;
+  mutable port::Mutex version_delete_mutex_;
 
   // Condition variable for thread coordination
   port::CondVar cv_;
