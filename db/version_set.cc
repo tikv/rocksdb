@@ -4145,7 +4145,8 @@ VersionSet::~VersionSet() {
   }
   obsolete_files_.clear();
   io_status_.PermitUncheckedError();
-  // Shutdown the dedicated background deletion scheduler first
+  // Shutdown the dedicated background deletion scheduler and wait for it to
+  // finish
   if (deletion_scheduler_) {
     deletion_scheduler_->Shutdown();
   }
