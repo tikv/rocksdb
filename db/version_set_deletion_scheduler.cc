@@ -21,7 +21,6 @@ VersionSetDeletionScheduler::VersionSetDeletionScheduler(Logger* info_log)
       deletion_queue_(),
       bg_thread_(nullptr),
       shutting_down_(false),
-      pending_deletion_count_(0),
       info_log_(info_log) {
   // Start the background thread
   bg_thread_.reset(new port::Thread(
@@ -39,11 +38,11 @@ void VersionSetDeletionScheduler::ScheduleDeletion(
   MutexLock lock(&version_delete_mutex_);
 
   if (shutting_down_) {
+    delete storage_info;  // Delete synchronously if shutting down
     return;
   }
 
   deletion_queue_.push(storage_info);
-  pending_deletion_count_++;
 
   // Notify the background thread that work is available
   cv_.Signal();
@@ -76,10 +75,9 @@ void VersionSetDeletionScheduler::BackgroundDeletionThread() {
     }
 
     // Process all pending deletion operations
-    while (!deletion_queue_.empty() && !shutting_down_) {
+    while (!deletion_queue_.empty()) {
       VersionStorageInfo* storage_info = deletion_queue_.front();
       deletion_queue_.pop();
-      pending_deletion_count_--;
 
       // Unlock mutex while executing the deletion operation
       version_delete_mutex_.Unlock();

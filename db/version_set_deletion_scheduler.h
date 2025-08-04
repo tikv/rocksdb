@@ -18,14 +18,8 @@ class VersionStorageInfo;
 class Logger;
 
 // VersionSetDeletionScheduler provides a dedicated background thread for
-// handling VersionStorageInfo deletion operations that were previously executed
-// via env_->Schedule() in the LOW priority thread pool.
-//
-// This dedicated thread helps to:
-// 1. Isolate version storage deletion operations from other background work
-// 2. Avoid potential interference with other low-priority operations
-// 3. Provide better control over deletion timing and parallelism
-//
+// handling VersionStorageInfo deletion operations that would be time-consuming
+// when having a lot of SST files.
 class VersionSetDeletionScheduler {
  public:
   explicit VersionSetDeletionScheduler(Logger* info_log);
@@ -57,9 +51,6 @@ class VersionSetDeletionScheduler {
 
   // Flag to indicate shutdown
   bool shutting_down_;
-
-  // Number of pending deletion operations
-  int pending_deletion_count_;
 
   // Logger for debug/info messages
   Logger* info_log_;
