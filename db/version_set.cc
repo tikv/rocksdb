@@ -734,6 +734,7 @@ class FilePickerMultiGet {
 
 VersionStorageInfo::~VersionStorageInfo() { delete[] files_; }
 
+// Required: DB mutex held
 Version::~Version() {
   assert(refs_ == 0);
 
@@ -742,9 +743,9 @@ Version::~Version() {
   next_->prev_ = prev_;
 
   // Drop references to files
-  for (int level = 0; level < storage_info_.num_levels_; level++) {
-    for (size_t i = 0; i < storage_info_.files_[level].size(); i++) {
-      FileMetaData* f = storage_info_.files_[level][i];
+  for (int level = 0; level < storage_info_->num_levels_; level++) {
+    for (size_t i = 0; i < storage_info_->files_[level].size(); i++) {
+      FileMetaData* f = storage_info_->files_[level][i];
       assert(f->refs > 0);
       f->refs--;
       if (f->refs <= 0) {
@@ -755,6 +756,18 @@ Version::~Version() {
             ObsoleteFileInfo(f, cfd_->ioptions()->cf_paths[path_id].path));
       }
     }
+  }
+
+  if (vset_->deletion_scheduler_) {
+    // Clear the blob files before scheduling deletion to avoid data race
+    // as ShardedBlobFileMetaData deleter will update vset_ without mutex locked
+    // See deleter definition in `ApplyBlobFileAddition`
+    storage_info_->blob_files_.clear();
+    // Use dedicated background deletion scheduler for VersionStorageInfo
+    // deletion
+    vset_->deletion_scheduler_->ScheduleDeletion(storage_info_);
+  } else {
+    delete storage_info_;
   }
 }
 
@@ -1294,7 +1307,7 @@ Status Version::GetTableProperties(std::shared_ptr<const TableProperties>* tp,
 
 Status Version::GetPropertiesOfAllTables(TablePropertiesCollection* props) {
   Status s;
-  for (int level = 0; level < storage_info_.num_levels_; level++) {
+  for (int level = 0; level < storage_info_->num_levels_; level++) {
     s = GetPropertiesOfAllTables(props, level);
     if (!s.ok()) {
       return s;
@@ -1313,8 +1326,8 @@ Status Version::TablesRangeTombstoneSummary(int max_entries_to_print,
 
   std::stringstream ss;
 
-  for (int level = 0; level < storage_info_.num_levels_; level++) {
-    for (const auto& file_meta : storage_info_.files_[level]) {
+  for (int level = 0; level < storage_info_->num_levels_; level++) {
+    for (const auto& file_meta : storage_info_->files_[level]) {
       auto fname =
           TableFileName(cfd_->ioptions()->cf_paths, file_meta->fd.GetNumber(),
                         file_meta->fd.GetPathId());
@@ -1360,7 +1373,7 @@ Status Version::TablesRangeTombstoneSummary(int max_entries_to_print,
 
 Status Version::GetPropertiesOfAllTables(TablePropertiesCollection* props,
                                          int level) {
-  for (const auto& file_meta : storage_info_.files_[level]) {
+  for (const auto& file_meta : storage_info_->files_[level]) {
     auto fname =
         TableFileName(cfd_->ioptions()->cf_paths, file_meta->fd.GetNumber(),
                       file_meta->fd.GetPathId());
@@ -1380,14 +1393,14 @@ Status Version::GetPropertiesOfAllTables(TablePropertiesCollection* props,
 
 Status Version::GetPropertiesOfTablesInRange(
     const Range* range, std::size_t n, TablePropertiesCollection* props) const {
-  for (int level = 0; level < storage_info_.num_non_empty_levels(); level++) {
+  for (int level = 0; level < storage_info_->num_non_empty_levels(); level++) {
     for (decltype(n) i = 0; i < n; i++) {
       // Convert user_key into a corresponding internal key.
       InternalKey k1(range[i].start, kMaxSequenceNumber, kValueTypeForSeek);
       InternalKey k2(range[i].limit, kMaxSequenceNumber, kValueTypeForSeek);
       std::vector<FileMetaData*> files;
-      storage_info_.GetOverlappingInputs(level, &k1, &k2, &files, -1, nullptr,
-                                         false);
+      storage_info_->GetOverlappingInputs(level, &k1, &k2, &files, -1, nullptr,
+                                          false);
       for (const auto& file_meta : files) {
         auto fname =
             TableFileName(cfd_->ioptions()->cf_paths,
@@ -1433,7 +1446,7 @@ Status Version::GetAggregatedTableProperties(
 
 size_t Version::GetMemoryUsageByTableReaders() {
   size_t total_usage = 0;
-  for (auto& file_level : storage_info_.level_files_brief_) {
+  for (auto& file_level : storage_info_->level_files_brief_) {
     for (size_t i = 0; i < file_level.num_files; i++) {
       total_usage += cfd_->table_cache()->GetMemoryUsageByTableReader(
           file_options_, cfd_->internal_comparator(), file_level.files[i].fd,
@@ -1506,8 +1519,8 @@ void Version::GetColumnFamilyMetaData(ColumnFamilyMetaData* cf_meta) {
 
 uint64_t Version::GetSstFilesSize() {
   uint64_t sst_files_size = 0;
-  for (int level = 0; level < storage_info_.num_levels_; level++) {
-    for (const auto& file_meta : storage_info_.LevelFiles(level)) {
+  for (int level = 0; level < storage_info_->num_levels_; level++) {
+    for (const auto& file_meta : storage_info_->LevelFiles(level)) {
       sst_files_size += file_meta->fd.GetFileSize();
     }
   }
@@ -1516,8 +1529,8 @@ uint64_t Version::GetSstFilesSize() {
 
 void Version::GetCreationTimeOfOldestFile(uint64_t* creation_time) {
   uint64_t oldest_time = port::kMaxUint64;
-  for (int level = 0; level < storage_info_.num_non_empty_levels_; level++) {
-    for (FileMetaData* meta : storage_info_.LevelFiles(level)) {
+  for (int level = 0; level < storage_info_->num_non_empty_levels_; level++) {
+    for (FileMetaData* meta : storage_info_->LevelFiles(level)) {
       assert(meta->fd.table_reader != nullptr);
       uint64_t file_creation_time = meta->TryGetFileCreationTime();
       if (file_creation_time == kUnknownFileCreationTime) {
@@ -1590,9 +1603,9 @@ void Version::AddIterators(const ReadOptions& read_options,
                            MergeIteratorBuilder* merge_iter_builder,
                            RangeDelAggregator* range_del_agg,
                            bool allow_unprepared_value) {
-  assert(storage_info_.finalized_);
+  assert(storage_info_->finalized_);
 
-  for (int level = 0; level < storage_info_.num_non_empty_levels(); level++) {
+  for (int level = 0; level < storage_info_->num_non_empty_levels(); level++) {
     AddIteratorsForLevel(read_options, soptions, merge_iter_builder, level,
                          range_del_agg, allow_unprepared_value);
   }
@@ -1604,11 +1617,11 @@ void Version::AddIteratorsForLevel(const ReadOptions& read_options,
                                    int level,
                                    RangeDelAggregator* range_del_agg,
                                    bool allow_unprepared_value) {
-  assert(storage_info_.finalized_);
-  if (level >= storage_info_.num_non_empty_levels()) {
+  assert(storage_info_->finalized_);
+  if (level >= storage_info_->num_non_empty_levels()) {
     // This is an empty level
     return;
-  } else if (storage_info_.LevelFilesBrief(level).num_files == 0) {
+  } else if (storage_info_->LevelFilesBrief(level).num_files == 0) {
     // No files in this level
     return;
   }
@@ -1618,8 +1631,8 @@ void Version::AddIteratorsForLevel(const ReadOptions& read_options,
   auto* arena = merge_iter_builder->GetArena();
   if (level == 0) {
     // Merge all level zero files together since they may overlap
-    for (size_t i = 0; i < storage_info_.LevelFilesBrief(0).num_files; i++) {
-      const auto& file = storage_info_.LevelFilesBrief(0).files[i];
+    for (size_t i = 0; i < storage_info_->LevelFilesBrief(0).num_files; i++) {
+      const auto& file = storage_info_->LevelFilesBrief(0).files[i];
       merge_iter_builder->AddIterator(cfd_->table_cache()->NewIterator(
           read_options, soptions, cfd_->internal_comparator(),
           *file.file_metadata, range_del_agg,
@@ -1635,18 +1648,18 @@ void Version::AddIteratorsForLevel(const ReadOptions& read_options,
       // rather than Seek(), while files in other levels are recored per seek.
       // If users execute one range query per iterator, there may be some
       // discrepancy here.
-      for (FileMetaData* meta : storage_info_.LevelFiles(0)) {
+      for (FileMetaData* meta : storage_info_->LevelFiles(0)) {
         sample_file_read_inc(meta);
       }
     }
-  } else if (storage_info_.LevelFilesBrief(level).num_files > 0) {
+  } else if (storage_info_->LevelFilesBrief(level).num_files > 0) {
     // For levels > 0, we can use a concatenating iterator that sequentially
     // walks through the non-overlapping files in the level, opening them
     // lazily.
     auto* mem = arena->AllocateAligned(sizeof(LevelIterator));
     merge_iter_builder->AddIterator(new (mem) LevelIterator(
         cfd_->table_cache(), read_options, soptions,
-        cfd_->internal_comparator(), &storage_info_.LevelFilesBrief(level),
+        cfd_->internal_comparator(), &storage_info_->LevelFilesBrief(level),
         mutable_cf_options_.prefix_extractor, should_sample_file_read(),
         cfd_->internal_stats()->GetFileReadHist(level),
         TableReaderCaller::kUserIterator, IsFilterSkipped(level), level,
@@ -1660,7 +1673,7 @@ Status Version::OverlapWithLevelIterator(const ReadOptions& read_options,
                                          const Slice& smallest_user_key,
                                          const Slice& largest_user_key,
                                          int level, bool* overlap) {
-  assert(storage_info_.finalized_);
+  assert(storage_info_->finalized_);
 
   auto icmp = cfd_->internal_comparator();
   auto ucmp = icmp.user_comparator();
@@ -1673,8 +1686,8 @@ Status Version::OverlapWithLevelIterator(const ReadOptions& read_options,
   *overlap = false;
 
   if (level == 0) {
-    for (size_t i = 0; i < storage_info_.LevelFilesBrief(0).num_files; i++) {
-      const auto file = &storage_info_.LevelFilesBrief(0).files[i];
+    for (size_t i = 0; i < storage_info_->LevelFilesBrief(0).num_files; i++) {
+      const auto file = &storage_info_->LevelFilesBrief(0).files[i];
       if (AfterFile(ucmp, &smallest_user_key, file) ||
           BeforeFile(ucmp, &largest_user_key, file)) {
         continue;
@@ -1695,11 +1708,11 @@ Status Version::OverlapWithLevelIterator(const ReadOptions& read_options,
         break;
       }
     }
-  } else if (storage_info_.LevelFilesBrief(level).num_files > 0) {
+  } else if (storage_info_->LevelFilesBrief(level).num_files > 0) {
     auto mem = arena.AllocateAligned(sizeof(LevelIterator));
     ScopedArenaIterator iter(new (mem) LevelIterator(
         cfd_->table_cache(), read_options, file_options,
-        cfd_->internal_comparator(), &storage_info_.LevelFilesBrief(level),
+        cfd_->internal_comparator(), &storage_info_->LevelFilesBrief(level),
         mutable_cf_options_.prefix_extractor, should_sample_file_read(),
         cfd_->internal_stats()->GetFileReadHist(level),
         TableReaderCaller::kUserIterator, IsFilterSkipped(level), level,
@@ -1775,7 +1788,7 @@ Version::Version(ColumnFamilyData* column_family_data, VersionSet* vset,
       blob_file_cache_(cfd_ ? cfd_->blob_file_cache() : nullptr),
       merge_operator_(
           (cfd_ == nullptr) ? nullptr : cfd_->ioptions()->merge_operator.get()),
-      storage_info_(
+      storage_info_(new VersionStorageInfo(
           (cfd_ == nullptr) ? nullptr : &cfd_->internal_comparator(),
           (cfd_ == nullptr) ? nullptr : cfd_->user_comparator(),
           cfd_ == nullptr ? 0 : cfd_->NumberLevels(),
@@ -1784,7 +1797,8 @@ Version::Version(ColumnFamilyData* column_family_data, VersionSet* vset,
           (cfd_ == nullptr || cfd_->current() == nullptr)
               ? nullptr
               : cfd_->current()->storage_info(),
-          cfd_ == nullptr ? false : cfd_->ioptions()->force_consistency_checks),
+          cfd_ == nullptr ? false
+                          : cfd_->ioptions()->force_consistency_checks)),
       vset_(vset),
       next_(this),
       prev_(this),
@@ -1827,7 +1841,7 @@ Status Version::GetBlob(const ReadOptions& read_options, const Slice& user_key,
     return Status::Corruption("Unexpected TTL/inlined blob index");
   }
 
-  const auto& blob_files = storage_info_.GetBlobFiles();
+  const auto& blob_files = storage_info_->GetBlobFiles();
 
   const uint64_t blob_file_number = blob_index.file_number();
 
@@ -1876,7 +1890,7 @@ void Version::MultiGetBlob(
 
   assert(!blob_rqs.empty());
   Status status;
-  const auto& blob_files = storage_info_.GetBlobFiles();
+  const auto& blob_files = storage_info_->GetBlobFiles();
   for (auto& elem : blob_rqs) {
     uint64_t blob_file_number = elem.first;
     if (blob_files.find(blob_file_number) == blob_files.end()) {
@@ -2012,9 +2026,9 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
     pinned_iters_mgr->StartPinning();
   }
 
-  FilePicker fp(user_key, ikey, &storage_info_.level_files_brief_,
-                storage_info_.num_non_empty_levels_,
-                &storage_info_.file_indexer_, user_comparator(),
+  FilePicker fp(user_key, ikey, &storage_info_->level_files_brief_,
+                storage_info_->num_non_empty_levels_,
+                &storage_info_->file_indexer_, user_comparator(),
                 internal_comparator());
   FdWithKeyRange* f = fp.GetNextFile();
 
@@ -2181,10 +2195,10 @@ void Version::MultiGet(const ReadOptions& read_options, MultiGetRange* range,
   }
 
   MultiGetRange file_picker_range(*range, range->begin(), range->end());
-  FilePickerMultiGet fp(
-      &file_picker_range,
-      &storage_info_.level_files_brief_, storage_info_.num_non_empty_levels_,
-      &storage_info_.file_indexer_, user_comparator(), internal_comparator());
+  FilePickerMultiGet fp(&file_picker_range, &storage_info_->level_files_brief_,
+                        storage_info_->num_non_empty_levels_,
+                        &storage_info_->file_indexer_, user_comparator(),
+                        internal_comparator());
   FdWithKeyRange* f = fp.GetNextFile();
   Status s;
   uint64_t num_index_read = 0;
@@ -2413,7 +2427,7 @@ bool Version::IsFilterSkipped(int level, bool is_file_last_in_level) {
   // skip checking the filters when we predict a hit.
   return cfd_->ioptions()->optimize_filters_for_hits &&
          (level > 0 || is_file_last_in_level) &&
-         level == storage_info_.num_non_empty_levels() - 1;
+         level == storage_info_->num_non_empty_levels() - 1;
 }
 
 void VersionStorageInfo::GenerateLevelFilesBrief() {
@@ -2424,21 +2438,41 @@ void VersionStorageInfo::GenerateLevelFilesBrief() {
   }
 }
 
+void VersionStorageInfo::GenerateFileLocations() {
+  // Pre-allocate space for file_locations_ based on total files
+  size_t total_files = 0;
+  for (int level = 0; level < num_levels_; level++) {
+    total_files += files_[level].size();
+  }
+  file_locations_.clear();
+  file_locations_.reserve(total_files);
+
+  for (int level = 0; level < num_levels_; level++) {
+    const auto& level_files = files_[level];
+    for (size_t i = 0; i < level_files.size(); i++) {
+      const uint64_t file_number = level_files[i]->fd.GetNumber();
+      assert(file_locations_.find(file_number) == file_locations_.end());
+      file_locations_.emplace(file_number, FileLocation(level, i));
+    }
+  }
+}
+
 void Version::PrepareApply(
     const MutableCFOptions& mutable_cf_options,
     bool update_stats) {
   TEST_SYNC_POINT_CALLBACK(
       "Version::PrepareApply:forced_check",
-      reinterpret_cast<void*>(&storage_info_.force_consistency_checks_));
+      reinterpret_cast<void*>(&storage_info_->force_consistency_checks_));
+  storage_info_->GenerateFileLocations();
   UpdateAccumulatedStats(update_stats);
-  storage_info_.UpdateNumNonEmptyLevels();
-  storage_info_.CalculateBaseBytes(*cfd_->ioptions(), mutable_cf_options);
-  storage_info_.UpdateFilesByCompactionPri(*cfd_->ioptions(),
-                                           mutable_cf_options);
-  storage_info_.GenerateFileIndexer();
-  storage_info_.GenerateLevelFilesBrief();
-  storage_info_.GenerateLevel0NonOverlapping();
-  storage_info_.GenerateBottommostFiles();
+  storage_info_->UpdateNumNonEmptyLevels();
+  storage_info_->CalculateBaseBytes(*cfd_->ioptions(), mutable_cf_options);
+  storage_info_->UpdateFilesByCompactionPri(*cfd_->ioptions(),
+                                            mutable_cf_options);
+  storage_info_->GenerateFileIndexer();
+  storage_info_->GenerateLevelFilesBrief();
+  storage_info_->GenerateLevel0NonOverlapping();
+  storage_info_->GenerateBottommostFiles();
 }
 
 bool Version::MaybeInitializeFileMetaData(FileMetaData* file_meta) {
@@ -2508,12 +2542,12 @@ void Version::UpdateAccumulatedStats(bool update_stats) {
     // will be triggered, which creates higher-level files whose num_deletions
     // will be updated here.
     for (int level = 0;
-         level < storage_info_.num_levels_ && init_count < kMaxInitCount;
+         level < storage_info_->num_levels_ && init_count < kMaxInitCount;
          ++level) {
-      for (auto* file_meta : storage_info_.files_[level]) {
+      for (auto* file_meta : storage_info_->files_[level]) {
         if (MaybeInitializeFileMetaData(file_meta)) {
           // each FileMeta will be initialized only once.
-          storage_info_.UpdateAccumulatedStats(file_meta);
+          storage_info_->UpdateAccumulatedStats(file_meta);
           // when option "max_open_files" is -1, all the file metadata has
           // already been read, so MaybeInitializeFileMetaData() won't incur
           // any I/O cost. "max_open_files=-1" means that the table cache passed
@@ -2532,19 +2566,20 @@ void Version::UpdateAccumulatedStats(bool update_stats) {
     // In case all sampled-files contain only deletion entries, then we
     // load the table-property of a file in higher-level to initialize
     // that value.
-    for (int level = storage_info_.num_levels_ - 1;
-         storage_info_.accumulated_raw_value_size_ == 0 && level >= 0;
+    for (int level = storage_info_->num_levels_ - 1;
+         storage_info_->accumulated_raw_value_size_ == 0 && level >= 0;
          --level) {
-      for (int i = static_cast<int>(storage_info_.files_[level].size()) - 1;
-           storage_info_.accumulated_raw_value_size_ == 0 && i >= 0; --i) {
-        if (MaybeInitializeFileMetaData(storage_info_.files_[level][i])) {
-          storage_info_.UpdateAccumulatedStats(storage_info_.files_[level][i]);
+      for (int i = static_cast<int>(storage_info_->files_[level].size()) - 1;
+           storage_info_->accumulated_raw_value_size_ == 0 && i >= 0; --i) {
+        if (MaybeInitializeFileMetaData(storage_info_->files_[level][i])) {
+          storage_info_->UpdateAccumulatedStats(
+              storage_info_->files_[level][i]);
         }
       }
     }
   }
 
-  storage_info_.ComputeCompensatedSizes();
+  storage_info_->ComputeCompensatedSizes();
 }
 
 void VersionStorageInfo::ComputeCompensatedSizes() {
@@ -3065,11 +3100,7 @@ void VersionStorageInfo::AddFile(int level, FileMetaData* f) {
 
   f->refs++;
 
-  const uint64_t file_number = f->fd.GetNumber();
-
-  assert(file_locations_.find(file_number) == file_locations_.end());
-  file_locations_.emplace(file_number,
-                          FileLocation(level, level_files.size() - 1));
+  // file_locations_ will be built later in PrepareApply()
 }
 
 void VersionStorageInfo::AddBlobFile(
@@ -3084,15 +3115,16 @@ void VersionStorageInfo::AddBlobFile(
   blob_files_.emplace_hint(it, blob_file_number, std::move(blob_file_meta));
 }
 
-// Version::PrepareApply() need to be called before calling the function, or
-// following functions called:
-// 1. UpdateNumNonEmptyLevels();
-// 2. CalculateBaseBytes();
-// 3. UpdateFilesByCompactionPri();
-// 4. GenerateFileIndexer();
-// 5. GenerateLevelFilesBrief();
-// 6. GenerateLevel0NonOverlapping();
-// 7. GenerateBottommostFiles();
+// Version::PrepareApply() must be called before calling this function.
+// PrepareApply() will call the following functions to prepare the version:
+// 1. GenerateFileLocations();
+// 2. UpdateNumNonEmptyLevels();
+// 3. CalculateBaseBytes();
+// 4. UpdateFilesByCompactionPri();
+// 5. GenerateFileIndexer();
+// 6. GenerateLevelFilesBrief();
+// 7. GenerateLevel0NonOverlapping();
+// 8. GenerateBottommostFiles();
 void VersionStorageInfo::SetFinalized() {
   finalized_ = true;
 #ifndef NDEBUG
@@ -3898,8 +3930,8 @@ void Version::AddLiveFiles(std::vector<uint64_t>* live_table_files,
   assert(live_table_files);
   assert(live_blob_files);
 
-  for (int level = 0; level < storage_info_.num_levels(); ++level) {
-    const auto& level_files = storage_info_.LevelFiles(level);
+  for (int level = 0; level < storage_info_->num_levels(); ++level) {
+    const auto& level_files = storage_info_->LevelFiles(level);
     for (const auto& meta : level_files) {
       assert(meta);
 
@@ -3907,7 +3939,7 @@ void Version::AddLiveFiles(std::vector<uint64_t>* live_table_files,
     }
   }
 
-  const auto& blob_files = storage_info_.GetBlobFiles();
+  const auto& blob_files = storage_info_->GetBlobFiles();
   for (const auto& pair : blob_files) {
     const auto& meta = pair.second;
     assert(meta);
@@ -3938,7 +3970,7 @@ void Version::RemoveLiveFiles(
 
 std::string Version::DebugString(bool hex, bool print_stats) const {
   std::string r;
-  for (int level = 0; level < storage_info_.num_levels_; level++) {
+  for (int level = 0; level < storage_info_->num_levels_; level++) {
     // E.g.,
     //   --- level 1 ---
     //   17:123[1 .. 124]['a' .. 'd']
@@ -3951,7 +3983,7 @@ std::string Version::DebugString(bool hex, bool print_stats) const {
     r.append(" --- version# ");
     AppendNumberTo(&r, version_number_);
     r.append(" ---\n");
-    const std::vector<FileMetaData*>& files = storage_info_.files_[level];
+    const std::vector<FileMetaData*>& files = storage_info_->files_[level];
     for (size_t i = 0; i < files.size(); i++) {
       r.push_back(' ');
       r.append(files[i]->DebugString(hex));
@@ -3965,7 +3997,7 @@ std::string Version::DebugString(bool hex, bool print_stats) const {
     }
   }
 
-  const auto& blob_files = storage_info_.GetBlobFiles();
+  const auto& blob_files = storage_info_->GetBlobFiles();
   if (!blob_files.empty()) {
     r.append("--- blob files --- version# ");
     AppendNumberTo(&r, version_number_);
@@ -4093,7 +4125,12 @@ VersionSet::VersionSet(const std::string& dbname,
       file_options_(storage_options),
       block_cache_tracer_(block_cache_tracer),
       io_tracer_(io_tracer),
-      db_session_id_(db_session_id) {}
+      db_session_id_(db_session_id),
+      deletion_scheduler_(nullptr) {
+  // Initialize the dedicated background deletion scheduler
+  deletion_scheduler_.reset(
+      new VersionSetDeletionScheduler(db_options_->info_log.get()));
+}
 
 VersionSet::~VersionSet() {
   // we need to delete column_family_set_ because its destructor depends on
@@ -4108,6 +4145,10 @@ VersionSet::~VersionSet() {
   }
   obsolete_files_.clear();
   io_status_.PermitUncheckedError();
+  // Shutdown the dedicated background deletion scheduler first
+  if (deletion_scheduler_) {
+    deletion_scheduler_->Shutdown();
+  }
 }
 
 void VersionSet::Reset() {
@@ -4145,7 +4186,7 @@ void VersionSet::AppendVersion(ColumnFamilyData* column_family_data,
       *column_family_data->GetLatestMutableCFOptions());
 
   // Mark v finalized
-  v->storage_info_.SetFinalized();
+  v->storage_info_->SetFinalized();
 
   // Make "v" current
   assert(v->refs_ == 0);

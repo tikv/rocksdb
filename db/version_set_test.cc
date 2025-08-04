@@ -179,6 +179,7 @@ class VersionStorageInfoTestBase : public testing::Test {
   }
 
   void Finalize() {
+    vstorage_.GenerateFileLocations();
     vstorage_.UpdateNumNonEmptyLevels();
     vstorage_.CalculateBaseBytes(ioptions_, mutable_cf_options_);
     vstorage_.UpdateFilesByCompactionPri(ioptions_, mutable_cf_options_);
@@ -458,6 +459,7 @@ TEST_F(VersionStorageInfoTest, FileLocationAndMetaDataByNumber) {
   Add(0, 12U, "1", "2", 5000U);
 
   Add(2, 7U, "1", "2", 8000U);
+  Finalize();
 
   ASSERT_EQ(vstorage_.GetFileLocation(11U),
             VersionStorageInfo::FileLocation(0, 0));
