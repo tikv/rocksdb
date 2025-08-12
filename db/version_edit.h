@@ -9,6 +9,7 @@
 
 #pragma once
 #include <algorithm>
+#include <atomic>
 #include <set>
 #include <string>
 #include <utility>
@@ -185,7 +186,7 @@ struct FileMetaData {
   uint64_t raw_key_size = 0;    // total uncompressed key size.
   uint64_t raw_value_size = 0;  // total uncompressed value size.
 
-  int refs = 0;  // Reference count
+  std::atomic<int> refs{0};  // Reference count
 
   bool being_compacted = false;       // Is this file undergoing compaction?
   bool init_stats_from_file = false;  // true if the data-entry stats of this
@@ -219,6 +220,60 @@ struct FileMetaData {
   std::string max_timestamp;
 
   FileMetaData() = default;
+
+  // Copy constructor to handle atomic fields
+  FileMetaData(const FileMetaData& other)
+      : fd(other.fd),
+        smallest(other.smallest),
+        largest(other.largest),
+        table_reader_handle(other.table_reader_handle),
+        stats(other.stats),
+        compensated_file_size(other.compensated_file_size),
+        num_entries(other.num_entries),
+        num_deletions(other.num_deletions),
+        raw_key_size(other.raw_key_size),
+        raw_value_size(other.raw_value_size),
+        refs(other.refs.load()),
+        being_compacted(other.being_compacted),
+        init_stats_from_file(other.init_stats_from_file),
+        marked_for_compaction(other.marked_for_compaction),
+        temperature(other.temperature),
+        oldest_blob_file_number(other.oldest_blob_file_number),
+        oldest_ancester_time(other.oldest_ancester_time),
+        file_creation_time(other.file_creation_time),
+        file_checksum(other.file_checksum),
+        file_checksum_func_name(other.file_checksum_func_name),
+        min_timestamp(other.min_timestamp),
+        max_timestamp(other.max_timestamp) {}
+
+  // Assignment operator to handle atomic fields
+  FileMetaData& operator=(const FileMetaData& other) {
+    if (this != &other) {
+      fd = other.fd;
+      smallest = other.smallest;
+      largest = other.largest;
+      table_reader_handle = other.table_reader_handle;
+      stats = other.stats;
+      compensated_file_size = other.compensated_file_size;
+      num_entries = other.num_entries;
+      num_deletions = other.num_deletions;
+      raw_key_size = other.raw_key_size;
+      raw_value_size = other.raw_value_size;
+      refs.store(other.refs.load());
+      being_compacted = other.being_compacted;
+      init_stats_from_file = other.init_stats_from_file;
+      marked_for_compaction = other.marked_for_compaction;
+      temperature = other.temperature;
+      oldest_blob_file_number = other.oldest_blob_file_number;
+      oldest_ancester_time = other.oldest_ancester_time;
+      file_creation_time = other.file_creation_time;
+      file_checksum = other.file_checksum;
+      file_checksum_func_name = other.file_checksum_func_name;
+      min_timestamp = other.min_timestamp;
+      max_timestamp = other.max_timestamp;
+    }
+    return *this;
+  }
 
   FileMetaData(uint64_t file, uint32_t file_path_id, uint64_t file_size,
                const InternalKey& smallest_key, const InternalKey& largest_key,
