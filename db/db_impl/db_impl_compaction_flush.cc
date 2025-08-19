@@ -1234,7 +1234,10 @@ Status DBImpl::CompactRangeInternal(const CompactRangeOptions& options,
             check_overlap_within_file = false;
           }
         }
-        if (!check_overlap_within_file) {
+        if (!check_overlap_within_file ||
+            (!overlap && options.bottom_level_check_range_overlap &&
+             level ==
+                 current_version->storage_info()->num_non_empty_levels() - 1)) {
           overlap = current_version->storage_info()->OverlapInLevel(level,
                                                                     begin, end);
         }

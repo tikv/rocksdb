@@ -2020,6 +2020,11 @@ struct CompactRangeOptions {
   // user-provided setting. This enables customers to selectively override the
   // age cutoff.
   double blob_garbage_collection_age_cutoff = -1;
+
+  // If set to true, it will check file range overlap instead of keys overlap
+  // for the bottom level. This is used in manual compact for SST ingestion
+  // scenario.
+  bool bottom_level_check_range_overlap = false;
 };
 
 // IngestExternalFileOptions is used by IngestExternalFile()
