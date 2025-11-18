@@ -2024,7 +2024,7 @@ struct CompactRangeOptions {
   // If set to true, it will check file range overlap instead of keys overlap
   // for the bottom level. This is used in manual compact for SST ingestion
   // scenario.
-  bool check_range_overlap_at_bottom_level = false;
+  bool check_range_overlap_on_bottom_level = false;
 };
 
 // IngestExternalFileOptions is used by IngestExternalFile()
