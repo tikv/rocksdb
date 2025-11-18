@@ -1585,6 +1585,7 @@ TEST_F(EventListenerTest, BlobDBFileTest) {
   // delete the oldest blob file and create new blob file during compaction.
   ASSERT_OK(db_->CompactRange(CompactRangeOptions(), begin, end));
   ASSERT_OK(dbfull()->TEST_WaitForCompact());
+  db_->Close();
 
   blob_event_listener->CheckCounters();
 }

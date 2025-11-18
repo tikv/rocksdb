@@ -820,6 +820,7 @@ class FilePickerMultiGet {
 
 VersionStorageInfo::~VersionStorageInfo() { delete[] files_; }
 
+// Required: DB mutex held
 Version::~Version() {
   assert(refs_ == 0);
 
@@ -828,9 +829,9 @@ Version::~Version() {
   next_->prev_ = prev_;
 
   // Drop references to files
-  for (int level = 0; level < storage_info_.num_levels_; level++) {
-    for (size_t i = 0; i < storage_info_.files_[level].size(); i++) {
-      FileMetaData* f = storage_info_.files_[level][i];
+  for (int level = 0; level < storage_info_->num_levels_; level++) {
+    for (size_t i = 0; i < storage_info_->files_[level].size(); i++) {
+      FileMetaData* f = storage_info_->files_[level][i];
       assert(f->refs > 0);
       f->refs--;
       if (f->refs <= 0) {
@@ -842,6 +843,18 @@ Version::~Version() {
             cfd_->GetFileMetadataCacheReservationManager());
       }
     }
+  }
+
+  if (vset_->deletion_scheduler_) {
+    // Clear the blob files before scheduling deletion to avoid data race
+    // as ShardedBlobFileMetaData deleter will update vset_ without mutex locked
+    // See deleter definition in `ApplyBlobFileAddition`
+    storage_info_->blob_files_.clear();
+    // Use dedicated background deletion scheduler for VersionStorageInfo
+    // deletion
+    vset_->deletion_scheduler_->ScheduleDeletion(storage_info_);
+  } else {
+    delete storage_info_;
   }
 }
 
@@ -1604,7 +1617,7 @@ Status Version::GetTableProperties(const ReadOptions& read_options,
 Status Version::GetPropertiesOfAllTables(const ReadOptions& read_options,
                                          TablePropertiesCollection* props) {
   Status s;
-  for (int level = 0; level < storage_info_.num_levels_; level++) {
+  for (int level = 0; level < storage_info_->num_levels_; level++) {
     s = GetPropertiesOfAllTables(read_options, props, level);
     if (!s.ok()) {
       return s;
@@ -1625,8 +1638,8 @@ Status Version::TablesRangeTombstoneSummary(int max_entries_to_print,
 
   // TODO: plumb Env::IOActivity
   const ReadOptions read_options;
-  for (int level = 0; level < storage_info_.num_levels_; level++) {
-    for (const auto& file_meta : storage_info_.files_[level]) {
+  for (int level = 0; level < storage_info_->num_levels_; level++) {
+    for (const auto& file_meta : storage_info_->files_[level]) {
       auto fname =
           TableFileName(cfd_->ioptions()->cf_paths, file_meta->fd.GetNumber(),
                         file_meta->fd.GetPathId());
@@ -1675,7 +1688,7 @@ Status Version::TablesRangeTombstoneSummary(int max_entries_to_print,
 Status Version::GetPropertiesOfAllTables(const ReadOptions& read_options,
                                          TablePropertiesCollection* props,
                                          int level) {
-  for (const auto& file_meta : storage_info_.files_[level]) {
+  for (const auto& file_meta : storage_info_->files_[level]) {
     auto fname =
         TableFileName(cfd_->ioptions()->cf_paths, file_meta->fd.GetNumber(),
                       file_meta->fd.GetPathId());
@@ -1697,14 +1710,14 @@ Status Version::GetPropertiesOfAllTables(const ReadOptions& read_options,
 Status Version::GetPropertiesOfTablesInRange(
     const ReadOptions& read_options, const Range* range, std::size_t n,
     TablePropertiesCollection* props) const {
-  for (int level = 0; level < storage_info_.num_non_empty_levels(); level++) {
+  for (int level = 0; level < storage_info_->num_non_empty_levels(); level++) {
     for (decltype(n) i = 0; i < n; i++) {
       // Convert user_key into a corresponding internal key.
       InternalKey k1(range[i].start, kMaxSequenceNumber, kValueTypeForSeek);
       InternalKey k2(range[i].limit, kMaxSequenceNumber, kValueTypeForSeek);
       std::vector<FileMetaData*> files;
-      storage_info_.GetOverlappingInputs(level, &k1, &k2, &files, -1, nullptr,
-                                         false);
+      storage_info_->GetOverlappingInputs(level, &k1, &k2, &files, -1, nullptr,
+                                          false);
       for (const auto& file_meta : files) {
         auto fname =
             TableFileName(cfd_->ioptions()->cf_paths, file_meta->fd.GetNumber(),
@@ -1752,7 +1765,7 @@ Status Version::GetAggregatedTableProperties(
 
 size_t Version::GetMemoryUsageByTableReaders(const ReadOptions& read_options) {
   size_t total_usage = 0;
-  for (auto& file_level : storage_info_.level_files_brief_) {
+  for (auto& file_level : storage_info_->level_files_brief_) {
     for (size_t i = 0; i < file_level.num_files; i++) {
       total_usage += cfd_->table_cache()->GetMemoryUsageByTableReader(
           file_options_, read_options, cfd_->internal_comparator(),
@@ -1829,8 +1842,8 @@ void Version::GetColumnFamilyMetaData(ColumnFamilyMetaData* cf_meta) {
 
 uint64_t Version::GetSstFilesSize() {
   uint64_t sst_files_size = 0;
-  for (int level = 0; level < storage_info_.num_levels_; level++) {
-    for (const auto& file_meta : storage_info_.LevelFiles(level)) {
+  for (int level = 0; level < storage_info_->num_levels_; level++) {
+    for (const auto& file_meta : storage_info_->LevelFiles(level)) {
       sst_files_size += file_meta->fd.GetFileSize();
     }
   }
@@ -1842,14 +1855,14 @@ void Version::GetSstFilesBoundaryKeys(Slice* smallest_user_key,
   smallest_user_key->clear();
   largest_user_key->clear();
   bool initialized = false;
-  const Comparator* ucmp = storage_info_.user_comparator_;
+  const Comparator* ucmp = storage_info_->user_comparator_;
   for (int level = 0; level < cfd_->NumberLevels(); level++) {
-    if (storage_info_.LevelFiles(level).size() == 0) {
+    if (storage_info_->LevelFiles(level).size() == 0) {
       continue;
     }
     if (level == 0) {
       // we need to consider all files on level 0
-      for (const auto& file : storage_info_.LevelFiles(level)) {
+      for (const auto& file : storage_info_->LevelFiles(level)) {
         const Slice& start_user_key = file->smallest.user_key();
         if (!initialized ||
             ucmp->Compare(start_user_key, *smallest_user_key) < 0) {
@@ -1865,13 +1878,13 @@ void Version::GetSstFilesBoundaryKeys(Slice* smallest_user_key,
     } else {
       // we only need to consider the first and last file
       const Slice& start_user_key =
-          storage_info_.LevelFiles(level)[0]->smallest.user_key();
+          storage_info_->LevelFiles(level)[0]->smallest.user_key();
       if (!initialized ||
           ucmp->Compare(start_user_key, *smallest_user_key) < 0) {
         *smallest_user_key = start_user_key;
       }
       const Slice& end_user_key =
-          storage_info_.LevelFiles(level).back()->largest.user_key();
+          storage_info_->LevelFiles(level).back()->largest.user_key();
       if (!initialized || ucmp->Compare(end_user_key, *largest_user_key) > 0) {
         *largest_user_key = end_user_key;
       }
@@ -1882,8 +1895,8 @@ void Version::GetSstFilesBoundaryKeys(Slice* smallest_user_key,
 
 void Version::GetCreationTimeOfOldestFile(uint64_t* creation_time) {
   uint64_t oldest_time = std::numeric_limits<uint64_t>::max();
-  for (int level = 0; level < storage_info_.num_non_empty_levels_; level++) {
-    for (FileMetaData* meta : storage_info_.LevelFiles(level)) {
+  for (int level = 0; level < storage_info_->num_non_empty_levels_; level++) {
+    for (FileMetaData* meta : storage_info_->LevelFiles(level)) {
       assert(meta->fd.table_reader != nullptr);
       uint64_t file_creation_time = meta->TryGetFileCreationTime();
       if (file_creation_time == kUnknownFileCreationTime) {
@@ -1906,7 +1919,7 @@ InternalIterator* Version::TEST_GetLevelIterator(
   TruncatedRangeDelIterator*** tombstone_iter_ptr = nullptr;
   auto level_iter = new (mem) LevelIterator(
       cfd_->table_cache(), read_options, file_options_,
-      cfd_->internal_comparator(), &storage_info_.LevelFilesBrief(level),
+      cfd_->internal_comparator(), &storage_info_->LevelFilesBrief(level),
       mutable_cf_options_.prefix_extractor, should_sample_file_read(),
       cfd_->internal_stats()->GetFileReadHist(level),
       TableReaderCaller::kUserIterator, IsFilterSkipped(level), level,
@@ -1977,9 +1990,9 @@ void Version::AddIterators(const ReadOptions& read_options,
                            const FileOptions& soptions,
                            MergeIteratorBuilder* merge_iter_builder,
                            bool allow_unprepared_value) {
-  assert(storage_info_.finalized_);
+  assert(storage_info_->finalized_);
 
-  for (int level = 0; level < storage_info_.num_non_empty_levels(); level++) {
+  for (int level = 0; level < storage_info_->num_non_empty_levels(); level++) {
     AddIteratorsForLevel(read_options, soptions, merge_iter_builder, level,
                          allow_unprepared_value);
   }
@@ -1989,11 +2002,11 @@ void Version::AddIteratorsForLevel(const ReadOptions& read_options,
                                    const FileOptions& soptions,
                                    MergeIteratorBuilder* merge_iter_builder,
                                    int level, bool allow_unprepared_value) {
-  assert(storage_info_.finalized_);
-  if (level >= storage_info_.num_non_empty_levels()) {
+  assert(storage_info_->finalized_);
+  if (level >= storage_info_->num_non_empty_levels()) {
     // This is an empty level
     return;
-  } else if (storage_info_.LevelFilesBrief(level).num_files == 0) {
+  } else if (storage_info_->LevelFilesBrief(level).num_files == 0) {
     // No files in this level
     return;
   }
@@ -2004,8 +2017,8 @@ void Version::AddIteratorsForLevel(const ReadOptions& read_options,
   if (level == 0) {
     // Merge all level zero files together since they may overlap
     TruncatedRangeDelIterator* tombstone_iter = nullptr;
-    for (size_t i = 0; i < storage_info_.LevelFilesBrief(0).num_files; i++) {
-      const auto& file = storage_info_.LevelFilesBrief(0).files[i];
+    for (size_t i = 0; i < storage_info_->LevelFilesBrief(0).num_files; i++) {
+      const auto& file = storage_info_->LevelFilesBrief(0).files[i];
       auto table_iter = cfd_->table_cache()->NewIterator(
           read_options, soptions, cfd_->internal_comparator(),
           *file.file_metadata, /*range_del_agg=*/nullptr,
@@ -2029,11 +2042,11 @@ void Version::AddIteratorsForLevel(const ReadOptions& read_options,
       // rather than Seek(), while files in other levels are recored per seek.
       // If users execute one range query per iterator, there may be some
       // discrepancy here.
-      for (FileMetaData* meta : storage_info_.LevelFiles(0)) {
+      for (FileMetaData* meta : storage_info_->LevelFiles(0)) {
         sample_file_read_inc(meta);
       }
     }
-  } else if (storage_info_.LevelFilesBrief(level).num_files > 0) {
+  } else if (storage_info_->LevelFilesBrief(level).num_files > 0) {
     // For levels > 0, we can use a concatenating iterator that sequentially
     // walks through the non-overlapping files in the level, opening them
     // lazily.
@@ -2041,7 +2054,7 @@ void Version::AddIteratorsForLevel(const ReadOptions& read_options,
     TruncatedRangeDelIterator*** tombstone_iter_ptr = nullptr;
     auto level_iter = new (mem) LevelIterator(
         cfd_->table_cache(), read_options, soptions,
-        cfd_->internal_comparator(), &storage_info_.LevelFilesBrief(level),
+        cfd_->internal_comparator(), &storage_info_->LevelFilesBrief(level),
         mutable_cf_options_.prefix_extractor, should_sample_file_read(),
         cfd_->internal_stats()->GetFileReadHist(level),
         TableReaderCaller::kUserIterator, IsFilterSkipped(level), level,
@@ -2063,7 +2076,7 @@ Status Version::OverlapWithLevelIterator(const ReadOptions& read_options,
                                          const Slice& smallest_user_key,
                                          const Slice& largest_user_key,
                                          int level, bool* overlap) {
-  assert(storage_info_.finalized_);
+  assert(storage_info_->finalized_);
 
   auto icmp = cfd_->internal_comparator();
   auto ucmp = icmp.user_comparator();
@@ -2076,8 +2089,8 @@ Status Version::OverlapWithLevelIterator(const ReadOptions& read_options,
   *overlap = false;
 
   if (level == 0) {
-    for (size_t i = 0; i < storage_info_.LevelFilesBrief(0).num_files; i++) {
-      const auto file = &storage_info_.LevelFilesBrief(0).files[i];
+    for (size_t i = 0; i < storage_info_->LevelFilesBrief(0).num_files; i++) {
+      const auto file = &storage_info_->LevelFilesBrief(0).files[i];
       if (AfterFile(ucmp, &smallest_user_key, file) ||
           BeforeFile(ucmp, &largest_user_key, file)) {
         continue;
@@ -2099,11 +2112,11 @@ Status Version::OverlapWithLevelIterator(const ReadOptions& read_options,
         break;
       }
     }
-  } else if (storage_info_.LevelFilesBrief(level).num_files > 0) {
+  } else if (storage_info_->LevelFilesBrief(level).num_files > 0) {
     auto mem = arena.AllocateAligned(sizeof(LevelIterator));
     ScopedArenaIterator iter(new (mem) LevelIterator(
         cfd_->table_cache(), read_options, file_options,
-        cfd_->internal_comparator(), &storage_info_.LevelFilesBrief(level),
+        cfd_->internal_comparator(), &storage_info_->LevelFilesBrief(level),
         mutable_cf_options_.prefix_extractor, should_sample_file_read(),
         cfd_->internal_stats()->GetFileReadHist(level),
         TableReaderCaller::kUserIterator, IsFilterSkipped(level), level,
@@ -2192,7 +2205,7 @@ Version::Version(ColumnFamilyData* column_family_data, VersionSet* vset,
       blob_source_(cfd_ ? cfd_->blob_source() : nullptr),
       merge_operator_(
           (cfd_ == nullptr) ? nullptr : cfd_->ioptions()->merge_operator.get()),
-      storage_info_(
+      storage_info_(new VersionStorageInfo(
           (cfd_ == nullptr) ? nullptr : &cfd_->internal_comparator(),
           (cfd_ == nullptr) ? nullptr : cfd_->user_comparator(),
           cfd_ == nullptr ? 0 : cfd_->NumberLevels(),
@@ -2206,7 +2219,7 @@ Version::Version(ColumnFamilyData* column_family_data, VersionSet* vset,
           cfd_ == nullptr ? nullptr : cfd_->ioptions()->clock,
           cfd_ == nullptr ? 0
                           : mutable_cf_options.bottommost_file_compaction_delay,
-          vset->offpeak_time_option()),
+          vset->offpeak_time_option())),
       vset_(vset),
       next_(this),
       prev_(this),
@@ -2253,7 +2266,7 @@ Status Version::GetBlob(const ReadOptions& read_options, const Slice& user_key,
 
   const uint64_t blob_file_number = blob_index.file_number();
 
-  auto blob_file_meta = storage_info_.GetBlobFileMetaData(blob_file_number);
+  auto blob_file_meta = storage_info_->GetBlobFileMetaData(blob_file_number);
   if (!blob_file_meta) {
     return Status::Corruption("Invalid blob file number");
   }
@@ -2277,7 +2290,7 @@ void Version::MultiGetBlob(
 
   for (auto& ctx : blob_ctxs) {
     const auto file_number = ctx.first;
-    const auto blob_file_meta = storage_info_.GetBlobFileMetaData(file_number);
+    const auto blob_file_meta = storage_info_->GetBlobFileMetaData(file_number);
 
     autovector<BlobReadRequest> blob_reqs_in_file;
     BlobReadContexts& blobs_in_file = ctx.second;
@@ -2399,9 +2412,9 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
     pinned_iters_mgr->StartPinning();
   }
 
-  FilePicker fp(user_key, ikey, &storage_info_.level_files_brief_,
-                storage_info_.num_non_empty_levels_,
-                &storage_info_.file_indexer_, user_comparator(),
+  FilePicker fp(user_key, ikey, &storage_info_->level_files_brief_,
+                storage_info_->num_non_empty_levels_,
+                &storage_info_->file_indexer_, user_comparator(),
                 internal_comparator());
   FdWithKeyRange* f = fp.GetNextFile();
 
@@ -2605,10 +2618,10 @@ void Version::MultiGet(const ReadOptions& read_options, MultiGetRange* range,
 #endif  // USE_COROUTINES
   {
     MultiGetRange file_picker_range(*range, range->begin(), range->end());
-    FilePickerMultiGet fp(&file_picker_range, &storage_info_.level_files_brief_,
-                          storage_info_.num_non_empty_levels_,
-                          &storage_info_.file_indexer_, user_comparator(),
-                          internal_comparator());
+    FilePickerMultiGet fp(
+        &file_picker_range, &storage_info_->level_files_brief_,
+        storage_info_->num_non_empty_levels_, &storage_info_->file_indexer_,
+        user_comparator(), internal_comparator());
     FdWithKeyRange* f = fp.GetNextFileInLevel();
     uint64_t num_index_read = 0;
     uint64_t num_filter_read = 0;
@@ -3046,7 +3059,7 @@ bool Version::IsFilterSkipped(int level, bool is_file_last_in_level) {
   // skip checking the filters when we predict a hit.
   return cfd_->ioptions()->optimize_filters_for_hits &&
          (level > 0 || is_file_last_in_level) &&
-         level == storage_info_.num_non_empty_levels() - 1;
+         level == storage_info_->num_non_empty_levels() - 1;
 }
 
 void VersionStorageInfo::GenerateLevelFilesBrief() {
@@ -3076,13 +3089,13 @@ void Version::PrepareAppend(const MutableCFOptions& mutable_cf_options,
                             bool update_stats) {
   TEST_SYNC_POINT_CALLBACK(
       "Version::PrepareAppend:forced_check",
-      reinterpret_cast<void*>(&storage_info_.force_consistency_checks_));
+      reinterpret_cast<void*>(&storage_info_->force_consistency_checks_));
 
   if (update_stats) {
     UpdateAccumulatedStats(read_options);
   }
 
-  storage_info_.PrepareForVersionAppend(*cfd_->ioptions(), mutable_cf_options);
+  storage_info_->PrepareForVersionAppend(*cfd_->ioptions(), mutable_cf_options);
 }
 
 bool Version::MaybeInitializeFileMetaData(const ReadOptions& read_options,
@@ -3153,12 +3166,12 @@ void Version::UpdateAccumulatedStats(const ReadOptions& read_options) {
   // will be triggered, which creates higher-level files whose num_deletions
   // will be updated here.
   for (int level = 0;
-       level < storage_info_.num_levels_ && init_count < kMaxInitCount;
+       level < storage_info_->num_levels_ && init_count < kMaxInitCount;
        ++level) {
-    for (auto* file_meta : storage_info_.files_[level]) {
+    for (auto* file_meta : storage_info_->files_[level]) {
       if (MaybeInitializeFileMetaData(read_options, file_meta)) {
         // each FileMeta will be initialized only once.
-        storage_info_.UpdateAccumulatedStats(file_meta);
+        storage_info_->UpdateAccumulatedStats(file_meta);
         // when option "max_open_files" is -1, all the file metadata has
         // already been read, so MaybeInitializeFileMetaData() won't incur
         // any I/O cost. "max_open_files=-1" means that the table cache passed
@@ -3177,13 +3190,13 @@ void Version::UpdateAccumulatedStats(const ReadOptions& read_options) {
   // In case all sampled-files contain only deletion entries, then we
   // load the table-property of a file in higher-level to initialize
   // that value.
-  for (int level = storage_info_.num_levels_ - 1;
-       storage_info_.accumulated_raw_value_size_ == 0 && level >= 0; --level) {
-    for (int i = static_cast<int>(storage_info_.files_[level].size()) - 1;
-         storage_info_.accumulated_raw_value_size_ == 0 && i >= 0; --i) {
+  for (int level = storage_info_->num_levels_ - 1;
+       storage_info_->accumulated_raw_value_size_ == 0 && level >= 0; --level) {
+    for (int i = static_cast<int>(storage_info_->files_[level].size()) - 1;
+         storage_info_->accumulated_raw_value_size_ == 0 && i >= 0; --i) {
       if (MaybeInitializeFileMetaData(read_options,
-                                      storage_info_.files_[level][i])) {
-        storage_info_.UpdateAccumulatedStats(storage_info_.files_[level][i]);
+                                      storage_info_->files_[level][i])) {
+        storage_info_->UpdateAccumulatedStats(storage_info_->files_[level][i]);
       }
     }
   }
@@ -4880,8 +4893,8 @@ void Version::AddLiveFiles(std::vector<uint64_t>* live_table_files,
   assert(live_table_files);
   assert(live_blob_files);
 
-  for (int level = 0; level < storage_info_.num_levels(); ++level) {
-    const auto& level_files = storage_info_.LevelFiles(level);
+  for (int level = 0; level < storage_info_->num_levels(); ++level) {
+    const auto& level_files = storage_info_->LevelFiles(level);
     for (const auto& meta : level_files) {
       assert(meta);
 
@@ -4889,7 +4902,7 @@ void Version::AddLiveFiles(std::vector<uint64_t>* live_table_files,
     }
   }
 
-  const auto& blob_files = storage_info_.GetBlobFiles();
+  const auto& blob_files = storage_info_->GetBlobFiles();
   for (const auto& meta : blob_files) {
     assert(meta);
 
@@ -4919,7 +4932,7 @@ void Version::RemoveLiveFiles(
 
 std::string Version::DebugString(bool hex, bool print_stats) const {
   std::string r;
-  for (int level = 0; level < storage_info_.num_levels_; level++) {
+  for (int level = 0; level < storage_info_->num_levels_; level++) {
     // E.g.,
     //   --- level 1 ---
     //   17:123[1 .. 124]['a' .. 'd']
@@ -4931,12 +4944,12 @@ std::string Version::DebugString(bool hex, bool print_stats) const {
     AppendNumberTo(&r, level);
     r.append(" --- version# ");
     AppendNumberTo(&r, version_number_);
-    if (storage_info_.compact_cursor_[level].Valid()) {
+    if (storage_info_->compact_cursor_[level].Valid()) {
       r.append(" --- compact_cursor: ");
-      r.append(storage_info_.compact_cursor_[level].DebugString(hex));
+      r.append(storage_info_->compact_cursor_[level].DebugString(hex));
     }
     r.append(" ---\n");
-    const std::vector<FileMetaData*>& files = storage_info_.files_[level];
+    const std::vector<FileMetaData*>& files = storage_info_->files_[level];
     for (size_t i = 0; i < files.size(); i++) {
       r.push_back(' ');
       AppendNumberTo(&r, files[i]->fd.GetNumber());
@@ -4966,7 +4979,7 @@ std::string Version::DebugString(bool hex, bool print_stats) const {
     }
   }
 
-  const auto& blob_files = storage_info_.GetBlobFiles();
+  const auto& blob_files = storage_info_->GetBlobFiles();
   if (!blob_files.empty()) {
     r.append("--- blob files --- version# ");
     AppendNumberTo(&r, version_number_);
@@ -5095,7 +5108,12 @@ VersionSet::VersionSet(
       io_tracer_(io_tracer),
       db_session_id_(db_session_id),
       offpeak_time_option_(OffpeakTimeOption(daily_offpeak_time_utc)),
-      error_handler_(error_handler) {}
+      error_handler_(error_handler),
+      deletion_scheduler_(nullptr) {
+  // Initialize the dedicated background deletion scheduler
+  deletion_scheduler_.reset(
+      new VersionSetDeletionScheduler(db_options_->info_log.get()));
+}
 
 VersionSet::~VersionSet() {
   // we need to delete column_family_set_ because its destructor depends on
@@ -5110,6 +5128,10 @@ VersionSet::~VersionSet() {
   }
   obsolete_files_.clear();
   io_status_.PermitUncheckedError();
+  // Shutdown the dedicated background deletion scheduler first
+  if (deletion_scheduler_) {
+    deletion_scheduler_->Shutdown();
+  }
 }
 
 void VersionSet::Reset() {
@@ -5151,7 +5173,7 @@ void VersionSet::AppendVersion(ColumnFamilyData* column_family_data,
       *column_family_data->GetLatestMutableCFOptions());
 
   // Mark v finalized
-  v->storage_info_.SetFinalized();
+  v->storage_info_->SetFinalized();
 
   // Make "v" current
   assert(v->refs_ == 0);
@@ -7251,8 +7273,8 @@ Status VersionSet::VerifyFileMetadata(const ReadOptions& read_options,
 
     Version* version = cfd->current();
     assert(version);
-    VersionStorageInfo& storage_info = version->storage_info_;
-    const InternalKeyComparator* icmp = storage_info.InternalComparator();
+    VersionStorageInfo* storage_info = version->storage_info_;
+    const InternalKeyComparator* icmp = storage_info->InternalComparator();
     assert(icmp);
 
     InternalStats* internal_stats = cfd->internal_stats();
