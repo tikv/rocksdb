@@ -79,6 +79,7 @@ LIB_SOURCES =                                                   \
   db/version_edit.cc                                            \
   db/version_edit_handler.cc                                    \
   db/version_set.cc                                             \
+  db/version_set_deletion_scheduler.cc                          \
   db/wal_edit.cc                                                \
   db/wal_manager.cc                                             \
   db/write_batch.cc                                             \

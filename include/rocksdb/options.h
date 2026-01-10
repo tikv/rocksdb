@@ -1886,6 +1886,9 @@ struct IngestExternalFileOptions {
   // ingestion. However, if no checksum information is provided with the
   // ingested files, DB will generate the checksum and store in the Manifest.
   bool verify_file_checksum = true;
+  // Set to TRUE if user wants to allow writes to the DB during ingestion.
+  // User must ensure no writes overlap with the ingested data.
+  bool allow_write = false;
 };
 
 enum TraceFilterType : uint64_t {

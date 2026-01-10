@@ -94,13 +94,13 @@ Status AESCTRCipherStream::Cipher(uint64_t file_offset, char* data,
   if (std::numeric_limits<uint64_t>::max() - block_index < initial_iv_low_) {
     iv_high++;
   }
-  unsigned char iv[block_size];
-  PutBigEndian64(iv_high, iv);
-  PutBigEndian64(iv_low, iv + sizeof(uint64_t));
+  std::vector<unsigned char> iv(block_size);
+  PutBigEndian64(iv_high, iv.data());
+  PutBigEndian64(iv_low, iv.data() + sizeof(uint64_t));
 
   ret = EVP_CipherInit(ctx, cipher_,
-                       reinterpret_cast<const unsigned char*>(key_.data()), iv,
-                       (is_encrypt ? 1 : 0));
+                       reinterpret_cast<const unsigned char*>(key_.data()),
+                       iv.data(), (is_encrypt ? 1 : 0));
   if (ret != 1) {
     return Status::IOError("Failed to init cipher.");
   }
@@ -116,7 +116,7 @@ Status AESCTRCipherStream::Cipher(uint64_t file_offset, char* data,
   uint64_t data_offset = 0;
   size_t remaining_data_size = data_size;
   int output_size = 0;
-  unsigned char partial_block[block_size];
+  std::vector<unsigned char> partial_block(block_size);
 
   // In the following we assume EVP_CipherUpdate allow in and out buffer are
   // the same, to save one memcpy. This is not specified in official man page.
@@ -126,9 +126,9 @@ Status AESCTRCipherStream::Cipher(uint64_t file_offset, char* data,
   if (block_offset > 0) {
     size_t partial_block_size =
         std::min<size_t>(block_size - block_offset, remaining_data_size);
-    memcpy(partial_block + block_offset, data, partial_block_size);
-    ret = EVP_CipherUpdate(ctx, partial_block, &output_size, partial_block,
-                           static_cast<int>(block_size));
+    memcpy(partial_block.data() + block_offset, data, partial_block_size);
+    ret = EVP_CipherUpdate(ctx, partial_block.data(), &output_size,
+                           partial_block.data(), static_cast<int>(block_size));
     if (ret != 1) {
       FreeCipherContext(ctx);
       return Status::IOError("Crypter failed for first block, offset " +
@@ -140,7 +140,7 @@ Status AESCTRCipherStream::Cipher(uint64_t file_offset, char* data,
           "Unexpected crypter output size for first block, expected " +
           ToString(block_size) + " vs actual " + ToString(output_size));
     }
-    memcpy(data, partial_block + block_offset, partial_block_size);
+    memcpy(data, partial_block.data() + block_offset, partial_block_size);
     data_offset += partial_block_size;
     remaining_data_size -= partial_block_size;
   }
@@ -172,9 +172,9 @@ Status AESCTRCipherStream::Cipher(uint64_t file_offset, char* data,
   // fake a full block.
   if (remaining_data_size > 0) {
     assert(remaining_data_size < block_size);
-    memcpy(partial_block, data + data_offset, remaining_data_size);
-    ret = EVP_CipherUpdate(ctx, partial_block, &output_size, partial_block,
-                           static_cast<int>(block_size));
+    memcpy(partial_block.data(), data + data_offset, remaining_data_size);
+    ret = EVP_CipherUpdate(ctx, partial_block.data(), &output_size,
+                           partial_block.data(), static_cast<int>(block_size));
     if (ret != 1) {
       FreeCipherContext(ctx);
       return Status::IOError("Crypter failed for last block, offset " +
@@ -186,7 +186,7 @@ Status AESCTRCipherStream::Cipher(uint64_t file_offset, char* data,
           "Unexpected crypter output size for last block, expected " +
           ToString(block_size) + " vs actual " + ToString(output_size));
     }
-    memcpy(data + data_offset, partial_block, remaining_data_size);
+    memcpy(data + data_offset, partial_block.data(), remaining_data_size);
   }
 
   // Since padding is disabled, and the cipher flow always passes a multiply
