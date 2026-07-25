@@ -826,6 +826,105 @@ class LDBTestCase(unittest.TestCase):
             cmd_verbose, expected_verbose_output, unexpected=False, isPattern=True
         )
 
+    def testManifestDumpSstFileNumber(self):
+        print("Running testManifestDumpSstFileNumber...")
+        dbPath = os.path.join(self.TMP_DIR, self.DB_NAME)
+        self.assertRunOK("put default-key default-value --create_if_missing", "OK")
+        self.assertRunOK("create_column_family write", "OK")
+        self.assertRunOK(
+            "put --column_family=write write-key write-value", "OK"
+        )
+        self.assertRunOK(
+            "put --column_family=write write-key-2 write-value-2", "OK"
+        )
+
+        help_output = my_check_output("./ldb --help", shell=True)
+        self.assertIn("--sst_file_number=<sst_file_number>", help_output)
+
+        live_files_output = my_check_output(
+            "./ldb list_live_files_metadata --sort_by_filename --db=%s" % dbPath,
+            shell=True,
+        )
+        write_file = re.search(
+            r"(\d+)\.sst : level (\d+), column family 'write'",
+            live_files_output,
+        )
+        self.assertIsNotNone(write_file)
+        sst_file_number = int(write_file.group(1))
+        expected_level = write_file.group(2)
+
+        output = my_check_output(
+            './ldb manifest_dump --hex --db=%s --sst_file_number=%d '
+            '| grep -v "Created bg thread"' % (dbPath, sst_file_number),
+            shell=True,
+        ).strip()
+        output_lines = output.splitlines()
+        self.assertEqual(len(output_lines), 2)
+        self.assertRegex(
+            output_lines[0],
+            r'^--------------- Column family "write"  \(ID \d+\) --------------$',
+        )
+        self.assertRegex(
+            output_lines[1],
+            r"^%d:\d+\[\d+ \.\. \d+\]"
+            r"\[.+ seq:\d+, type:\d+ \.\. .+ seq:\d+, type:\d+\]"
+            r" at level %s$" % (sst_file_number, expected_level),
+        )
+
+        output_with_leading_zeros = my_check_output(
+            './ldb manifest_dump --hex --db=%s --sst_file_number=%020d '
+            '| grep -v "Created bg thread"' % (dbPath, sst_file_number),
+            shell=True,
+        ).strip()
+        self.assertEqual(output_with_leading_zeros, output)
+
+        invalid_sst_file_numbers = [
+            "",
+            "0",
+            "not-a-number",
+            "-1",
+            "+1",
+            " 1",
+            "1k",
+            "123abc",
+            "18446744073709551616",
+        ]
+        for invalid_sst_file_number in invalid_sst_file_numbers:
+            process = subprocess.Popen(
+                [
+                    "./ldb",
+                    "manifest_dump",
+                    "--db=%s" % dbPath,
+                    "--sst_file_number=%s" % invalid_sst_file_number,
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            stdout, stderr = process.communicate()
+            self.assertNotEqual(process.returncode, 0)
+            self.assertEqual(stdout.decode("utf-8").strip(), "")
+            self.assertIn("Failed: --sst_file_number", stderr.decode("utf-8"))
+
+        self.assertRunOK("drop_column_family write", "OK")
+        output = my_check_output(
+            "./ldb manifest_dump --db=%s --sst_file_number=%d"
+            % (dbPath, sst_file_number),
+            shell=True,
+        )
+        self.assertEqual(output.strip(), "")
+
+        all_sst_file_numbers = [
+            int(os.path.basename(path).split(".")[0])
+            for path in self.getSSTFiles(dbPath)
+        ]
+        missing_sst_file_number = max(all_sst_file_numbers) + 1
+        output = my_check_output(
+            "./ldb manifest_dump --db=%s --sst_file_number=%d"
+            % (dbPath, missing_sst_file_number),
+            shell=True,
+        )
+        self.assertEqual(output.strip(), "")
+
     def testGetProperty(self):
         print("Running testGetProperty...")
         dbPath = os.path.join(self.TMP_DIR, self.DB_NAME)

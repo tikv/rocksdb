@@ -1349,7 +1349,8 @@ namespace {
 
 void DumpManifestFile(Options options, std::string file, bool verbose, bool hex,
                       bool json,
-                      const std::vector<ColumnFamilyDescriptor>& cf_descs) {
+                      const std::vector<ColumnFamilyDescriptor>& cf_descs,
+                      uint64_t sst_file_number = 0) {
   EnvOptions sopt;
   std::string dbname("dummy");
   std::shared_ptr<Cache> tc(NewLRUCache(options.max_open_files - 10,
@@ -1367,7 +1368,8 @@ void DumpManifestFile(Options options, std::string file, bool verbose, bool hex,
                       /*db_id=*/"", /*db_session_id=*/"",
                       options.daily_offpeak_time_utc,
                       /*error_handler=*/nullptr);
-  Status s = versions.DumpManifest(options, file, verbose, hex, json, cf_descs);
+  Status s = versions.DumpManifest(options, file, verbose, hex, json, cf_descs,
+                                   sst_file_number);
   if (!s.ok()) {
     fprintf(stderr, "Error in processing file %s %s\n", file.c_str(),
             s.ToString().c_str());
@@ -1379,6 +1381,7 @@ void DumpManifestFile(Options options, std::string file, bool verbose, bool hex,
 const std::string ManifestDumpCommand::ARG_VERBOSE = "verbose";
 const std::string ManifestDumpCommand::ARG_JSON = "json";
 const std::string ManifestDumpCommand::ARG_PATH = "path";
+const std::string ManifestDumpCommand::ARG_NUMBER = "sst_file_number";
 
 void ManifestDumpCommand::Help(std::string& ret) {
   ret.append("  ");
@@ -1386,6 +1389,7 @@ void ManifestDumpCommand::Help(std::string& ret) {
   ret.append(" [--" + ARG_VERBOSE + "]");
   ret.append(" [--" + ARG_JSON + "]");
   ret.append(" [--" + ARG_PATH + "=<path_to_manifest_file>]");
+  ret.append(" [--" + ARG_NUMBER + "=<sst_file_number>]");
   ret.append("\n");
 }
 
@@ -1393,11 +1397,12 @@ ManifestDumpCommand::ManifestDumpCommand(
     const std::vector<std::string>& /*params*/,
     const std::map<std::string, std::string>& options,
     const std::vector<std::string>& flags)
-    : LDBCommand(
-          options, flags, false,
-          BuildCmdLineOptions({ARG_VERBOSE, ARG_PATH, ARG_HEX, ARG_JSON})),
+    : LDBCommand(options, flags, false,
+                 BuildCmdLineOptions(
+                     {ARG_VERBOSE, ARG_PATH, ARG_HEX, ARG_JSON, ARG_NUMBER})),
       verbose_(false),
-      json_(false) {
+      json_(false),
+      sst_file_number_(0) {
   verbose_ = IsFlagPresent(flags, ARG_VERBOSE);
   json_ = IsFlagPresent(flags, ARG_JSON);
 
@@ -1406,6 +1411,23 @@ ManifestDumpCommand::ManifestDumpCommand(
     path_ = itr->second;
     if (path_.empty()) {
       exec_state_ = LDBCommandExecuteResult::Failed("--path: missing pathname");
+    }
+  }
+
+  if (IsFlagPresent(flags, ARG_NUMBER)) {
+    exec_state_ =
+        LDBCommandExecuteResult::Failed("--sst_file_number requires a value");
+  } else {
+    itr = options.find(ARG_NUMBER);
+    if (itr != options.end()) {
+      Slice value(itr->second);
+      if (!ConsumeDecimalNumber(&value, &sst_file_number_) || !value.empty()) {
+        exec_state_ = LDBCommandExecuteResult::Failed(
+            "--sst_file_number must be an unsigned 64-bit decimal integer");
+      } else if (sst_file_number_ == 0) {
+        exec_state_ = LDBCommandExecuteResult::Failed(
+            "--sst_file_number must be greater than zero");
+      }
     }
   }
 }
@@ -1480,7 +1502,7 @@ void ManifestDumpCommand::DoCommand() {
   }
 
   DumpManifestFile(options_, manifestfile, verbose_, is_key_hex_, json_,
-                   column_families_);
+                   column_families_, sst_file_number_);
 
   if (verbose_) {
     fprintf(stdout, "Processing Manifest file %s done\n", manifestfile.c_str());

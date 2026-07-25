@@ -59,6 +59,28 @@ Status FileMetaData::UpdateBoundaries(const Slice& key, const Slice& value,
   return Status::OK();
 }
 
+std::string FileMetaData::DebugString(bool hex) const {
+  std::string result;
+  AppendNumberTo(&result, fd.GetNumber());
+  result.push_back(':');
+  AppendNumberTo(&result, fd.GetFileSize());
+  result.append("[");
+  AppendNumberTo(&result, fd.smallest_seqno);
+  result.append(" .. ");
+  AppendNumberTo(&result, fd.largest_seqno);
+  result.append("]");
+  result.append("[");
+  result.append(smallest.DebugString(hex));
+  result.append(" .. ");
+  result.append(largest.DebugString(hex));
+  result.append("]");
+  if (oldest_blob_file_number != kInvalidBlobFileNumber) {
+    result.append(" blob_file:");
+    AppendNumberTo(&result, oldest_blob_file_number);
+  }
+  return result;
+}
+
 void VersionEdit::Clear() {
   max_level_ = 0;
   db_id_.clear();

@@ -333,6 +333,8 @@ struct FileMetaData {
     return kUnknownFileCreationTime;
   }
 
+  std::string DebugString(bool hex) const;
+
   // WARNING: manual update to this function is needed
   // whenever a new string property is added to FileMetaData
   // to reduce approximation error.

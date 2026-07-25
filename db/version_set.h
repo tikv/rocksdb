@@ -1294,10 +1294,12 @@ class VersionSet {
   // Get the checksum information of all live files
   Status GetLiveFilesChecksumInfo(FileChecksumList* checksum_list);
 
-  // printf contents (for debugging)
+  // Print contents for debugging. If sst_file_number is nonzero, only print
+  // the final metadata for that live SST.
   Status DumpManifest(Options& options, std::string& manifestFileName,
                       bool verbose, bool hex = false, bool json = false,
-                      const std::vector<ColumnFamilyDescriptor>& cf_descs = {});
+                      const std::vector<ColumnFamilyDescriptor>& cf_descs = {},
+                      uint64_t sst_file_number = 0);
 
   const std::string& DbSessionId() const { return db_session_id_; }
 
