@@ -2394,23 +2394,56 @@ TEST_P(ExternalSSTFileTest, IngestBehind) {
 TEST_P(ExternalSSTFileTest, WriteDuringIngest) {
   SyncPoint::GetInstance()->DisableProcessing();
 
-  // Set callback to simulate concurrent write during ingestion
-  SyncPoint::GetInstance()->SetCallBack(
-      "DBImpl::IngestExternalFile:AfterAllowWriteCheck", [&](void*) {
-        // Write a non-overlapping key
-        ASSERT_OK(Put("foo", "v1"));
-      });
-
   Options options = CurrentOptions();
+  options.enable_multi_batch_write = true;
   DestroyAndReopen(options);
 
+  std::vector<std::string> external_files;
+  for (const std::string& key : {"foo1", "foo2"}) {
+    std::string file_path = sst_files_dir_ + env_->GenerateUniqueId();
+    SstFileWriter writer(EnvOptions(), options);
+    ASSERT_OK(writer.Open(file_path));
+    ASSERT_OK(writer.Put(key, "v1"));
+    ASSERT_OK(writer.Finish());
+    external_files.push_back(std::move(file_path));
+  }
+
+  const SequenceNumber last_seqno = db_->GetLatestSequenceNumber();
+  const Snapshot* snapshot = db_->GetSnapshot();
+  std::vector<SequenceNumber> assigned_seqnos;
+
+  // Write after the ingestion sequence number has been reserved but before it
+  // is assigned to the ingested file.
+  SyncPoint::GetInstance()->SetCallBack(
+      "DBImpl::IngestExternalFiles:AfterReserveSeqno",
+      [&](void*) { ASSERT_OK(Put("bar", "v1")); });
+  SyncPoint::GetInstance()->SetCallBack(
+      "ExternalSstFileIngestionJob::Run", [&](void* arg) {
+        ASSERT_NE(arg, nullptr);
+        assigned_seqnos.push_back(*static_cast<SequenceNumber*>(arg));
+      });
+
   SyncPoint::GetInstance()->EnableProcessing();
-  ASSERT_OK(GenerateAndAddExternalFile(options, {{"foo", "v1"}}, -1, true,
-                                       false, true, false, false,
-                                       true /* allow_write */));
-  ASSERT_OK(Put("bar", "v1"));
-  ASSERT_EQ(Get("foo"), "v1");
+  IngestExternalFileOptions ifo;
+  ifo.allow_global_seqno = true;
+  ifo.write_global_seqno = std::get<0>(GetParam());
+  ifo.verify_checksums_before_ingest = std::get<1>(GetParam());
+  ifo.allow_write = true;
+  ASSERT_OK(db_->IngestExternalFile(external_files, ifo));
+
+  ASSERT_EQ((std::vector<SequenceNumber>{last_seqno + 1, last_seqno + 2}),
+            assigned_seqnos);
+  ASSERT_EQ(last_seqno + 3, db_->GetLatestSequenceNumber());
+  ASSERT_EQ(Get("foo1"), "v1");
+  ASSERT_EQ(Get("foo2"), "v1");
   ASSERT_EQ(Get("bar"), "v1");
+
+  ReadOptions read_options;
+  read_options.snapshot = snapshot;
+  std::string value;
+  ASSERT_TRUE(db_->Get(read_options, "foo1", &value).IsNotFound());
+  ASSERT_TRUE(db_->Get(read_options, "foo2", &value).IsNotFound());
+  db_->ReleaseSnapshot(snapshot);
 
   SyncPoint::GetInstance()->DisableProcessing();
   SyncPoint::GetInstance()->ClearAllCallBacks();

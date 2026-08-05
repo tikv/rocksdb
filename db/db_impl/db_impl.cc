@@ -5928,9 +5928,45 @@ Status DBImpl::IngestExternalFiles(
     }
     // Run ingestion jobs.
     if (status.ok()) {
+      if (allow_write) {
+        // Briefly stop writes while reserving sequence numbers for ingestion.
+        write_thread_.EnterUnbatched(&w, &mutex_);
+        if (two_write_queues_) {
+          nonmem_write_thread_.EnterUnbatched(&nonmem_w, &mutex_);
+        }
+        WaitForPendingWrites();
+      }
+
+      SequenceNumber last_seqno = versions_->LastSequence();
+      if (allow_write) {
+        SequenceNumber reserved_seqno_count = 0;
+        for (size_t i = 0; i != num_cfs; ++i) {
+          reserved_seqno_count =
+              std::max(reserved_seqno_count,
+                       static_cast<SequenceNumber>(
+                           ingestion_jobs[i].files_to_ingest().size()));
+        }
+        assert(reserved_seqno_count > 0);
+        assert(last_seqno <= kMaxSequenceNumber - reserved_seqno_count);
+        const SequenceNumber reserved_last_seqno =
+            last_seqno + reserved_seqno_count;
+        versions_->SetLastAllocatedSequence(reserved_last_seqno);
+        versions_->SetLastPublishedSequence(reserved_last_seqno);
+        versions_->SetLastSequence(reserved_last_seqno);
+
+        if (two_write_queues_) {
+          nonmem_write_thread_.ExitUnbatched(&nonmem_w);
+        }
+        write_thread_.ExitUnbatched(&w);
+
+        // The reservation cannot be rolled back if ingestion fails because a
+        // foreground write may have already consumed a later sequence number.
+        TEST_SYNC_POINT("DBImpl::IngestExternalFiles:AfterReserveSeqno");
+      }
+
       for (size_t i = 0; i != num_cfs; ++i) {
         mutex_.AssertHeld();
-        status = ingestion_jobs[i].Run();
+        status = ingestion_jobs[i].Run(last_seqno);
         if (!status.ok()) {
           break;
         }
@@ -5964,29 +6000,36 @@ Status DBImpl::IngestExternalFiles(
         }
         assert(0 == num_entries);
       }
+      // With allow_write, foreground flushes may advance the MANIFEST sequence
+      // after sequence numbers are reserved. LogAndApplyHelper keeps
+      // VersionEdit sequence numbers non-decreasing in the MANIFEST.
       status = versions_->LogAndApply(cfds_to_commit, mutable_cf_options_list,
                                       read_options, edit_lists, &mutex_,
                                       directories_.GetDbDir());
-      // It is safe to update VersionSet last seqno here after LogAndApply since
-      // LogAndApply persists last sequence number from VersionEdits,
-      // which are from file's largest seqno and not from VersionSet.
-      //
-      // It is necessary to update last seqno here since LogAndApply releases
-      // mutex when persisting MANIFEST file, and the snapshots taken during
-      // that period will not be stable if VersionSet last seqno is updated
-      // before LogAndApply.
-      int consumed_seqno_count =
-          ingestion_jobs[0].ConsumedSequenceNumbersCount();
-      for (size_t i = 1; i != num_cfs; ++i) {
-        consumed_seqno_count =
-            std::max(consumed_seqno_count,
-                     ingestion_jobs[i].ConsumedSequenceNumbersCount());
-      }
-      if (consumed_seqno_count > 0) {
-        const SequenceNumber last_seqno = versions_->LastSequence();
-        versions_->SetLastAllocatedSequence(last_seqno + consumed_seqno_count);
-        versions_->SetLastPublishedSequence(last_seqno + consumed_seqno_count);
-        versions_->SetLastSequence(last_seqno + consumed_seqno_count);
+      if (!allow_write) {
+        // It is safe to update VersionSet last seqno here after LogAndApply
+        // since LogAndApply persists last sequence number from VersionEdits,
+        // which are from file's largest seqno and not from VersionSet.
+        //
+        // It is necessary to update last seqno here since LogAndApply releases
+        // mutex when persisting MANIFEST file, and the snapshots taken during
+        // that period will not be stable if VersionSet last seqno is updated
+        // before LogAndApply.
+        int consumed_seqno_count =
+            ingestion_jobs[0].ConsumedSequenceNumbersCount();
+        for (size_t i = 1; i != num_cfs; ++i) {
+          consumed_seqno_count =
+              std::max(consumed_seqno_count,
+                       ingestion_jobs[i].ConsumedSequenceNumbersCount());
+        }
+        if (consumed_seqno_count > 0) {
+          const SequenceNumber last_seqno = versions_->LastSequence();
+          versions_->SetLastAllocatedSequence(last_seqno +
+                                              consumed_seqno_count);
+          versions_->SetLastPublishedSequence(last_seqno +
+                                              consumed_seqno_count);
+          versions_->SetLastSequence(last_seqno + consumed_seqno_count);
+        }
       }
     }
 

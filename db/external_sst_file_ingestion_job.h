@@ -131,8 +131,16 @@ class ExternalSstFileIngestionJob {
   Status NeedsFlush(bool* flush_needed, SuperVersion* super_version);
 
   // Will execute the ingestion job and prepare edit() to be applied.
+  //
+  // If `allow_write` is false, foreground writes must remain blocked while
+  // this job runs. Otherwise, the caller must ensure that concurrent writes do
+  // not overlap the ingested key ranges.
+  //
+  // `last_seqno` must immediately precede the sequence numbers available to
+  // this job. If foreground writes are allowed, the caller must reserve enough
+  // sequence numbers before resuming them.
   // REQUIRES: Mutex held
-  Status Run();
+  Status Run(SequenceNumber last_seqno);
 
   // Register key range involved in this ingestion job
   // to prevent key range conflict with other ongoing compaction/file ingestion

@@ -372,9 +372,7 @@ Status ExternalSstFileIngestionJob::NeedsFlush(bool* flush_needed,
   return status;
 }
 
-// REQUIRES: we have become the only writer by entering both write_thread_ and
-// nonmem_write_thread_
-Status ExternalSstFileIngestionJob::Run() {
+Status ExternalSstFileIngestionJob::Run(SequenceNumber last_seqno) {
   Status status;
   SuperVersion* super_version = cfd_->GetSuperVersion();
 #ifndef NDEBUG
@@ -398,9 +396,6 @@ Status ExternalSstFileIngestionJob::Run() {
     // if the don't overlap with any ranges since we have snapshots
     force_global_seqno = true;
   }
-  // It is safe to use this instead of LastAllocatedSequence since we are
-  // the only active writer, and hence they are equal
-  SequenceNumber last_seqno = versions_->LastSequence();
   edit_.SetColumnFamily(cfd_->GetID());
   // The levels that the files will be ingested into
 
