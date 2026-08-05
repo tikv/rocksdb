@@ -2449,6 +2449,69 @@ TEST_P(ExternalSSTFileTest, WriteDuringIngest) {
   SyncPoint::GetInstance()->ClearAllCallBacks();
 }
 
+TEST_P(ExternalSSTFileTest, AllowWriteIngestWaitsForPendingWriter) {
+  constexpr auto kReleaseWriter =
+      "ExternalSSTFileTest::AllowWriteIngestWaitsForPendingWriter:"
+      "ReleaseWriter";
+  constexpr auto kWriterPrepared =
+      "ExternalSSTFileTest::AllowWriteIngestWaitsForPendingWriter:"
+      "WriterPrepared";
+  constexpr auto kStartIngest =
+      "ExternalSSTFileTest::AllowWriteIngestWaitsForPendingWriter:"
+      "StartIngest";
+  constexpr auto kContinueWriter =
+      "ExternalSSTFileTest::AllowWriteIngestWaitsForPendingWriter:"
+      "ContinueWriter";
+
+  auto* sync_point = SyncPoint::GetInstance();
+  sync_point->DisableProcessing();
+  sync_point->ClearAllCallBacks();
+  sync_point->LoadDependency(
+      {{kWriterPrepared, kStartIngest}, {kReleaseWriter, kContinueWriter}});
+
+  sync_point->SetCallBack("DBImpl::WriteImpl:BeforeLeaderEnters", [&](void*) {
+    TEST_SYNC_POINT(kWriterPrepared);
+    TEST_SYNC_POINT(kContinueWriter);
+  });
+
+  const auto release_writer = [&](void*) { TEST_SYNC_POINT(kReleaseWriter); };
+  sync_point->SetCallBack("WriteThread::EnterUnbatched:Wait", release_writer);
+
+  SequenceNumber assigned_seqno = 0;
+  sync_point->SetCallBack("ExternalSstFileIngestionJob::Run", [&](void* arg) {
+    release_writer(nullptr);
+    ASSERT_NE(arg, nullptr);
+    assigned_seqno = *static_cast<SequenceNumber*>(arg);
+  });
+
+  Options options = CurrentOptions();
+  options.enable_multi_batch_write = false;
+  DestroyAndReopen(options);
+
+  const SequenceNumber last_seqno = db_->GetLatestSequenceNumber();
+  const Snapshot* snapshot = db_->GetSnapshot();
+  Status write_status;
+
+  sync_point->EnableProcessing();
+  port::Thread writer([&]() { write_status = Put("bar", "v1"); });
+
+  TEST_SYNC_POINT(kStartIngest);
+  ASSERT_OK(GenerateAndAddExternalFile(
+      options, {{"foo", "v"}}, -1, true, std::get<0>(GetParam()),
+      std::get<1>(GetParam()), false, false, true /* allow_write */));
+  writer.join();
+
+  ASSERT_OK(write_status);
+  ASSERT_EQ(last_seqno + 2, assigned_seqno);
+  ASSERT_EQ(last_seqno + 2, db_->GetLatestSequenceNumber());
+  ASSERT_EQ("v1", Get("bar"));
+  ASSERT_EQ("v", Get("foo"));
+  db_->ReleaseSnapshot(snapshot);
+
+  sync_point->DisableProcessing();
+  sync_point->ClearAllCallBacks();
+}
+
 TEST_P(ExternalSSTFileTest, InconsistentAllowWriteArguments) {
   Options options = CurrentOptions();
   CreateAndReopenWithCF({"koko"}, options);
