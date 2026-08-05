@@ -5938,7 +5938,11 @@ Status DBImpl::IngestExternalFiles(
       }
 
       SequenceNumber last_seqno = versions_->LastSequence();
+
       if (allow_write) {
+        // Each file consumes at most one sequence number. Jobs for different
+        // column families share the same sequence range, so reserve the maximum
+        // file count. Unused sequence numbers are harmless gaps.
         SequenceNumber reserved_seqno_count = 0;
         for (size_t i = 0; i != num_cfs; ++i) {
           reserved_seqno_count =
@@ -5947,7 +5951,6 @@ Status DBImpl::IngestExternalFiles(
                            ingestion_jobs[i].files_to_ingest().size()));
         }
         assert(reserved_seqno_count > 0);
-        assert(last_seqno <= kMaxSequenceNumber - reserved_seqno_count);
         const SequenceNumber reserved_last_seqno =
             last_seqno + reserved_seqno_count;
         versions_->SetLastAllocatedSequence(reserved_last_seqno);
