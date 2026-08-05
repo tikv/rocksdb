@@ -2101,7 +2101,11 @@ struct IngestExternalFileOptions {
   // ingest_behind takes precedence over fail_if_not_bottommost_level.
   bool fail_if_not_bottommost_level = false;
   // Set to TRUE if user wants to allow writes to the DB during ingestion.
-  // User must ensure no writes overlap with the ingested data.
+  // User must ensure that concurrent writes do not overlap the ingested key
+  // ranges.
+  // Reads using snapshots created before ingestion are allowed. A snapshot
+  // created while ingestion is in progress must not read the ingested key
+  // ranges before ingestion completes.
   bool allow_write = false;
 };
 
