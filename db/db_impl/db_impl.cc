@@ -6004,9 +6004,9 @@ Status DBImpl::IngestExternalFiles(
         assert(0 == num_entries);
       }
       // With allow_write, a concurrent flush may persist a higher last sequence
-      // before this ingestion edit is applied. LogAndApplyHelper raises this edit's
-      // last sequence as needed to keep VersionEdit::last_sequence values
-      // non-decreasing in the MANIFEST.
+      // before this ingestion edit is applied. LogAndApplyHelper raises this
+      // edit's last sequence as needed to keep VersionEdit::last_sequence
+      // values non-decreasing in the MANIFEST.
       status = versions_->LogAndApply(cfds_to_commit, mutable_cf_options_list,
                                       read_options, edit_lists, &mutex_,
                                       directories_.GetDbDir());
