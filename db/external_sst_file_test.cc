@@ -2411,12 +2411,19 @@ TEST_P(ExternalSSTFileTest, WriteDuringIngest) {
   const SequenceNumber last_seqno = db_->GetLatestSequenceNumber();
   const Snapshot* snapshot = db_->GetSnapshot();
   std::vector<SequenceNumber> assigned_seqnos;
+  Status write_status;
+  std::unique_ptr<port::Thread> write_thread;
 
-  // Write after the ingestion sequence number has been reserved but before it
-  // is assigned to the ingested file.
+  // Start a foreground write after the ingestion sequence numbers have been
+  // reserved. The callback runs with the DB mutex held, so run Put in another
+  // thread and join it after ingestion to avoid a mutex deadlock.
   SyncPoint::GetInstance()->SetCallBack(
-      "DBImpl::IngestExternalFiles:AfterReserveSeqno",
-      [&](void*) { ASSERT_OK(Put("bar", "v1")); });
+      "DBImpl::IngestExternalFiles:AfterReserveSeqno", [&](void*) {
+        ASSERT_EQ(last_seqno + external_files.size(),
+                  db_->GetLatestSequenceNumber());
+        write_thread = std::make_unique<port::Thread>(
+            [&] { write_status = Put("bar", "v1"); });
+      });
   SyncPoint::GetInstance()->SetCallBack(
       "ExternalSstFileIngestionJob::Run", [&](void* arg) {
         ASSERT_NE(arg, nullptr);
@@ -2429,7 +2436,12 @@ TEST_P(ExternalSSTFileTest, WriteDuringIngest) {
   ifo.write_global_seqno = std::get<0>(GetParam());
   ifo.verify_checksums_before_ingest = std::get<1>(GetParam());
   ifo.allow_write = true;
-  ASSERT_OK(db_->IngestExternalFile(external_files, ifo));
+  Status ingest_status = db_->IngestExternalFile(external_files, ifo);
+
+  ASSERT_NE(write_thread, nullptr);
+  write_thread->join();
+  ASSERT_OK(ingest_status);
+  ASSERT_OK(write_status);
 
   ASSERT_EQ((std::vector<SequenceNumber>{last_seqno + 1, last_seqno + 2}),
             assigned_seqnos);
