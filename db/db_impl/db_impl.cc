@@ -5938,12 +5938,11 @@ Status DBImpl::IngestExternalFiles(
       }
 
       SequenceNumber last_seqno = versions_->LastSequence();
-
+      SequenceNumber reserved_seqno_count = 0;
       if (allow_write) {
         // Each file consumes at most one sequence number. Jobs for different
         // column families share the same sequence range, so reserve the maximum
         // file count. Unused sequence numbers are harmless gaps.
-        SequenceNumber reserved_seqno_count = 0;
         for (size_t i = 0; i != num_cfs; ++i) {
           reserved_seqno_count =
               std::max(reserved_seqno_count,
@@ -5973,6 +5972,10 @@ Status DBImpl::IngestExternalFiles(
         if (!status.ok()) {
           break;
         }
+        assert(!allow_write ||
+               static_cast<SequenceNumber>(
+                   ingestion_jobs[i].ConsumedSequenceNumbersCount()) <=
+                   reserved_seqno_count);
         ingestion_jobs[i].RegisterRange();
       }
     }
