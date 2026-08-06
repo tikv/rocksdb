@@ -14,6 +14,7 @@
 #include "port/stack_trace.h"
 #include "rocksdb/sst_file_reader.h"
 #include "rocksdb/sst_file_writer.h"
+#include "rocksdb/write_batch.h"
 #include "test_util/testutil.h"
 #include "util/random.h"
 #include "util/thread_guard.h"
@@ -2394,14 +2395,16 @@ TEST_P(ExternalSSTFileTest, IngestBehind) {
 TEST_P(ExternalSSTFileTest, WriteDuringIngest) {
   SyncPoint::GetInstance()->DisableProcessing();
 
-  // Set callback to simulate concurrent write during ingestion
+  // Set callback to simulate a write before the initial NeedsFlush check.
   SyncPoint::GetInstance()->SetCallBack(
       "DBImpl::IngestExternalFile:AfterAllowWriteCheck", [&](void*) {
-        // Write a non-overlapping key
+        // Write the same key as the external file.
         ASSERT_OK(Put("foo", "v1"));
       });
 
   Options options = CurrentOptions();
+  options.two_write_queues = std::get<0>(GetParam());
+  options.atomic_flush = std::get<1>(GetParam());
   DestroyAndReopen(options);
 
   SyncPoint::GetInstance()->EnableProcessing();
@@ -2414,6 +2417,74 @@ TEST_P(ExternalSSTFileTest, WriteDuringIngest) {
 
   SyncPoint::GetInstance()->DisableProcessing();
   SyncPoint::GetInstance()->ClearAllCallBacks();
+}
+
+TEST_P(ExternalSSTFileTest, AllowWriteIngestSequencePublication) {
+  constexpr auto kReleaseWriter =
+      "ExternalSSTFileTest::AllowWriteIngestSequencePublication:"
+      "ReleaseWriter";
+  constexpr auto kWriterPrepared =
+      "ExternalSSTFileTest::AllowWriteIngestSequencePublication:"
+      "WriterPrepared";
+
+  auto* sync_point = SyncPoint::GetInstance();
+  sync_point->DisableProcessing();
+  sync_point->ClearAllCallBacks();
+  sync_point->LoadDependency(
+      {{"DBImpl::WriteImpl:BeforeLeaderEnters:0", kWriterPrepared},
+       {kReleaseWriter, "DBImpl::WriteImpl:BeforeLeaderEnters"}});
+  const auto release_writer = [&](void*) { TEST_SYNC_POINT(kReleaseWriter); };
+  sync_point->SetCallBack("WriteThread::EnterUnbatched:Wait", release_writer);
+  sync_point->SetCallBack(
+      "DBImpl::IngestExternalFiles:AfterReadLastSequenceBeforePublish",
+      release_writer);
+
+  Options options = CurrentOptions();
+  options.two_write_queues = std::get<0>(GetParam());
+  options.atomic_flush = std::get<1>(GetParam());
+  DestroyAndReopen(options);
+  const Snapshot* old_snapshot = db_->GetSnapshot();
+  ASSERT_NE(nullptr, old_snapshot);
+
+  sync_point->EnableProcessing();
+  port::Thread writer([&]() {
+    WriteBatch batch;
+    ASSERT_OK(batch.Put("write-1", "v1"));
+    ASSERT_OK(batch.Put("write-2", "v2"));
+    ASSERT_OK(db_->Write(WriteOptions(), &batch));
+  });
+
+  // The writer has read its sequence base but is paused before entering the
+  // batch group. With the fix, the late ingest writer gate waits behind it and
+  // releases it. Without the gate, it is released only after ingestion reads
+  // its stale sequence base before publication.
+  TEST_SYNC_POINT(kWriterPrepared);
+  port::Thread ingest([&]() {
+    ASSERT_OK(GenerateAndAddExternalFile(
+        options, {{"ingest", "v"}}, -1, true /* allow_global_seqno */,
+        false /* write_global_seqno */,
+        true /* verify_checksums_before_ingest */, false /* ingest_behind */,
+        false /* sort_data */, true /* allow_write */));
+  });
+  ingest.join();
+  writer.join();
+
+  ASSERT_GE(db_->GetLatestSequenceNumber(), 3U);
+  ASSERT_EQ("v1", Get("write-1"));
+  ASSERT_EQ("v2", Get("write-2"));
+  ASSERT_EQ("v", Get("ingest"));
+  const Snapshot* new_snapshot = db_->GetSnapshot();
+  ASSERT_NE(nullptr, new_snapshot);
+  ASSERT_EQ("v1", Get("write-1", new_snapshot));
+  ASSERT_EQ("v2", Get("write-2", new_snapshot));
+  ASSERT_EQ("v", Get("ingest", new_snapshot));
+  db_->ReleaseSnapshot(new_snapshot);
+  ASSERT_EQ("NOT_FOUND", Get("write-2", old_snapshot));
+  ASSERT_EQ("NOT_FOUND", Get("ingest", old_snapshot));
+  db_->ReleaseSnapshot(old_snapshot);
+
+  sync_point->DisableProcessing();
+  sync_point->ClearAllCallBacks();
 }
 
 TEST_P(ExternalSSTFileTest, InconsistentAllowWriteArguments) {

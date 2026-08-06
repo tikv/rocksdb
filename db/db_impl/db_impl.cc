@@ -5853,8 +5853,8 @@ Status DBImpl::IngestExternalFiles(
 
     WriteThread::Writer w;
     WriteThread::Writer nonmem_w;
-    if (!allow_write) {
-      // Stop writes to the DB by entering both write threads.
+    bool write_threads_entered = false;
+    const auto enter_write_threads = [&]() {
       write_thread_.EnterUnbatched(&w, &mutex_);
       if (two_write_queues_) {
         nonmem_write_thread_.EnterUnbatched(&nonmem_w, &mutex_);
@@ -5866,6 +5866,11 @@ Status DBImpl::IngestExternalFiles(
       // memtable flush.
       // So wait here to ensure there is no pending write to memtable.
       WaitForPendingWrites();
+      write_threads_entered = true;
+    };
+    if (!allow_write) {
+      // Stop writes to the DB by entering both write threads.
+      enter_write_threads();
     }
 
     TEST_SYNC_POINT_CALLBACK("DBImpl::IngestExternalFile:AfterAllowWriteCheck",
@@ -5903,10 +5908,10 @@ Status DBImpl::IngestExternalFiles(
       flush_opts.check_if_compaction_disabled = true;
       if (immutable_db_options_.atomic_flush) {
         mutex_.Unlock();
-        status = AtomicFlushMemTables(flush_opts,
-                                      FlushReason::kExternalFileIngestion,
-                                      {} /* provided_candidate_cfds */,
-                                      !allow_write /* entered_write_thread */);
+        status = AtomicFlushMemTables(
+            flush_opts, FlushReason::kExternalFileIngestion,
+            {} /* provided_candidate_cfds */,
+            write_threads_entered /* entered_write_thread */);
         mutex_.Lock();
       } else {
         for (size_t i = 0; i != num_cfs; ++i) {
@@ -5915,9 +5920,9 @@ Status DBImpl::IngestExternalFiles(
             auto* cfd =
                 static_cast<ColumnFamilyHandleImpl*>(args[i].column_family)
                     ->cfd();
-            status = FlushMemTable(cfd, flush_opts,
-                                   FlushReason::kExternalFileIngestion,
-                                   !allow_write /* entered_write_thread */);
+            status = FlushMemTable(
+                cfd, flush_opts, FlushReason::kExternalFileIngestion,
+                write_threads_entered /* entered_write_thread */);
             mutex_.Lock();
             if (!status.ok()) {
               break;
@@ -5926,6 +5931,68 @@ Status DBImpl::IngestExternalFiles(
         }
       }
     }
+
+    if (status.ok() && allow_write) {
+      // Run() assigns global sequence numbers and the sequence numbers are
+      // published after LogAndApply below. It requires there to be no active
+      // writers during both operations. Keep writes allowed while preparing
+      // and flushing the ingestion, but serialize this final phase with normal
+      // writes.
+      enter_write_threads();
+
+      // Writes were allowed during the earlier NeedsFlush check and flush, so
+      // the result can have become stale. Recheck after writer exclusion. If a
+      // new overlapping memtable appeared, flush it before calling Run().
+      bool final_need_flush = false;
+      std::vector<bool> final_need_flushes(num_cfs, false);
+      for (size_t i = 0; i != num_cfs; ++i) {
+        auto* cfd =
+            static_cast<ColumnFamilyHandleImpl*>(args[i].column_family)->cfd();
+        if (cfd->IsDropped()) {
+          status = Status::InvalidArgument(
+              "cannot ingest an external file into a dropped CF");
+          break;
+        }
+        bool tmp = false;
+        status = ingestion_jobs[i].NeedsFlush(&tmp, cfd->GetSuperVersion());
+        final_need_flushes[i] = tmp;
+        final_need_flush = final_need_flush || tmp;
+        if (!status.ok()) {
+          break;
+        }
+      }
+
+      if (status.ok() && final_need_flush) {
+        FlushOptions flush_opts;
+        flush_opts.allow_write_stall = true;
+        flush_opts.check_if_compaction_disabled = true;
+        if (immutable_db_options_.atomic_flush) {
+          mutex_.Unlock();
+          status = AtomicFlushMemTables(flush_opts,
+                                        FlushReason::kExternalFileIngestion,
+                                        {} /* provided_candidate_cfds */,
+                                        true /* entered_write_thread */);
+          mutex_.Lock();
+        } else {
+          for (size_t i = 0; i != num_cfs; ++i) {
+            if (final_need_flushes[i]) {
+              mutex_.Unlock();
+              auto* cfd =
+                  static_cast<ColumnFamilyHandleImpl*>(args[i].column_family)
+                      ->cfd();
+              status = FlushMemTable(cfd, flush_opts,
+                                     FlushReason::kExternalFileIngestion,
+                                     true /* entered_write_thread */);
+              mutex_.Lock();
+              if (!status.ok()) {
+                break;
+              }
+            }
+          }
+        }
+      }
+    }
+
     // Run ingestion jobs.
     if (status.ok()) {
       for (size_t i = 0; i != num_cfs; ++i) {
@@ -5984,6 +6051,8 @@ Status DBImpl::IngestExternalFiles(
       }
       if (consumed_seqno_count > 0) {
         const SequenceNumber last_seqno = versions_->LastSequence();
+        TEST_SYNC_POINT(
+            "DBImpl::IngestExternalFiles:AfterReadLastSequenceBeforePublish");
         versions_->SetLastAllocatedSequence(last_seqno + consumed_seqno_count);
         versions_->SetLastPublishedSequence(last_seqno + consumed_seqno_count);
         versions_->SetLastSequence(last_seqno + consumed_seqno_count);
@@ -6022,7 +6091,7 @@ Status DBImpl::IngestExternalFiles(
       error_handler_.SetBGError(io_s, BackgroundErrorReason::kManifestWrite);
     }
 
-    if (!allow_write) {
+    if (write_threads_entered) {
       if (two_write_queues_) {
         nonmem_write_thread_.ExitUnbatched(&nonmem_w);
       }
