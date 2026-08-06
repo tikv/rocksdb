@@ -2461,18 +2461,18 @@ TEST_P(ExternalSSTFileTest, WriteDuringIngest) {
   SyncPoint::GetInstance()->ClearAllCallBacks();
 }
 
-TEST_P(ExternalSSTFileTest, AllowWriteIngestWaitsForPendingWriter) {
+TEST_P(ExternalSSTFileTest, AllowWriteIngestWaitsForActiveWriter) {
   constexpr auto kReleaseWriter =
-      "ExternalSSTFileTest::AllowWriteIngestWaitsForPendingWriter:"
+      "ExternalSSTFileTest::AllowWriteIngestWaitsForActiveWriter:"
       "ReleaseWriter";
   constexpr auto kWriterPrepared =
-      "ExternalSSTFileTest::AllowWriteIngestWaitsForPendingWriter:"
+      "ExternalSSTFileTest::AllowWriteIngestWaitsForActiveWriter:"
       "WriterPrepared";
   constexpr auto kStartIngest =
-      "ExternalSSTFileTest::AllowWriteIngestWaitsForPendingWriter:"
+      "ExternalSSTFileTest::AllowWriteIngestWaitsForActiveWriter:"
       "StartIngest";
   constexpr auto kContinueWriter =
-      "ExternalSSTFileTest::AllowWriteIngestWaitsForPendingWriter:"
+      "ExternalSSTFileTest::AllowWriteIngestWaitsForActiveWriter:"
       "ContinueWriter";
 
   auto* sync_point = SyncPoint::GetInstance();
@@ -2491,8 +2491,9 @@ TEST_P(ExternalSSTFileTest, AllowWriteIngestWaitsForPendingWriter) {
 
   SequenceNumber assigned_seqno = 0;
   sync_point->SetCallBack("ExternalSstFileIngestionJob::Run", [&](void* arg) {
+    // Release the writer here as a fallback so that a failure to wait in
+    // EnterUnbatched causes an assertion failure instead of a deadlock.
     release_writer(nullptr);
-    ASSERT_NE(arg, nullptr);
     assigned_seqno = *static_cast<SequenceNumber*>(arg);
   });
 
@@ -2513,6 +2514,68 @@ TEST_P(ExternalSSTFileTest, AllowWriteIngestWaitsForPendingWriter) {
       std::get<1>(GetParam()), false, false, true /* allow_write */));
   writer.join();
 
+  ASSERT_OK(write_status);
+  ASSERT_EQ(last_seqno + 2, assigned_seqno);
+  ASSERT_EQ(last_seqno + 2, db_->GetLatestSequenceNumber());
+  ASSERT_EQ("v1", Get("bar"));
+  ASSERT_EQ("v", Get("foo"));
+  db_->ReleaseSnapshot(snapshot);
+
+  sync_point->DisableProcessing();
+  sync_point->ClearAllCallBacks();
+}
+
+TEST_F(ExternalSSTFileTest, AllowWriteIngestWaitsForPendingMultiBatchWrite) {
+  constexpr auto kStartIngest =
+      "ExternalSSTFileTest::"
+      "AllowWriteIngestWaitsForPendingMultiBatchWrite:StartIngest";
+  constexpr auto kReleaseWriter =
+      "ExternalSSTFileTest::"
+      "AllowWriteIngestWaitsForPendingMultiBatchWrite:ReleaseWriter";
+
+  auto* sync_point = SyncPoint::GetInstance();
+  sync_point->DisableProcessing();
+  sync_point->ClearAllCallBacks();
+  sync_point->LoadDependency(
+      {{"DBImpl::WriteImpl:CommitAfterWriteWAL", kStartIngest},
+       {kReleaseWriter, "DBImpl::WriteImpl:BeforePipelineWriteMemtable"}});
+
+  const auto release_writer = [&](void*) { TEST_SYNC_POINT(kReleaseWriter); };
+  sync_point->SetCallBack("DBImpl::WaitForPendingWrites:BeforeBlock",
+                          release_writer);
+
+  SequenceNumber assigned_seqno = 0;
+  sync_point->SetCallBack("ExternalSstFileIngestionJob::Run", [&](void* arg) {
+    assigned_seqno = *static_cast<SequenceNumber*>(arg);
+  });
+
+  Options options = CurrentOptions();
+  options.enable_pipelined_write = false;
+  options.unordered_write = false;
+  options.enable_multi_batch_write = true;
+  DestroyAndReopen(options);
+
+  const SequenceNumber last_seqno = db_->GetLatestSequenceNumber();
+  // Force the ingested file to consume a global sequence number.
+  const Snapshot* snapshot = db_->GetSnapshot();
+  Status write_status;
+
+  sync_point->EnableProcessing();
+  port::Thread writer([&]() { write_status = Put("bar", "v1"); });
+
+  // The writer has allocated a sequence and released write_thread_, but has
+  // not inserted into the memtable or published the sequence yet.
+  TEST_SYNC_POINT(kStartIngest);
+  Status ingest_status =
+      GenerateAndAddExternalFile(options, {{"foo", "v"}}, -1, true, false, true,
+                                 false, false, true /* allow_write */);
+
+  // If ingestion does not wait for the pending writer, release it here so the
+  // sequence assertions fail instead of hanging in writer.join().
+  release_writer(nullptr);
+  writer.join();
+
+  ASSERT_OK(ingest_status);
   ASSERT_OK(write_status);
   ASSERT_EQ(last_seqno + 2, assigned_seqno);
   ASSERT_EQ(last_seqno + 2, db_->GetLatestSequenceNumber());
