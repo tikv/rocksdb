@@ -5984,6 +5984,40 @@ Status DBImpl::IngestExternalFiles(
       }
       if (consumed_seqno_count > 0) {
         const SequenceNumber last_seqno = versions_->LastSequence();
+
+        ROCKS_LOG_WARN(
+            immutable_db_options_.info_log,
+            "[sequence-number-repro] consumed_seqno_count=%d, "
+            "last_seqno=%" PRIu64 ", sleeping for 10ms before updating "
+            "VersionSet sequence numbers",
+            consumed_seqno_count, last_seqno);
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+        const SequenceNumber target_seqno =
+            last_seqno + static_cast<SequenceNumber>(consumed_seqno_count);
+        const SequenceNumber current_allocated =
+            versions_->LastAllocatedSequence();
+        const SequenceNumber current_published =
+            versions_->LastPublishedSequence();
+        const SequenceNumber current_last = versions_->LastSequence();
+        const SequenceNumber allocated_rollback =
+            current_allocated > target_seqno ? current_allocated - target_seqno
+                                             : 0;
+        const SequenceNumber published_rollback =
+            current_published > target_seqno ? current_published - target_seqno
+                                             : 0;
+        const SequenceNumber last_rollback =
+            current_last > target_seqno ? current_last - target_seqno : 0;
+
+        ROCKS_LOG_WARN(
+            immutable_db_options_.info_log,
+            "[sequence-number-repro-after-sleep] target_seqno=%" PRIu64
+            ", current_allocated=%" PRIu64 ", allocated_rollback=%" PRIu64
+            ", current_published=%" PRIu64 ", published_rollback=%" PRIu64
+            ", current_last=%" PRIu64 ", last_rollback=%" PRIu64,
+            target_seqno, current_allocated, allocated_rollback,
+            current_published, published_rollback, current_last, last_rollback);
+  
         versions_->SetLastAllocatedSequence(last_seqno + consumed_seqno_count);
         versions_->SetLastPublishedSequence(last_seqno + consumed_seqno_count);
         versions_->SetLastSequence(last_seqno + consumed_seqno_count);
