@@ -2587,6 +2587,79 @@ TEST_F(ExternalSSTFileTest, AllowWriteIngestWaitsForPendingMultiBatchWrite) {
   sync_point->ClearAllCallBacks();
 }
 
+TEST_F(ExternalSSTFileTest, AllowWriteIngestWaitsForFailedMultiBatchWrite) {
+  constexpr auto kWriterPrepared =
+      "ExternalSSTFileTest::"
+      "AllowWriteIngestWaitsForFailedMultiBatchWrite:WriterPrepared";
+  constexpr auto kStartIngest =
+      "ExternalSSTFileTest::"
+      "AllowWriteIngestWaitsForFailedMultiBatchWrite:StartIngest";
+  constexpr auto kReleaseWriter =
+      "ExternalSSTFileTest::"
+      "AllowWriteIngestWaitsForFailedMultiBatchWrite:ReleaseWriter";
+  constexpr auto kContinueWriter =
+      "ExternalSSTFileTest::"
+      "AllowWriteIngestWaitsForFailedMultiBatchWrite:ContinueWriter";
+
+  auto* sync_point = SyncPoint::GetInstance();
+  sync_point->DisableProcessing();
+  sync_point->ClearAllCallBacks();
+  sync_point->LoadDependency(
+      {{kWriterPrepared, kStartIngest}, {kReleaseWriter, kContinueWriter}});
+
+  sync_point->SetCallBack("DBImpl::WriteImpl:CommitAfterWriteWAL", [&](void*) {
+    TEST_SYNC_POINT(kWriterPrepared);
+    TEST_SYNC_POINT(kContinueWriter);
+  });
+
+  const auto release_writer = [&](void*) { TEST_SYNC_POINT(kReleaseWriter); };
+  sync_point->SetCallBack("DBImpl::WaitForPendingWrites:PendingWrites",
+                          release_writer);
+
+  SequenceNumber assigned_seqno = 0;
+  sync_point->SetCallBack("ExternalSstFileIngestionJob::Run", [&](void* arg) {
+    // Release the writer here as a fallback so that a failure to wait for it
+    // causes the sequence assertions to fail instead of a deadlock.
+    release_writer(nullptr);
+    assigned_seqno = *static_cast<SequenceNumber*>(arg);
+  });
+
+  Options options = CurrentOptions();
+  options.enable_pipelined_write = false;
+  options.unordered_write = false;
+  options.enable_multi_batch_write = true;
+  // Keep the DB usable after the injected WAL error so ingestion can proceed.
+  options.paranoid_checks = false;
+  DestroyAndReopen(options);
+
+  const SequenceNumber last_seqno = db_->GetLatestSequenceNumber();
+  // Force the ingested file to consume a global sequence number.
+  const Snapshot* snapshot = db_->GetSnapshot();
+  Status write_status;
+
+  env_->log_write_error_.store(true, std::memory_order_release);
+  sync_point->EnableProcessing();
+  port::Thread writer([&]() { write_status = Put("bar", "v1"); });
+
+  TEST_SYNC_POINT(kStartIngest);
+  env_->log_write_error_.store(false, std::memory_order_release);
+  Status ingest_status =
+      GenerateAndAddExternalFile(options, {{"foo", "v"}}, -1, true, false, true,
+                                 false, false, true /* allow_write */);
+  writer.join();
+
+  ASSERT_OK(ingest_status);
+  ASSERT_NOK(write_status);
+  ASSERT_EQ(last_seqno + 2, assigned_seqno);
+  ASSERT_EQ(last_seqno + 2, db_->GetLatestSequenceNumber());
+  ASSERT_EQ("NOT_FOUND", Get("bar"));
+  ASSERT_EQ("v", Get("foo"));
+  db_->ReleaseSnapshot(snapshot);
+
+  sync_point->DisableProcessing();
+  sync_point->ClearAllCallBacks();
+}
+
 TEST_P(ExternalSSTFileTest, InconsistentAllowWriteArguments) {
   Options options = CurrentOptions();
   CreateAndReopenWithCF({"koko"}, options);

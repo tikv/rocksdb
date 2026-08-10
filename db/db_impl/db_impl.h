@@ -2045,9 +2045,10 @@ class DBImpl : public DB {
       return;
     }
 
-    // Wait for the ones who already wrote to the WAL to finish their
-    // memtable write.
+    // Wait for writers that have allocated sequence numbers to finish their
+    // memtable writes and publish their sequences.
     if (pending_memtable_writes_.load() != 0) {
+      TEST_SYNC_POINT("DBImpl::WaitForPendingWrites:PendingWrites");
       std::unique_lock<std::mutex> guard(switch_mutex_);
       switch_cv_.wait(guard,
                       [&] { return pending_memtable_writes_.load() == 0; });
@@ -2719,7 +2720,7 @@ class DBImpl : public DB {
   std::condition_variable switch_cv_;
   // The mutex used by switch_cv_. mutex_ should be acquired beforehand.
   std::mutex switch_mutex_;
-  // Number of threads intending to write to memtable
+  // Number of writers with pending memtable writes or sequence publication.
   std::atomic<size_t> pending_memtable_writes_ = {};
 
   // A flag indicating whether the current rocksdb database has any

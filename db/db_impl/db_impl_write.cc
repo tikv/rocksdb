@@ -366,13 +366,14 @@ Status DBImpl::MultiBatchWriteImpl(const WriteOptions& write_options,
       const ReadOptions read_options;
       writer.status = ApplyWALToManifest(read_options, &synced_wals);
     }
-    if (writer.status.ok()) {
-      pending_memtable_writes_ += memtable_write_cnt;
-    } else {
+    if (!writer.status.ok()) {
       // The `pending_wb_cnt` must be reset to avoid other writers helping
       // the front writer write its WBs after it failed to write the WAL.
       writer.ResetPendingWBCnt();
     }
+    // Every writer in the commit queue calls MultiBatchWriteCommit, including
+    // when the write fails before its memtable write.
+    pending_memtable_writes_ += memtable_write_cnt;
     write_thread_.ExitAsBatchGroupLeader(wal_write_group, writer.status);
   }
 
