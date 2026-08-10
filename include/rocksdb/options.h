@@ -1887,7 +1887,12 @@ struct IngestExternalFileOptions {
   // ingested files, DB will generate the checksum and store in the Manifest.
   bool verify_file_checksum = true;
   // Set to TRUE if user wants to allow writes to the DB during ingestion.
-  // User must ensure no writes overlap with the ingested data.
+  // User must ensure that concurrent writes do not overlap the ingested key
+  // ranges.
+  // Snapshot consistency is not guaranteed for snapshots created during
+  // ingestion because ingestion sequence numbers are published before the
+  // ingested files become visible. Such snapshots must not be used to read the
+  // ingested key ranges.
   bool allow_write = false;
 };
 
