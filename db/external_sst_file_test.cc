@@ -2378,8 +2378,8 @@ TEST_P(ExternalSSTFileTest, WriteDuringIngest) {
       "DBImpl::IngestExternalFiles:AfterReserveSeqno", [&](void*) {
         ASSERT_EQ(last_seqno + external_files.size(),
                   db_->GetLatestSequenceNumber());
-        write_thread = std::make_unique<port::Thread>(
-            [&] { write_status = Put("bar", "v1"); });
+        write_thread.reset(
+            new port::Thread([&] { write_status = Put("bar", "v1"); }));
       });
   SyncPoint::GetInstance()->SetCallBack(
       "ExternalSstFileIngestionJob::Run", [&](void* arg) {
