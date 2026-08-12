@@ -333,6 +333,13 @@ Status DBImpl::MergeDisjointInstances(const MergeInstanceOptions& merge_options,
   {
     autovector<autovector<VersionEdit*>> edit_ptrs;
     autovector<const MutableCFOptions*> cf_mopts;
+    // Mark the version edits as an atomic group if the number of version edits
+    // exceeds 1.
+    if (num_cfs > 1) {
+      for (size_t i = 0; i < num_cfs; i++) {
+        cf_edits[i].MarkAtomicGroup(num_cfs - i - 1 /*remaining_entries*/);
+      }
+    }
     for (size_t i = 0; i < num_cfs; i++) {
       edit_ptrs.push_back({&cf_edits[i]});
       cf_mopts.push_back(this_cfds[i]->GetLatestMutableCFOptions());
