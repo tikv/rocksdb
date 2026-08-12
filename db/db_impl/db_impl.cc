@@ -4889,26 +4889,72 @@ Status DBImpl::IngestExternalFiles(
     }
     // Run ingestion jobs.
     if (status.ok()) {
+      if (allow_write) {
+        // Briefly stop writes while reserving sequence numbers for ingestion.
+        write_thread_.EnterUnbatched(&w, &mutex_);
+        if (two_write_queues_) {
+          nonmem_write_thread_.EnterUnbatched(&nonmem_w, &mutex_);
+        }
+        WaitForPendingWrites();
+      }
+
+      SequenceNumber last_seqno = versions_->LastSequence();
+      SequenceNumber reserved_seqno_count = 0;
+      if (allow_write) {
+        // Each file consumes at most one sequence number. Jobs for different
+        // column families share the same sequence range, so reserve the maximum
+        // file count. Unused sequence numbers are harmless gaps.
+        for (size_t i = 0; i != num_cfs; ++i) {
+          reserved_seqno_count =
+              std::max(reserved_seqno_count,
+                       static_cast<SequenceNumber>(
+                           ingestion_jobs[i].files_to_ingest().size()));
+        }
+        assert(reserved_seqno_count > 0);
+        const SequenceNumber reserved_last_seqno =
+            last_seqno + reserved_seqno_count;
+        versions_->SetLastAllocatedSequence(reserved_last_seqno);
+        versions_->SetLastPublishedSequence(reserved_last_seqno);
+        versions_->SetLastSequence(reserved_last_seqno);
+        // Resume writes
+        if (two_write_queues_) {
+          nonmem_write_thread_.ExitUnbatched(&nonmem_w);
+        }
+        write_thread_.ExitUnbatched(&w);
+
+        // The reservation cannot be rolled back if ingestion fails because a
+        // foreground write may have already consumed a later sequence number.
+        TEST_SYNC_POINT("DBImpl::IngestExternalFiles:AfterReserveSeqno");
+      }
+
       for (size_t i = 0; i != num_cfs; ++i) {
-        status = ingestion_jobs[i].Run();
+        status = ingestion_jobs[i].Run(last_seqno);
         if (!status.ok()) {
           break;
         }
+        assert(!allow_write ||
+               static_cast<SequenceNumber>(
+                   ingestion_jobs[i].ConsumedSequenceNumbersCount()) <=
+                   reserved_seqno_count);
       }
     }
     if (status.ok()) {
-      int consumed_seqno_count =
-          ingestion_jobs[0].ConsumedSequenceNumbersCount();
-      for (size_t i = 1; i != num_cfs; ++i) {
-        consumed_seqno_count =
-            std::max(consumed_seqno_count,
-                     ingestion_jobs[i].ConsumedSequenceNumbersCount());
-      }
-      if (consumed_seqno_count > 0) {
-        const SequenceNumber last_seqno = versions_->LastSequence();
-        versions_->SetLastAllocatedSequence(last_seqno + consumed_seqno_count);
-        versions_->SetLastPublishedSequence(last_seqno + consumed_seqno_count);
-        versions_->SetLastSequence(last_seqno + consumed_seqno_count);
+      if (!allow_write) {
+        int consumed_seqno_count =
+            ingestion_jobs[0].ConsumedSequenceNumbersCount();
+        for (size_t i = 1; i != num_cfs; ++i) {
+          consumed_seqno_count =
+              std::max(consumed_seqno_count,
+                       ingestion_jobs[i].ConsumedSequenceNumbersCount());
+        }
+        if (consumed_seqno_count > 0) {
+          const SequenceNumber last_seqno = versions_->LastSequence();
+          versions_->SetLastAllocatedSequence(last_seqno +
+                                              consumed_seqno_count);
+          versions_->SetLastPublishedSequence(last_seqno +
+                                              consumed_seqno_count);
+          versions_->SetLastSequence(last_seqno + consumed_seqno_count);
+        }
       }
       autovector<ColumnFamilyData*> cfds_to_commit;
       autovector<const MutableCFOptions*> mutable_cf_options_list;
@@ -4936,6 +4982,10 @@ Status DBImpl::IngestExternalFiles(
         }
         assert(0 == num_entries);
       }
+      // With allow_write, a concurrent flush may persist a higher last sequence
+      // before this ingestion edit is applied. LogAndApplyHelper updates the
+      // edit as needed to keep VersionEdit::last_sequence non-decreasing in the
+      // MANIFEST.
       status =
           versions_->LogAndApply(cfds_to_commit, mutable_cf_options_list,
                                  edit_lists, &mutex_, directories_.GetDbDir());

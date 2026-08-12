@@ -116,7 +116,7 @@ class ExternalSstFileIngestionJob {
 
   // Will execute the ingestion job and prepare edit() to be applied.
   // REQUIRES: Mutex held
-  Status Run();
+  Status Run(SequenceNumber last_seqno);
 
   // Update column family stats.
   // REQUIRES: Mutex held
