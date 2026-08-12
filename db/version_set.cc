@@ -4333,19 +4333,7 @@ Status VersionSet::ProcessManifestWrites(
         batch_edits.push_back(e);
       }
     }
-    for (int i = 0; i < static_cast<int>(versions.size()); ++i) {
-      assert(!builder_guards.empty() &&
-             builder_guards.size() == versions.size());
-      auto* builder = builder_guards[i]->version_builder();
-      Status s = builder->SaveTo(versions[i]->storage_info());
-      if (!s.ok()) {
-        // free up the allocated memory
-        for (auto v : versions) {
-          delete v;
-        }
-        return s;
-      }
-    }
+   
   }
 
 #ifndef NDEBUG
@@ -4436,7 +4424,17 @@ Status VersionSet::ProcessManifestWrites(
         assert(!mutable_cf_options_ptrs.empty() &&
                builder_guards.size() == versions.size());
         ColumnFamilyData* cfd = versions[i]->cfd_;
-        s = builder_guards[i]->version_builder()->LoadTableHandlers(
+        auto* builder = builder_guards[i]->version_builder();
+        s = builder->SaveTo(versions[i]->storage_info());
+        if (!s.ok()) {
+          mu->Lock();
+          // free up the allocated memory
+          for (auto v : versions) {
+            delete v;
+          }
+          return s;
+        }
+        s = builder->LoadTableHandlers(
             cfd->internal_stats(), 1 /* max_threads */,
             true /* prefetch_index_and_filter_in_cache */,
             false /* is_initial_load */,
