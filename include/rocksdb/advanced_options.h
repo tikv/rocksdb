@@ -725,15 +725,14 @@ struct AdvancedColumnFamilyOptions {
   // Dynamically changeable through SetOptions() API
   uint64_t max_compaction_bytes = 0;
 
-  // When setting up compaction input files, we ignore the
-  // `max_compaction_bytes` limit when pulling in input files that are entirely
-  // within output key range.
+  // When setting up compaction input files, use a softer limit of
+  // 2 * `max_compaction_bytes` when pulling in input files that are entirely
+  // within the output key range. If false, use the strict
+  // `max_compaction_bytes` limit instead.
   //
   // Default: true
   //
   // Dynamically changeable through SetOptions() API
-  // We could remove this knob and always ignore the limit once it is proven
-  // safe.
   bool ignore_max_compaction_bytes_for_input = true;
 
   // All writes will be slowed down to at least delayed_write_rate if estimated
