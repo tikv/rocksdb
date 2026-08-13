@@ -5967,6 +5967,9 @@ Status DBImpl::IngestExternalFiles(
           write_thread_.UpdateLastSequence(reserved_last_seqno);
           seqno_reservation.commit_lsn = reserved_last_seqno;
           write_thread_.EnterCommitQueue(&seqno_reservation);
+          // Keep global barriers from passing until the reservation is
+          // published.
+          ++pending_memtable_writes_;
         } else {
           versions_->SetLastPublishedSequence(reserved_last_seqno);
           versions_->SetLastSequence(reserved_last_seqno);
@@ -5978,11 +5981,10 @@ Status DBImpl::IngestExternalFiles(
         write_thread_.ExitUnbatched(&w);
 
         if (publish_seqno_through_commit_queue) {
+          mutex_.Unlock();
           TEST_SYNC_POINT(
               "DBImpl::IngestExternalFiles:BeforeWaitForSeqnoReservation");
-          mutex_.Unlock();
-          write_thread_.ExitWaitSequenceCommit(&seqno_reservation,
-                                               &versions_->last_sequence_);
+          MultiBatchWriteCommit(&seqno_reservation);
           mutex_.Lock();
         }
 

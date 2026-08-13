@@ -2615,6 +2615,99 @@ TEST_F(ExternalSSTFileTest, AllowWriteIngestWaitsForPendingMultiBatchWrite) {
   sync_point->ClearAllCallBacks();
 }
 
+TEST_F(ExternalSSTFileTest, GlobalBarrierWaitsForSeqnoReservation) {
+  constexpr auto kReservationReady =
+      "ExternalSSTFileTest::GlobalBarrierWaitsForSeqnoReservation:"
+      "ReservationReady";
+  constexpr auto kStartBarrier =
+      "ExternalSSTFileTest::GlobalBarrierWaitsForSeqnoReservation:"
+      "StartBarrier";
+  constexpr auto kBarrierReached =
+      "ExternalSSTFileTest::GlobalBarrierWaitsForSeqnoReservation:"
+      "BarrierReached";
+  constexpr auto kBarrierObserved =
+      "ExternalSSTFileTest::GlobalBarrierWaitsForSeqnoReservation:"
+      "BarrierObserved";
+  constexpr auto kReleaseReservation =
+      "ExternalSSTFileTest::GlobalBarrierWaitsForSeqnoReservation:"
+      "ReleaseReservation";
+  constexpr auto kContinueReservation =
+      "ExternalSSTFileTest::GlobalBarrierWaitsForSeqnoReservation:"
+      "ContinueReservation";
+
+  auto* sync_point = SyncPoint::GetInstance();
+  sync_point->DisableProcessing();
+  sync_point->ClearAllCallBacks();
+  sync_point->LoadDependency({{kReservationReady, kStartBarrier},
+                              {kBarrierReached, kBarrierObserved},
+                              {kReleaseReservation, kContinueReservation}});
+
+  sync_point->SetCallBack(
+      "DBImpl::IngestExternalFiles:BeforeWaitForSeqnoReservation", [&](void*) {
+        TEST_SYNC_POINT(kReservationReady);
+        TEST_SYNC_POINT(kContinueReservation);
+      });
+
+  std::atomic<bool> barrier_waited{false};
+  std::atomic<bool> barrier_reached{false};
+  const auto signal_barrier_reached = [&] {
+    if (!barrier_reached.exchange(true)) {
+      TEST_SYNC_POINT(kBarrierReached);
+    }
+  };
+  sync_point->SetCallBack("DBImpl::WaitForPendingWrites:PendingWrites",
+                          [&](void*) {
+                            barrier_waited.store(true);
+                            signal_barrier_reached();
+                          });
+
+  sync_point->SetCallBack("ExternalSstFileIngestionJob::Run", [&](void*) {
+    // If the barrier fails to wait, prevent the test from hanging.
+    signal_barrier_reached();
+  });
+
+  Options options = CurrentOptions();
+  options.enable_pipelined_write = false;
+  options.unordered_write = false;
+  options.enable_multi_batch_write = true;
+  DestroyAndReopen(options);
+
+  const SequenceNumber last_seqno = db_->GetLatestSequenceNumber();
+  const Snapshot* snapshot = db_->GetSnapshot();
+  Status allow_write_status;
+  Status barrier_status;
+
+  sync_point->EnableProcessing();
+  port::Thread allow_write_ingest([&]() {
+    allow_write_status =
+        GenerateAndAddExternalFile(options, {{"foo1", "v1"}}, 1, true, false,
+                                   true, false, false, true /* allow_write */);
+  });
+
+  TEST_SYNC_POINT(kStartBarrier);
+  port::Thread barrier_ingest([&]() {
+    barrier_status =
+        GenerateAndAddExternalFile(options, {{"foo2", "v2"}}, 2, true, false,
+                                   true, false, false, false /* allow_write */);
+  });
+  TEST_SYNC_POINT(kBarrierObserved);
+  TEST_SYNC_POINT(kReleaseReservation);
+
+  allow_write_ingest.join();
+  barrier_ingest.join();
+
+  ASSERT_TRUE(barrier_waited.load());
+  ASSERT_OK(allow_write_status);
+  ASSERT_OK(barrier_status);
+  ASSERT_EQ(last_seqno + 2, db_->GetLatestSequenceNumber());
+  ASSERT_EQ("v1", Get("foo1"));
+  ASSERT_EQ("v2", Get("foo2"));
+  db_->ReleaseSnapshot(snapshot);
+
+  sync_point->DisableProcessing();
+  sync_point->ClearAllCallBacks();
+}
+
 TEST_F(ExternalSSTFileTest, AllowWriteIngestWaitsForFailedMultiBatchWrite) {
   constexpr auto kWriterPrepared =
       "ExternalSSTFileTest::"
