@@ -2045,8 +2045,8 @@ class DBImpl : public DB {
       return;
     }
 
-    // Wait for writers that have allocated sequence numbers to finish their
-    // memtable writes and publish their sequences.
+    // Wait for allocated sequence numbers to be published, including after
+    // memtable writes and external SST ingestion reservations.
     if (pending_memtable_writes_.load() != 0) {
       TEST_SYNC_POINT("DBImpl::WaitForPendingWrites:PendingWrites");
       std::unique_lock<std::mutex> guard(switch_mutex_);
@@ -2715,8 +2715,8 @@ class DBImpl : public DB {
   // initialized with startup time.
   uint64_t delete_obsolete_files_last_run_;
 
-  // The thread that wants to switch memtable, can wait on this cv until the
-  // pending writes to memtable finishes.
+  // The thread that wants a global sequence barrier can wait on this cv until
+  // pending memtable writes and sequence reservations are published.
   std::condition_variable switch_cv_;
   // The mutex used by switch_cv_. mutex_ should be acquired beforehand.
   std::mutex switch_mutex_;

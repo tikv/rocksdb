@@ -397,10 +397,8 @@ class WriteThread {
   virtual ~WriteThread() = default;
 
   // IMPORTANT: None of the methods in this class rely on the db mutex
-  // for correctness. All of the methods except JoinBatchGroup and
-  // EnterUnbatched may be called either with or without the db mutex held.
-  // Correctness is maintained by ensuring that only a single thread is
-  // a leader at a time.
+  // for correctness. Correctness is maintained by ensuring that only a
+  // single thread is a leader at a time.
 
   // Registers w as ready to become part of a batch group, waits until the
   // caller should perform some work, and returns the current state of the
@@ -459,8 +457,12 @@ class WriteThread {
   // someone else has already taken responsibility for that.
   bool CompleteParallelMemTableWriter(Writer* w);
 
-  // Waits for all preceding writers (unlocking mu while waiting), then
-  // registers w as the currently proceeding writer.
+  // Waits for all preceding writers, then registers w as the currently
+  // proceeding writer. The db mutex must not be held.
+  void EnterUnbatched(Writer* w);
+
+  // Same as above, but unlocks the db mutex while waiting and reacquires it
+  // before returning.
   //
   // Writer* w:              A Writer not eligible for batching
   // InstrumentedMutex* mu:  The db mutex, to unlock while waiting

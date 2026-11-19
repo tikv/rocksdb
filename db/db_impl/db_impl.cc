@@ -5928,16 +5928,9 @@ Status DBImpl::IngestExternalFiles(
     }
     // Run ingestion jobs.
     if (status.ok()) {
-      if (allow_write) {
-        // Briefly stop writes while reserving sequence numbers for ingestion.
-        write_thread_.EnterUnbatched(&w, &mutex_);
-        if (two_write_queues_) {
-          nonmem_write_thread_.EnterUnbatched(&nonmem_w, &mutex_);
-        }
-        WaitForPendingWrites();
-      }
-
-      SequenceNumber last_seqno = versions_->LastSequence();
+      const bool publish_seqno_through_commit_queue =
+          allow_write && immutable_db_options_.enable_multi_batch_write;
+      CommitRequest seqno_reservation(&w);
       SequenceNumber reserved_seqno_count = 0;
       if (allow_write) {
         // Each file consumes at most one sequence number. Jobs for different
@@ -5950,16 +5943,61 @@ Status DBImpl::IngestExternalFiles(
                            ingestion_jobs[i].files_to_ingest().size()));
         }
         assert(reserved_seqno_count > 0);
+
+        // Become the write queue leader before reserving sequence numbers.
+        if (publish_seqno_through_commit_queue) {
+          // Sequence reservation only needs write queue serialization. Keep
+          // the DB mutex unlocked so it cannot extend the write barrier.
+          mutex_.Unlock();
+          write_thread_.EnterUnbatched(&w);
+        } else {
+          write_thread_.EnterUnbatched(&w, &mutex_);
+        }
+        if (two_write_queues_) {
+          if (publish_seqno_through_commit_queue) {
+            nonmem_write_thread_.EnterUnbatched(&nonmem_w);
+          } else {
+            nonmem_write_thread_.EnterUnbatched(&nonmem_w, &mutex_);
+          }
+        }
+        if (!publish_seqno_through_commit_queue) {
+          WaitForPendingWrites();
+        }
+      }
+
+      SequenceNumber last_seqno =
+          publish_seqno_through_commit_queue
+              ? write_thread_.UpdateLastSequence(versions_->LastSequence())
+              : versions_->LastSequence();
+      if (allow_write) {
         const SequenceNumber reserved_last_seqno =
             last_seqno + reserved_seqno_count;
         versions_->SetLastAllocatedSequence(reserved_last_seqno);
-        versions_->SetLastPublishedSequence(reserved_last_seqno);
-        versions_->SetLastSequence(reserved_last_seqno);
+        if (publish_seqno_through_commit_queue) {
+          // Publish the reservation after preceding multi-batch writers, but
+          // release the write queue immediately so later writers can proceed.
+          write_thread_.UpdateLastSequence(reserved_last_seqno);
+          seqno_reservation.commit_lsn = reserved_last_seqno;
+          write_thread_.EnterCommitQueue(&seqno_reservation);
+          // Keep global barriers from passing until the reservation is
+          // published.
+          ++pending_memtable_writes_;
+        } else {
+          versions_->SetLastPublishedSequence(reserved_last_seqno);
+          versions_->SetLastSequence(reserved_last_seqno);
+        }
         // Resume writes
         if (two_write_queues_) {
           nonmem_write_thread_.ExitUnbatched(&nonmem_w);
         }
         write_thread_.ExitUnbatched(&w);
+
+        if (publish_seqno_through_commit_queue) {
+          TEST_SYNC_POINT(
+              "DBImpl::IngestExternalFiles:BeforeWaitForSeqnoReservation");
+          MultiBatchWriteCommit(&seqno_reservation);
+          mutex_.Lock();
+        }
 
         // The reservation cannot be rolled back if ingestion fails because a
         // foreground write may have already consumed a later sequence number.
